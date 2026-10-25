@@ -39,7 +39,8 @@ test('authenticated Cloudflare directory requires same UUID and configured email
 });
 test('database target uses staging branch only and verified-TLS provider hostname',()=>{
  const resources={account_id:env.CLOUDFLARE_ACCOUNT_ID,environments:{staging:{database:{provider:'planetscale',name:'porchday-staging',branch:'main',engine:'postgresql',branch_id:'stage-branch'}}}};
- const value='postgresql://operator.stage-branch:synthetic@sample.pg.psdb.cloud:5432/postgres';
+ // URL validation only: this fixture never opens a connection or needs a password.
+ const value='postgresql://operator.stage-branch@sample.pg.psdb.cloud:5432/postgres';
  expect(stagingConnection({...env,PORCHDAY_STAGING_DATABASE_MIGRATION_URL:value},resources)).toBe(value);
  expect(()=>stagingConnection({...env,CLOUDFLARE_ACCOUNT_ID:'b'.repeat(32),PORCHDAY_STAGING_DATABASE_MIGRATION_URL:value},resources)).toThrow('ACCOUNT_TARGET');
  expect(()=>stagingConnection({...env,PORCHDAY_STAGING_DATABASE_MIGRATION_URL:value},{...resources,environments:{staging:{database:{...resources.environments.staging.database,name:'porchday-production'}}}})).toThrow('DATABASE_TARGET');
