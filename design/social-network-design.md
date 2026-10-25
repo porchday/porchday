@@ -40,7 +40,13 @@ The owner authorized up to $1,000 total spending while setting up the MVP on Oct
 
 The initial repository is private `bobbyhwilder/porchday` (https://github.com/bobbyhwilder/porchday). Keep it private during development; Apache-2.0 remains the intended license and public source release remains a later launch milestone. Do not advertise source availability before publication. Never commit credentials; the existing secrets file remains outside the repository.
 
-Workers Paid, separate staging/production PlanetScale databases, six restricted Hyperdrive bindings, and private media/recovery-journal/backup buckets are provisioned. The linked PlanetScale organization is `andykonwinski`; both databases have 42 migrations through `041_deletion_pass_health.sql`. Cloudflare Email Sending and sender DNS are configured, and the owner confirmed receipt and successful use of three real synthetic signup links. Separate Cloudflare monitors and the hosted restore drill have passed their documented checks. Linux CI and hosted iOS simulator builds have passed; this is not evidence that every native interaction or recovery workflow has been verified. A $10 Cloudflare usage-budget alert is enabled for the account owner; its delivery and exact recent accrued billing remain unverified. The owner confirmed the separate service-monitor attention/recovery email pair. Current deployment versions, test scope, outstanding acceptance and admission gates, and costs are recorded in `docs/build-status.md` and `docs/cost-ledger.md`; provisioning alone does not establish pilot readiness.
+Workers Paid, separate staging/production PlanetScale databases, six restricted Hyperdrive bindings, and private media/recovery-journal/backup buckets are provisioned. The linked PlanetScale organization is `andykonwinski`; both databases have 43 migrations through `042_review_queue_health.sql`. Both deployed applications run `ffeb1a2`, with verified asset hashes and healthy V3 protected snapshots. The V3 function adds only aggregate moderation/verified-recovery queue age and remains jobs-only; V1/V2 are preserved for rolling deployment.
+
+Cloudflare Email Sending and sender DNS are configured, and the owner confirmed receipt and successful use of three real synthetic signup links. Separate Cloudflare monitors and the hosted restore drill have passed their documented checks.
+
+Updated monitors completed normal post-deployment cron checks at 19:47 UTC with operational status and metrics ready, preserving their secrets and Durable Object state. Sustained auth/recovery-failure alert channels are implemented, but their actual inbox delivery remains unverified. A deployed-source to fresh local-destination archive migration passed its application assertions and independent teardown checks; its runner’s redundant-signout failure remains explicitly recorded in `docs/hosted-archive-migration.md`. Linux CI and hosted iOS simulator builds have passed; this is not evidence that every native interaction or recovery workflow has been verified.
+
+A $10 Cloudflare usage-budget alert is enabled for the account owner; its delivery and exact recent accrued billing remain unverified. The owner confirmed the separate service-monitor attention/recovery email pair. Current deployment versions, test scope, outstanding acceptance and admission gates, and costs are recorded in `docs/build-status.md` and `docs/cost-ledger.md`; provisioning alone does not establish pilot readiness.
 
 ## Scope and confirmed decisions
 
@@ -82,6 +88,8 @@ Direct messages, video, livestreaming, marketplaces, brand pages, public discove
 
 ### Visual direction
 
+Use the same simple corn-on-the-cob mark across the website, PWA and native iOS app: a white cutout silhouette in a burnt-orange `#974013` square, without rounding, tilt or gradients. Keep the Porchday wordmark alongside it. The new shared assets are implemented for the next release; they are not part of the deployed `ffeb1a2` checkpoint.
+
 Use the homemade, sometimes clumsy and kitschy personal-page side of early MySpace, rather than a generic social-network portal. The supplied references call for a busy repeating wallpaper behind a narrow centered page, dense unequal columns, square paper panels, contrasting color blocks, chunky/double/dashed borders, small badges, and mixed serif/monospace/sans typography. Use an original burnt-orange, mustard, cream, and dark-brown interpretation; avoid Facebook-like blue identity, corporate navigation bars, oversized editorial heroes, rounded floating cards, and polished dashboard styling. Keep the Porchday hero level, without rotation. Omit the “about this little website” sidebar, the “you are here” bar, and the “friends & family & being yourself” tagline. Use direct, simple language throughout the homepage and footer; the visual style can be personal without cute or diminutive copy. Illustrative profile content must be clearly labeled; no invented live activity, visitor counters, ads, or nonfunctional music controls.
 
 Personal walls retain member-selected colors, fonts, backgrounds, and photos so profiles feel individual. New accounts receive one randomized choice from curated local tiled wallpapers, saved in their encrypted profile; the choice persists across devices and can be changed or removed in settings. Never rerandomize on render or login or overwrite an existing profile’s choice. Tile IDs map to bundled static artwork, never arbitrary CSS, scripts, or external image URLs. Keep text and forms on quiet readable panels, retain visible keyboard focus, semantic headings, responsive stacking, and comfortable touch targets. No flashing, automatic sound, or motion is needed to achieve this style.
@@ -107,7 +115,7 @@ Follow the hero with a preview of a personal wall and a calm chronological feed.
 6. Feature **Real people. No AI agents.** Explain the humans-only policy and reporting process; do not claim members have passed technical human verification.
 7. Demonstrate photos, comments, reactions, named groups, and optional timers for posts and comments.
 
-Use “Join Porchday” and “Learn about our mission” as primary actions, with a separate “Log in” link. The sign-in screen offers email/password login and registration, plus a “Forgot password?” link. During a closed pilot, explain invitation eligibility before sending someone through authentication. Include mission, governance, funding, privacy, community rules, accessibility, and contact links. Publish nonprofit status accurately; do not imply tax deductibility or established nonprofit status before these are confirmed.
+Use inline “Join with an invitation” and “About the project” links in the hero, with a separate “Log in” link. In the Account panel, keep “Have an invitation? create account” on one inline text line at ordinary desktop width, with natural wrapping on narrow screens. The sign-in screen offers email/password login and registration, plus a “Forgot password?” link. During a closed pilot, explain invitation eligibility before sending someone through authentication. Include mission, governance, funding, privacy, community rules, accessibility, and contact links. Publish nonprofit status accurately; do not imply tax deductibility or established nonprofit status before these are confirmed.
 
 Use **By invitation only** for the homepage's admission label. Do not show the former “18+ / invitation-only pilot” location bar or “A little closer to your people.” footer tagline. The adults-only pilot and invitation requirements remain enforced and explained in registration and policy screens.
 
@@ -324,7 +332,7 @@ Use a responsive TypeScript web application on Cloudflare Workers with Static As
 | Encrypted photos and derivatives | Private R2 buckets, accessible through authorized Worker routes |
 | Expiry and asynchronous work | Cron Triggers, Cloudflare Queues, and a PostgreSQL outbox |
 | Transactional email | Cloudflare Email Service |
-| Monitoring | Cloudflare Workers logs, traces, metrics, and service analytics; PlanetScale database diagnostics |
+| Monitoring | Privacy-filtered Cloudflare Analytics Engine metrics, independent scheduled monitor and public status page; PlanetScale database diagnostics. Persisted application request logs/traces remain disabled. |
 
 Create or connect PlanetScale Postgres through Cloudflare's integration and use Cloudflare billing where available. PlanetScale remains the database operator. Consolidated billing does not remove the linked PlanetScale organization or its access requirements: the documented CLI provisioning flow requires PlanetScale credentials as well as Cloudflare billing authorization. Validate the account connection and provisioning route during setup. [Cloudflare PlanetScale integration](https://developers.cloudflare.com/hyperdrive/planetscale/)
 
@@ -345,7 +353,7 @@ Keep the public homepage and authentication routes clearly separate from session
 
 Email/password is the only MVP member login method. Google and GitHub OAuth and account linking are future work. No social-provider credentials or consent screens are required to launch.
 
-Run authentication on Workers using a maintained library and private identity/session tables in PlanetScale Postgres. Better Auth is the candidate; validate its PostgreSQL adapter through Hyperdrive, Workers runtime compatibility, password hashing costs, native iOS sessions, email verification, recovery, and revocation before pinning a version. Reserve Cloudflare Access for staff routes; it does not provide member email/password accounts. [Better Auth basic usage](https://better-auth.com/docs/basic-usage)
+Run authentication on Workers using a maintained library and private identity/session tables in PlanetScale Postgres. Better Auth is implemented and pinned; preserve its tested PostgreSQL/Hyperdrive adapter, Workers compatibility, password hashing, native sessions, email verification and revocation when updating it. Complete the remaining human-assisted recovery acceptance before admission. Reserve Cloudflare Access for staff routes; it does not provide member email/password accounts. [Better Auth basic usage](https://better-auth.com/docs/basic-usage)
 
 For registration, verify email ownership before enabling social actions. Provide login, change-password, forgot-password, email-change verification, and single-use expiring reset links. Store only salted adaptive password hashes using a maintained implementation with parameters tested on Workers. Allow password managers and long passphrases, reject known compromised passwords, and rate-limit login and reset attempts. Use generic responses to reduce account enumeration. Password resets revoke existing sessions and send a security notice. Neither password reset nor support recovery can decrypt old content without a trusted device or the member-held encryption recovery secret.
 
@@ -355,7 +363,7 @@ Store opaque application sessions server-side. Web sessions use Secure, HttpOnly
 
 Separate database roles and Hyperdrive bindings for authentication tables, ordinary social operations, and background maintenance; use a distinct migration/owner credential only during deployment. Runtime social credentials must not own tables, have superuser or BYPASSRLS privileges, or grant arbitrary schema changes. Do not expose Postgres directly to members. Store database credentials in Hyperdrive's configuration and application secrets in Workers secret storage, never public assets.
 
-Staff routes additionally use Cloudflare Access with validated issuer, audience, signature, and time claims, plus explicit application staff roles. An Access login alone does not grant moderation privileges. [Cloudflare JWT validation](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
+Staff routes additionally use Cloudflare Access with validated issuer, audience, signature, and time claims, plus explicit application staff roles. An Access login alone does not grant moderation privileges. The `/staff` entry and recovery queue must work without a social member account or encryption vault. A read-only identity route exposes only the caller’s verified signed subject, email and current roles; operators assign roles separately. Access loss clears case details and rejects late responses. Only the explicit `/staff/moderation` trusted-device flow can decrypt disclosed evidence. [Cloudflare JWT validation](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
 
 ### Stolen account reporting and recovery
 
@@ -463,6 +471,8 @@ Do not enable session replay, screen recording, DOM capture, or automatic browse
 
 Configure Cloudflare dashboards and supported notifications, plus scheduled health checks for application-specific alerts for service health, latency/error objectives, queue/deletion backlogs, and failed authentication or recovery operations. Use synthetic checks for public availability and core application flows with isolated test accounts and synthetic content; never give monitoring jobs access to real member data or recovery keys. Test monitoring credentials and bot-defense exceptions narrowly so they cannot bypass production authorization. Synthetic test automation is infrastructure, not an allowed automated social participant.
 
+The implemented V3 health check exposes aggregate ages/counts for unresolved retained moderation cases and contact-verified recovery cases, with a provisional 24-hour operator escalation target. It excludes unverified reports and does not promise staffed response times. Sustained authentication/recovery-failure monitoring uses fixed route categories, minimum sample floors and consecutive-window thresholds; idle evidence cannot clear an incident. These channels have isolated regression coverage and an accepted provider query, but no remotely exercised failure/alert-inbox acceptance. See `docs/independent-monitoring.md` for exact thresholds and limitations.
+
 Route actionable alerts to a named operator with a backup. Maintain an independent service-status page and incident runbooks so a monitoring outage does not remove the communication path. Proposed pilot availability is 99.5% per month; revisit staffing and cost before promising a higher target. Telemetry delivery must be asynchronous and bounded: an unavailable telemetry or alert endpoint must not block posting, authentication, or deletion jobs. Monitor dropped telemetry and ingestion failures.
 
 Set explicit metrics retention, sampling, ingestion budgets, and access controls before launch; application log/trace persistence remains off. Keep metric tags bounded; avoid per-member, per-post, or raw-URL cardinality. Account for provider sampling weights when calculating counts and latency, retain useful fixed failure codes within defined budgets, and alert on unexpected ingestion growth. Include Cloudflare telemetry, health-check execution, and PlanetScale diagnostics in operating cost estimates. Review provider retention and data-location controls, disable unsafe SQL capture, and disclose the operational metadata each provider receives. Validate alert capabilities rather than assuming feature parity with Datadog.
@@ -562,7 +572,7 @@ Required acceptance scenarios:
 
 Load testing should cover the confirmed initial scale of up to 10,000 registered users, including members at the 300-connection cap with varied friend/family mixes. Use 1,000 daily active members as a provisional workload assumption, not a confirmed forecast; test peak concurrency and media traffic separately. The budget is flexible, but establish operating estimates and spending alerts before launch. Set a provisional p95 feed API target below 500 ms at agreed pilot concurrency, excluding media transfer. Record actual service costs and latency before setting launch commitments.
 
-## Decisions to settle before implementation
+## Implementation choices and remaining launch decisions
 
 | Decision | Proposed direction |
 | --- | --- |
@@ -570,18 +580,18 @@ Load testing should cover the confirmed initial scale of up to 10,000 registered
 | Native iOS release | Select the minimum iOS version and finalize App Store, TestFlight, signing, APNs, and platform privacy configuration. |
 | MVP monitoring | Validate Cloudflare alerts and PlanetScale diagnostics, select retention and sampling budgets, and assign alert ownership. Datadog is deferred. |
 | Product and organization name | Use Porchday as the working product name and porchday.com as the domain; the legal organization name remains to be settled. |
-| Cloudflare authentication library | Validate Better Auth on Workers with PlanetScale Postgres through Hyperdrive, email/password, native sessions, hashing costs, and recovery. Reserve Access for staff. |
-| PlanetScale provisioning | Link the organization through Cloudflare, confirm billing eligibility, tier, region, backup retention, runtime role grants, and separate migration access. |
+| Cloudflare authentication library | Better Auth email/password is deployed on Workers with PlanetScale/Hyperdrive, with verified session/MFA checks. Reserve Access for staff; finish human email-change/reset and full stolen-account recovery acceptance. |
+| PlanetScale provisioning | Staging PS-5 ARM and production PS-20 ARM with two replicas are provisioned in Oregon, billed through Cloudflare, with separate runtime roles, migration access and seven-day backup retention. Both have 43 migrations; actual capacity and accrued billing still need ongoing observation. |
 | Definition of family | Include chosen family through mutual confirmation without documentary proof. |
 | Content permanence | Default to no timer, with clearly visible optional expiration; shortening only after publishing. |
 | Public discovery and groups | Private groups and limited member discovery at launch. |
-| Backup and safety retention | Select explicit durations with operating policies and hosting plan before making deletion promises. |
+| Backup and safety retention | Seven-day database/media backups and independent privacy-journal replay are implemented; the real hosted restore passed. Retain the disclosed backup delay and tested first/final deletion obligations when describing erasure. |
 | Funding and governance | Establish nonprofit operating structure, member participation, and a realistic annual budget before public launch. |
 | Capacity and spending controls | Initial scale is confirmed at 10,000 or fewer users with a flexible budget; validate active usage, peak concurrency, and media traffic, then set spending alerts. |
 | Media and recovery budget | Select storage allowances, ciphertext backup features, and tested client-side image processing before launch. |
 | Notifications and account recovery | In-app social notifications first; transactional email, tested recovery flows, and a staffed stolen-account response target are required for launch. |
 | Open-source release | Publish the application source under Apache License 2.0 with development documentation, and establish contribution and security-reporting processes. |
-| Migration destinations | Ship the open archive and same-platform importer; select and test additional destination adapters based on actual import capabilities. |
+| Migration destinations | The versioned archive and same-platform importer are implemented; clean-destination application assertions and independent cleanup checks are recorded with the harness failure preserved. Other-product adapters and compatibility remain future validation. |
 
 ## Future work
 
