@@ -14,6 +14,8 @@ struct ProfileEditor: View {
     @State private var theme="sage"
     @State private var font="serif"
     @State private var order="about-first"
+    @State private var wallpaper: ProfileWallpaper = .none
+    @State private var wallpaperChanged = false
     @State private var slot="avatar"
     @State private var selection:PhotosPickerItem?
     @State private var assets:[String:PreparedPhoto]=[:]
@@ -58,6 +60,10 @@ struct ProfileEditor: View {
                 Text("Location metadata is removed before photos are encrypted.").font(.footnote)
             }
             Section("Make this corner yours") {
+                Picker("Tiled wallpaper", selection: Binding(get: { wallpaper }, set: { wallpaper = $0; wallpaperChanged = true })) {
+                    ForEach(ProfileWallpaper.allCases) { choice in Text(choice.label).tag(choice) }
+                }
+                if wallpaper != .none { WallpaperBackground(wallpaper: wallpaper).frame(height: 120).clipShape(RoundedRectangle(cornerRadius: 8)).accessibilityLabel(wallpaper.label + " preview") }
                 Picker("Theme",selection:$theme) { Text("Sunday garden").tag("sage");Text("Golden hour").tag("apricot");Text("After the rain").tag("lavender");Text("Library afternoon").tag("ink") }
                 Picker("Heading style",selection:$font) { Text("Bookish serif").tag("serif");Text("Simple sans serif").tag("sans") }
                 Picker("Section order",selection:$order) { Text("About, then interests").tag("about-first");Text("Interests, then about").tag("interests-first") }
@@ -65,7 +71,7 @@ struct ProfileEditor: View {
                 Button(busy ? "Encrypting your profile…":"Save and share profile") { Task { await save() } }.disabled(busy || name.count>80 || bio.count>1000 || status.count>100 || interests.count>300)
             }
         }.disabled(busy).navigationTitle("Your personal space").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
-            .task { name=profile["displayName"].string ?? "";bio=profile["bio"].string ?? "";interests=profile["interests"].string ?? "";status=profile["status"].string ?? "";theme=profile["theme"].string ?? "sage";font=profile["font"].string ?? "serif";order=profile["sectionOrder"].string ?? "about-first" }
+            .task { name=profile["displayName"].string ?? "";bio=profile["bio"].string ?? "";interests=profile["interests"].string ?? "";status=profile["status"].string ?? "";theme=profile["theme"].string ?? "sage";font=profile["font"].string ?? "serif";order=profile["sectionOrder"].string ?? "about-first";wallpaper=ProfileWallpaper.displayed(profile["wallpaper"]) }
             .onChange(of:selection) { _,item in let targetSlot=slot;Task { await model.perform { if let data=try await item?.loadTransferable(type:Data.self) { assets[targetSlot]=try PhotoPipeline.prepare(data);removedAssets.remove(targetSlot) } } } }
     }
     private func save() async {
@@ -74,6 +80,7 @@ struct ProfileEditor: View {
             guard let member=model.member else{return}
             let plan = SurfacePhotoRemoval(payload: currentProfile, slots: ["avatar", "cover", "background"], removed: removedAssets, replaced: Set(assets.keys))
             var payload=plan.payload.replacing("displayName",with:.string(name)).replacing("bio",with:.string(bio)).replacing("interests",with:.string(interests)).replacing("status",with:.string(status)).replacing("theme",with:.string(theme)).replacing("font",with:.string(font)).replacing("sectionOrder",with:.string(order))
+            payload = ProfileWallpaper.applying(wallpaper, to: payload, changed: wallpaperChanged)
             var attachments:[(String,String)]=[]
             for (slot,photo) in assets {
                 let meta=try await model.uploadSurfacePhoto(photo,audience:"connections",parent:member.id)

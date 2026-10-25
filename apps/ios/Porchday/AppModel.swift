@@ -8,6 +8,8 @@ import Combine
     @Published var error: String?
     @Published var notice: String?
     @Published var deepLinkPost: String?
+    @Published private(set) var initialProfileVersion = 0
+    private var profileInitialization: (id: UUID, memberID: String, task: Task<Bool, Never>)?
     let vault = CryptoVault()
     let api = API.shared
     func restore() async {
@@ -26,8 +28,38 @@ import Combine
     func finishSignIn() async throws { let member = try Member(try await api.social("/me")); self.member = member; needsTwoFactor = false; try await vault.load(member: member) }
     func verifySecondFactor(code:String,backup:Bool) async throws { _ = try await api.auth(backup ? "two-factor/verify-backup-code":"two-factor/verify-totp",body:.object(["code":.string(code),"trustDevice":.bool(false)])); try await finishSignIn() }
     func signOut() async {
+        profileInitialization?.task.cancel(); profileInitialization = nil
         await NativeNotifications.shared.signOut(model: self)
         _ = try? await api.auth("sign-out", body: .object([:])); await api.clearSession(); vault.clear(); SecureStore.clear(); clearTemporaryArchives(); member = nil; needsTwoFactor = false
+    }
+    /// A wallpaper is cosmetic: enrollment and access stay successful if this save is unavailable.
+    func initializeProfileWallpaper() async {
+        guard let member, member.raw["status"].string == "active", vault.unlocked else { return }
+        if let pending = profileInitialization, pending.memberID == member.id { _ = await pending.task.value; return }
+        profileInitialization?.task.cancel()
+        let initializationID = UUID()
+        let task = Task { @MainActor [weak self] () -> Bool in
+            guard let self else { return false }
+            do {
+                return try await InitialProfileWallpaper.initialize(read: {
+                    try Task.checkCancellation()
+                    guard self.member?.id == member.id, self.vault.unlocked else { throw CancellationError() }
+                    return try await self.api.social("/me")
+                }, create: { payload in
+                    try Task.checkCancellation()
+                    guard self.member?.id == member.id, self.vault.unlocked else { throw CancellationError() }
+                    let original: JSON = .object(["revision": .number(1), "createdAt": .string(PorchDate.string())])
+                    let envelope = try await self.vault.seal(payload, member: member, kind: "profile", audience: "connections", id: member.id, original: original)
+                    try Task.checkCancellation()
+                    guard self.member?.id == member.id, self.vault.unlocked else { throw CancellationError() }
+                    _ = try await self.api.social("/profiles/me", method: "PUT", body: .object(["envelope": envelope]))
+                })
+            } catch { return false } // Retry on a later unlock or wall visit; never clear keys or prevent entry.
+        }
+        profileInitialization = (initializationID, member.id, task)
+        let created = await task.value
+        if profileInitialization?.id == initializationID { profileInitialization = nil }
+        if created, self.member?.id == member.id { initialProfileVersion += 1 }
     }
     private func clearTemporaryArchives() {
         let root=FileManager.default.temporaryDirectory

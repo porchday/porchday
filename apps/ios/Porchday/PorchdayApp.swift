@@ -41,6 +41,7 @@ struct MainTabs: View {
             NavigationStack { ProfileView(memberID: member.id, handle: member.handle) }.tabItem { Label("My wall", systemImage: "person.crop.rectangle") }
             NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .task(id: member.id) { await model.initializeProfileWallpaper() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
     }

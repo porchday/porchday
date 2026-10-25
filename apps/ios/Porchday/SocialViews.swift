@@ -9,6 +9,7 @@ struct FeedView: View {
     var showComposer = false
     var groupID: String?
     var profileHeader: AnyView?
+    var wallpaper: ProfileWallpaper = .none
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @State private var rows: [SocialItem] = []
@@ -29,6 +30,8 @@ struct FeedView: View {
                     if busy { ProgressView() }
                 }
             }
+            .scrollContentBackground(wallpaper == .none ? .visible : .hidden)
+            .background { if wallpaper != .none { WallpaperBackground(wallpaper: wallpaper).ignoresSafeArea(edges: .bottom) } }
         }
         .navigationTitle(title).refreshable { await load() }.task(id: endpoint) { await load() }
         .toolbar { NavigationLink { NotificationsView() } label: { Label("Notifications", systemImage: "bell") } }

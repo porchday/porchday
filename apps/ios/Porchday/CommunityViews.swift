@@ -27,11 +27,16 @@ struct ProfileView: View {
     @State private var profile: JSON = .null
     @State private var edit = false
     @State private var compose = false
+    @AppStorage("porchday-standard-profile-theme") private var standardTheme = false
     var body: some View {
         FeedView(title: "@" + handle, endpoint: "/walls/" + memberID,
-                 profileHeader: AnyView(ProfileHeader(profile: profile, handle: handle, isOwner: memberID == model.member?.id,
-                                                      edit: { edit = true }, compose: { compose = true })))
-            .task { await refresh() }
+                 profileHeader: AnyView(ProfileHeader(profile: profile, handle: handle, isOwner: memberID == model.member?.id, standardTheme: $standardTheme,
+                                                      edit: { edit = true }, compose: { compose = true })),
+                 wallpaper: ProfileWallpaper.displayed(profile["wallpaper"], standardTheme: standardTheme))
+            .task(id: model.initialProfileVersion) {
+                if memberID == model.member?.id { await model.initializeProfileWallpaper() }
+                await refresh()
+            }
             .sheet(isPresented: $edit) { NavigationStack { ProfileEditor(profile: profile) { Task { await refresh() } } } }
             .sheet(isPresented: $compose) { NavigationStack { ComposerView { } } }
     }
@@ -41,17 +46,19 @@ private struct ProfileHeader: View {
     let profile: JSON
     let handle: String
     let isOwner: Bool
+    @Binding var standardTheme: Bool
     let edit: () -> Void
     let compose: () -> Void
     private var tint: Color {
+        if standardTheme { return .secondary }
         switch profile["theme"].string {
-        case "apricot": .orange
-        case "lavender": .purple
-        case "ink": .blue
-        default: .green
+        case "apricot": return .orange
+        case "lavender": return .purple
+        case "ink": return .blue
+        default: return .green
         }
     }
-    private var heading: Font { .system(.title2, design: profile["font"].string == "sans" ? .default : .serif, weight: .bold) }
+    private var heading: Font { .system(.title2, design: standardTheme || profile["font"].string == "sans" ? .default : .serif, weight: .bold) }
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if profile["cover"] != .null { EncryptedPhotoView(photo: profile["cover"]).frame(maxHeight: 160).clipped() }
@@ -63,7 +70,9 @@ private struct ProfileHeader: View {
                     if let status = profile["status"].string, !status.isEmpty { Text(status).font(.callout).italic() }
                 }
             }
-            if profile["sectionOrder"].string == "interests-first" { interests; about } else { about; interests }
+            if !standardTheme && profile["sectionOrder"].string == "interests-first" { interests; about } else { about; interests }
+            Toggle("Use standard theme", isOn: $standardTheme).font(.callout)
+            Text("This display preference stays on this device and does not change anyone’s profile.").font(.caption).foregroundStyle(.secondary)
             if isOwner {
                 HStack { Button("Make this space yours", action: edit); Spacer(); Button("Post to my wall", action: compose) }.font(.callout)
             }
@@ -73,7 +82,7 @@ private struct ProfileHeader: View {
         .background {
             ZStack {
                 tint.opacity(0.12)
-                if profile["background"] != .null { EncryptedPhotoView(photo: profile["background"]).opacity(0.12).accessibilityHidden(true) }
+                if !standardTheme && profile["background"] != .null { EncryptedPhotoView(photo: profile["background"]).opacity(0.12).accessibilityHidden(true) }
             }.clipped()
         }
         .clipShape(RoundedRectangle(cornerRadius: 12))
