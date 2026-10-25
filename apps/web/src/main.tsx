@@ -186,7 +186,7 @@ function App() {
         {!online && <OfflineScreen onRetry={retryConnection} />}
         <div hidden={!online}>
           <VaultProvider member={member}>
-            <AppShell path={path} onLogout={signOut} />
+            <AppShell path={path} routeKey={route} onLogout={signOut} />
           </VaultProvider>
         </div>
       </>
@@ -274,9 +274,11 @@ const links = [
 ];
 function AppShell({
   path,
+  routeKey,
   onLogout,
 }: {
   path: string;
+  routeKey: string;
   onLogout: () => Promise<void>;
 }) {
   const vault = useVault();
@@ -429,7 +431,7 @@ function AppShell({
             <a href="/appeals">Request an independent review.</a>
           </Alert>
         )}
-        {content}
+        <React.Fragment key={routeKey}>{content}</React.Fragment>
       </main>
       <aside className="right-rail">
         <div className="rail-date">

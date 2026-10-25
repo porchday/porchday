@@ -106,6 +106,11 @@ export class ApiError extends Error {
     this.details = data.error?.details || data.details || {};
   }
 }
+export function accessLost(error: unknown): boolean {
+  return (
+    error instanceof ApiError && [401, 403, 404, 410].includes(error.status)
+  );
+}
 export async function request<T = Json>(
   path: string,
   options: RequestInit = {},

@@ -21,6 +21,7 @@ import {
   remaining,
   message,
   unexpired,
+  accessLost,
   type SocialObject,
   type Content,
   type MediaPayload,
@@ -39,6 +40,8 @@ import {
 } from "./ui";
 import { useVault } from "./vault";
 import { reshareDeadline, resharePayload } from "./reshare";
+import { jpegDimensions, validatedPhoto } from "./photo-safety";
+import { preservedPhotoDeadline } from "./archive";
 const CATALOG = [
   ["like", "👍", "Like"],
   ["love", "❤️", "Love"],
@@ -150,6 +153,8 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
     throw new Error("Each source photo must be 20 MB or smaller.");
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
     throw new Error("Choose a JPEG, PNG, or WebP photo.");
+  if (file.type === "image/jpeg")
+    jpegDimensions(new Uint8Array(await file.arrayBuffer()), 65535);
   const bitmap = await createImageBitmap(file);
   if (
     bitmap.width * bitmap.height > 40_000_000 ||
@@ -417,6 +422,7 @@ export function Feed({
   const [loaded, setLoaded] = useState(false);
   const [version, setVersion] = useState(0);
   const [clock, setClock] = useState(Date.now());
+  const loadVersion = useRef(0);
   const action = useAction();
   const endpoint = singleId
     ? `/posts/${singleId}`
@@ -426,10 +432,22 @@ export function Feed({
         ? `/walls/${wallId}`
         : "/feed";
   async function load(more = false) {
+    const attempt = ++loadVersion.current;
     await action.run(async () => {
-      const r = await get(
-        `${endpoint}${more && cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
-      );
+      let r: Json;
+      try {
+        r = await get(
+          `${endpoint}${more && cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+        );
+      } catch (e) {
+        if (attempt === loadVersion.current && accessLost(e)) {
+          setRows([]);
+          setCursor(null);
+          setLoaded(true);
+        }
+        throw e;
+      }
+      if (attempt !== loadVersion.current) return;
       const next = singleId ? [r.post] : items<SocialObject>(r);
       setRows((old) =>
         more
@@ -442,6 +460,9 @@ export function Feed({
   }
   useEffect(() => {
     load();
+    return () => {
+      loadVersion.current++;
+    };
   }, [endpoint, version]);
   useEffect(() => {
     const interval = setInterval(() => setClock(Date.now()), 1000);
@@ -556,6 +577,7 @@ export function PostCard({
   const [editText, setEditText] = useState("");
   const [editTimer, setEditTimer] = useState("inherit");
   const [details, setDetails] = useState<Json | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
   const action = useAction();
   useEffect(() => {
     let alive = true;
@@ -575,8 +597,17 @@ export function PostCard({
     };
   }, [row.id, row.envelope.ciphertext]);
   async function loadDetails() {
-    const d = await get(`/posts/${row.id}`);
-    setDetails(d);
+    try {
+      const d = await get(`/posts/${row.id}`);
+      setDetails(d);
+    } catch (e) {
+      if (accessLost(e)) {
+        setUnavailable(true);
+        setContent(null);
+        setDetails(null);
+      }
+      throw e;
+    }
   }
   useEffect(() => {
     loadDetails().catch(() => {});
@@ -622,6 +653,12 @@ export function PostCard({
       onChange();
     });
   }
+  if (unavailable)
+    return (
+      <div className="panel">
+        <Alert>This moment is no longer available.</Alert>
+      </div>
+    );
   return (
     <article className="post-card panel">
       <header className="post-heading">
@@ -821,14 +858,22 @@ export function PostCard({
 }
 export function EncryptedPhoto({ media }: { media: MediaPayload }) {
   const vault = useVault();
-  const [url, setUrl] = useState("");
+  const [opened, setOpened] = useState<{ id: string; url: string } | null>(
+    null,
+  );
   const [error, setError] = useState("");
+  const url = opened?.id === media.id ? opened.url : "";
   useEffect(() => {
     let alive = true;
     let objectUrl = "";
+    let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    const controller = new AbortController();
+    setOpened(null);
+    setError("");
     fetch(`/api/v1/media/${media.id}/bytes`, {
       credentials: "same-origin",
       cache: "no-store",
+      signal: controller.signal,
     })
       .then(async (response) => {
         if (!response.ok) throw new Error("This photo is no longer available.");
@@ -837,27 +882,38 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
         if (payload.mime !== "image/jpeg" || typeof payload.bytes !== "string")
           throw new Error("Unsupported photo format.");
         const bytes = base64ToBytes(payload.bytes);
-        if (bytes.byteLength > 20 * 1024 * 1024)
-          throw new Error("Photo exceeds the safety limit.");
-        const blob = new Blob([bytes as BlobPart], { type: "image/jpeg" });
-        const img = await createImageBitmap(blob);
-        if (
-          img.width * img.height > 40_000_000 ||
-          img.width > 2400 ||
-          img.height > 2400
-        ) {
-          img.close();
-          throw new Error("Photo dimensions exceed the safety limit.");
-        }
-        img.close();
+        const { blob } = await validatedPhoto(bytes);
+        if (!alive) return;
+        const expiry = envelope.context.expiresAt
+          ? Date.parse(envelope.context.expiresAt)
+          : null;
+        if (expiry !== null && expiry <= Date.now())
+          throw new Error("This photo expired.");
         objectUrl = URL.createObjectURL(blob);
-        if (alive) setUrl(objectUrl);
+        setOpened({ id: media.id, url: objectUrl });
+        const checkExpiry = () => {
+          if (expiry === null || !alive) return;
+          const remaining = expiry - Date.now();
+          if (remaining <= 0) {
+            URL.revokeObjectURL(objectUrl);
+            objectUrl = "";
+            setOpened(null);
+            setError("This photo expired.");
+          } else
+            expiryTimer = setTimeout(
+              checkExpiry,
+              Math.min(remaining, 2_147_483_647),
+            );
+        };
+        checkExpiry();
       })
       .catch((e) => {
         if (alive) setError(e.message);
       });
     return () => {
       alive = false;
+      controller.abort();
+      if (expiryTimer) clearTimeout(expiryTimer);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [media.id]);
@@ -1048,9 +1104,19 @@ export function Comments({
   const action = useAction();
   async function refresh() {
     await action.run(async () => {
-      const r = await get(`/posts/${postRow.id}`);
-      setComments(r.comments || []);
-      setReactions(r.comment_reactions || r.reactions || []);
+      try {
+        const r = await get(`/posts/${postRow.id}`);
+        setComments(r.comments || []);
+        setReactions(r.comment_reactions || r.reactions || []);
+      } catch (e) {
+        if (accessLost(e)) {
+          setComments([]);
+          setReactions([]);
+          setReply(null);
+          await onChange().catch(() => {});
+        }
+        throw e;
+      }
       await onChange();
     });
   }
@@ -1578,22 +1644,12 @@ function ReshareDialog({
           )
             throw new Error("An original photo has an unsupported format.");
           const bytes = base64ToBytes(original.bytes);
-          if (bytes.length > 20 * 1024 * 1024)
-            throw new Error("An original photo exceeds the safe size limit.");
-          const bitmap = await createImageBitmap(
-            new Blob([bytes as BlobPart], { type: "image/jpeg" }),
+          const { width, height } = await validatedPhoto(bytes);
+          const photoExpiresAt = preservedPhotoDeadline(
+            oldEnvelope.context.expiresAt,
+            expiresAt,
           );
-          if (
-            !bitmap.width ||
-            !bitmap.height ||
-            bitmap.width > 2400 ||
-            bitmap.height > 2400
-          ) {
-            bitmap.close();
-            throw new Error("An original photo exceeds the safe dimensions.");
-          }
-          bitmap.close();
-          const item = { ...photo, id: crypto.randomUUID() };
+          const item = { ...photo, width, height, id: crypto.randomUUID() };
           const envelope = await vault.seal(
             { ...item, bytes: original.bytes },
             {
@@ -1603,7 +1659,7 @@ function ReshareDialog({
               parentId: id,
               groupId,
               createdAt,
-              expiresAt,
+              expiresAt: photoExpiresAt,
             },
           );
           const packed = new TextEncoder().encode(JSON.stringify(envelope));

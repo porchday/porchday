@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { zipSync, strToU8, strFromU8, unzipSync } from "fflate";
 import {
   emptyArchive,
@@ -7,6 +7,8 @@ import {
   validateSet,
   eligibleEntries,
   checksum,
+  preservedPhotoDeadline,
+  prepareValidatedExport,
 } from "../src/archive";
 const member = "11111111-1111-4111-8111-111111111111";
 const entry = {
@@ -138,5 +140,70 @@ describe("portable archive privacy and integrity", () => {
     expect(() => unpackArchive(packArchive(part))).toThrow(
       /missing or malformed/,
     );
+  });
+  it("preserves a shorter photo or parent deadline and never imports an already expired photo", () => {
+    const now = Date.parse("2026-10-25T12:00:00Z");
+    const short = "2026-10-25T13:00:00.000Z";
+    const long = "2026-10-26T13:00:00.000Z";
+    expect(preservedPhotoDeadline(short, long, now)).toBe(short);
+    expect(preservedPhotoDeadline(long, short, now)).toBe(short);
+    expect(preservedPhotoDeadline(short, null, now)).toBe(short);
+    expect(preservedPhotoDeadline(null, null, now)).toBeNull();
+    expect(() =>
+      preservedPhotoDeadline(short, long, Date.parse(short)),
+    ).toThrow(/expired/);
+    expect(() => preservedPhotoDeadline("bad-date", null, now)).toThrow(
+      /invalid/,
+    );
+  });
+  it("rejects malformed photo expiration metadata instead of treating it as permanent", () => {
+    const part = emptyArchive(member, "friend");
+    part.media = [
+      {
+        id: "photo",
+        path: "photos/photo.jpg",
+        mime: "image/jpeg",
+        sha256: "a".repeat(64),
+        expires_at: "not-a-date",
+      },
+    ];
+    expect(() =>
+      unpackArchive(
+        packArchive(part, { "photos/photo.jpg": new Uint8Array([1]) }),
+      ),
+    ).toThrow(/malformed/);
+  });
+  it("does not hand an export to the saver when content expires during archive preparation", async () => {
+    let expired = false;
+    const save = vi.fn();
+    const prepare = async () => {
+      expired = true;
+      return new Uint8Array([1, 2]);
+    };
+    const validate = vi.fn(async () => {
+      if (expired) throw new Error("EXPORT_INVALIDATED");
+    });
+    await expect(
+      prepareValidatedExport(prepare, validate, () => {}).then(save),
+    ).rejects.toThrow(/EXPORT_INVALIDATED/);
+    expect(validate).toHaveBeenCalledOnce();
+    expect(save).not.toHaveBeenCalled();
+  });
+  it("honors cancellation during the final export check, including a completion-only part", async () => {
+    let canceled = false;
+    const save = vi.fn();
+    const ensureContinue = () => {
+      if (canceled) throw new Error("Canceled");
+    };
+    await expect(
+      prepareValidatedExport(
+        async () => new Uint8Array(),
+        async () => {
+          canceled = true;
+        },
+        ensureContinue,
+      ).then(save),
+    ).rejects.toThrow(/Canceled/);
+    expect(save).not.toHaveBeenCalled();
   });
 });

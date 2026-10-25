@@ -9,6 +9,8 @@ import { post, request, type MediaPayload } from "./api";
 import { preparePhoto } from "./Social";
 import { Alert, Button, Icon, useAction } from "./ui";
 import { useVault } from "./vault";
+import { jpegDimensions } from "./photo-safety";
+import { preservedPhotoDeadline } from "./archive";
 export type PendingAsset = {
   slot: "avatar" | "cover" | "background" | "image";
   id: string;
@@ -99,6 +101,7 @@ export function useAssetUpload() {
     audience: Audience = groupId ? "group" : "connections",
   ): Promise<MediaPayload> => {
     let photoBytes: Uint8Array;
+    let expiresAt: string | null = null;
     if ("blob" in asset)
       photoBytes = new Uint8Array(await asset.blob.arrayBuffer());
     else {
@@ -115,20 +118,19 @@ export function useAssetUpload() {
       if (content.mime !== "image/jpeg" || typeof content.bytes !== "string")
         throw new Error("A current image has an unsupported format.");
       photoBytes = base64ToBytes(content.bytes);
-      if (photoBytes.length > 20 * 1024 * 1024)
-        throw new Error("The current image exceeds the safe size limit.");
+      expiresAt = preservedPhotoDeadline(envelope.context.expiresAt, null);
     }
+    const dimensions = jpegDimensions(photoBytes);
     const meta: MediaPayload = {
       id: crypto.randomUUID(),
       alt: asset.alt,
       mime: "image/jpeg",
       name: asset.name,
-      width: asset.width,
-      height: asset.height,
+      ...dimensions,
     };
     const envelope = await vault.seal(
       { ...meta, bytes: bytesToBase64(photoBytes) },
-      { id: meta.id, kind: "media", audience, parentId, groupId },
+      { id: meta.id, kind: "media", audience, parentId, groupId, expiresAt },
     );
     const bytes = new TextEncoder().encode(JSON.stringify(envelope));
     const upload = await post("/media", {

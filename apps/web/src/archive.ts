@@ -166,7 +166,11 @@ export function unpackArchive(bytes: Uint8Array): {
       !/^photos\/[A-Za-z0-9_-]+\.jpg$/.test(media.path) ||
       media.mime !== "image/jpeg" ||
       !files[media.path] ||
-      typeof media.sha256 !== "string"
+      typeof media.sha256 !== "string" ||
+      !/^[a-f0-9]{64}$/.test(media.sha256) ||
+      (media.expires_at != null &&
+        (typeof media.expires_at !== "string" ||
+          !Number.isFinite(Date.parse(media.expires_at))))
     )
       throw new Error("A photo reference is missing or malformed.");
   }
@@ -228,4 +232,39 @@ export function eligibleEntries(
     ),
   ]);
   return entries.filter((e) => !e.expires_at || Date.parse(e.expires_at) > now);
+}
+
+/** A migrated attachment keeps whichever original deadline is earliest. */
+export function preservedPhotoDeadline(
+  photoDeadline: string | null | undefined,
+  parentDeadline: string | null,
+  now = Date.now(),
+): string | null {
+  const deadlines = [photoDeadline, parentDeadline].filter(
+    (value): value is string => value != null,
+  );
+  if (deadlines.some((value) => !Number.isFinite(Date.parse(value))))
+    throw new Error("A photo has an invalid expiration date.");
+  const earliest = deadlines.length
+    ? Math.min(...deadlines.map(Date.parse))
+    : null;
+  if (earliest !== null && earliest <= now)
+    throw new Error(
+      "A photo expired. Review the available photos before trying again.",
+    );
+  return earliest === null ? null : new Date(earliest).toISOString();
+}
+
+/** Expensive preparation must finish before the final server authorization check. */
+export async function prepareValidatedExport<T>(
+  prepare: () => Promise<T>,
+  validate: () => Promise<void>,
+  ensureContinue: () => void,
+): Promise<T> {
+  ensureContinue();
+  const prepared = await prepare();
+  ensureContinue();
+  await validate();
+  ensureContinue();
+  return prepared;
 }

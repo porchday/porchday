@@ -26,10 +26,13 @@ import {
   validateSet,
   eligibleEntries,
   checksum,
+  preservedPhotoDeadline,
+  prepareValidatedExport,
   PART_BUDGET,
   PART_MAX,
   type PortableArchive,
 } from "./archive";
+import { jpegDimensions, validatedPhoto } from "./photo-safety";
 const SECTIONS = [
   "profile",
   "posts",
@@ -61,6 +64,7 @@ type ImportPlan = {
   media: Map<string, { part: number; record: Json }>;
   profile: Json | null;
   expired: number;
+  expiredPhotos: number;
 };
 export function DataTransfer() {
   const vault = useVault();
@@ -123,17 +127,22 @@ export function DataTransfer() {
           total: final ? index : null,
           ...(final ? { complete: true } : {}),
         };
-        if (!refs.length)
-          await post(`/exports/${job.id}/validate`, { items: [] });
-        for (let i = 0; i < refs.length; i += 1000)
-          await post(`/exports/${job.id}/validate`, {
-            items: refs.slice(i, i + 1000),
-          });
-        ensureContinue();
         setProgress(`Preparing archive part ${index}…`);
-        const zip = packArchive(archive, files);
-        const bytes = plain ? zip : (await encryptArchive(zip, key)).ciphertext;
-        ensureContinue();
+        const bytes = await prepareValidatedExport(
+          async () => {
+            const zip = packArchive(archive, files);
+            return plain ? zip : (await encryptArchive(zip, key)).ciphertext;
+          },
+          async () => {
+            if (!refs.length)
+              await post(`/exports/${job.id}/validate`, { items: [] });
+            for (let i = 0; i < refs.length; i += 1000)
+              await post(`/exports/${job.id}/validate`, {
+                items: refs.slice(i, i + 1000),
+              });
+          },
+          ensureContinue,
+        );
         const name = `porchday-${setId.slice(0, 8)}-part-${String(index).padStart(3, "0")}.zip${plain ? "" : ".pgp"}`;
         if (directory) {
           const handle = await directory.getFileHandle(name, { create: true });
@@ -239,6 +248,7 @@ export function DataTransfer() {
                     "An exported photo has an unsupported format.",
                   );
                 const bytes = base64ToBytes(payload.bytes);
+                const dimensions = jpegDimensions(bytes);
                 await room(bytes.length + 4096);
                 const path = `photos/${row.id}.jpg`;
                 files[path] = bytes;
@@ -248,8 +258,7 @@ export function DataTransfer() {
                   mime: "image/jpeg",
                   alt: String(payload.alt || ""),
                   name: String(payload.name || ""),
-                  width: payload.width,
-                  height: payload.height,
+                  ...dimensions,
                   sha256: await checksum(bytes),
                   post_id: row.post_id || null,
                   profile_id: row.profile_member_id || row.profile_id || null,
@@ -343,6 +352,8 @@ export function DataTransfer() {
         setProgress(`Checking ${file.name}…`);
         const { archive, files } = await unpackFile(file);
         for (const photo of archive.media) {
+          if (!photo.expires_at || Date.parse(photo.expires_at) > Date.now())
+            jpegDimensions(files[photo.path]);
           if ((await checksum(files[photo.path])) !== photo.sha256)
             throw new Error(
               "A photo checksum did not match. The archive may be incomplete or modified.",
@@ -359,6 +370,27 @@ export function DataTransfer() {
       }
       validateSet(parts.map((p) => p.archive));
       const entries = eligibleEntries(parts.map((p) => p.archive));
+      const photoAvailable = (id: string) => {
+        const photo = media.get(id)?.record;
+        if (!photo)
+          throw new Error(
+            "A referenced photo is missing. Select every archive part.",
+          );
+        return !photo.expires_at || Date.parse(photo.expires_at) > Date.now();
+      };
+      for (const entry of entries)
+        entry.payload = {
+          ...entry.payload,
+          media: (entry.payload.media || []).filter((photo: Json) =>
+            photoAvailable(photo.id),
+          ),
+        };
+      if (profile) {
+        profile = { ...profile };
+        for (const slot of ["avatar", "cover", "background"])
+          if (profile[slot] && !photoAvailable(profile[slot].id))
+            delete profile[slot];
+      }
       const referencedMedia = new Set<string>(
         entries.flatMap((e) => (e.payload.media || []).map((m: Json) => m.id)),
       );
@@ -423,6 +455,10 @@ export function DataTransfer() {
         media,
         profile,
         expired: allCount - eligibleEntries(parts.map((p) => p.archive)).length,
+        expiredPhotos: [...media.values()].filter(
+          ({ record }) =>
+            record.expires_at && Date.parse(record.expires_at) <= Date.now(),
+        ).length,
       });
       setProgress(
         "Your archive is checked. Review the import before continuing.",
@@ -448,21 +484,8 @@ export function DataTransfer() {
         const bytes = cachedFiles[found.record.path];
         if (!bytes || (await checksum(bytes)) !== found.record.sha256)
           throw new Error("A photo changed after the import preview.");
-        const bitmap = await createImageBitmap(
-          new Blob([bytes as BlobPart], { type: "image/jpeg" }),
-        );
-        if (
-          bitmap.width > 2400 ||
-          bitmap.height > 2400 ||
-          !bitmap.width ||
-          !bitmap.height ||
-          bitmap.width * bitmap.height > 40_000_000
-        ) {
-          bitmap.close();
-          throw new Error("An imported photo exceeds safe dimensions.");
-        }
-        bitmap.close();
-        return { bytes, record: found.record };
+        const { width, height } = await validatedPhoto(bytes);
+        return { bytes, record: { ...found.record, width, height } as Json };
       }
       async function uploadPhoto(
         old: Json,
@@ -472,6 +495,10 @@ export function DataTransfer() {
       ) {
         ensureContinue();
         const { bytes, record } = await loadPhoto(old.id);
+        const photoExpiresAt = preservedPhotoDeadline(
+          record.expires_at,
+          expiresAt,
+        );
         const mediaId = crypto.randomUUID();
         const meta: MediaPayload = {
           id: mediaId,
@@ -489,7 +516,7 @@ export function DataTransfer() {
             audience: "only_me",
             parentId,
             createdAt,
-            expiresAt,
+            expiresAt: photoExpiresAt,
           },
         );
         const packed = new TextEncoder().encode(JSON.stringify(envelope));
@@ -739,8 +766,9 @@ export function DataTransfer() {
               <h3>Review your import</h3>
               <p>
                 {plan.entries.length} unexpired authored entries ·{" "}
-                {plan.media.size} photos · {plan.parts.length} archive parts ·{" "}
-                {plan.expired} expired entries skipped.
+                {plan.media.size - plan.expiredPhotos} unexpired photos ·{" "}
+                {plan.parts.length} archive parts · {plan.expired} expired
+                entries and {plan.expiredPhotos} expired photos skipped.
               </p>
               <p>
                 Posts begin as “Only me.” Your comments and reactions become
