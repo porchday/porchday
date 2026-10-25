@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import {
   check,
+  diagnosticRoute,
   privatePath,
   readPrivate,
   SmokeClient,
@@ -44,6 +45,11 @@ describe("hosted smoke guardrails", () => {
     ])
       expect(() => target(value)).toThrow("SAME_ORIGIN_REQUIRED");
     expect(target("/api/v1/me").href).toBe(stagingOrigin + "/api/v1/me");
+    expect(
+      diagnosticRoute(
+        "/api/v1/posts/private-id/reactions/opaque-secret?token=secret",
+      ),
+    ).toBe("/api/v1/posts/:id/reactions/:id");
   });
   it("only consumes actual email-verification paths with same-origin login callbacks", () => {
     expect(
@@ -153,6 +159,47 @@ describe("hosted smoke guardrails", () => {
     await expect(missing.json("/api/v1/feed")).rejects.toThrow(
       "HTTP_STATUS_503",
     );
+  });
+  it("reports only normalized routes and allowlisted error codes", async () => {
+    const api = new SmokeClient(
+      async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: "FORBIDDEN", detail: "private-content" },
+          }),
+          { status: 403, headers: { "Cache-Control": "no-store" } },
+        ),
+    );
+    await expect(
+      api.json("/api/v1/posts/secret-id?token=private", "POST", {
+        secret: "private",
+      }),
+    ).rejects.toMatchObject({
+      message: "HTTP_STATUS_403",
+      diagnostic: {
+        route: "/api/v1/posts/:id",
+        method: "POST",
+        code: "FORBIDDEN",
+      },
+    });
+    const untrusted = new SmokeClient(
+      async () =>
+        new Response(JSON.stringify({ error: { code: "private-content" } }), {
+          status: 400,
+          headers: { "Cache-Control": "no-store" },
+        }),
+    );
+    await expect(
+      untrusted.json("/api/v1/imports", "POST", {}),
+    ).rejects.toMatchObject({
+      message: "HTTP_STATUS_400",
+      diagnostic: { route: "/api/v1/imports", method: "POST" },
+    });
+    try {
+      await untrusted.json("/api/v1/imports");
+    } catch (error) {
+      expect(JSON.stringify(error)).not.toContain("private-content");
+    }
   });
   it("refuses remote mutations before loading any private input without --run", () => {
     const result = spawnSync(

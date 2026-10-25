@@ -2,7 +2,43 @@ import { lstat, mkdir, open, readFile, rename } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
 
 export const stagingOrigin = "https://staging.porchday.com";
-export class SmokeError extends Error {}
+export class SmokeError extends Error {
+  constructor(
+    message: string,
+    readonly diagnostic?: { route: string; method: string; code?: string },
+  ) {
+    super(message);
+  }
+}
+const routeWords = new Set(
+  "api v1 auth sign-in sign-up sign-out email get-session verify-email me profiles member devices audiences connections requests accept feed posts comments reactions media bytes groups invitations group-invitations members owned-groups exports validate imports blocks account".split(
+    " ",
+  ),
+);
+export function diagnosticRoute(path: string): string {
+  return target(path)
+    .pathname.split("/")
+    .map((segment) => (!segment || routeWords.has(segment) ? segment : ":id"))
+    .join("/");
+}
+const safeServerCodes = new Set([
+  "FORBIDDEN",
+  "SOCIAL_RESTRICTED",
+  "DEVICE_NOT_TRUSTED",
+  "ACCOUNT_UNAVAILABLE",
+  "ORIGIN_DENIED",
+  "UNAUTHORIZED",
+  "INVALID_INPUT",
+  "AUDIENCE_CHANGED",
+  "KEY_SETUP_REQUIRED",
+  "RECENT_AUTH_REQUIRED",
+  "RATE_LIMIT",
+  "SERVICE_UNAVAILABLE",
+  "PILOT_CLOSED",
+  "INVALID_INVITATION",
+  "NOT_FOUND",
+  "EXPORT_INVALIDATED",
+]);
 export function check(value: unknown, code: string): asserts value {
   if (!value) throw new SmokeError(code);
 }
@@ -193,7 +229,15 @@ export class SmokeClient {
     expected = 200,
   ): Promise<T> {
     const response = await this.request(path, method, body);
-    check(response.status === expected, "HTTP_STATUS_" + response.status);
+    if (response.status !== expected) {
+      const body = (await response.json().catch(() => null)) as any;
+      const code = body?.error?.code;
+      throw new SmokeError("HTTP_STATUS_" + response.status, {
+        route: diagnosticRoute(path),
+        method,
+        ...(safeServerCodes.has(code) ? { code } : {}),
+      });
+    }
     return response.json() as Promise<T>;
   }
 }

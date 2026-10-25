@@ -42,6 +42,8 @@ type State = {
   accounts: Account[];
   socialStarted?: boolean;
   socialPassed?: boolean;
+  continuationStarted?: boolean;
+  portabilityStarted?: boolean;
   interop?: {
     webPostId: string;
     webMediaId: string;
@@ -65,6 +67,9 @@ const allowed = [
   "signup",
   "verify",
   "social",
+  "social-continue",
+  "portability-continue",
+  "feed-latency",
   "interop-prepare",
   "interop-check",
   "cleanup",
@@ -676,6 +681,94 @@ async function social(s: State) {
   );
   const groupId = groupEnvelope.context.id;
   await a.api.json("/api/v1/groups", "POST", { envelope: groupEnvelope }, 201);
+  await finishSocial(s, people, {
+    groupId,
+    oldId,
+    postId,
+    photoId,
+    postText: postPayload.text,
+  });
+}
+
+async function continueSocial(s: State) {
+  check(
+    s.socialStarted && !s.socialPassed && !s.continuationStarted,
+    "BOUNDED_CONTINUATION_REQUIRED",
+  );
+  const group = await readPrivate<{
+    v: 1;
+    run: string;
+    id: string;
+    envelope: EncryptedEnvelope;
+  }>(directory + "group-resume.json");
+  check(
+    group.v === 1 &&
+      group.run === s.run &&
+      uuid.test(group.id) &&
+      group.envelope.context.id === group.id,
+    "RETAINED_GROUP_REQUIRED",
+  );
+  const people: Person[] = [];
+  for (const account of s.accounts) {
+    check(account.device?.enrolled, "EXISTING_DEVICE_REQUIRED");
+    people.push(await enroll(s, account, await login(account)));
+  }
+  const [a] = people;
+  const groups = await a.api.json("/api/v1/groups");
+  check(
+    groups.items.length === 1 && groups.items[0].id === group.id,
+    "RETAINED_GROUP_CHANGED",
+  );
+  const feed = await a.api.json("/api/v1/feed");
+  let oldId = "",
+    postId = "",
+    photoId = "";
+  for (const row of feed.items) {
+    if (row.author_id !== a.account.id) continue;
+    const payload = await decrypt(a, a, row.envelope);
+    if (payload.text === "Synthetic hosted check: historical recipients") {
+      check(!oldId, "AMBIGUOUS_ORIGINAL_FIXTURE");
+      oldId = row.id;
+    }
+    if (payload.text === "Synthetic shared photo") {
+      check(
+        !postId &&
+          payload.media?.length === 1 &&
+          uuid.test(payload.media[0].id),
+        "AMBIGUOUS_PHOTO_FIXTURE",
+      );
+      postId = row.id;
+      photoId = payload.media[0].id;
+    }
+  }
+  check(
+    uuid.test(oldId) && uuid.test(postId) && uuid.test(photoId),
+    "ORIGINAL_FIXTURES_REQUIRED",
+  );
+  s.continuationStarted = true;
+  await persist(s);
+  await finishSocial(s, people, {
+    groupId: group.id,
+    oldId,
+    postId,
+    photoId,
+    postText: "Synthetic shared photo",
+  });
+}
+
+async function finishSocial(
+  s: State,
+  people: Person[],
+  fixture: {
+    groupId: string;
+    oldId: string;
+    postId: string;
+    photoId: string;
+    postText: string;
+  },
+) {
+  const [a, b, c] = people;
+  const { groupId, oldId, postId } = fixture;
   const invitation = await a.api.json(
     "/api/v1/groups/" + groupId + "/invitations",
     "POST",
@@ -720,6 +813,75 @@ async function social(s: State) {
   );
   await a.api.json("/api/v1/groups/" + groupId, "DELETE");
 
+  progress("group-access-and-removal-passed");
+  await finishPortability(s, people, fixture);
+}
+
+type PostFixture = {
+  oldId: string;
+  postId: string;
+  photoId: string;
+  postText: string;
+};
+async function continuePortability(s: State) {
+  check(
+    s.continuationStarted && !s.socialPassed && !s.portabilityStarted,
+    "BOUNDED_PORTABILITY_CONTINUATION_REQUIRED",
+  );
+  const people: Person[] = [];
+  for (const account of s.accounts) {
+    check(account.device?.enrolled, "EXISTING_DEVICE_REQUIRED");
+    people.push(await enroll(s, account, await login(account)));
+  }
+  const [a] = people;
+  check(
+    (await a.api.json("/api/v1/groups")).items.length === 0,
+    "GROUP_CHECKPOINT_INCOMPLETE",
+  );
+  const feed = await a.api.json("/api/v1/feed");
+  const fixture: PostFixture = {
+    oldId: "",
+    postId: "",
+    photoId: "",
+    postText: "Synthetic shared photo",
+  };
+  for (const row of feed.items) {
+    if (row.author_id !== a.account.id) continue;
+    const plain = await decrypt(a, a, row.envelope);
+    check(row.audience !== "only_me", "IMPORT_ALREADY_PRESENT");
+    if (plain.text === "Synthetic hosted check: historical recipients") {
+      check(!fixture.oldId, "AMBIGUOUS_ORIGINAL_FIXTURE");
+      fixture.oldId = row.id;
+    }
+    if (plain.text === fixture.postText) {
+      check(
+        !fixture.postId &&
+          plain.media?.length === 1 &&
+          uuid.test(plain.media[0].id),
+        "AMBIGUOUS_PHOTO_FIXTURE",
+      );
+      fixture.postId = row.id;
+      fixture.photoId = plain.media[0].id;
+    }
+  }
+  check(
+    uuid.test(fixture.oldId) &&
+      uuid.test(fixture.postId) &&
+      uuid.test(fixture.photoId),
+    "ORIGINAL_FIXTURES_REQUIRED",
+  );
+  s.portabilityStarted = true;
+  await persist(s);
+  await finishPortability(s, people, fixture);
+}
+
+async function finishPortability(
+  s: State,
+  people: Person[],
+  fixture: PostFixture,
+) {
+  const [a, b] = people;
+  const { oldId, postId } = fixture;
   const exportJob = await a.api.json("/api/v1/exports", "POST", {}, 201);
   const exported = await a.api.json(
     `/api/v1/exports/${exportJob.id}?section=posts`,
@@ -730,7 +892,7 @@ async function social(s: State) {
     "EXPORT_OWNERSHIP_FAILED",
   );
   const plain = await decrypt(a, a, own.envelope);
-  check(plain.text === postPayload.text, "EXPORT_DECRYPTION_FAILED");
+  check(plain.text === fixture.postText, "EXPORT_DECRYPTION_FAILED");
   // This focused check imports text only. Full multipart/photo ZIP import is browser QA.
   const imported = await seal(
     a,
@@ -789,7 +951,7 @@ async function social(s: State) {
     "DELETED_EXPORT_STILL_VALID",
   );
   check(
-    (await b.api.request("/api/v1/media/" + photo.context.id + "/bytes"))
+    (await b.api.request("/api/v1/media/" + fixture.photoId + "/bytes"))
       .status === 404,
     "DELETED_PHOTO_STILL_ACCESSIBLE",
   );
@@ -1068,6 +1230,49 @@ async function checkInterop(s: State) {
   }
 }
 
+async function feedLatency(s: State) {
+  check(s.socialPassed, "FINISHED_SOCIAL_RUN_REQUIRED");
+  const api = await login(s.accounts[0]);
+  try {
+    const durations: number[] = [],
+      statuses: Record<string, number> = {};
+    let next = 0;
+    await Promise.all(
+      Array.from({ length: 5 }, async () => {
+        while (next++ < 100) {
+          const start = performance.now();
+          const response = await api.request("/api/v1/feed");
+          await response.arrayBuffer();
+          durations.push(performance.now() - start);
+          statuses[response.status] = (statuses[response.status] ?? 0) + 1;
+        }
+      }),
+    );
+    durations.sort((a, b) => a - b);
+    const percentile = (fraction: number) =>
+      Math.round(durations[Math.ceil(durations.length * fraction) - 1]);
+    console.log(
+      JSON.stringify({
+        phase,
+        requests: durations.length,
+        concurrency: 5,
+        statuses,
+        p50_ms: percentile(0.5),
+        p95_ms: percentile(0.95),
+        max_ms: percentile(1),
+        fixture: "three-synthetic-members",
+        capacityClaim: false,
+      }),
+    );
+    check(
+      durations.length === 100 && statuses[200] === 100,
+      "FEED_LATENCY_STATUS_FAILED",
+    );
+  } finally {
+    await api.json("/api/auth/sign-out", "POST", {});
+  }
+}
+
 async function main() {
   check(allowed.includes(phase), "KNOWN_PHASE_REQUIRED");
   if (!["init", "public"].includes(phase))
@@ -1079,6 +1284,9 @@ async function main() {
     const s = await state();
     if (phase === "signup") await signup(s);
     else if (phase === "social") await social(s);
+    else if (phase === "social-continue") await continueSocial(s);
+    else if (phase === "portability-continue") await continuePortability(s);
+    else if (phase === "feed-latency") await feedLatency(s);
     else if (phase === "interop-prepare") await prepareInterop(s);
     else if (phase === "interop-check") await checkInterop(s);
     else await cleanup(s);
@@ -1099,6 +1307,9 @@ main().catch((error) => {
       phase: allowed.includes(phase) ? phase : "invalid",
       passed: false,
       code: error instanceof SmokeError ? error.message : "HOSTED_SMOKE_FAILED",
+      ...(error instanceof SmokeError && error.diagnostic
+        ? { request: error.diagnostic }
+        : {}),
     }),
   );
   process.exitCode = 1;

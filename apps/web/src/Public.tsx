@@ -227,7 +227,7 @@ export function Landing() {
                 <Icon name="people" size={26} />
               </span>
               <h3>
-                Your circle.
+                Your circle.{" "}
                 <br />
                 Not an audience.
               </h3>
@@ -242,7 +242,7 @@ export function Landing() {
                 <Icon name="clock" size={26} />
               </span>
               <h3>
-                Catch up.
+                Catch up.{" "}
                 <br />
                 Then carry on.
               </h3>
@@ -259,7 +259,7 @@ export function Landing() {
                 <Icon name="wall" size={26} />
               </span>
               <h3>
-                A wall that feels
+                A wall that feels{" "}
                 <br />
                 like your room.
               </h3>
@@ -293,7 +293,7 @@ export function Landing() {
               A GOOD SOCIAL NETWORK KNOWS ITS PLACE
             </span>
             <h2>
-              You control
+              You control{" "}
               <br />
               your data.
             </h2>
@@ -447,7 +447,7 @@ export function AuthPage({
         <aside className="auth-aside">
           <span className="eyebrow">WELCOME TO YOUR LITTLE CORNER</span>
           <h1>
-            Good to
+            Good to{" "}
             <br />
             see you<span className="coral">.</span>
           </h1>

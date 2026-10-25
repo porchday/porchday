@@ -94,6 +94,18 @@ The runner verifies the identity of every account before social writes, then che
 
 The three-account run is deliberately bounded. It does not establish the 300-connection concurrency limit, full archive/photo round-trip, iOS interoperability, actual push delivery, cleanup-independent expiry, physical object deletion or load/cost objectives. Existing focused database/crypto tests cover some of those invariants; remaining hosted/browser work is listed below. A failure leaves the private fixture state for diagnosis and cleanup; rerunning the social phase is intentionally refused because partial relationships/content would invalidate its assumptions.
 
+### Diagnosing a partial run
+
+Unexpected HTTP failures emit only a normalized route, method and allowlisted server code. Identifiers, query strings and server response details remain private. Preserve the fixture and diagnose the failed operation before retrying. The `social-continue` and `portability-continue` phases are intentionally narrow recovery checkpoints for the first hosted run, not automatic retries: they validate the retained group/original posts, require explicit `--run`, and refuse a second attempt. Coordinate them with the deployment operator after the cause is understood; never clear `socialStarted` to replay the entire workflow.
+
+After the social checks pass, an optional bounded read sample is available:
+
+```sh
+node --import tsx scripts/hosted-smoke.ts feed-latency --run
+```
+
+It reuses synthetic A, issues 100 authenticated feed reads at concurrency five, logs only status counts and p50/p95/max duration, then signs out. This tiny fixture is an end-to-end latency observation, not a capacity result for 10,000 or 10 million members.
+
 ### Native interoperability handoff
 
 After the social smoke passes, coordinate the native hosted-test operator before preparing a two-hour fixture:
