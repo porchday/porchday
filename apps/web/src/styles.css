@@ -1269,7 +1269,7 @@ hr {
 .alert {
   border: 1px solid #e8c8b9;
   background: #fcf0e9;
-  color: #a35d45;
+  color: #80412f;
   border-radius: 7px;
   padding: 12px 14px;
   display: flex;
@@ -2645,20 +2645,20 @@ hr {
   font:
     italic 20px Georgia,
     serif;
-  color: #99ab87;
+  color: #45583b;
   height: 77px;
 }
 .theme-choice.apricot .theme-swatch {
   background: var(--apricot);
-  color: #b99a7c;
+  color: #784927;
 }
 .theme-choice.lavender .theme-swatch {
   background: var(--lavender);
-  color: #a193b1;
+  color: #58436d;
 }
 .theme-choice.ink .theme-swatch {
   background: #dfe8e9;
-  color: #8aa5ad;
+  color: #365b65;
 }
 .theme-choice > strong,
 .theme-choice > small {
