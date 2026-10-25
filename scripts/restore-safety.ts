@@ -1,5 +1,5 @@
 import postgres from 'postgres';
-import {R2JournalStore} from './r2-journal-store.js';
+import {withOperatorR2} from './r2-operator-bridge.js';
 import {initializePrivacyJournal,checkpointJournal,quarantineJournal,readJournalControl,verifyJournalChain,type JournalDatabase,JournalError} from '../apps/api/src/privacy-journal.js';
 import {replayPrivacyJournal,releasePrivacyQuarantine,reconcileDurableReceipts} from '../apps/api/src/restore-journal.js';
 
@@ -8,7 +8,6 @@ const commands=['initialize','quarantine','verify','checkpoint-original','reconc
 if(!command||!commands.includes(command))throw new Error('Use restore-safety.ts '+commands.join('|'));
 const bucket=process.env.RECOVERY_JOURNAL_BUCKET;
 if(!bucket)throw new Error('RECOVERY_JOURNAL_BUCKET is required.');
-const store=R2JournalStore.fromEnvironment(bucket);
 let sql:ReturnType<typeof postgres>|undefined;
 function database(original=false) {
   const url=original?process.env.ORIGINAL_DATABASE_MIGRATION_URL:process.env.DATABASE_MIGRATION_URL;
@@ -18,8 +17,11 @@ function database(original=false) {
   return db;
 }
 try {
-  // Never assume the API-token REST path implements conditional semantics.
-  await store.verifyConditionalWrites();
+  const mediaBucket=command==='replay'?process.env.MEDIA_BUCKET:undefined;
+  if(command==='replay'&&(!mediaBucket||mediaBucket===bucket))throw new Error('SEPARATE_MEDIA_BUCKET_REQUIRED');
+  // The native binding transport probes authentication and atomic conditional
+  // writes before entering this callback, and tears down its temporary endpoint.
+  await withOperatorR2({journalBucket:bucket,mediaBucket,journalAccess:command==='verify'?'read-only':'read-write'},async({journal:store,deleteMediaObject})=>{
   if(command==='initialize') {
     await initializePrivacyJournal(store,database());
     console.log('Independent checkpoint initialized in quarantine. Review and release explicitly.');
@@ -46,16 +48,15 @@ try {
     console.log(JSON.stringify(await reconcileDurableReceipts(store)));
     console.log('Original primary checkpointed. Quarantine remains active; no automatic release.');
   } else if(command==='replay') {
-    database();const mediaBucket=process.env.MEDIA_BUCKET;
-    if(!mediaBucket||mediaBucket===bucket)throw new Error('SEPARATE_MEDIA_BUCKET_REQUIRED');
-    const media=R2JournalStore.fromEnvironment(mediaBucket);
-    console.log(JSON.stringify(await replayPrivacyJournal(store,sql!,key=>media.deleteMediaObject(key))));
+    database();
+    console.log(JSON.stringify(await replayPrivacyJournal(store,sql!,deleteMediaObject)));
     console.log('Reconciliation complete; quarantine remains active. Revalidate staff Access roles before restoring staff access.');
   } else if(command==='release') {
     database();const current=await readJournalControl(store);
     if(process.env.RESTORE_REVIEWED_SEQUENCE!==current.value.sequence)throw new Error('REVIEWED_CHECKPOINT_SEQUENCE_REQUIRED');
     await releasePrivacyQuarantine(store,sql!);console.log('Reviewed checkpoint released. Reopen traffic only after application checks pass.');
   }
+  });
 } catch(error) {
   const code=error instanceof JournalError?error.code:(error as Error).message;
   // Only our fixed codes are printed; provider/SQL messages can contain secrets.

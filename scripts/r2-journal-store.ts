@@ -42,7 +42,16 @@ export class R2JournalStore implements JournalStore {
     const response=await this.send('PUT',key,value,options);
     if(response.status===412)return null;
     if(!response.ok)throw new Error('R2_OPERATOR_WRITE_FAILED');
-    return {etag:readETag(response)};
+    // Cloudflare's REST write returns the atomic result ETag in JSON metadata;
+    // R2 object GET uses the HTTP ETag header. Never substitute a later GET.
+    if(response.headers.has('etag'))return {etag:readETag(response)};
+    let result:unknown;
+    try {result=await response.json();} catch {throw new Error('R2_STRONG_ETAG_REQUIRED');}
+    const metadata=result as {success?:boolean;result?:{etag?:unknown}};
+    if(metadata.success!==true || typeof metadata.result?.etag!=='string')throw new Error('R2_STRONG_ETAG_REQUIRED');
+    const etag=metadata.result.etag;
+    if(etag.startsWith('W/'))throw new Error('R2_STRONG_ETAG_REQUIRED');
+    return {etag:quoteETag(etag).slice(1,-1)};
   }
   async deleteMediaObject(key: string): Promise<void> {
     if(!key.startsWith('media/'))throw new Error('R2_MEDIA_KEY_INVALID');
