@@ -56,7 +56,20 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
  afterAll(async()=>{
   await Promise.all(runtimePools.map(pool=>pool.end()));
   if(owner)await owner.end();
-  if(admin){await admin.query('DROP DATABASE IF EXISTS '+database+' WITH(FORCE)');await admin.query('DROP ROLE IF EXISTS '+role);await admin.end();}
+  if(admin)try{
+   // pg.Pool.end() can resolve after sending Terminate but before PostgreSQL
+   // removes the backend. FORCE would kill that closing socket and emit an
+   // unhandled 57P01; wait for actual disconnects instead of hiding that error.
+   let drained=false;
+   for(let attempt=0;attempt<200;attempt++){
+    const {rows}=await admin.query('SELECT count(*)::integer AS remaining FROM pg_stat_activity WHERE datname=$1',[database]);
+    if(rows[0].remaining===0){drained=true;break;}
+    await new Promise(resolve=>setTimeout(resolve,25));
+   }
+   if(!drained)throw Error('DISPOSABLE_DATABASE_CONNECTIONS_DID_NOT_DRAIN');
+   await admin.query('DROP DATABASE IF EXISTS '+database);
+   await admin.query('DROP ROLE IF EXISTS '+role);
+  }finally{await admin.end();}
  });
  it.each([false,true])('uses one session/user query and retains schema/status reads (transaction config=%s)',async inTransaction=>{
   const actor=await person(),other=await person(),{pool,queries}=runtimePool();
