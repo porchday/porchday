@@ -8,6 +8,7 @@ struct FeedView: View {
     let endpoint: String
     var showComposer = false
     var groupID: String?
+    var profileHeader: AnyView?
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @State private var rows: [SocialItem] = []
@@ -18,6 +19,7 @@ struct FeedView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
+                if let profileHeader { Section { profileHeader } }
                 if showComposer { Section { Button { compose = true } label: { Label("Share a little of your day", systemImage: "square.and.pencil").padding(.vertical, 8) } } }
                 Section("Your people, newest first") {
                     if loaded && rows.filter(\.active).isEmpty { ContentUnavailableView("A quiet start", systemImage: "sun.max", description: Text("Connect with your people. Their moments will appear here, with no suggested posts or ads.")) }
@@ -64,19 +66,21 @@ struct PostDetailView: View {
     @State private var report: SocialItem?
     @State private var edit: SocialItem?
     @State private var removing: SocialItem?
+    @State private var resharing: SocialItem?
+    @State private var mayModerate = false
     @State private var deleted = false
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
                 if let post, post.active, !deleted {
                     Section { MomentCard(item: post); ReactionBar(item: post, reactions: reactions, postID: id, changed: refresh); Button("Write a comment") { reply = post } }
-                    if post.authorID == model.member?.id { Section { Button("Edit or shorten timer") { edit = post }; Button("Delete post and comments", role: .destructive) { removing = post } } }
+                    if post.authorID == model.member?.id || mayModerate { Section { if post.authorID == model.member?.id { Button("Edit or shorten timer") { edit = post }; Button("Share with current audience again") { resharing = post } }; Button("Delete post and comments", role: .destructive) { removing = post } } }
                     Section("Comments") {
                         ForEach(threadedComments) { item in VStack(alignment: .leading, spacing: 8) {
                             if let parent = item.raw["parent_id"].string { Label("Reply in thread", systemImage: "arrow.turn.down.right").font(.caption).accessibilityHint("Reply to comment \(parent)") }
                             MomentCard(item: item)
                             ReactionBar(item: item, reactions: commentReactions.filter { $0["comment_id"].string == item.id }, postID: id, changed: refresh)
-                            HStack { Button("Reply") { reply = item }; Button("Report") { report = item };if item.authorID == model.member?.id { Button("Edit") { edit = item } }; if item.authorID == model.member?.id || post.authorID == model.member?.id { Button("Delete", role: .destructive) { removing = item } } } }.padding(.leading, item.raw["parent_id"].string == nil ? 0 : 12) }
+                            HStack { Button("Reply") { reply = item }; Button("Report") { report = item };if item.authorID == model.member?.id { Button("Edit") { edit = item } }; if item.authorID == model.member?.id || post.authorID == model.member?.id || mayModerate { Button("Delete", role: .destructive) { removing = item } } } }.padding(.leading, item.raw["parent_id"].string == nil ? 0 : 12) }
                     }
                     Section { Button("Report a concern") { report = post } }
                 } else { ContentUnavailableView("This moment isn’t here", systemImage: "clock", description: Text("It may have expired, been removed, or no longer be shared with you.")) }
@@ -88,6 +92,7 @@ struct PostDetailView: View {
             } message: { Text("Saved copies cannot be recalled.") }
             .sheet(item: $reply) { item in if let post { NavigationStack { ComposerView(post: post, parent: item) { Task { await refresh() } } } } }
             .sheet(item: $edit) { item in NavigationStack { EditContentView(item: item, postID: id) { Task { await refresh() } } } }
+            .sheet(item: $resharing) { item in NavigationStack { ResharePostView(item: item) { Task { await refresh() } } } }
             .sheet(item: $report) { item in NavigationStack { ReportView(item: item) } }
     }
     private var threadedComments: [SocialItem] {
@@ -95,7 +100,12 @@ struct PostDetailView: View {
         func append(_ parent: String?) { for item in active where item.raw["parent_id"].string == parent && !seen.contains(item.id) { seen.insert(item.id); result.append(item); append(item.id) } }; append(nil)
         return result
     }
-    private func refresh() async { await model.perform { let data = try await model.api.social("/posts/" + id); post = await vault.item(data["post"]); var decoded: [SocialItem] = []; for raw in data["comments"].array { decoded.append(await vault.item(raw)) }; comments = decoded; reactions = data["reactions"].array; commentReactions = data["comment_reactions"].array } }
+    private func refresh() async { await model.perform { let data = try await model.api.social("/posts/" + id); post = await vault.item(data["post"]); var decoded: [SocialItem] = []; for raw in data["comments"].array { decoded.append(await vault.item(raw)) }; comments = decoded; reactions = data["reactions"].array; commentReactions = data["comment_reactions"].array
+        mayModerate = false
+        if let group = post?.context["groupId"].string, let details = try? await model.api.social("/groups/" + group) {
+            mayModerate = details["members"].array.contains { $0["member_id"].string == model.member?.id && ["owner", "moderator"].contains($0["role"].string ?? "") }
+        }
+    } }
 }
 struct ReactionBar: View {
     let item: SocialItem

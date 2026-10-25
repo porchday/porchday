@@ -72,7 +72,6 @@ import Porchcrypto
             let updated = backup.replacing("devices", with: .array(backup["devices"].array + [entry]))
             let raw = challengeBody.replacing("member_id", with: .string(member.id)).replacing("name", with: .string("iPhone")).replacing("authorization", with: .object(["type": .string("recovery"), "signed": try .parse(proof)])).replacing("backup", with: updated)
             _ = try await api.social("/devices", method: "POST", body: raw)
-            _ = try await api.social("/keys/backup", method: "PUT", body: .object(["envelope": updated]))
             let active = try Device(raw), session = try recover(entry, secret: secret)
             recovered[active.fingerprint] = session; sessions = recovered; device = active; devices.append(active); try persist(member: member)
         } catch { for session in recovered.values { session.close() }; throw error }

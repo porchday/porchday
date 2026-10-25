@@ -1,6 +1,18 @@
 import Foundation
 
 @MainActor extension AppModel {
+    func uploadSurfacePhoto(_ photo: PreparedPhoto, audience: String, parent: String, group: String? = nil) async throws -> JSON {
+        guard let member else { throw PorchError.message("Sign in before sharing a photo.") }
+        let metadata: JSON = .object(["id": .string(photo.id), "mime": .string("image/jpeg"), "alt": .string(photo.alt),
+                                      "width": .number(Double(photo.width)), "height": .number(Double(photo.height))])
+        let envelope = try await vault.seal(metadata.replacing("bytes", with: .string(photo.bytes.base64EncodedString())), member: member,
+                                            kind: "media", audience: audience, id: photo.id, group: group, parent: parent)
+        let bytes = try JSONEncoder().encode(envelope)
+        let upload = try await api.social("/media", method: "POST", body: .object(["id": .string(photo.id), "envelope": envelope, "byte_size": .number(Double(bytes.count))]))
+        guard let path = upload["upload_url"].string else { throw PorchError.message("Photo upload was not authorized.") }
+        _ = try await api.bytes(path, method: "PUT", body: bytes)
+        return metadata
+    }
     /// Explicit profile/group resharing creates a fresh asset for the new current audience.
     func reshareSurfacePhoto(_ metadata:JSON,audience:String,parent:String,group:String?=nil) async throws -> JSON {
         guard let member,let oldID=metadata["id"].string else{throw PorchError.message("A profile photo reference is missing.")}

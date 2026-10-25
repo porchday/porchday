@@ -27,11 +27,63 @@ struct ProfileView: View {
     @State private var profile: JSON = .null
     @State private var edit = false
     @State private var compose = false
-    var body: some View { VStack(spacing: 0) {
-        VStack(alignment: .leading, spacing: 8) { if profile["cover"] != .null { EncryptedPhotoView(photo:profile["cover"]).frame(maxHeight:140).clipped() };if profile["avatar"] != .null { EncryptedPhotoView(photo:profile["avatar"]).frame(width:80,height:80).clipShape(Circle()) };Label(profile["displayName"].string ?? "@" + handle, systemImage: "person.crop.circle").font(.title2.bold()); if let bio = profile["bio"].string { Text(bio) }; if let interests = profile["interests"].string { Text(interests).font(.footnote).foregroundStyle(.secondary) }; if memberID == model.member?.id { HStack { Button("Make this space yours") { edit = true }; Button("Post to my wall") { compose = true } }.font(.callout) } }.frame(maxWidth: .infinity, alignment: .leading).padding().background(profile["theme"].string == "apricot" ? Color.orange.opacity(0.08) : profile["theme"].string == "ink" ? Color.blue.opacity(0.08) : Color.green.opacity(0.08))
-        FeedView(title: "@" + handle, endpoint: "/walls/" + memberID)
-    }.task { await refresh() }.sheet(isPresented: $edit) { NavigationStack { ProfileEditor(profile: profile) { Task { await refresh() } } } }.sheet(isPresented: $compose) { NavigationStack { ComposerView { } } } }
+    var body: some View {
+        FeedView(title: "@" + handle, endpoint: "/walls/" + memberID,
+                 profileHeader: AnyView(ProfileHeader(profile: profile, handle: handle, isOwner: memberID == model.member?.id,
+                                                      edit: { edit = true }, compose: { compose = true })))
+            .task { await refresh() }
+            .sheet(isPresented: $edit) { NavigationStack { ProfileEditor(profile: profile) { Task { await refresh() } } } }
+            .sheet(isPresented: $compose) { NavigationStack { ComposerView { } } }
+    }
     private func refresh() async { do { let raw = try await model.api.social("/profiles/" + handle); if raw["envelope"] != .null { profile = try await vault.open(raw) } } catch { profile = .null } }
+}
+private struct ProfileHeader: View {
+    let profile: JSON
+    let handle: String
+    let isOwner: Bool
+    let edit: () -> Void
+    let compose: () -> Void
+    private var tint: Color {
+        switch profile["theme"].string {
+        case "apricot": .orange
+        case "lavender": .purple
+        case "ink": .blue
+        default: .green
+        }
+    }
+    private var heading: Font { .system(.title2, design: profile["font"].string == "sans" ? .default : .serif, weight: .bold) }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if profile["cover"] != .null { EncryptedPhotoView(photo: profile["cover"]).frame(maxHeight: 160).clipped() }
+            HStack(alignment: .center) {
+                if profile["avatar"] != .null { EncryptedPhotoView(photo: profile["avatar"]).frame(width: 72, height: 72).clipShape(Circle()) }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(profile["displayName"].string ?? "@" + handle).font(heading)
+                    Text("@" + handle).font(.callout).foregroundStyle(.secondary)
+                    if let status = profile["status"].string, !status.isEmpty { Text(status).font(.callout).italic() }
+                }
+            }
+            if profile["sectionOrder"].string == "interests-first" { interests; about } else { about; interests }
+            if isOwner {
+                HStack { Button("Make this space yours", action: edit); Spacer(); Button("Post to my wall", action: compose) }.font(.callout)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            ZStack {
+                tint.opacity(0.12)
+                if profile["background"] != .null { EncryptedPhotoView(photo: profile["background"]).opacity(0.12).accessibilityHidden(true) }
+            }.clipped()
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+    @ViewBuilder private var about: some View {
+        if let text = profile["bio"].string, !text.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("About me").font(.headline); Text(text).textSelection(.enabled) } }
+    }
+    @ViewBuilder private var interests: some View {
+        if let text = profile["interests"].string, !text.isEmpty { VStack(alignment: .leading, spacing: 4) { Text("Interests").font(.headline); Text(text).textSelection(.enabled) } }
+    }
 }
 struct GroupsView: View {
     @EnvironmentObject var model: AppModel
@@ -58,13 +110,25 @@ struct GroupView: View {
     @State private var data: JSON = .null
     @State private var handle = ""
     @State private var groupPayload: JSON = .null
+    @State private var editing = false
     var body: some View { FeedView(title: title, endpoint: "/groups/\(id)/posts", showComposer: true, groupID: id)
         .toolbar { Button("Members") { manage = true } }
         .sheet(isPresented: $manage) { NavigationStack { List {
+            Section("About this group") {
+                Text(groupPayload["name"].string ?? title).font(.headline)
+                if let description = groupPayload["description"].string { Text(description) }
+                if groupPayload["image"] != .null { EncryptedPhotoView(photo: groupPayload["image"]).frame(maxHeight: 180) }
+                if data["members"].array.contains(where: { $0["member_id"].string == model.member?.id && ["owner", "moderator"].contains($0["role"].string ?? "") }) {
+                    Button("Edit name, description and image") { editing = true }
+                }
+            }
             Section { TextField("Invite an exact @handle", text: $handle).textInputAutocapitalization(.never); Button("Invite") { Task { await run("/groups/\(id)/invitations", body: .object(["handle": .string(handle)])) } }.disabled(handle.isEmpty); Button("Share group details with current members") { Task { await model.perform { guard let member = model.member, groupPayload != .null else { throw PorchError.message("You need access to the group details to share them.") }; var shared = groupPayload;if shared["image"] != .null { shared=shared.replacing("image",with:try await model.reshareSurfacePhoto(shared["image"],audience:"group",parent:id,group:id)) };let envelope = try await vault.seal(shared, member: member, kind: "group", audience: "group", id: id, group: id, original:data["group"]["envelope"]["context"].replacing("revision",with:.number(Double((data["group"]["envelope"]["context"]["revision"].integer ?? 0)+1))).replacing("createdAt",with:.string(PorchDate.string()))); _ = try await model.api.social("/groups/" + id, method: "PUT", body: .object(["envelope": envelope]));if let image=shared["image"]["id"].string { _ = try await model.api.social("/media/"+image+"/attachment",method:"PUT",body:.object(["kind":.string("group"),"target_id":.string(id),"slot":.string("image")])) };await refresh() } } }; Text("New members receive future posts. Group details and historical posts require an explicit share.").font(.footnote) }
             Section("Members") { ForEach(Array(data["members"].array.enumerated()), id: \.offset) { _, entry in let person = entry["member_id"].string ?? ""; VStack(alignment: .leading) { Text("@\(data["handles"].array.first { $0["member_id"].string == person || $0["id"].string == person }?["handle"].string ?? "member") · \(entry["role"].string ?? "member")"); Menu("Manage membership") { Button("Make moderator") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("moderator")])) } }; Button("Make member") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("member")])) } }; Button("Transfer ownership") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("owner")])) } }; Button("Remove member", role: .destructive) { Task { await run("/groups/\(id)/members/\(person)", method: "DELETE") } } } } } }
             Section { Button("Leave group", role: .destructive) { Task { await run("/groups/\(id)/members/\(model.member?.id ?? "")", method: "DELETE"); manage = false } }; Text("Owners must transfer ownership or delete the group before leaving.").font(.caption); Button("Delete group", role: .destructive) { Task { await run("/groups/" + id, method: "DELETE"); manage = false } } }
-        }.navigationTitle("Group members").task { await refresh() }.toolbar { Button("Done") { manage = false } } } } }
+        }.navigationTitle("Group members").task { await refresh() }.toolbar { Button("Done") { manage = false } }
+            .sheet(isPresented: $editing) { NavigationStack { GroupEditor(id: id, payload: groupPayload, context: data["group"]["envelope"]["context"]) { Task { await refresh() } } } }
+        } } }
+
     private func refresh() async { await model.perform { data = try await model.api.social("/groups/" + id); groupPayload = (try? await vault.open(data["group"])) ?? .null } }
     private func run(_ path: String, method: String = "POST", body: JSON? = .object([:])) async { await model.perform { _ = try await model.api.social(path, method: method, body: method == "DELETE" ? nil : body); await refresh() } }
 }
