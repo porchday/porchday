@@ -39,6 +39,7 @@ import {
 import { Alert, Button, Field, Icon, Loading, useAction } from "./ui";
 import { LockedAccount } from "./LockedAccount";
 import { initializeEmptyProfile } from "./initial-profile";
+import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
 type BackupDevice = {
   id: string;
   public_key: string;
@@ -147,8 +148,16 @@ export function VaultProvider({
         const list = items<Device>(result);
         if (canceled) return;
         setDevices(list);
+        const localRestore = ["restricted", "suspended"].includes(member.status || "");
+        if (active) {
+          try {
+            setActive(refreshRecoveredAuthor({ status: member.status, memberId: member.id, active,
+              previousRoster: devices || [], roster: list, fingerprint: key => key.getFingerprint() }));
+          } catch (error) { setActive(null); throw error; }
+          return;
+        }
         const own = list.find(
-          (d) => d.id === storedDevice(member.id) && !d.revoked_at,
+          (d) => d.id === storedDevice(member.id) && (!d.revoked_at || localRestore),
         );
         if (own) {
           const key = await recallDevice({
@@ -166,15 +175,19 @@ export function VaultProvider({
               }).catch(() => null);
               if (recalled) historical.push(recalled);
             }
-            setActive({ device: own, key, history: historical });
+            const recovered = [{ device: own, key }, ...historical.map(old => ({
+              device: list.find(d => d.fingerprint === old.getFingerprint())!, key: old,
+            }))];
+            const selected = localRestore ? selectRecoveredDevice(recovered, list, member.id) : { device: own, key };
+            if (!canceled) setActive({ ...selected, history: recovered.filter(v => v.key !== selected.key).map(v => v.key) });
           }
         }
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => { if (!canceled) setError(e.message); });
     return () => {
       canceled = true;
     };
-  }, [member.id]);
+  }, [member.id, member.status]);
   useEffect(() => {
     if (!active) return;
     const readyKey = member.id + ":" + active.device.id;
@@ -303,10 +316,8 @@ export function VaultProvider({
       let device: Device;
       let key: UnlockedPrivateKey;
       if (["restricted", "suspended"].includes(member.status || "")) {
-        const restored =
-          unlocked.find((v) => devices!.some((d) => d.id === v.device.id)) ||
-          unlocked[0];
-        device = { ...restored.device, member_id: member.id };
+        const restored = selectRecoveredDevice(unlocked, devices!, member.id);
+        device = restored.device;
         key = restored.key;
       } else if (existing) {
         const match = unlocked.find((v) => v.device.id === existing.id);
@@ -581,13 +592,7 @@ export function VaultProvider({
     postId?: string,
     signal?: AbortSignal,
   ) {
-    if (
-      ["restricted", "suspended"].includes(member.status || "") &&
-      partial.kind !== "report"
-    )
-      throw new Error(
-        "Social changes are unavailable while this account is restricted. Your data and appeals remain available.",
-      );
+    requireSealingAuthor(member.status, partial.kind, active!.device);
     const recipients = await audience(
       partial.audience,
       partial.groupId,
