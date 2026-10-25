@@ -12,9 +12,9 @@ export async function restoreMediaSnapshot(options:{journal:JournalStore;sql:Sql
  await sql`create temporary table porchday_verified_media(object_key text primary key) on commit preserve rows`;let copied=0,discarded=0;
  try{
  await verifyMediaBackup(backup,snapshotId,pairedTime,async(item,bytes)=>{
-  const[asset]=await sql`select envelope_sha256,byte_size from app.media_assets where object_key=${item.object_key} and state in('ready','attached') and(app.media_deadline(id) is null or app.media_deadline(id)>now())`;
+  const[asset]=await sql`select envelope_sha256,raw_sha256,byte_size from app.media_assets where object_key=${item.object_key} and state in('ready','attached') and(app.media_deadline(id) is null or app.media_deadline(id)>now())`;
   if(!asset){discarded++;return;}
-  if(!bytes||!item.sha256||asset.envelope_sha256!==item.canonical_sha256||Number(asset.byte_size)!==item.byte_size)throw Error('MEDIA_RESTORE_INVENTORY_MISMATCH');
+  if(!bytes||!item.sha256||asset.envelope_sha256!==item.canonical_sha256||asset.raw_sha256!==item.sha256||Number(asset.byte_size)!==item.byte_size)throw Error('MEDIA_RESTORE_INVENTORY_MISMATCH');
   await restoreObject({snapshotId,key:item.object_key,sha256:item.sha256,byteSize:item.byte_size});await sql`insert into porchday_verified_media(object_key) values(${item.object_key}) on conflict do nothing`;copied++;
  },{generation:state.value.generation,maxJournalSequence:current.value.sequence});
  const[missing]=await sql`select count(*)::int n from app.media_assets where state in('ready','attached') and(app.media_deadline(id) is null or app.media_deadline(id)>now()) and not exists(select from porchday_verified_media v where v.object_key=app.media_assets.object_key)`;

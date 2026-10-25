@@ -4,7 +4,7 @@ import {resolve4,resolve6,resolveCname,Resolver} from 'node:dns/promises';
 import {request as httpsRequest} from 'node:https';
 import type {JournalStore} from '../apps/api/src/privacy-journal.js';
 
-type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>;verifyMediaObject(value:{key:string;canonicalSha256:string;byteSize:number}):Promise<void>;restoreMediaObject(value:{snapshotId:string;key:string;sha256:string;byteSize:number}):Promise<void>};
+type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>;verifyMediaObject(value:{key:string;sha256:string;byteSize:number}):Promise<void>;restoreMediaObject(value:{snapshotId:string;key:string;sha256:string;byteSize:number}):Promise<void>};
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 /** A temporary private capability, never written to stdout, disk or command arguments. */
 export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucket?:string;backupBucket?:string;journalAccess?:'read-only'|'read-write';hostname?:string;onProgress?:(phase:string)=>void},work:(bridge:Bridge)=>Promise<T>):Promise<T> {

@@ -143,7 +143,7 @@ try {
  await assert.rejects(releasePrivacyQuarantine(journal,target),/RESTORE_MEDIA_VERIFICATION_REQUIRED/);
  await assert.rejects(releasePrivacyQuarantine(journal,target,async()=>{throw Error('SYNTHETIC_MEDIA_VERIFY_FAILED');}),/SYNTHETIC_MEDIA_VERIFY_FAILED/);
  await assert.rejects(assertJournalReadable(journal,targetDb),/RESTORE_QUARANTINED/);
- await releasePrivacyQuarantine(journal,target,async item=>{const object=await reconciled.get(item.key);assert(object);const bytes=await object.arrayBuffer();assert.equal(bytes.byteLength,item.byteSize);assert.equal(digest(canonicalJson(JSON.parse(new TextDecoder().decode(bytes)))),item.canonicalSha256);});await assertJournalReadable(journal,targetDb);
+ await releasePrivacyQuarantine(journal,target,async item=>{const object=await reconciled.get(item.key);assert(object);const bytes=await object.arrayBuffer();assert.equal(bytes.byteLength,item.byteSize);assert.equal(digest(new Uint8Array(bytes)),item.sha256);});await assertJournalReadable(journal,targetDb);
  const own=await target.begin(async tx=>{await tx`set local role porchday_social`;await tx`select set_config('app.member_id',${alice},true)`;return tx`select id,envelope from app.posts order by id`;});assert.equal(own.length,2);
  for(const actor of[bob,outsider]){const rows=await target.begin(async tx=>{await tx`set local role porchday_social`;await tx`select set_config('app.member_id',${actor},true)`;return tx`select id from app.posts`;});assert.equal(rows.length,0);}
  await assert.rejects(target.begin(async tx=>{await tx`set local role porchday_social`;return tx`select * from public.auth_session`;}),{code:'42501'});

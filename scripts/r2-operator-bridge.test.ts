@@ -27,8 +27,8 @@ describe('Ephemeral operator Worker with real local R2 bindings',()=>{
       await media.put(key,'different existing object');expect((await call(args)).status).toBe(409);expect(await(await media.get(key))!.text()).toBe('different existing object');
       await backup.put('snapshots/'+id+'/complete.json',JSON.stringify({run:{id,expires_at:new Date(Date.now()-1000).toISOString()}}));expect((await call(args)).status).toBe(409);
       const envelope={z:'synthetic encrypted bytes 🌻',a:[1,true,null,{last:'value',first:'value'}]},raw=JSON.stringify(envelope),canonicalSha256=createHash('sha256').update(canonicalJson(envelope)).digest('hex');await media.put(key,raw);
-      const verify=(hash:string)=>mf.dispatchFetch('https://ops.porchday.test/media/verify',{method:'POST',headers:{Authorization:'Bearer synthetic-operator-test','Content-Type':'application/json'},body:JSON.stringify({key,byteSize:Buffer.byteLength(raw),canonicalSha256:hash})});
-      expect((await verify(canonicalSha256)).status).toBe(200);expect((await verify(createHash('sha256').update(raw).digest('hex'))).status).toBe(409);await media.delete(key);expect((await verify(canonicalSha256)).status).toBe(409);
+      const verify=(hash:string)=>mf.dispatchFetch('https://ops.porchday.test/media/verify',{method:'POST',headers:{Authorization:'Bearer synthetic-operator-test','Content-Type':'application/json'},body:JSON.stringify({key,byteSize:Buffer.byteLength(raw),sha256:hash})});
+      expect((await verify(canonicalSha256)).status).toBe(409);expect((await verify(createHash('sha256').update(raw).digest('hex'))).status).toBe(200);await media.delete(key);expect((await verify(canonicalSha256)).status).toBe(409);
 
     }finally{await mf.dispose();}
   });

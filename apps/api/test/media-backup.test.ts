@@ -9,7 +9,7 @@ async function fixture(count=17){
  const mf=new Miniflare(convertV4MiniflareOptions({name:'backup-test',modules:true,script:'export default{fetch(){return new Response("test")}}',compatibilityDate:'2026-10-01',r2Buckets:['SOURCE','BACKUP','JOURNAL']}));
  const source=await mf.getR2Bucket('SOURCE') as unknown as R2Bucket,backup=await mf.getR2Bucket('BACKUP') as unknown as R2Bucket,journal=await mf.getR2Bucket('JOURNAL') as unknown as JournalStore;
  const owner=randomUUID(),events:JournalEvent[]=[],generation=randomUUID(),started=new Date(),run={id:randomUUID(),restore_at:started.toISOString(),generation,base_sequence:'0',expires_at:new Date(+started+7*86400000).toISOString()};
- const items=[];for(let i=0;i<count;i++){const object_key='media/'+owner+'/'+randomUUID(),data=JSON.stringify({ciphertext:'synthetic encrypted bytes '+i});await source.put(object_key,data);items.push({object_key,canonical_sha256:createHash('sha256').update(canonicalJson(JSON.parse(data))).digest('hex'),byte_size:Buffer.byteLength(data)});}items.sort((a,b)=>a.object_key.localeCompare(b.object_key));
+ const items=[];for(let i=0;i<count;i++){const object_key='media/'+owner+'/'+randomUUID(),data=JSON.stringify({ciphertext:'synthetic encrypted bytes '+i});await source.put(object_key,data);items.push({object_key,canonical_sha256:createHash('sha256').update(canonicalJson(JSON.parse(data))).digest('hex'),sha256:createHash('sha256').update(data).digest('hex'),byte_size:Buffer.byteLength(data)});}items.sort((a,b)=>a.object_key.localeCompare(b.object_key));
  await source.put('unreferenced-object','must never be copied');const deleted=new Set<string>();let completed=0;
  const db:BackupDatabase={journal:{async status(){return {generation,sequence:String(events.length),quarantined:false};},async page(after){return events.slice(Number(after));}},async start(){return run;},async info(){return run;},async page(_,cursor){return items.filter(i=>i.object_key>(cursor??'')).slice(0,8);},async missing(_,key){return deleted.has(key)?String(events.length):null;},async complete(){completed++;},async failed(){}};
  await initializePrivacyJournal(journal,db.journal);const control=await readJournalControl(journal);await journal.put('control.json',JSON.stringify({...control.value,mode:'active',reason:null}),{onlyIf:{etagMatches:control.etag}});
@@ -44,6 +44,14 @@ describe('Private media snapshot pipeline through native R2',()=>{
    expect(await copyMediaBackupPage(f.storage,id)).toBe('more');expect(await copyMediaBackupPage(f.storage,id)).toBe('complete');expect((await verifyMediaBackup(original,id,f.run.restore_at)).objects).toBe(2);
    const state=JSON.parse(await(await original.get('snapshots/'+id+'/complete.json'))!.text());state.run.restore_at=new Date(Date.now()-8*86400000).toISOString();state.run.expires_at=new Date(Date.now()-86400000).toISOString();await original.put('snapshots/'+id+'/complete.json',JSON.stringify(state));
    await expect(verifyMediaBackup(original,id,state.run.restore_at)).rejects.toThrow(/BACKUP_(EXPIRED|RETENTION_INVALID)/);
+  }finally{await f.mf.dispose();}
+ });
+ it('rejects changed raw upload bytes through native checksum validation before committing a copy',async()=>{
+  const f=await fixture(1);try{
+   const id=await beginMediaBackup(f.storage),key=f.items[0].object_key,raw=await(await f.storage.source.get(key))!.text();
+   const corrupted=raw.replace('synthetic','corrupted');expect(corrupted.length).toBe(raw.length);await f.storage.source.put(key,corrupted);
+   await expect(copyMediaBackupPage(f.storage,id)).rejects.toThrow();expect(await f.storage.backup.get('snapshots/'+id+'/objects/'+key.slice(6))).toBeNull();expect(await f.storage.backup.get('snapshots/'+id+'/complete.json')).toBeNull();
+   await f.storage.source.put(key,raw);expect(await copyMediaBackupPage(f.storage,id)).toBe('more');expect(await copyMediaBackupPage(f.storage,id)).toBe('complete');
   }finally{await f.mf.dispose();}
  });
 });

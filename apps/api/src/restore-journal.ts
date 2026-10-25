@@ -67,14 +67,14 @@ export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedi
   return {replayed,deletedObjects,heldAccounts:hold.size,sequence:verified.control.sequence};
 }
 
-export type MediaVerification = (item:{key:string;canonicalSha256:string;byteSize:number})=>Promise<void>;
+export type MediaVerification = (item:{key:string;sha256:string;byteSize:number})=>Promise<void>;
 /** Bounded scan, no object bytes or SQL locks retained across the callback. */
 export async function verifyRestoredMedia(sql:Sql,verify?:MediaVerification){
  let cursor='',verified=0;
- for(;;){const rows=await sql`select object_key,envelope_sha256,byte_size from app.media_assets where object_key>${cursor} and state in('ready','attached') and(app.media_deadline(id) is null or app.media_deadline(id)>now()) order by object_key limit 50`;
+ for(;;){const rows=await sql`select object_key,raw_sha256,byte_size from app.media_assets where object_key>${cursor} and state in('ready','attached') and(app.media_deadline(id) is null or app.media_deadline(id)>now()) order by object_key limit 50`;
   if(!rows.length)return verified;
   if(!verify)throw new JournalError('RESTORE_MEDIA_VERIFICATION_REQUIRED');
-  for(const row of rows){if(!/^[a-f0-9]{64}$/.test(row.envelope_sha256??''))throw new JournalError('RESTORE_MEDIA_DIGEST_MISSING');await verify({key:row.object_key,canonicalSha256:row.envelope_sha256,byteSize:Number(row.byte_size)});verified++;cursor=row.object_key;}
+  for(const row of rows){if(!/^[a-f0-9]{64}$/.test(row.raw_sha256??''))throw new JournalError('RESTORE_MEDIA_DIGEST_MISSING');await verify({key:row.object_key,sha256:row.raw_sha256,byteSize:Number(row.byte_size)});verified++;cursor=row.object_key;}
  }
 }
 

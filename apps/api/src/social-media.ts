@@ -50,6 +50,7 @@ export function registerMediaRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     let envelope:EncryptedEnvelope;
     try{envelope=envelopeSchema.parse(JSON.parse(new TextDecoder('utf-8',{fatal:true,ignoreBOM:false}).decode(bytes)));}catch{return fail('INVALID_MEDIA_ENVELOPE');}
     const digest=await envelopeDigest(envelope);
+    const rawDigest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
     let written:string|undefined;
     try{return c.json(await tx(c,async db=>{
       await writeAllowed(db);
@@ -59,7 +60,7 @@ export function registerMediaRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
       if(envelope.context.expiresAt&&Date.parse(envelope.context.expiresAt)<=Date.now())fail('EXPIRED',409);
       await c.env.MEDIA.put(m.object_key,bytes,{httpMetadata:{contentType:'application/octet-stream',cacheControl:'no-store'}});
       written=m.object_key;
-      await db`update app.media_assets set state='ready' where id=${mediaId}`;
+      await db`update app.media_assets set state='ready',raw_sha256=${rawDigest} where id=${mediaId}`;
       return {ok:true};
     }));}catch(error){if(written)await c.env.MEDIA.delete(written);throw error;}
   });

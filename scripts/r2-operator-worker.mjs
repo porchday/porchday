@@ -1,4 +1,5 @@
 const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
+const streamDigest=async body=>{const digest=new crypto.DigestStream('SHA-256');await body.pipeTo(digest);return [...new Uint8Array(await digest.digest)].map(b=>b.toString(16).padStart(2,'0')).join('');};
 const journalKey=key=>typeof key==='string' && (key==='control.json' || /^(intents|receipts|probes)\/[a-f0-9-]{36}\.json$/.test(key) || /^batches\/[a-f0-9-]{36}\/[0-9]+-[0-9]+-[a-f0-9]{64}\.json$/.test(key));
 export default {async fetch(request,env) {
   // No body parsing, R2 access or diagnostic content before authorization.
@@ -17,12 +18,9 @@ export default {async fetch(request,env) {
   } catch{return json({error:'INVALID_BODY'},400);}
   try {
     if(path==='/media/verify'){
-      if(!env.MEDIA||!/^media\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(body?.key)||!Number.isInteger(body.byteSize)||body.byteSize<1||body.byteSize>22020096||!/^[a-f0-9]{64}$/.test(body.canonicalSha256))return json({error:'INVALID_MEDIA_VERIFICATION'},400);
+      if(!env.MEDIA||!/^media\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(body?.key)||!Number.isInteger(body.byteSize)||body.byteSize<1||body.byteSize>22020096||!/^[a-f0-9]{64}$/.test(body.sha256))return json({error:'INVALID_MEDIA_VERIFICATION'},400);
       const object=await env.MEDIA.get(body.key);if(!object||object.size!==body.byteSize)return json({error:'RESTORE_MEDIA_MISSING'},409);
-      // Same sorted-key JSON encoding as canonicalJson, over parsed JSON only.
-      const canonical=value=>{if(value===null||typeof value==='string'||typeof value==='boolean')return JSON.stringify(value);if(typeof value==='number'&&Number.isFinite(value))return JSON.stringify(value);if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';if(value&&typeof value==='object')return '{'+Object.keys(value).sort().map(k=>JSON.stringify(k)+':'+canonical(value[k])).join(',')+'}';throw Error('INVALID_JSON');};
-      const text=canonical(JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(await object.arrayBuffer()))),digest=[...new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text)))].map(b=>b.toString(16).padStart(2,'0')).join('');
-      return digest===body.canonicalSha256?json({ok:true}):json({error:'RESTORE_MEDIA_HASH_MISMATCH'},409);
+      return await streamDigest(object.body)===body.sha256?json({ok:true}):json({error:'RESTORE_MEDIA_HASH_MISMATCH'},409);
     }
     if(path==='/backup/restore'){
       if(!env.BACKUP||!env.MEDIA||typeof body.snapshotId!=='string'||!/^[a-f0-9-]{36}$/.test(body.snapshotId)||!/^media\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/.test(body.key)||!Number.isInteger(body.byteSize)||body.byteSize<1||body.byteSize>22020096||!/^[a-f0-9]{64}$/.test(body.sha256))return json({error:'INVALID_BACKUP_COPY'},400);
@@ -31,10 +29,10 @@ export default {async fetch(request,env) {
       const manifest=await complete.json(),expiry=Date.parse(manifest?.run?.expires_at);
       if(manifest?.run?.id!==body.snapshotId||!Number.isFinite(expiry)||expiry<=Date.now())return json({error:'BACKUP_EXPIRED'},409);
       const source=await env.BACKUP.get(prefix+'objects/'+body.key.slice(6));if(!source||source.size!==body.byteSize)return json({error:'BACKUP_OBJECT_MISSING'},409);
-      const data=await source.arrayBuffer(),digest=async bytes=>[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(b=>b.toString(16).padStart(2,'0')).join('');
-      if(await digest(data)!==body.sha256)return json({error:'BACKUP_HASH_MISMATCH'},409);
-      if(!await env.MEDIA.put(body.key,data,{onlyIf:{etagDoesNotMatch:'*'},sha256:body.sha256})){
-        const existing=await env.MEDIA.get(body.key);if(!existing||existing.size!==body.byteSize||await digest(await existing.arrayBuffer())!==body.sha256)return json({error:'RESTORE_OBJECT_CONFLICT'},409);
+      if(await streamDigest(source.body)!==body.sha256)return json({error:'BACKUP_HASH_MISMATCH'},409);
+      const copy=await env.BACKUP.get(prefix+'objects/'+body.key.slice(6),{onlyIf:{etagMatches:source.etag}});if(!copy?.body)return json({error:'BACKUP_OBJECT_CHANGED'},409);
+      if(!await env.MEDIA.put(body.key,copy.body,{onlyIf:{etagDoesNotMatch:'*'},sha256:body.sha256})){
+        const existing=await env.MEDIA.get(body.key);if(!existing||existing.size!==body.byteSize||await streamDigest(existing.body)!==body.sha256)return json({error:'RESTORE_OBJECT_CONFLICT'},409);
       }
       return json({ok:true});
     }

@@ -9,6 +9,7 @@ CREATE TABLE app.media_backup_items(
  run_id uuid NOT NULL REFERENCES app.media_backup_runs ON DELETE CASCADE,
  object_key text NOT NULL CHECK(object_key ~ '^media/[a-f0-9-]{36}/[a-f0-9-]{36}$'),
  canonical_sha256 text NOT NULL CHECK(canonical_sha256 ~ '^[a-f0-9]{64}$'),
+ sha256 text NOT NULL CHECK(sha256 ~ '^[a-f0-9]{64}$'),
  byte_size bigint NOT NULL CHECK(byte_size BETWEEN 1 AND 22020096),
  PRIMARY KEY(run_id,object_key)
 );
@@ -25,8 +26,8 @@ BEGIN
  SELECT run,(paired_at AT TIME ZONE 'UTC')::date,paired_at,generation,sequence,paired_at+interval '7 days' FROM app.safety_journal_state WHERE id
  ON CONFLICT(day) DO NOTHING RETURNING * INTO result;
  IF result.id IS NOT NULL THEN
-  INSERT INTO app.media_backup_items(run_id,object_key,canonical_sha256,byte_size)
-  SELECT result.id,m.object_key,m.envelope_sha256,m.byte_size FROM app.media_assets m
+  INSERT INTO app.media_backup_items(run_id,object_key,canonical_sha256,sha256,byte_size)
+  SELECT result.id,m.object_key,m.envelope_sha256,m.raw_sha256,m.byte_size FROM app.media_assets m
   WHERE m.state IN('ready','attached') AND(app.media_deadline(m.id) IS NULL OR app.media_deadline(m.id)>paired_at);
  ELSE SELECT * INTO result FROM app.media_backup_runs WHERE day=(paired_at AT TIME ZONE 'UTC')::date;END IF;
  RETURN to_jsonb(result)||jsonb_build_object('base_sequence',result.base_sequence::text);
@@ -36,7 +37,7 @@ CREATE FUNCTION app.media_backup_info(run uuid) RETURNS jsonb LANGUAGE sql STABL
 $$;
 CREATE FUNCTION app.media_backup_page(run uuid,after_key text) RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,app AS $$
  SELECT coalesce(jsonb_agg(to_jsonb(i) ORDER BY i.object_key),'[]') FROM(
-  SELECT object_key,canonical_sha256,byte_size FROM app.media_backup_items WHERE run_id=run AND object_key>coalesce(after_key,'')
+  SELECT object_key,canonical_sha256,sha256,byte_size FROM app.media_backup_items WHERE run_id=run AND object_key>coalesce(after_key,'')
   AND EXISTS(SELECT FROM app.media_backup_runs WHERE id=run AND expires_at>now()) ORDER BY object_key LIMIT 8
  ) i
 $$;
