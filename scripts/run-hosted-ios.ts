@@ -62,7 +62,7 @@ try {
 
   phase = "BUILD";
   const derived = join(directory, "DerivedData"), destination = "platform=iOS Simulator,id=" + simulator;
-  requireValue(await recorded("xcodebuild", ["-project", "apps/ios/Porchday.xcodeproj", "-scheme", "Porchday", "-configuration", "Debug", "-destination", destination, "-derivedDataPath", derived, "CODE_SIGNING_ALLOWED=NO", "build-for-testing"], 15 * 60_000) === 0, "BUILD_FAILED");
+  requireValue(await recorded("xcodebuild", ["-project", "apps/ios/Porchday.xcodeproj", "-scheme", "Porchday", "-configuration", "Debug", "-destination", destination, "-derivedDataPath", derived, "build-for-testing"], 15 * 60_000) === 0, "BUILD_FAILED");
   const products = join(derived, "Build", "Products");
   const manifests = (await readdir(products)).filter(name => name.endsWith(".xctestrun"));
   requireValue(manifests.length === 1, "XCTESTRUN_NOT_FOUND");
@@ -75,7 +75,7 @@ try {
 
   phase = "TEST";
   const resultPath = join(directory, "Hosted.xcresult");
-  const code = await recorded("xcodebuild", ["test-without-building", "-xctestrun", manifest, "-destination", destination, "-only-testing:PorchdayTests/HostedInteropTests/testHostedInteroperability", "-parallel-testing-enabled", "NO", "-maximum-concurrent-test-simulator-destinations", "1", "-test-timeouts-enabled", "YES", "-default-test-execution-time-allowance", "480", "-maximum-test-execution-time-allowance", "600", "-resultBundlePath", resultPath, "CODE_SIGNING_ALLOWED=NO"], 12 * 60_000);
+  const code = await recorded("xcodebuild", ["test-without-building", "-xctestrun", manifest, "-destination", destination, "-only-testing:PorchdayTests/HostedInteropTests/testHostedInteroperability", "-parallel-testing-enabled", "NO", "-maximum-concurrent-test-simulator-destinations", "1", "-test-timeouts-enabled", "YES", "-default-test-execution-time-allowance", "480", "-maximum-test-execution-time-allowance", "600", "-resultBundlePath", resultPath], 12 * 60_000);
   if (code !== 0) {
     const tail = await logTail(); diagnostic = nativeFailureDiagnostic(tail);
     throw new HostedIOSError(nativeFailureCode(tail) ?? "NATIVE_TEST_FAILED");

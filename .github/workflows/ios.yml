@@ -46,7 +46,7 @@ jobs:
             -destination "platform=iOS Simulator,id=$PORCHDAY_SIMULATOR" \
             -derivedDataPath apps/ios/build/DerivedData \
             -resultBundlePath apps/ios/build/PorchdayTests.xcresult \
-            CODE_SIGNING_ALLOWED=NO test
+            test
       - name: Launch app and capture simulator evidence
         run: |
           xcrun simctl boot "$PORCHDAY_SIMULATOR" || true

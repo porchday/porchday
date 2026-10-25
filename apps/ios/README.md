@@ -14,9 +14,9 @@ Install full Xcode with an iOS simulator runtime, Go matching packages/crypto/na
     xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday \
       -destination 'platform=iOS Simulator,name=iPhone 16' \
       -derivedDataPath apps/ios/build/DerivedData \
-      CODE_SIGNING_ALLOWED=NO test
+      test
 
-Choose an installed simulator from xcrun simctl list devices available. The build script creates the native Porchcrypto.xcframework from pinned GopenPGP and gomobile dependencies, then generates the Xcode project. Generated binaries/build output are ignored by Git.
+Choose an installed simulator from xcrun simctl list devices available. The build script creates the native Porchcrypto.xcframework from pinned GopenPGP and gomobile dependencies, then generates the Xcode project. Generated binaries/build output are ignored by Git. Do not override simulator signing with CODE_SIGNING_ALLOWED=NO: the resulting app loses the entitlements needed for its real Keychain storage. The SDK-specific project settings sign simulator builds ad hoc and keep hardware signing separate. The normal native suite includes a real Keychain write/read/update/delete test and verifies device-only accessibility.
 
 The Verify native iOS GitHub Actions workflow builds the bridge and app on a macOS runner, executes native crypto/portability unit tests and onboarding UI tests, launches the app in the simulator, and keeps the test result bundle and screenshot for seven days. It does not use production credentials. DEBUG-only --ui-testing skips automatic session restoration so onboarding UI tests do not depend on production availability; no test argument supplies an authenticated session or bypasses server authorization.
 
@@ -40,11 +40,11 @@ A successful build/test run is evidence of compilation and the exercised flows, 
 
 ## Signed build capabilities
 
-The checked-in entitlements declare applinks:porchday.com and an APNs environment build variable. Simulator CI remains unsigned and PORCHDAY_PUSH_ENABLED=NO. For a physical build, select a real development team, enable Push Notifications and Associated Domains for com.porchday.app in that Apple account, allow signing, set PORCHDAY_PUSH_ENABLED=YES, and choose PORCHDAY_APNS_ENVIRONMENT=development for sandbox or production for a distribution profile. Do not put an APNs provider private key in the app or repository.
+The checked-in entitlements declare applinks:porchday.com and an APNs environment build variable. Simulator CI uses an ad-hoc signature and a separate simulator-only app-local Keychain entitlement; PORCHDAY_PUSH_ENABLED=NO. It does not use an Apple team or provisioning profile. For a physical build, select a real development team, enable Push Notifications and Associated Domains for com.porchday.app in that Apple account, allow signing, set PORCHDAY_PUSH_ENABLED=YES, and choose PORCHDAY_APNS_ENVIRONMENT=development for sandbox or production for a distribution profile. Do not put an APNs provider private key in the app or repository.
 
 The native permission button appears only when this signed-build flag and /api/v1/native-push/config both enable delivery. Only pressing Enable requests notification authorization. Previously opted-in launches ask APNs for a fresh device token and send it through the authenticated API; token bytes are never cached on disk. Opt-out and sign-out remove this device's server subscription and unregister locally. Notifications carry generic text only; tapping opens the authorized in-app inbox. No notification service extension downloads or decrypts private content.
 
-Configure the backend with the matching real APNs team, key, bundle ID and provider key before enabling delivery. Publish /.well-known/apple-app-site-association as JSON with the real TEAM_ID.com.porchday.app application identifier and /app/post/* path components, without a redirect. An unsigned simulator build does not verify APNs or the Apple domain association. Record a physical-device push and universal-link test once signing is available. No fake Apple team identifier is supplied or published.
+Configure the backend with the matching real APNs team, key, bundle ID and provider key before enabling delivery. Publish /.well-known/apple-app-site-association as JSON with the real TEAM_ID.com.porchday.app application identifier and /app/post/* path components, without a redirect. An ad-hoc simulator build does not verify APNs or the Apple domain association. Record a physical-device push and universal-link test once signing is available. No fake Apple team identifier is supplied or published.
 
 Apple references: https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns ; https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications ; https://developer.apple.com/documentation/xcode/supporting-associated-domains .
 

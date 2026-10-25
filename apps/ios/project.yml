@@ -10,6 +10,11 @@ settings:
     IPHONEOS_DEPLOYMENT_TARGET: '17.0'
     DEVELOPMENT_TEAM: ''
     CODE_SIGNING_ALLOWED: 'NO'
+    # Simulator Keychain access requires app entitlements in an ad-hoc signature.
+    # Hardware/release signing still requires the owner's real Apple identity.
+    'CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]': 'YES'
+    'CODE_SIGN_IDENTITY[sdk=iphonesimulator*]': '-'
+    'CODE_SIGN_STYLE[sdk=iphonesimulator*]': Manual
     PORCHDAY_PUSH_ENABLED: 'NO'
     PORCHDAY_APNS_ENVIRONMENT: development
     INFOPLIST_KEY_PorchdayPushEnabled: '$(PORCHDAY_PUSH_ENABLED)'
@@ -37,6 +42,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.porchday.app
         CODE_SIGN_ENTITLEMENTS: Porchday/Porchday.entitlements
+        'CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]': Porchday/Porchday-Simulator.entitlements
     dependencies:
       - package: ZIPFoundation
       - framework: ../../packages/crypto/native/build/Porchcrypto.xcframework
