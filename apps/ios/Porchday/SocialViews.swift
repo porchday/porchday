@@ -22,12 +22,15 @@ struct FeedView: View {
             List {
                 if let profileHeader { Section { profileHeader } }
                 if showComposer { Section { Button { compose = true } label: { Label("Share a little of your day", systemImage: "square.and.pencil").padding(.vertical, 8) } } }
-                Section("Your people, newest first") {
+                Section {
                     if loaded && rows.filter(\.active).isEmpty { ContentUnavailableView("A quiet start", systemImage: "sun.max", description: Text("Connect with your people. Their moments will appear here, with no suggested posts or ads.")) }
                     ForEach(rows.filter(\.active)) { item in NavigationLink { PostDetailView(id: item.id) } label: { MomentCard(item: item) } }
                     if cursor != nil { Button("Load more moments") { Task { await load(more: true) } }.disabled(busy) }
                     else if loaded && !rows.isEmpty { Text("You’re all caught up. There’s a whole day out there.").font(.footnote).foregroundStyle(.secondary) }
                     if busy { ProgressView() }
+                } header: {
+                    if wallpaper == .none { Text("Your people, newest first") }
+                    else { Text("Your people, newest first").foregroundStyle(.primary).padding(8).background(.background, in: RoundedRectangle(cornerRadius: 6)) }
                 }
             }
             .scrollContentBackground(wallpaper == .none ? .visible : .hidden)
