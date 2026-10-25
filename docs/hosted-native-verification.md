@@ -47,3 +47,21 @@ Apple documents the supported [build-for-testing/test-without-building flow](htt
 The simulator build uses an ad-hoc signature with an app-local `application-identifier` and `keychain-access-groups` entitlement. These settings apply only to `iphonesimulator`; they contain no Apple team identifier and do not enable APNs or Universal Links. The application still uses the shipped device-only Keychain implementation. The normal native suite must pass its real `SecureStoreTests` write/read/update/delete and accessibility checks before running a hosted fixture. Apple describes the relationship between app entitlements and Keychain access in [errSecMissingEntitlement](https://developer.apple.com/documentation/security/errsecmissingentitlement).
 
 The initial hosted attempt (40213370898) stopped at LOGIN; the bounded diagnostic retry (40213888423) identified KEYCHAIN_WRITE. Both removed their private test output and temporary repository secret. Inspection of the earlier ordinary simulator artifact showed no app entitlements under the prior CODE_SIGNING_ALLOWED=NO override. Those attempts did not verify hosted interoperability and reached no native recovery enrollment or content publication. Record subsequent verification separately.
+
+## Verified staging run — October 25, 2026
+
+The final hosted simulator run and independent JavaScript check both passed. The repository remains private; these links are private CI evidence, not a public app release.
+
+| Check | Revision / run | Result |
+| --- | --- | --- |
+| Ordinary simulator suite, including the real Keychain round-trip and device-only accessibility check | `3552fce`, [40214444339](https://github.com/bobbyhwilder/porchday/actions/runs/40214444339) | Passed; the Keychain test executed and was not skipped. |
+| Hosted native interoperability against `https://staging.porchday.com` | `cd1335d`, [40214835293](https://github.com/bobbyhwilder/porchday/actions/runs/40214835293) | Passed; the result parser confirmed exactly one successful hosted XCTest, no skipped/failed tests, and private runner cleanup. |
+| Independent OpenPGP.js verification using `scripts/hosted-smoke.ts interop-check --run` | Same synthetic fixture, after the native run | Exited 0; `native-post-and-photo-decrypted-by-web-crypto` and final `passed:true`. |
+
+The native run used the real login endpoint and shipped URLSession/Keychain code, recovered historical keys from C's encrypted backup, authorized a fresh native device through the normal signed challenge, and verified/decrypted A's post and 16 × 16 JPEG. It signed/encrypted and published a new native post/photo through the actual staging API, read them back, and signed out.
+
+The independent JavaScript check signed in as A through the normal endpoint and asserted the native author was C; its device was fresh, non-revoked and different from C's original browser device; post/media IDs, parent linkage and the original two-hour deadline matched; OpenPGP signatures and recipient decryption succeeded; and the exact synthetic text and JPEG SHA-256 matched. It then signed out. It did not create a replacement fixture or use native plaintext as its verification result.
+
+Each of the three hosted attempts removed its temporary `PORCHDAY_IOS_HOSTED_FIXTURE_B64` repository secret. After the successful attempt, a separate repository-secret listing confirmed that secret was absent. The native runner reported private simulator/log/manifest/result cleanup. No raw hosted log, `.xcresult`, screenshot, app bundle, private key, recovery secret or login credential was uploaded as an artifact. The synthetic accounts and hosted fixture were retained for the separate restore/browser checks; the fixture's signed deadline remains in force.
+
+This proves the exercised hosted web↔native encryption and recovery flow, not a physical-iPhone test, a browser UI journey, maximum-size native media handling, push delivery, Universal Links, a capacity benchmark or an independent cryptographic audit. The earlier LOGIN failures remain part of the evidence above and were resolved by simulator signing entitlements, without replacing Keychain storage or relaxing server authentication.
