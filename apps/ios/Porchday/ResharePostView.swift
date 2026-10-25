@@ -34,7 +34,7 @@ struct ResharePostView: View {
             guard let member = model.member, var payload = item.payload, item.authorID == member.id else { throw PorchError.message("Only the author can share this post again.") }
             let newID = UUID().uuidString.lowercased(), group = item.context["groupId"].string, share = group == nil ? audience : "group"
             var media: [JSON] = []
-            for photo in payload["media"].array { media.append(try await model.reshareSurfacePhoto(photo, audience: share, parent: newID, group: group)) }
+            for photo in payload["media"].array { media.append(try await model.reshareSurfacePhoto(photo, audience: share, parent: newID, group: group, parentExpiry: item.expiry)) }
             payload = payload.replacing("media", with: .array(media)).replacing("reactionSecret", with: .string(try CryptoVault.randomSecret()))
             let envelope = try await vault.seal(payload, member: member, kind: "post", audience: share, id: newID, group: group, expiry: item.expiry)
             _ = try await model.api.social("/posts/" + item.id + "/reshare", method: "POST", body: .object([
