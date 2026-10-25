@@ -7,10 +7,10 @@ import {readFile} from 'node:fs/promises';
 import {z} from 'zod';
 import {check,readPrivate,writePrivate,SmokeClient,SmokeError,stagingOrigin} from './hosted-smoke-support.js';
 import {readJournalControl,eventSchema,type JournalStore} from '../apps/api/src/privacy-journal.js';
-import {syntheticC,validateDeletionTicket,ticketHash,issueDeletion,finalOutboxComplete,type DeletionState,type DeletionTicket,type DeletionIntent,type DeletionReceipt,type DeletionAccount,type MediaEvidence} from './hosted-deletion-support.js';
+import {syntheticC,validateDeletionTicket,ticketHash,issueDeletion,finalOutboxComplete,deletionFailure,type DeletionState,type DeletionTicket,type DeletionIntent,type DeletionReceipt,type DeletionAccount,type MediaEvidence} from './hosted-deletion-support.js';
 
 const directory='artifacts/private/hosted-smoke/',ticketPath=directory+'account-deletion-c.ticket.json',intentPath=directory+'account-deletion-c.intent.json',receiptPath=directory+'account-deletion-c.receipt.json';
-const phase=process.argv[2];let sql:Sql|undefined;const transientClients:SmokeClient[]=[];
+const phase=process.argv[2];let stage='SETUP';let sql:Sql|undefined;const transientClients:SmokeClient[]=[];
 const fixedOutput=(value:Record<string,unknown>)=>console.log(JSON.stringify({phase,...value}));
 const pointer=z.object({key:z.string().regex(/^batches\/[a-f0-9-]{36}\/[0-9]+-[0-9]+-[a-f0-9]{64}\.json$/),hash:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 const batchSchema=z.object({v:z.literal(1),generation:z.uuid(),from:z.string().regex(/^\d+$/),to:z.string().regex(/^\d+$/),previous:pointer.nullable(),events:z.array(eventSchema).min(1).max(500)}).strict();
@@ -93,19 +93,19 @@ try{
    const intent=await readPrivate<DeletionIntent>(intentPath),receipt=await optionalPrivate<DeletionReceipt>(receiptPath);
    check(intent.v===1&&intent.ticketSHA256===hash&&Number.isFinite(Date.parse(intent.startedAt))&&(!receipt||(receipt.v===1&&receipt.ticketSHA256===hash)),'DELETION_INTENT_MISMATCH');
    check(Date.parse(intent.startedAt)<=Date.now()&&Date.parse(intent.startedAt)>Date.now()-24*3600000,'DELETION_STATUS_WINDOW_EXPIRED');
-   const api=new SmokeClient();let sessionsRevoked=true;
+   stage='STATUS_SESSIONS';const api=new SmokeClient();let sessionsRevoked=true;
    for(const session of [...ticket.sessions,intent.session]){
     const denied=await api.request('/api/v1/me','GET',undefined,session.cookie);check([401,403].includes(denied.status),'DELETION_SESSION_STILL_AUTHORIZED');await denied.body?.cancel();
     const ended=await api.request('/api/auth/get-session','GET',undefined,session.cookie);check(ended.status===200,'DELETION_SESSION_READ_FAILED');const data=await ended.json() as any;check(!data?.user,'DELETION_AUTH_SESSION_STILL_LIVE');
    }
    // Fresh sign-in must also fail, independent of the captured cookies.
    const denied=await api.request('/api/auth/sign-in/email','POST',{email:c.email,password:c.password});check([400,401,403].includes(denied.status),'DELETION_PASSWORD_LOGIN_SUCCEEDED');await denied.body?.cancel();
-   const [counts]=await db`select jsonb_build_object(
+   stage='STATUS_DATABASE_COUNTS';const [counts]=await db`select jsonb_build_object(
     'members',(select count(*) from app.members where id=${c.id}),'profiles',(select count(*) from app.profiles where member_id=${c.id}),
     'devices',(select count(*) from app.device_keys where member_id=${c.id}),'recovery_keys',(select count(*) from app.recovery_keys where member_id=${c.id}),
     'key_backups',(select count(*) from app.encrypted_key_backups where member_id=${c.id}),'device_challenges',(select count(*) from app.device_challenges where member_id=${c.id}),
-    'posts',(select count(*) from app.posts where author_id=${c.id} or id=any(${ticket.postIds}::uuid[])),
-    'comments',(select count(*) from app.comments where author_id=${c.id} or id=any(${ticket.commentIds}::uuid[])),
+    'posts',(select count(*) from app.posts where author_id=${c.id} or id in(select jsonb_array_elements_text(${db.json(ticket.postIds)}::jsonb)::uuid)),
+    'comments',(select count(*) from app.comments where author_id=${c.id} or id in(select jsonb_array_elements_text(${db.json(ticket.commentIds)}::jsonb)::uuid)),
     'post_reactions',(select count(*) from app.post_reactions where member_id=${c.id}),'comment_reactions',(select count(*) from app.comment_reactions where member_id=${c.id}),
     'post_recipients',(select count(*) from app.post_recipients where member_id=${c.id}),'media',(select count(*) from app.media_assets where owner_id=${c.id}),
     'connections',(select count(*) from app.connections where member_a=${c.id} or member_b=${c.id}),'requests',(select count(*) from app.connection_requests where sender=${c.id} or recipient=${c.id}),
@@ -119,19 +119,19 @@ try{
     'contact_history',(select count(*) from public.security_contact_history where member_id=${c.id}),'account_email',(select count(*) from public.auth_email_outbox where member_id=${c.id})
    ) as value`;
    check(Object.values(counts.value).every(n=>Number(n)===0),'DELETION_DATABASE_ROWS_REMAIN');
-   const protectedRows=await db`select m.id,m.status,u."emailVerified" as verified from app.members m join public.auth_user u on u.id=m.id::text where m.id=any(${ticket.protectedMembers}::uuid[])`;
+   stage='STATUS_PROTECTED_ACCOUNTS';const protectedRows=await db`select m.id,m.status,u."emailVerified" as verified from app.members m join public.auth_user u on u.id=m.id::text where m.id in(select jsonb_array_elements_text(${db.json(ticket.protectedMembers)}::jsonb)::uuid)`;
    check(protectedRows.length===2&&protectedRows.every(m=>m.status==='active'&&m.verified),'DELETION_PROTECTED_ACCOUNTS_CHANGED');
-   const [ledger]=await db`select exists(select from app.deletion_ledger where kind='members' and object_id=${c.id} and deleted_at>=${intent.startedAt}::timestamptz) as present`;
+   stage='STATUS_LEDGER';const [ledger]=await db`select exists(select from app.deletion_ledger where kind='members' and object_id=${c.id} and deleted_at>=${intent.startedAt}::timestamptz) as present`;
    check(ledger.present,'DELETION_DURABLE_MARKER_MISSING');
-   const identities=await db`select completed_at from app.identity_deletion_outbox where member_id=${c.id}`;
+   stage='STATUS_OUTBOXES';const identities=await db`select completed_at from app.identity_deletion_outbox where member_id=${c.id}`;
    check(identities.length===1,'DELETION_IDENTITY_OUTBOX_MISSING');
    const [authPending]=await db`select (select count(*) from public.pilot_invitations where consumed_user=${c.id})+(select count(*) from public.auth_verification where value=${c.id}) as count`;
-   const outboxes=await db`select object_key,attempts,created_at,completed_at from app.deletion_outbox where object_key=any(${ticket.media.map(m=>m.object_key)}::text[]) order by object_key`;
+   const outboxes=await db`select object_key,attempts,created_at,completed_at from app.deletion_outbox where object_key in(select jsonb_array_elements_text(${db.json(ticket.media.map(m=>m.object_key))}::jsonb)) order by object_key`;
    check(outboxes.length===ticket.media.length,'DELETION_MEDIA_OUTBOX_MISSING');
    const rows=outboxes.map(row=>({object_key:String(row.object_key),attempts:Number(row.attempts),created_at:new Date(row.created_at).toISOString(),completed_at:row.completed_at?new Date(row.completed_at).toISOString():null}));
    check(rows.every(row=>Date.parse(row.created_at)>=Date.parse(intent.startedAt)),'DELETION_MEDIA_ALREADY_REMOVED_BEFORE_REQUEST');
-   let absent=true;for(const item of ticket.media){const response=await r2(env.bucket,item.object_key);absent&&=response.status===404;await response.body?.cancel();}
-   const control=(await readJournalControl(journal)).value;check(control.mode==='active'&&control.generation===ticket.journal.generation,'DELETION_JOURNAL_UNAVAILABLE');
+   stage='STATUS_MEDIA_ABSENCE';let absent=true;for(const item of ticket.media){const response=await r2(env.bucket,item.object_key);absent&&=response.status===404;await response.body?.cancel();}
+   stage='STATUS_JOURNAL';const control=(await readJournalControl(journal)).value;check(control.mode==='active'&&control.generation===ticket.journal.generation,'DELETION_JOURNAL_UNAVAILABLE');
    let pointerValue=control.head,expected=BigInt(control.sequence),memberJournaled=false;const mediaJournaled=new Set(ticket.media.map(m=>m.object_key));
    for(let page=0;pointerValue&&page<128;page++){
     const object=await journal.get(pointerValue.key);check(object,'DELETION_JOURNAL_GAP');const text=await object.text();check(createHash('sha256').update(text).digest('hex')===pointerValue.hash,'DELETION_JOURNAL_HASH_MISMATCH');
@@ -148,11 +148,16 @@ try{
    const journalVerified=memberJournaled&&!mediaJournaled.size;check(journalVerified,'DELETION_EXTERNAL_JOURNAL_MARKER_MISSING');
    const identityComplete=identities[0].completed_at!==null&&Number(authPending.count)===0,delayedPassComplete=finalOutboxComplete(rows,ticket);
    const complete=!!receipt&&absent&&identityComplete&&delayedPassComplete;
-   const result={v:1,synthetic:true,checkedAt:new Date().toISOString(),ticketSHA256:hash,acknowledged:!!receipt,sessionsRevoked,loginDenied:true,databaseErased:true,protectedAccountsIntact:true,journalVerified,identityComplete,mediaAbsent:absent,delayedPassComplete,complete,mediaObjects:ticket.media.length};
+   stage='STATUS_RETAINED_BACKUP_METADATA';
+   const [retained]=await db`select count(distinct r.id)::int as snapshots,max(r.expires_at) as retention_until from app.media_backup_items i join app.media_backup_runs r on r.id=i.run_id where r.completed_at is not null and r.expires_at>now() and i.object_key in(select jsonb_array_elements_text(${db.json(ticket.media.map(m=>m.object_key))}::jsonb))`;
+   const retainedBackupSnapshots=Number(retained.snapshots),latestBackupExpiry=retained.retention_until?new Date(retained.retention_until).toISOString():null;
+   const minimumCleanupAttempts=Math.min(...rows.map(row=>row.attempts)),minimumFinalPassAgeSeconds=delayedPassComplete?Math.floor(Math.min(...rows.map(row=>Date.parse(row.completed_at!)-Date.parse(row.created_at)))/1000):null;
+   const result={v:1,synthetic:true,checkedAt:new Date().toISOString(),ticketSHA256:hash,acknowledged:!!receipt,sessionsRevoked,loginDenied:true,databaseErased:true,protectedAccountsIntact:true,journalVerified,identityComplete,mediaAbsent:absent,delayedPassComplete,complete,mediaObjects:ticket.media.length,minimumCleanupAttempts,minimumFinalPassAgeSeconds,retainedBackupSnapshots,latestBackupExpiry};
+   if(!(await optionalPrivate(directory+'account-deletion-c.first-status.json')))await writePrivate(directory+'account-deletion-c.first-status.json',result,true);
    await writePrivate(directory+'account-deletion-c.status.json',result);
    if(complete){const latest=await readPrivate<DeletionState>(directory+'state.json');check(latest.run===state.run&&syntheticC(latest,true).id===c.id,'DELETION_STATE_CHANGED');latest.accounts[2].deleted=true;await writePrivate(directory+'state.json',latest);}
-   fixedOutput({acknowledged:!!receipt,sessionsRevoked,databaseErased:true,protectedAccountsIntact:true,journalVerified,identityComplete,mediaAbsent:absent,delayedPassComplete,complete,mediaObjects:ticket.media.length});
+   fixedOutput({acknowledged:!!receipt,sessionsRevoked,databaseErased:true,protectedAccountsIntact:true,journalVerified,identityComplete,mediaAbsent:absent,delayedPassComplete,complete,mediaObjects:ticket.media.length,minimumCleanupAttempts,minimumFinalPassAgeSeconds,retainedBackupSnapshots,latestBackupExpiry});
   }
  }
-}catch(error){console.error(JSON.stringify({phase,error:error instanceof SmokeError?error.message:'HOSTED_ACCOUNT_DELETION_CHECK_FAILED'}));process.exitCode=1;}
+}catch(error){console.error(JSON.stringify({phase,...deletionFailure(error,stage)}));process.exitCode=1;}
 finally{for(const api of transientClients)try{await api.request('/api/auth/sign-out','POST',{});}catch{}await sql?.end({timeout:1});}

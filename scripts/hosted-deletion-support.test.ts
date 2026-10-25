@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from 'vitest';
 import {spawnSync} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
-import {finalOutboxComplete,issueDeletion,syntheticC,ticketHash,validateDeletionTicket,type DeletionState,type DeletionTicket} from './hosted-deletion-support.js';
+import {finalOutboxComplete,deletionFailure,issueDeletion,syntheticC,ticketHash,validateDeletionTicket,type DeletionState,type DeletionTicket} from './hosted-deletion-support.js';
 import {stagingOrigin} from './hosted-smoke-support.js';
 const now=Date.now();
 function fixture(){
@@ -12,6 +12,12 @@ function fixture(){
  return {state,ticket};
 }
 describe('Synthetic account deletion boundaries',()=>{
+ it('emits only closed failure labels and SQLSTATE/parameter positions, never provider text or values',()=>{
+  const diagnostic=deletionFailure({name:'PostgresError',code:'22P02',message:'secret-cookie-value',query:'private SQL',parameters:['private-key'],where:"unnamed portal parameter $8 = 'secret-cookie-value'"},'STATUS_DATABASE_COUNTS');
+  expect(diagnostic).toEqual({error:'HOSTED_ACCOUNT_DELETION_CHECK_FAILED',stage:'STATUS_DATABASE_COUNTS',category:'PostgresError',sqlstate:'22P02',parameter:8});
+  expect(JSON.stringify(diagnostic)).not.toMatch(/secret|cookie|private/);
+  expect(deletionFailure(null,'untrusted secret')).toEqual({error:'HOSTED_ACCOUNT_DELETION_CHECK_FAILED',stage:'SETUP'});
+ });
  it('refuses missing/extra arguments before credentials or private state are read',()=>{
   for(const args of [['prepare'],['request'],['status'],['request','--run','--account=B'],['cleanup','--run']]){
    const result=spawnSync(process.execPath,['--import','tsx','scripts/hosted-account-deletion.ts',...args],{encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH}});

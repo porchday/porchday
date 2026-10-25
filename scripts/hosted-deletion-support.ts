@@ -1,6 +1,6 @@
 /** Guardrails for the bounded synthetic-C deletion check. No credentials or content are logged. */
 import {createHash} from 'node:crypto';
-import {check,stagingOrigin} from './hosted-smoke-support.js';
+import {check,SmokeError,stagingOrigin} from './hosted-smoke-support.js';
 
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export type DeletionAccount={id:string;email:string;password:string;handle:string;deleted?:boolean};
@@ -40,4 +40,16 @@ export function finalOutboxComplete(rows:{object_key:string;attempts:number;crea
   const row=rows.find(r=>r.object_key===m.object_key);
   return !!row&&row.attempts>=2&&row.completed_at!==null&&Date.parse(row.completed_at)>=Date.parse(row.created_at)+10*60000;
  });
+}
+
+/** Keep provider messages, SQL text, parameter values and cookie-bearing errors private. */
+export function deletionFailure(error:unknown,stage:string){
+ const allowedStages=new Set(['SETUP','STATUS_SESSIONS','STATUS_DATABASE_COUNTS','STATUS_PROTECTED_ACCOUNTS','STATUS_LEDGER','STATUS_OUTBOXES','STATUS_MEDIA_ABSENCE','STATUS_JOURNAL','STATUS_RETAINED_BACKUP_METADATA']);
+ if(error instanceof SmokeError&&/^[A-Z][A-Z0-9_]{2,100}$/.test(error.message))return {error:error.message};
+ const e=(error&&typeof error==='object'?error:{}) as {name?:unknown;code?:unknown;where?:unknown};
+ const parameter=typeof e.where==='string'?e.where.match(/parameter \$(\d+)/):null;
+ return {error:'HOSTED_ACCOUNT_DELETION_CHECK_FAILED',stage:allowedStages.has(stage)?stage:'SETUP',
+  ...(typeof e.name==='string'&&['PostgresError','TypeError','SyntaxError','ZodError'].includes(e.name)?{category:e.name}:{}),
+  ...(typeof e.code==='string'&&/^[0-9A-Z]{5}$/.test(e.code)?{sqlstate:e.code}:{}),
+  ...(parameter?{parameter:Number(parameter[1])}:{})};
 }

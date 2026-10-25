@@ -1359,7 +1359,7 @@ async function feedLatency(s: State) {
         p50_ms: percentile(0.5),
         p95_ms: percentile(0.95),
         max_ms: percentile(1),
-        fixture: "three-synthetic-members",
+        fixture: s.accounts.filter((account) => !account.deleted).length + "-surviving-synthetic-members",
         capacityClaim: false,
       }),
     );
