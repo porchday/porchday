@@ -1,5 +1,19 @@
 # Application Web Push verification procedure
 
+## Observed hosted result
+
+The single authorized attempt **`80982b2a` passed** on October 25, 2026 against staging deployment **`102f71f4-5091-4092-8e13-8d46c590907a`**, using harness commit `7f2e732`. It began at **19:04:32 UTC**, observed the actual hosted service-worker notification at **19:05:27 UTC**, and finished successful cleanup at **19:06:00 UTC**. Six focused guard tests and strict TypeScript checking passed before execution; an independent review checked the mutation boundaries and timeout/cleanup behavior.
+
+Fresh normal API reads confirmed A and B were both active, both had `in_app=true` and `push=false`, A blocked B, B did not block A, and there was no friendship or pending request. The fresh installed-Chrome profile registered a real FCM subscription using **staging's deployed public VAPID key**, bound to A's actual login session through the normal API. Only the authorized A→B block was temporarily removed. B's ordinary friend request created exactly the matching unread notification; no friendship was accepted. Normal deployed cron/outbox processing delivered the generic notification to the actual hosted service worker. No direct provider send or fabricated notification was used.
+
+An independent operator read-only database observation at **19:05:44 UTC** matched exactly one captured subscription/notification outbox row with **`outcome='sent'`, `completed=true`, and `attempts=1`**. The application runner separately observed `Porchday` / `You have a new update.` / `porchday-update` through the real service-worker notification API. Thus this check covers authenticated registration, deployed VAPID configuration, the ordinary notification event, normal cron/outbox processing, provider transport, and actual browser notification creation on this Mac.
+
+All cleanup checks passed: A→B's block and both accounts' original relationship state were restored; the captured request was cancelled and its notification/outbox removed through normal block behavior; the new subscription was revoked; A's `in_app=true,push=false` preferences were restored; both profile envelopes and device sets were unchanged; browser subscription, notification, permissions and cookies were cleared; both login sessions were revoked and old cookies denied; the exact fresh browser profile was deleted. The normal cancelled-request metadata and new block timestamp/audit revisions remain, as described below. No original content, group, key or recovery-case data changed.
+
+This is **staging application delivery evidence**, not a claim about a visible OS banner, production, iOS, closed-browser delivery or long-term renewal. The earlier [transport-only check](hosted-web-push-verification.md) remains separately documented with its original narrower scope.
+
+## Reproduction and safety boundaries
+
 The opt-in `scripts/hosted-app-push.ts` check exercises only synthetic staging A/B. It requires an explicit fresh eight-hex-digit attempt: `node --import tsx scripts/hosted-app-push.ts --run --attempt=<attempt>`. Run only after the operator confirms no concurrent staging/fixture activity and an independent guard review. Do not rerun a failed attempt blindly.
 
 The authorized exception is narrowly defined: both accounts must still be active, in-app notifications enabled, push disabled, no friendship or pending request, and only A blocking B. A must have no existing push subscriptions. The check signs in normally, uses a **new owner-only installed-Chrome profile**, and never unlocks or enrolls encryption keys. The public staging page loads the unmodified deployed service worker. A real `PushManager` subscription uses the deployed public VAPID key and is registered through the ordinary authenticated application API. Permission is granted only in this temporary profile. The user’s browser and OS settings are untouched.
