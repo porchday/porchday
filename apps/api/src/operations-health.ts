@@ -17,15 +17,32 @@ export function operationalIssues(snapshot:z.infer<typeof operationalSnapshotSch
  if(snapshot.email_age_seconds>300||snapshot.email_failed>0)issues.push('account_email_backlog');
  return issues;
 }
+export const mediaBackupSnapshotSchema=z.object({
+ last_complete_age_seconds:count.nullable(),unfinished_runs:count,oldest_unfinished_age_seconds:count,failed_runs:count,
+}).strict();
+export function mediaBackupIssues(snapshot:z.infer<typeof mediaBackupSnapshotSchema>,configured:boolean){
+ if(!configured)return ['media_backup_not_configured'];
+ const issues:string[]=[];
+ if(snapshot.last_complete_age_seconds===null)issues.push('media_backup_missing');
+ else if(snapshot.last_complete_age_seconds>26*60*60)issues.push('media_backup_stale');
+ if(snapshot.oldest_unfinished_age_seconds>2*60*60)issues.push('media_backup_stuck');
+ if(snapshot.failed_runs>0)issues.push('media_backup_retrying');
+ return issues;
+}
 async function operationsDb<T>(env:Pick<Env,'HYPERDRIVE_JOBS'>,work:(sql:ReturnType<typeof postgres>)=>Promise<T>){
  const sql=postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:false,fetch_types:false,connect_timeout:5,idle_timeout:1});
  try{return await work(sql);}finally{await sql.end({timeout:1});}
 }
 export const recordCleanupSuccess=(env:Pick<Env,'HYPERDRIVE_JOBS'>)=>operationsDb(env,async sql=>{await sql`select app.record_cleanup_success()`;});
-export const readOperationalHealth=(env:Pick<Env,'HYPERDRIVE_JOBS'>)=>operationsDb(env,async sql=>{
- const [row]=await sql`select app.operational_snapshot() as value`;
+type HealthEnvironment=Pick<Env,'HYPERDRIVE_JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'MEDIA_BACKUP_ENABLED'|'MEDIA_BACKUP'|'RECOVERY_JOURNAL'>>;
+export const readOperationalHealth=(env:HealthEnvironment)=>operationsDb(env,async sql=>{
+ const [row]=await sql`select app.operational_snapshot() as value,app.media_backup_health() as backup`;
  const snapshot=operationalSnapshotSchema.parse(row.value),issues=operationalIssues(snapshot);
- return {status:issues.length?'degraded':'ok',issues,snapshot};
+ const backup=mediaBackupSnapshotSchema.parse(row.backup);
+ if(env.ENVIRONMENT==='staging'||env.ENVIRONMENT==='production'){
+  issues.push(...mediaBackupIssues(backup,env.MEDIA_BACKUP_ENABLED==='true'&&!!env.MEDIA_BACKUP&&!!env.RECOVERY_JOURNAL));
+ }
+ return {status:issues.length?'degraded':'ok',issues,snapshot,backup};
 });
 
 /** Dedicated monitoring capability; cannot authenticate a member or read content. */
