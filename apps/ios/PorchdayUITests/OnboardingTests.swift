@@ -2,7 +2,7 @@ import XCTest
 final class OnboardingTests:XCTestCase {
     @MainActor private func openApp()->XCUIApplication {
         let app=XCUIApplication();app.launchArguments=["--ui-testing"];app.launch()
-        XCTAssertTrue(app.staticTexts["a late 90s style social network"].waitForExistence(timeout:10));return app
+        XCTAssertTrue(app.staticTexts["a simple social network"].waitForExistence(timeout:10));return app
     }
     @MainActor private func tapVisible(_ element:XCUIElement,in app:XCUIApplication) {
         for _ in 0..<5 { if element.exists && element.isHittable { break };app.swipeUp() }
