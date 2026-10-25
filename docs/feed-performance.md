@@ -132,3 +132,24 @@ This is also a public-asset experiment. `run_worker_first:true` sends requests t
 After deployment is independently verified, measure one bounded 100-read feed sample at concurrency five, plus public `/`, `/health` and representative built asset requests. Keep all HTTP failures and fixed error-code counts; a recurrence of privacy-guard errors requires investigation before retrying. Record the release, deployment, time, account/device count and any archive-test changes to surviving content. Those changes prevent treating the earlier sample as an identical fixture. Do not overlap measurement with archive imports/deletions or other synthetic writes.
 
 The available client is in California. These samples can show observed feed and public-response behavior from that location, including a large regression, but cannot establish global performance, eastern-US or overseas asset latency, browser rendering, constrained mobile networks, sustained capacity or the actual Worker location from timings alone. Ten sequential public requests are especially sensitive to cold/warm and network variation. A faster local result is evidence for further validation, not sufficient reason to copy the setting into production or the generator. If request errors recur or public latency worsens materially, preserve the result and remove the staging placement setting before the next controlled comparison.
+
+### Oregon placement observation
+
+At approximately 18:23 UTC on October 25, the operator deployed `b0c9488` to staging as `e25e95b0-a48b-4b27-b282-ffc8cf740ce2`. `/health` independently confirmed that exact version before and after measurement. The API code remained `a19cb86`; the experiment changed only staging placement. Migration 041 had also been applied additively without its new runtime policy, so the environment was not byte-for-byte identical to the earlier baseline. Provider settings reported targeted placement with an encoded target; this is configuration evidence, not proof of the location serving each request.
+
+The browser archive check finished before measurement: its new private copies were deleted, original profile/content and A's two-device set were preserved, and the browser signed out. The sample still used the two surviving synthetic identities and A's original runner device. Intervening archive outbox work, elapsed time and network variation remain comparison limitations. No browser, integration or content writes overlapped the measured reads.
+
+The single bounded feed sample made **100 requests at concurrency five**, all **HTTP 200**, with **zero classified errors**. Client **p50 was 404 ms**, **p95 687 ms**, and **maximum 1,069 ms**. A signed out afterward. These observed values are lower than the preceding 716 / 1,060 ms sample, but p95 still exceeds the 500 ms objective. This is directional evidence for placement, not causal proof, sustained capacity or an achieved SLO.
+
+Public requests followed sequentially, ten per endpoint, all HTTP 200; p95 is the maximum of each small sample. Asset bytes were fully consumed, just as feed bodies were; no browser rendering or client decryption is included.
+
+| Endpoint | p50 ms | p95 / maximum ms | Response bytes |
+| --- | ---: | ---: | ---: |
+| Staging `/` | 91 | 271 | 888 |
+| Staging `/health` | 60 | 84 | 109 |
+| Staging built entry JavaScript | 148 | 731 | 233,086 |
+| Staging built stylesheet | 115 | 433 | 85,959 |
+| Staging `icon-192.png` | 83 | 507 | 4,584 |
+| Production `/` (unchanged control context) | 38 | 339 | 888 |
+
+The homepage and health medians rose from 37 / 18 ms before placement to 91 / 60 ms afterward; the homepage tail happened to fall. Cold/warm variance and ten observations prevent a firm regression estimate. The representative asset samples have no equivalent pre-placement baseline, so no asset speedup is claimed. This California-only evidence supports further staging diagnosis while leaving production and the generator unchanged. Any decision to retain placement must account for public delivery farther from Oregon, and the remaining feed latency needs investigation without weakening fresh security checks.
