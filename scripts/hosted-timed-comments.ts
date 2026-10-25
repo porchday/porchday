@@ -6,8 +6,8 @@ import { createHash } from 'node:crypto';
 import { decryptObject, encryptObject, signStatement, unlockPrivateKey, type EncryptedEnvelope,
   type UnlockedPrivateKey } from '@porchday/crypto';
 import { check, readPrivate, writePrivate, stagingOrigin, SmokeClient, SmokeError } from './hosted-smoke-support.js';
-import { explicitAttempt, captureTimedWrite, assertTimedPayload, responseAfterAction, uuid,
-  type ExpectedWrite, type TimedBoundary, type CapturedWrite } from './hosted-timed-comments-support.js';
+import { explicitAttempt, captureTimedWrite, assertTimedPayload, responseAfterAction, waitForWarning, uuid,
+  type ExpectedWrite, type TimedBoundary, type WarningState } from './hosted-timed-comments-support.js';
 
 const directory = 'artifacts/private/hosted-smoke/', phase = 'timed-comments';
 let stage = 'preflight', attempt = '', sequence = 0, complete = false, cleanupArmed = false;
@@ -54,19 +54,34 @@ function observe(request: Request) {
   }));
 }
 function form() { return page!.locator('form.comment-composer'); }
-async function warning(parent: string, reply: boolean, fromPost = false) {
-  const text = await form().locator('.timer-warning').innerText();
-  check(text.includes(reply ? 'This reply will be deleted with the comment on' : 'This comment will be deleted with the post on') &&
-    text.includes('You can make its timeout shorter.') &&
-    text.includes('This deadline is inherited from the original post.') === fromPost, 'TIMED_WARNING_WORDING');
-  const shown = await form().locator('.timer-warning strong').innerText();
+async function warning(parent: string, reply: boolean, fromPost = false, parentId = boundary!.postId!) {
   const expected = await page!.evaluate(value => {
     let timeZone: string | undefined;
     try { timeZone = localStorage.getItem('porchday-timezone') || undefined; if (timeZone) new Intl.DateTimeFormat(undefined, { timeZone }).format(); }
     catch { timeZone = undefined; }
     return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short', timeZone }).format(new Date(value));
   }, parent);
-  check(shown === expected, 'TIMED_WARNING_DEADLINE');
+  const latest: { value?: WarningState } = {};
+  try {
+    await waitForWarning(async () => {
+      latest.value = await page!.evaluate(() => {
+        const composer = document.querySelector('form.comment-composer');
+        const warning = composer?.querySelector<HTMLElement>('.timer-warning'), text = warning?.innerText || '';
+        return { parentId: composer?.querySelector('textarea')?.id.replace(/^comment-/, '') || null,
+          deadline: warning?.querySelector('strong')?.textContent || null,
+          comment: text.includes('This comment will be deleted with the post on'),
+          reply: text.includes('This reply will be deleted with the comment on'),
+          shorter: text.includes('You can make its timeout shorter.'),
+          fromPost: text.includes('This deadline is inherited from the original post.') };
+      });
+      return latest.value;
+    }, { parentId, deadline: expected, reply, fromPost });
+  } catch (error) {
+    await receipt('warning-not-settled', { parentMatched: latest.value?.parentId === parentId, deadlineMatched: latest.value?.deadline === expected,
+      comment: latest.value?.comment, reply: latest.value?.reply, shorter: latest.value?.shorter, fromPost: latest.value?.fromPost,
+      expectedReply: reply, expectedFromPost: fromPost });
+    throw error;
+  }
 }
 async function selectCustom(locator: Locator, expiry: string) {
   await locator.getByRole('combobox', { name: 'Expiration', exact: true }).selectOption('custom');
@@ -101,10 +116,10 @@ async function comment(text: string, parentId: string, parentExpiry: string, exp
   else await selectCustom(form(), expiry);
   return submit({ kind: 'comment', parentId, expiresAt: expiry, acknowledged: parentExpiry, text, expectedStatus: 201 }, keyboard);
 }
-async function replyTo(text: string) {
+async function replyTo(text: string, parentId: string) {
   const row = page!.locator('.comment').filter({ has: page!.getByText(text, { exact: true }) });
   await row.getByRole('button', { name: 'Reply', exact: true }).click();
-  await form().getByLabel('Write a reply', { exact: true }).waitFor();
+  await form().locator('#comment-' + parentId).waitFor({ state: 'visible' });
 }
 async function cleanup() {
   cleanupArmed = true; if (!context || !boundary?.postId) return;
@@ -217,10 +232,10 @@ try {
   const inherited = await comment(inheritedText, boundary.postId!, parentExpiry, parentExpiry, true);
   progress('shorter-comment'); const shorterText = `Synthetic shorter comment ${attempt}`;
   const shorter = await comment(shorterText, boundary.postId!, parentExpiry, shortExpiry);
-  progress('reply-inherits-post'); await replyTo(inheritedText); await warning(parentExpiry, true, true);
+  progress('reply-inherits-post'); await replyTo(inheritedText, inherited.id); await warning(parentExpiry, true, true, inherited.id);
   check(await form().getByRole('combobox', { name: 'Expiration', exact: true }).inputValue() === 'inherit', 'REPLY_DEFAULT_INHERIT_REQUIRED');
   await comment(`Synthetic inherited reply ${attempt}`, inherited.id, parentExpiry, parentExpiry, true);
-  progress('reply-inherits-shorter-comment'); await replyTo(shorterText); await warning(shortExpiry, true, false);
+  progress('reply-inherits-shorter-comment'); await replyTo(shorterText, shorter.id); await warning(shortExpiry, true, false, shorter.id);
   await form().getByRole('combobox', { name: 'Expiration', exact: true }).selectOption('custom');
   check(await form().getByLabel('Custom expiration date and time', { exact: true }).getAttribute('max') === shortExpiry.slice(0, 16),
     'SHORT_REPLY_MAX_MISMATCH');

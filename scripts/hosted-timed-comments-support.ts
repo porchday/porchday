@@ -8,6 +8,21 @@ export type CapturedWrite = { id: string; kind: 'post' | 'comment'; parentId: st
   expiresAt: string; acknowledged: string | null; expectedStatus: 201 | 409; accepted: boolean };
 export type TimedBoundary = { member: string; device: string; postId?: string;
   captured: Map<string, CapturedWrite>; expected?: ExpectedWrite };
+export type WarningState = { parentId: string | null; deadline: string | null; comment: boolean;
+  reply: boolean; shorter: boolean; fromPost: boolean };
+export type ExpectedWarning = { parentId: string; deadline: string; reply: boolean; fromPost: boolean };
+
+/** Poll the exact expected state, never a fixed settling delay or a looser match. */
+export async function waitForWarning(read: () => Promise<WarningState>, expected: ExpectedWarning, timeout = 5000) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    const state = await read();
+    if (state.parentId === expected.parentId && state.deadline === expected.deadline && state.shorter &&
+      state.reply === expected.reply && state.comment === !expected.reply && state.fromPost === expected.fromPost) return state;
+    check(Date.now() < until, 'TIMED_WARNING_DID_NOT_SETTLE');
+    await new Promise(resolve => setTimeout(resolve, Math.min(25, until - Date.now())));
+  }
+}
 
 export function explicitAttempt(args: string[]) {
   check(args.length === 2 && args[0] === '--run' && /^--attempt=[a-f0-9]{8}$/.test(args[1]), 'EXPLICIT_TIMED_COMMENT_ATTEMPT_REQUIRED');

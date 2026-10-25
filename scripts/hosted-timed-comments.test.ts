@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { assertTimedPayload, captureTimedWrite, responseAfterAction, type TimedBoundary, type ExpectedWrite } from './hosted-timed-comments-support.js';
+import { assertTimedPayload, captureTimedWrite, responseAfterAction, waitForWarning, type TimedBoundary, type ExpectedWrite } from './hosted-timed-comments-support.js';
 
 function fixture() {
   const member = randomUUID(), device = randomUUID(), now = Date.now(), expiry = new Date(now + 7200000).toISOString();
@@ -25,6 +25,23 @@ function commentFixture() {
 }
 
 describe('Hosted timed comment boundaries', () => {
+  it('waits for the exact new parent and deadline, and rejects a warning that never settles', async () => {
+    vi.useFakeTimers();
+    try {
+      const expected = { parentId: 'new-parent', deadline: 'Shorter deadline', reply: true, fromPost: false };
+      let state = { parentId: 'old-parent', deadline: 'Original deadline', comment: false, reply: true, shorter: true, fromPost: true };
+      let settled = false;
+      const pending = waitForWarning(async () => state, expected, 200).then(() => { settled = true; });
+      await vi.advanceTimersByTimeAsync(50); expect(settled).toBe(false);
+      state = { ...state, parentId: expected.parentId };
+      await vi.advanceTimersByTimeAsync(50); expect(settled).toBe(false);
+      state = { ...state, deadline: expected.deadline, fromPost: false };
+      await vi.advanceTimersByTimeAsync(25); await pending; expect(settled).toBe(true);
+      const failure = expect(waitForWarning(async () => ({ ...state, fromPost: true }), expected, 100))
+        .rejects.toThrow('TIMED_WARNING_DID_NOT_SETTLE');
+      await vi.advanceTimersByTimeAsync(100); await failure;
+    } finally { vi.useRealTimers(); }
+  });
   it('refuses ambiguous invocation before fixture, browser or network access', () => {
     for (const args of [[], ['--run'], ['--run', '--attempt=12345678', '--account=B'], ['--run', '--attempt=../private']]) {
       const run = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/hosted-timed-comments.ts', ...args], {
