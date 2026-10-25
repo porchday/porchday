@@ -100,3 +100,23 @@ The separate public sample used ten sequential requests per endpoint, all HTTP 2
 | Production `/` | 40 | 363 |
 
 The production sample is context only; production was not changed by the staging driver experiment. A possible next controlled experiment is explicit staging placement near the existing Oregon database, using `placement: {region: "aws:us-west-2"}`. The installed Wrangler schema accepts that setting, and PlanetScale maps `us-west` to Oregon. It remains a proposal, not a deployed or verified optimization. Keep all existing fresh checks and measure public assets as well as the feed because assets currently traverse the placed Worker. [Cloudflare placement](https://developers.cloudflare.com/workers/configuration/placement/), [asset-routing behavior](https://developers.cloudflare.com/workers/static-assets/binding/), [PlanetScale region mapping](https://planetscale.com/docs/plans/regions).
+
+### Baseline after the journal recheck correction
+
+At approximately 18:10 UTC on October 25, staging `a19cb86`, deployment `f384074f-8b17-41ec-b1a6-df33f5927ecb`, was independently verified through `/health` and sampled once. This release includes the prepared-statement correction and the reviewed bounded privacy-checkpoint recheck/fixed failure taxonomy. Placement and phase diagnostics remain disabled; Better Auth joins, database tier and freshness checks remain unchanged. The earlier failed result above is retained; this is a new release checkpoint, not a silent retry.
+
+The fixture still had two surviving synthetic identities, but A now had **two registered devices** following hosted browser verification at 18:02:56. Historical envelopes were unchanged. Archive-test writes were held until this feed sample and A's logout completed. This device change and ordinary temporal/network variance prevent treating older samples as an identical controlled baseline.
+
+The runner made **100 authenticated feed reads at concurrency five**, all **HTTP 200**, with **zero classified errors**: client **p50 716 ms**, **p95 1,060 ms**, **maximum 1,515 ms**. It signed A out and made no content, relationship or key changes. This small sample passed the request-success criterion but still exceeds the 500 ms feed objective and does not establish pilot capacity. No additional retry was run.
+
+The read sample waited until the earlier media-deletion queue completed normally at 18:07:50.759; the operator observed zero pending items at 18:08:49. The associated monitoring-policy correction was not deployed for this measurement. Thus a pending delayed cleanup operation was not intentionally included in the feed baseline.
+
+Public checks immediately afterward used ten sequential requests per endpoint, all HTTP 200:
+
+| Endpoint | p50 ms | p95 / maximum ms |
+| --- | ---: | ---: |
+| Staging `/` | 37 | 595 |
+| Staging `/health` | 18 | 34 |
+| Production `/` | 30 | 490 |
+
+The recommended next experiment is a staging-only explicit Oregon placement change, independently verified and compared with a newly labelled sample of the current fixture. Keep the same driver/code, fresh journal/session/status checks, RLS, disabled query caching and database tier. Measure both the feed and public assets, preserve all failures, and revert or investigate if errors recur. This remains a recommendation; no placement setting or claimed improvement is part of this checkpoint.
