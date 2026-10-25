@@ -94,7 +94,7 @@ describe('Independent operational monitor',()=>{
     const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async(url)=>{
       if(String(url).endsWith('/api/operations/health'))return healthy();
       if(String(url).endsWith('/health'))return Response.json({status:'ok',service:'porchday',environment:'staging'});
-      return queryFails?new Response('private-provider-diagnostic',{status:403}):Response.json({data:[{route:'/health',requests:10,observations:10,server_errors:0,p95_ms:3,latest_timestamp:new Date().toISOString()}]});
+      return queryFails?new Response('private-provider-diagnostic',{status:403}):Response.json({data:[{route:'/health',requests:10,observations:10,server_errors:0,failed_requests:0,p95_ms:3,latest_timestamp:new Date().toISOString()}]});
     });
     for(let i=0;i<=10;i++)await f.tick(i);
     expect(fetcher.mock.calls.filter(([url])=>String(url).endsWith('/api/operations/health'))).toHaveLength(11);
@@ -110,7 +110,7 @@ describe('Independent operational monitor',()=>{
     vi.spyOn(globalThis,'fetch').mockImplementation(async(url)=>{
       if(String(url).endsWith('/api/operations/health'))return healthy();
       if(String(url).endsWith('/health'))return Response.json({status:'ok',service:'porchday',environment:'staging'});
-      return Response.json({data:[{route:'/health',requests:10,observations:10,server_errors:0,p95_ms:3,latest_timestamp:new Date().toISOString()},{route:'/api/v1/feed',requests:200,observations:100,server_errors:10,p95_ms:800,latest_timestamp:new Date().toISOString()}]});
+      return Response.json({data:[{route:'/health',requests:10,observations:10,server_errors:0,failed_requests:0,p95_ms:3,latest_timestamp:new Date().toISOString()},{route:'/api/v1/feed',requests:200,observations:100,server_errors:10,failed_requests:10,p95_ms:800,latest_timestamp:new Date().toISOString()}]});
     });
     for(let i=0;i<10;i++)await f.tick(i);
     f.mail.mockRejectedValueOnce(Error('private-provider-diagnostic'));vi.spyOn(console,'log').mockImplementation(()=>{});
@@ -120,6 +120,24 @@ describe('Independent operational monitor',()=>{
     await f.tick(15);expect(f.mail).toHaveBeenCalledTimes(3);expect(f.mail.mock.calls[2][0].subject).toContain('feed latency');
     const snapshot=await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json();expect(snapshot).toMatchObject({status:'degraded',metrics_monitoring:'ready'});
     expect(await(await worker.fetch(new Request('https://status.porchday.com/'),f.env)).text()).toContain('Performance and telemetry monitoring is receiving data.');
+  });
+  it('delivers bounded auth/recovery notices without publishing private failure channels or clearing them on idle traffic',async()=>{
+    vi.useFakeTimers();const f=fixture();Object.assign(f.env,{METRICS_ENABLED:'true',ANALYTICS_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_ANALYTICS_READ_TOKEN:'private-read-only-capability-123456789'});
+    let mode:'bad'|'idle'|'good'='bad';
+    vi.spyOn(globalThis,'fetch').mockImplementation(async(url)=>{
+      if(String(url).endsWith('/api/operations/health'))return healthy();
+      if(String(url).endsWith('/health'))return Response.json({status:'ok',service:'porchday',environment:'staging'});
+      const rows=[{route:'/health',requests:10,observations:10,server_errors:0,failed_requests:0,p95_ms:3,latest_timestamp:new Date().toISOString()}];
+      if(mode!=='idle')for(const route of ['/api/auth/sign-in/email','/api/account-recovery/*'])rows.push({route,requests:100,observations:50,server_errors:0,failed_requests:mode==='bad'?20:0,p95_ms:3,latest_timestamp:new Date().toISOString()});
+      return Response.json({data:rows});
+    });
+    for(let minute=0;minute<=11;minute++)await f.tick(minute);
+    expect(f.mail).toHaveBeenCalledTimes(2);expect(f.mail.mock.calls[0][0].subject).toContain('authentication failures');expect(f.mail.mock.calls[1][0].subject).toContain('account-recovery failures');
+    const status=await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json();expect(status).toEqual({status:'operational',last_checked_at:new Date(start+11*60000).toISOString(),metrics_monitoring:'ready'});
+    mode='idle';for(let minute=12;minute<=20;minute++)await f.tick(minute);expect(f.mail).toHaveBeenCalledTimes(2);
+    mode='good';for(let minute=21;minute<=31;minute++)await f.tick(minute);expect(f.mail).toHaveBeenCalledTimes(4);
+    expect(f.mail.mock.calls[2][0].subject).toContain('authentication failures recovered');expect(f.mail.mock.calls[3][0].subject).toContain('account-recovery failures recovered');
+    expect(JSON.stringify([...f.storage.data])).not.toMatch(/private-|operator@example/);
   });
   it('bounds parallel check and one email stall below the Durable Object concurrency-gate deadline',async()=>{
     vi.useFakeTimers();vi.setSystemTime(start);const f=fixture();Object.assign(f.env,{METRICS_ENABLED:'true',ANALYTICS_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_ANALYTICS_READ_TOKEN:'private-read-only-capability-123456789'});

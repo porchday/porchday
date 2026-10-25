@@ -27,7 +27,7 @@ Positions have stable meanings. Change the schema marker/dataset version before 
 | blob1 | `porchday_metrics_v1` |
 | blob2 | development, staging or production |
 | blob3 | request, job, email, error, or staging-only feed_phase |
-| blob4 | `/api/v1/feed`, a fixed allowlisted auth action, `/api/auth/*`, `/api/*`, `/assets/*`, `/health`, or `none` |
+| blob4 | `/api/v1/feed`, a fixed allowlisted auth action, `/api/auth/*`, `/api/account-recovery/*`, `/api/*`, `/api/operations/health`, `/assets/*`, `/health`, or `none` |
 | blob5 | Allowlisted HTTP method or `none` |
 | blob6 | Allowlisted operational code, fixed staging feed phase, or `none` |
 | blob7 | HTTP status class such as `5xx`, or `none` |
@@ -47,9 +47,12 @@ python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production coun
 python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production freshness
 python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production usage
 python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts staging feed-phases
+python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts staging security
 ```
 
 `CLOUDFLARE_ANALYTICS_READ_TOKEN` takes precedence over the existing setup token. Summary/counters/freshness use a 15-minute window; usage uses 30 days. The helper enforces fixed environment/query choices, a 30-second timeout, no redirects and a 1 MiB response limit. It makes no database or configuration changes.
+
+The `security` view uses the monitor's identical bounded 15-minute query and strict aggregate parser. It shows only fixed auth/recovery route labels, weighted requests/failures, observed rows and each channel's sufficient-sample verdict (`null` means insufficient evidence). A failed request is HTTP 4xx/5xx, including expected invalid/expired links and rate limits; it is not proof of takeover. The new recovery category discards all actual subpaths, IDs and query strings. Older points remain in `/api/*`; do not backfill them or treat a just-deployed channel as a complete historical sample. See the [independent monitor](independent-monitoring.md) for persistence, alert/recovery thresholds and delivery limits.
 
 ### Privacy-check failures
 

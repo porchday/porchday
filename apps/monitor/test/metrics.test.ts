@@ -1,10 +1,10 @@
 import {afterEach,describe,expect,it,vi} from 'vitest';
-import {checkMetrics,heartbeat,initialMetrics,metricsConfigured,metricsQuery,parseAggregates,performanceSignals,publicMetrics,readMetrics,type MetricsConfig} from '../src/metrics';
+import {checkMetrics,heartbeat,initialMetrics,metricsConfigured,metricsQuery,parseAggregates,performanceSignals,securitySignals,metricsAlertText,publicMetrics,readMetrics,type MetricsConfig} from '../src/metrics';
 
 afterEach(()=>{vi.restoreAllMocks();vi.useRealTimers();});
 const now=Date.UTC(2026,9,25,12);
 const env:MetricsConfig={ENVIRONMENT:'staging',METRICS_ENABLED:'true',ANALYTICS_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_ANALYTICS_READ_TOKEN:'synthetic-read-only-capability-123456789'};
-const row=(route='/api/v1/feed',overrides:Record<string,unknown>={})=>({route,requests:'200',observations:100,server_errors:0,p95_ms:100,latest_timestamp:new Date(Date.now()).toISOString(),...overrides});
+const row=(route='/api/v1/feed',overrides:Record<string,unknown>={})=>({route,requests:'200',observations:100,server_errors:0,failed_requests:overrides.server_errors??0,p95_ms:100,latest_timestamp:new Date(Date.now()).toISOString(),...overrides});
 const response=(rows:unknown[])=>Response.json({data:rows});
 const beat=()=>Response.json({status:'ok',service:'porchday',environment:'staging'});
 
@@ -12,7 +12,7 @@ describe('Bounded private aggregate metrics consumer',()=>{
  it('uses only fixed SQL, sampling weights, validated account/environment and a dedicated read capability',async()=>{
   vi.useFakeTimers();vi.setSystemTime(now);
   const fetcher=vi.fn().mockResolvedValue(response([row()]));
-  expect(await readMetrics(env,now,fetcher)).toEqual([{route:'/api/v1/feed',requests:200,observations:100,server_errors:0,p95_ms:100,latest:now}]);
+  expect(await readMetrics(env,now,fetcher)).toEqual([{route:'/api/v1/feed',requests:200,observations:100,server_errors:0,failed_requests:0,p95_ms:100,latest:now}]);
   const [url,options]=fetcher.mock.calls[0];
   expect(url).toBe('https://api.cloudflare.com/client/v4/accounts/'+'a'.repeat(32)+'/analytics_engine/sql');
   expect(options).toMatchObject({method:'POST',redirect:'manual',headers:{Authorization:'Bearer '+env.CLOUDFLARE_ANALYTICS_READ_TOKEN}});
@@ -33,7 +33,7 @@ describe('Bounded private aggregate metrics consumer',()=>{
   vi.useFakeTimers();vi.setSystemTime(now);
   const fetcher=vi.fn().mockResolvedValue(new Response('private-provider-diagnostic',{status:403}));expect(await readMetrics(env,now,fetcher)).toBeNull();
   fetcher.mockResolvedValue(new Response('a'.repeat(16385)));expect(await readMetrics(env,now,fetcher)).toBeNull();
-  for(const bad of [{requests:1,observations:20},{requests:200,server_errors:201},{requests:'Infinity'},{observations:0},{observations:1.5},{p95_ms:-1},{route:'/private/member/id'},{latest_timestamp:'invalid private token'},{latest_timestamp:new Date(now+120000).toISOString()}])expect(()=>parseAggregates({data:[row('/api/v1/feed',bad)]},now)).toThrow('METRICS_RESPONSE');
+  for(const bad of [{requests:1,observations:20},{requests:200,server_errors:201},{failed_requests:201},{server_errors:10,failed_requests:9},{failed_requests:0.5},{requests:'Infinity'},{observations:0},{observations:1.5},{p95_ms:-1},{route:'/private/member/id'},{latest_timestamp:'invalid private token'},{latest_timestamp:new Date(now+120000).toISOString()}])expect(()=>parseAggregates({data:[row('/api/v1/feed',bad)]},now)).toThrow('METRICS_RESPONSE');
   expect(()=>parseAggregates({data:[row(),row()]},now)).toThrow();expect(()=>parseAggregates({data:Array(33).fill(row())},now)).toThrow();
   expect(parseAggregates({data:[row('/health',{latest_timestamp:'2026-10-25 12:00:00',provider_debug:'private-response'})]},now)[0].latest).toBe(now);
  });
@@ -86,5 +86,24 @@ describe('Bounded private aggregate metrics consumer',()=>{
    const state=await checkMetrics(initialMetrics(),config,now,1,fetcher);expect(publicMetrics(state,now)).toBe('not_configured');
   }
   expect(fetcher).not.toHaveBeenCalled();
+ });
+ it('keeps aggregate credential/link failures separate, with both sample floors and no false idle recovery',async()=>{
+  vi.useFakeTimers();vi.setSystemTime(now);
+  const parse=(rows:unknown[])=>parseAggregates({data:rows},Date.now());
+  expect(securitySignals(parse([row('/api/auth/get-session',{failed_requests:200})]))).toEqual({authentication:null,recovery:null});
+  expect(securitySignals(parse([row('/api/auth/sign-in/email',{requests:100,failed_requests:20}),row('/api/account-recovery/*',{requests:100,failed_requests:19})]))).toEqual({authentication:false,recovery:true});
+  expect(securitySignals(parse([row('/api/account-recovery/*',{requests:10000,observations:1,failed_requests:10000})]))).toEqual({authentication:null,recovery:null});
+  let mode:'bad'|'thin'|'good'='bad';
+  const fetcher=vi.fn(async(url:RequestInfo|URL)=>String(url).endsWith('/health')?beat():response([row('/health'),row('/api/account-recovery/*',{requests:100,observations:mode==='thin'?1:50,failed_requests:mode==='bad'?20:0}),row('/api/auth/sign-in/email',{requests:100,failed_requests:0})]));
+  const legacy=initialMetrics();delete (legacy as any).authentication;delete (legacy as any).recovery;
+  let state=legacy;
+  for(const minute of [0,5,10]){vi.setSystemTime(now+minute*60000);state=await checkMetrics(state,env,Date.now(),minute,fetcher);}
+  expect(state.recovery.status).toBe('degraded');expect(state.recovery.pending?.kind).toBe('outage');expect(state.authentication.status).toBe('operational');
+  state.recovery.outageDelivered=true;state.recovery.pending=null;mode='thin';
+  for(const minute of [15,20]){vi.setSystemTime(now+minute*60000);state=await checkMetrics(state,env,Date.now(),minute,fetcher);}
+  expect(state.recovery.status).toBe('degraded');expect(state.recovery.pending).toBeNull();mode='good';
+  for(const minute of [25,30]){vi.setSystemTime(now+minute*60000);state=await checkMetrics(state,env,Date.now(),minute,fetcher);}
+  expect(state.recovery.status).toBe('operational');expect(state.recovery.pending?.kind).toBe('recovery');
+  const notice=metricsAlertText('staging','recovery','outage');expect(notice.text).toContain('No account action is automatic');expect(JSON.stringify(notice)).not.toContain(env.CLOUDFLARE_ANALYTICS_READ_TOKEN);
  });
 });

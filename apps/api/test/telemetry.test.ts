@@ -52,7 +52,8 @@ test('normalization separates fixed health probes, feed, auth actions and generi
  expect(normalizedRoute('/api/v1/feed')).toBe('/api/v1/feed');
  expect(normalizedRoute('/api/auth/sign-in/email')).toBe('/api/auth/sign-in/email');
  for(const path of ['/api/auth/reset-password/private-token','/api/auth/verify-email?token=private-token'])expect(normalizedRoute(path)).toBe('/api/auth/*');
- for(const path of ['/api/v1/posts/private-id','/api/account-recovery/private-token','/api/v1/profiles/private-handle'])expect(normalizedRoute(path)).toBe('/api/*');
+ for(const path of ['/api/v1/posts/private-id','/api/v1/profiles/private-handle'])expect(normalizedRoute(path)).toBe('/api/*');
+ expect(normalizedRoute('/api/account-recovery/verify-contact?token=private-token')).toBe('/api/account-recovery/*');
  expect(normalizedRoute('/app/reset?token=private-token')).toBe('/assets/*');
 });
 

@@ -37,7 +37,7 @@ export class Monitor {
       const now=Date.now(),state=observe(old,result.healthy,now,tick);
       // Persist before any email attempt. Storage failure cannot produce an
       // untracked email storm, and never affects the separate application.
-      const candidates=[{channel:'availability' as const,state},{channel:'telemetry' as const,state:metrics.telemetry},{channel:'latency' as const,state:metrics.latency},{channel:'errors' as const,state:metrics.errors}];
+      const candidates=[{channel:'availability' as const,state},{channel:'telemetry' as const,state:metrics.telemetry},{channel:'latency' as const,state:metrics.latency},{channel:'errors' as const,state:metrics.errors},{channel:'authentication' as const,state:metrics.authentication},{channel:'recovery' as const,state:metrics.recovery}];
       const selected=candidates.find(item=>item.state.pending&&item.state.pending.nextAttemptAt<=now);
       const pending=selected?.state.pending;
       const send=!!pending&&pending.nextAttemptAt<=now;

@@ -54,3 +54,9 @@ test('feed phase reader rejects production before making a request',async()=>{
  await expect(invoke('feed-phases',Response.json({data:[]}),'production')).rejects.toThrow('FEED_PHASES_STAGING_ONLY');
  expect(fetch).not.toHaveBeenCalled();
 });
+test('security view shares the monitor query and returns only validated fixed routes and aggregate failure evidence',async()=>{
+ const {fetcher,output,errors}=await invoke('security',Response.json({data:[{route:'/api/account-recovery/*',requests:100,observations:50,server_errors:0,failed_requests:25,p95_ms:5,latest_timestamp:new Date().toISOString(),private_debug:'private token'}]}));
+ expect((fetcher.mock.calls[0] as unknown as [string,RequestInit])[1].body).toContain('AS failed_requests');
+ expect(JSON.parse(output.mock.calls[0][0])).toEqual({environment:'staging',view:'security',signals:{authentication:null,recovery:false},data:[{route:'/api/account-recovery/*',requests:100,observations:50,failed_requests:25}]});
+ expect(JSON.stringify(output.mock.calls)).not.toContain('private');expect(errors).not.toHaveBeenCalled();
+});

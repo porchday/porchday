@@ -1,12 +1,14 @@
 /** Fixed read-only aggregate queries. Credentials stay in the process environment. */
 import {FEED_PHASES} from '../apps/api/src/telemetry';
+import {metricsQuery,parseAggregates,securitySignals} from '../apps/monitor/src/metrics';
 const environment=process.argv[2],view=process.argv[3]??'summary';
-if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_SUMMARY_COUNTERS_FRESHNESS_USAGE_OR_FEED_PHASES');
+if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','security'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_SUMMARY_COUNTERS_FRESHNESS_USAGE_FEED_PHASES_OR_SECURITY');
 if(view==='feed-phases'&&environment!=='staging')throw Error('FEED_PHASES_STAGING_ONLY');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_ANALYTICS_READ_TOKEN??process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
 if(!account||!/^[a-f0-9]{32}$/.test(account)||!token)throw Error('ANALYTICS_READ_CREDENTIALS_REQUIRED');
 const dataset='porchday_'+environment+'_operations_v1';
 const queries={
+ security:metricsQuery(environment as 'staging'|'production'),
  'feed-phases':`SELECT blob6 AS phase,count() AS observed_points,sum(_sample_interval) AS events,
   sum(double2*_sample_interval)/sum(_sample_interval) AS mean_ms,
   quantileExactWeighted(0.50)(double2,_sample_interval) AS p50_ms,
@@ -62,10 +64,16 @@ try{
   }
   return safe;
  }
+ if(view==='security'){
+  const rows=parseAggregates(result,Date.now());
+  const data=rows.filter(row=>['/api/auth/sign-in/email','/api/auth/reset-password','/api/auth/verify-email','/api/auth/*','/api/account-recovery/*'].includes(row.route)).map(({route,requests,observations,failed_requests})=>({route,requests,observations,failed_requests}));
+  console.log(JSON.stringify({environment,view,signals:securitySignals(rows),data},null,2));
+ }else{
  const data=view==='feed-phases'
   ?phaseRows(result.data)
   :result.data.map((row:Record<string,unknown>)=>Object.fromEntries(Object.entries(row).filter(([key,value])=>columns.has(key)&&(value===null||typeof value==='number'||(typeof value==='string'&&value.length<=80)))));
  console.log(JSON.stringify({environment,view,data},null,2));
+ }
 }catch(error){
  const code=(error as Error).message;
  console.error(/^ANALYTICS_[A-Z_]+$/.test(code)?code:'ANALYTICS_QUERY_UNAVAILABLE');process.exitCode=1;

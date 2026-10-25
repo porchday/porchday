@@ -5,12 +5,13 @@ import type {Env,Variables} from './types';
 
 const count=z.number().int().nonnegative();
 export const operationalSnapshotSchema=z.object({
- version:z.literal(2),
+ version:z.literal(3),
  cleanup_age_seconds:count.nullable(),deletion_pending:count,deletion_age_seconds:count,
  deletion_first_pass_pending:count,deletion_first_pass_age_seconds:count,
  deletion_final_pass_pending:count,deletion_final_pass_overdue_seconds:count,
  identity_pending:count,identity_age_seconds:count,email_pending:count,email_failed:count,email_age_seconds:count,
  web_push_pending:count,native_push_pending:count,
+ moderation_pending:count,moderation_age_seconds:count,recovery_pending:count,recovery_age_seconds:count,
 }).strict();
 export function operationalIssues(snapshot:z.infer<typeof operationalSnapshotSchema>){
  const issues:string[]=[];
@@ -20,6 +21,10 @@ export function operationalIssues(snapshot:z.infer<typeof operationalSnapshotSch
  if(snapshot.deletion_first_pass_age_seconds>600||snapshot.deletion_final_pass_overdue_seconds>300)issues.push('media_deletion_backlog');
  if(snapshot.identity_age_seconds>300)issues.push('identity_deletion_backlog');
  if(snapshot.email_age_seconds>300||snapshot.email_failed>0)issues.push('account_email_backlog');
+ // Provisional review escalation, not a staffed response-time guarantee.
+ // Original enqueue/verification times survive assignment and retries.
+ if(snapshot.moderation_age_seconds>24*60*60)issues.push('moderation_review_backlog');
+ if(snapshot.recovery_age_seconds>24*60*60)issues.push('recovery_review_backlog');
  return issues;
 }
 export const mediaBackupSnapshotSchema=z.object({
@@ -41,7 +46,7 @@ async function operationsDb<T>(env:Pick<Env,'HYPERDRIVE_JOBS'>,work:(sql:ReturnT
 export const recordCleanupSuccess=(env:Pick<Env,'HYPERDRIVE_JOBS'>)=>operationsDb(env,async sql=>{await sql`select app.record_cleanup_success()`;});
 type HealthEnvironment=Pick<Env,'HYPERDRIVE_JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'MEDIA_BACKUP_ENABLED'|'MEDIA_BACKUP'|'RECOVERY_JOURNAL'>>;
 export const readOperationalHealth=(env:HealthEnvironment)=>operationsDb(env,async sql=>{
- const [row]=await sql`select app.operational_snapshot_v2() as value,app.media_backup_health() as backup`;
+ const [row]=await sql`select app.operational_snapshot_v3() as value,app.media_backup_health() as backup`;
  const snapshot=operationalSnapshotSchema.parse(row.value),issues=operationalIssues(snapshot);
  const backup=mediaBackupSnapshotSchema.parse(row.backup);
  if(env.ENVIRONMENT==='staging'||env.ENVIRONMENT==='production'){

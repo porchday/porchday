@@ -10,7 +10,7 @@ const feedPhases=new Set<string>(FEED_PHASES);
 const codes=new Set(['accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry','outbox_retry','outbox_delivered','email_outbox_retry','recovery_email_retry','media_backup_retry','journal_not_initialized','restore_quarantined','database_rollback_detected','journal_not_configured','journal_unavailable','journal_store_read_failed','journal_control_invalid','journal_database_read_failed','journal_database_status_invalid']);
 const methods=new Set(['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']);
 const environments=new Set(['development','staging','production']);
-const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/auth/*','/api/*','/assets/*',
+const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/auth/*','/api/account-recovery/*','/api/*','/assets/*',
  ...['sign-in/email','sign-up/email','sign-out','get-session','verify-email','request-password-reset','reset-password','send-verification-email','change-password','list-sessions','revoke-session','revoke-sessions'].map(route=>'/api/auth/'+route)]);
 type Fields={route?:string;method?:string;status?:number;durationMs?:number;code?:string;environment?:string;count?:number};
 type MetricsEnvironment=Pick<Env,'ENVIRONMENT'|'METRICS'|'FEED_PHASE_TIMING'>;
@@ -53,5 +53,6 @@ export function event(name:'request'|'job'|'email'|'error'|'feed_phase',fields:F
 export function normalizedRoute(path:string):string{
  if(routes.has(path))return path;
  if(path.startsWith('/api/auth/'))return '/api/auth/*';
+ if(path.startsWith('/api/account-recovery/'))return '/api/account-recovery/*';
  return path.startsWith('/api/')?'/api/*':'/assets/*';
 }

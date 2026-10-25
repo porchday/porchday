@@ -13,7 +13,7 @@ describe('Monitor with a real local Durable Object',()=>{
         const path=new URL(request.url).pathname;
         if(path==='/api/operations/health')return Response.json({status:'ok',issues:[],snapshot:{cleanup_age_seconds:0}});
         if(path==='/health')return Response.json({status:'ok',service:'porchday',environment:'staging'});
-        if(path.endsWith('/analytics_engine/sql'))return Response.json({data:[{route:'/health',requests:'1',observations:'1',server_errors:'0',p95_ms:'10',latest_timestamp:new Date().toISOString()}]});
+        if(path.endsWith('/analytics_engine/sql'))return Response.json({data:[{route:'/health',requests:'1',observations:'1',server_errors:'0',failed_requests:'0',p95_ms:'10',latest_timestamp:new Date().toISOString()}]});
         return new Response(null,{status:500});
       }}));
       try{

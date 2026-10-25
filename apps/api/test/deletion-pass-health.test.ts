@@ -41,7 +41,7 @@ suite('real PostgreSQL deletion pass acknowledgements and operational deadlines'
   expect(first.first_deleted_at).toBeInstanceOf(Date);expect(first.completed_at).toBeNull();expect(first.attempts).toBe(1);expect(objects.has(key)).toBe(false);
   expect(first.next_retry.getTime()-first.created_at.getTime()).toBe(600000);
   const health=await readOperationalHealth(env);
-  expect(health.snapshot).toMatchObject({version:2,deletion_pending:1,deletion_first_pass_pending:0,deletion_first_pass_age_seconds:0,deletion_final_pass_pending:1,deletion_final_pass_overdue_seconds:0});
+  expect(health.snapshot).toMatchObject({version:3,deletion_pending:1,deletion_first_pass_pending:0,deletion_first_pass_age_seconds:0,deletion_final_pass_pending:1,deletion_final_pass_overdue_seconds:0});
   expect(health.issues).toEqual([]);
   await cleanupExpired(env);expect(deletes).toBe(1); // The not-yet-due final pass is not claimed.
   // Advance this disposable fixture's creation point; no live clock/queue is changed.

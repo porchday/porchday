@@ -19,7 +19,7 @@ This file records notable development changes. Porchday has no published GitHub 
 - Improved chronological feed query performance and recorded the scope of local measurements.
 - Gave retried native photo uploads fresh media identities and added clear busy/retry feedback while preserving sequential uploads.
 - Bounded encrypted-media parsing and upload concurrency, preserved failed-upload cleanup ownership, and exercised maximum-size synthetic uploads and backup/restore with isolated Cloudflare resources.
-- Verified native simulator CI and local/database/runtime checks for the recorded revisions. Added separate monitoring readiness and sustained alert rules; deployed alert delivery remains unverified.
+- Verified native simulator CI and local/database/runtime checks for the recorded revisions. Added separate monitoring readiness and sustained alert rules. The owner confirmed the deployed staging availability attention/recovery emails; performance and telemetry-loss notification delivery remain separate unverified checks.
 - Added contribution, conduct, private security-reporting and branding policies. A verified restricted reporting contact, independent conduct contact and branding-rights ownership record remain launch gates.
 - Added persistent selective posting/upload/invitation pauses that preserve authorized reads and account safety actions, with an incident-response runbook and regression checks.
 - Documented the portable archive schema, version policy, synthetic standalone/multipart samples and importer interface. Added contract checks against the real ZIP and encryption implementations.

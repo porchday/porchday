@@ -1,0 +1,21 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.md]
+# Markdown uses two trailing spaces for an intentional hard line break.
+trim_trailing_whitespace = false
+
+[docs/archive/sample/**]
+# These bytes are checksum-bound interoperability fixtures.
+insert_final_newline = false
+trim_trailing_whitespace = false
+
+[third-party-licenses/**]
+# Preserve upstream license texts verbatim.
+insert_final_newline = false
+trim_trailing_whitespace = false

@@ -10,12 +10,12 @@ export type MetricsReadiness='not_configured'|'checking'|'ready'|'unavailable';
 export interface MetricsState {
  v:1;startedAt:number|null;lastPollTick:number;checkedAt:number|null;
  readiness:MetricsReadiness;heartbeatLastAt:number|null;
- latency:MonitorState;errors:MonitorState;telemetry:MonitorState;
+ latency:MonitorState;errors:MonitorState;telemetry:MonitorState;authentication:MonitorState;recovery:MonitorState;
 }
-export const initialMetrics=():MetricsState=>({v:1,startedAt:null,lastPollTick:-1,checkedAt:null,readiness:'not_configured',heartbeatLastAt:null,latency:initialState(),errors:initialState(),telemetry:initialState()});
-const routes=['/health','/api/v1/feed','/api/*','/api/auth/*',...['sign-in/email','sign-up/email','sign-out','get-session','verify-email','request-password-reset','reset-password','send-verification-email','change-password','list-sessions','revoke-session','revoke-sessions'].map(route=>'/api/auth/'+route)];
+export const initialMetrics=():MetricsState=>({v:1,startedAt:null,lastPollTick:-1,checkedAt:null,readiness:'not_configured',heartbeatLastAt:null,latency:initialState(),errors:initialState(),telemetry:initialState(),authentication:initialState(),recovery:initialState()});
+const routes=['/health','/api/v1/feed','/api/*','/api/auth/*','/api/account-recovery/*',...['sign-in/email','sign-up/email','sign-out','get-session','verify-email','request-password-reset','reset-password','send-verification-email','change-password','list-sessions','revoke-session','revoke-sessions'].map(route=>'/api/auth/'+route)];
 const routeSet=new Set(routes);
-export interface Aggregate {route:string;requests:number;observations:number;server_errors:number;p95_ms:number;latest:number}
+export interface Aggregate {route:string;requests:number;observations:number;server_errors:number;failed_requests:number;p95_ms:number;latest:number}
 export function metricsConfigured(env:MetricsConfig):boolean {
  return env.METRICS_ENABLED==='true'&&['staging','production'].includes(env.ENVIRONMENT)&&/^[a-f0-9]{32}$/.test(env.ANALYTICS_ACCOUNT_ID??'')&&/^[^\s]{32,256}$/.test(env.CLOUDFLARE_ANALYTICS_READ_TOKEN??'');
 }
@@ -24,6 +24,7 @@ export function metricsQuery(environment:Environment):string {
  if(!['staging','production'].includes(environment))throw Error('METRICS_ENVIRONMENT');
  return `SELECT blob4 AS route, sum(_sample_interval) AS requests, count() AS observations,
  sum(if(double1>=500,_sample_interval,0)) AS server_errors,
+ sum(if(double1>=400,_sample_interval,0)) AS failed_requests,
  quantileExactWeighted(0.95)(double2,_sample_interval) AS p95_ms, max(timestamp) AS latest_timestamp
  FROM porchday_${environment}_operations_v1
  WHERE timestamp>NOW()-INTERVAL '15' MINUTE AND blob1='porchday_metrics_v1'
@@ -56,13 +57,13 @@ export function parseAggregates(value:unknown,now:number):Aggregate[] {
  const seen=new Set<string>();
  return data.map(row=>{
   if(!row||typeof row!=='object'||!routeSet.has(row.route)||seen.has(row.route))throw Error('METRICS_RESPONSE');seen.add(row.route);
-  const requests=number(row.requests),observations=number(row.observations,1e9),server_errors=number(row.server_errors),p95_ms=number(row.p95_ms,3600000);
-  if(!Number.isSafeInteger(requests)||!Number.isSafeInteger(observations)||!Number.isSafeInteger(server_errors)||observations<1||requests<observations||server_errors>requests)throw Error('METRICS_RESPONSE');
+  const requests=number(row.requests),observations=number(row.observations,1e9),server_errors=number(row.server_errors),failed_requests=number(row.failed_requests),p95_ms=number(row.p95_ms,3600000);
+  if(!Number.isSafeInteger(requests)||!Number.isSafeInteger(observations)||!Number.isSafeInteger(server_errors)||!Number.isSafeInteger(failed_requests)||observations<1||requests<observations||server_errors>failed_requests||failed_requests>requests)throw Error('METRICS_RESPONSE');
   const stamp=row.latest_timestamp;
   if(typeof stamp!=='string'||!/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z?$/.test(stamp))throw Error('METRICS_RESPONSE');
   const latest=Date.parse(stamp.replace(' ','T').replace(/Z?$/,'Z'));
   if(!Number.isFinite(latest)||latest>now+60000||latest<now-15*60000-60000)throw Error('METRICS_RESPONSE');
-  return{route:row.route,requests,observations,server_errors,p95_ms,latest};
+  return{route:row.route,requests,observations,server_errors,failed_requests,p95_ms,latest};
  });
 }
 export async function readMetrics(env:MetricsConfig,now:number,request:typeof fetch=fetch):Promise<Aggregate[]|null> {
@@ -91,8 +92,20 @@ export function performanceSignals(rows:Aggregate[]):{latency:boolean|null;error
  // traffic; a feed-latency incident still requires enough new feed evidence.
  return{latency:enoughFeed?feed!.p95_ms<=500:null,errors:enoughApi?!(errors>=5&&errors/count>=0.01):null};
 }
+/** Aggregate operational warning only: expected invalid/expired credentials
+ * also return 4xx. Never identify a person or automatically hold/block accounts. */
+export function securitySignals(rows:Aggregate[]):{authentication:boolean|null;recovery:boolean|null} {
+ const authRoutes=new Set(['/api/auth/sign-in/email','/api/auth/reset-password','/api/auth/verify-email','/api/auth/*']);
+ const signal=(selected:Aggregate[])=>{
+  const requests=selected.reduce((n,r)=>n+r.requests,0),observations=selected.reduce((n,r)=>n+r.observations,0),failures=selected.reduce((n,r)=>n+r.failed_requests,0);
+  return requests>=100&&observations>=20?!(failures>=20&&failures/requests>=0.20):null;
+ };
+ return{authentication:signal(rows.filter(row=>authRoutes.has(row.route))),recovery:signal(rows.filter(row=>row.route==='/api/account-recovery/*'))};
+}
 export async function checkMetrics(previous:MetricsState,env:MetricsConfig,now:number,tick:number,request:typeof fetch=fetch):Promise<MetricsState> {
  const state=structuredClone(previous);
+ // Additive upgrade of persisted v1 state; existing incidents are retained.
+ state.authentication??=initialState();state.recovery??=initialState();
  if(!metricsConfigured(env)){
   // Do not keep retrying stale performance alerts after an explicit disable.
   return initialMetrics();
@@ -112,14 +125,20 @@ export async function checkMetrics(previous:MetricsState,env:MetricsConfig,now:n
  state.telemetry=warming?uncertain(state.telemetry):observe(state.telemetry,state.readiness==='ready',now,tick);
  const signals=rows&&fresh?performanceSignals(rows):{latency:null,errors:null};
  for(const channel of ['latency','errors'] as const)state[channel]=signals[channel]===null?uncertain(state[channel]):observe(state[channel],signals[channel]!,now,tick);
+ const security=rows&&fresh?securitySignals(rows):{authentication:null,recovery:null};
+ for(const channel of ['authentication','recovery'] as const)state[channel]=security[channel]===null?uncertain(state[channel]):observe(state[channel],security[channel]!,now,tick);
  return state;
 }
 export function publicMetrics(state:MetricsState,now=Date.now()):MetricsReadiness {
  if(state.readiness==='not_configured')return 'not_configured';
  return state.checkedAt===null||now-state.checkedAt>7*60000?'unavailable':state.readiness;
 }
-export function metricsAlertText(environment:Environment,channel:'latency'|'errors'|'telemetry',kind:'outage'|'recovery') {
+export function metricsAlertText(environment:Environment,channel:'latency'|'errors'|'telemetry'|'authentication'|'recovery',kind:'outage'|'recovery') {
  const recovered=kind==='recovery';
+ if(channel==='authentication'||channel==='recovery'){
+  const label=channel==='authentication'?'authentication failures':'account-recovery failures';
+  return{subject:`Porchday ${environment}: ${label} ${recovered?'recovered':'need attention'}`,text:`Porchday ${environment} ${recovered?'passed two':'failed three'} consecutive five-minute ${label} polls. Each 15-minute window requires at least 100 weighted requests and 20 observed rows. Attention means at least 20 HTTP 4xx/5xx responses and a failure proportion of 20% or more. These are provisional aggregate review thresholds, not evidence of a compromised account; invalid or expired links and rate limits count too. Inspect private aggregate metrics and authorized support queues. Idle or insufficient traffic cannot establish recovery. No account action is automatic.`};
+ }
  const label=channel==='latency'?'feed latency':channel==='errors'?'API error checks':'metrics monitoring';
  const text=channel==='telemetry'
   ?`Porchday ${environment} metrics monitoring ${recovered?'passed two':'failed three'} consecutive five-minute polls. A healthy metrics check requires a successful bounded query and a GET /health observation within five minutes. Query or ingestion failure means monitoring is unavailable; this does not itself establish an application outage. Inspect the private monitoring configuration and aggregate metrics.`
