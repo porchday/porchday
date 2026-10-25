@@ -46,303 +46,196 @@ export function Landing() {
   return (
     <>
       <PublicHeader />
-      <main id="main-content">
-        <section className="hero wrap">
-          <div className="hero-copy">
-            <span className="eyebrow">
-              <span className="status-dot" /> A SMALLER CORNER OF THE INTERNET
-            </span>
-            <h1>
-              a late 90s style
-              <br />
-              social network<span className="coral">.</span>
-            </h1>
-            <p className="hero-promise">
-              No ads. No influencers. No algorithm.
-            </p>
-            <p className="hero-description">
-              A little less scrolling. A little more connection.
-              <br className="desktop" /> Your friends, your family, and the
-              everyday things
-              <br className="desktop" /> that bring you closer.
-            </p>
-            <div className="hero-actions">
-              <a href="/join" className="button primary">
-                Find your people <Icon name="arrow" size={19} />
-              </a>
-              <span className="invitation-note">
-                Starting small.
-                <br />
-                By invitation.
-              </span>
-            </div>
-            <div className="hero-mission">
-              <Icon name="leaf" size={22} />
-              <p>
-                Designed for nonprofit stewardship.
-                <br />
-                <strong>For the public good. Funded by philanthropy.</strong>
-              </p>
-            </div>
-          </div>
-          <div
-            className="hero-art"
-            aria-label="An illustrated preview of a personal Porchday wall"
-          >
-            <span className="art-caption">a place to just be you ↘</span>
-            <div className="art-sun">
-              <Icon name="sun" size={78} />
-            </div>
-            <div className="preview-window">
-              <div className="window-bar">
-                <span />
-                <span />
-                <span />
-                <small>your little corner</small>
-                <Icon name="lock" size={12} />
+      <main id="main-content" className="classic-home wrap">
+        <div className="classic-status">
+          A place for friends & family.{" "}
+          <span>Adults 18+ · Invitation-only pilot</span>
+        </div>
+        <div className="classic-columns">
+          <aside className="classic-side">
+            <section className="classic-box">
+              <h2>Welcome to Porchday</h2>
+              <div className="classic-box-body">
+                <p>Already have an account?</p>
+                <a className="button primary" href="/login">
+                  Member log in
+                </a>
+                <p>Have an invitation?</p>
+                <a href="/join">Join Porchday »</a>
               </div>
-              <div className="preview-cover">
-                <span className="cover-sparkle">✳</span>
-                <span>
-                  ordinary days.
-                  <br />
-                  <em>good company.</em>
-                </span>
-                <div className="cover-flower">✿</div>
+            </section>
+            <section className="classic-box">
+              <h2>Site directory</h2>
+              <nav className="classic-directory" aria-label="Site directory">
+                <a href="/about">What is Porchday?</a>
+                <a href="/principles">Our promises</a>
+                <a href="/privacy">Your data & privacy</a>
+                <a href="/community">Community rules</a>
+                <a href="/help">Help & contact</a>
+              </nav>
+            </section>
+            <section className="classic-box classic-note">
+              <h2>Remember personal websites?</h2>
+              <div className="classic-box-body">
+                <p>
+                  Your wall can be a little more <em>you</em>. Pick colors,
+                  change your background, share photos, and write about an
+                  ordinary day.
+                </p>
+                <p>No follower counts. No competition to be interesting.</p>
               </div>
-              <div className="preview-profile">
-                <span className="illustration-avatar">
-                  <svg viewBox="0 0 90 90">
-                    <circle cx="45" cy="45" r="45" fill="#dfad89" />
-                    <path d="M14 90c0-37 62-37 62 0" fill="#66866e" />
-                    <ellipse cx="45" cy="40" rx="19" ry="24" fill="#efcdb4" />
-                    <path
-                      d="M24 43c-12-28 24-45 41-17l1 23-9-17c-11 5-21 7-31 0"
-                      fill="#5b4336"
-                    />
-                    <path
-                      d="M39 49q6 5 12 0"
-                      fill="none"
-                      stroke="#a16f55"
-                      strokeWidth="2"
-                    />
-                    <circle cx="37" cy="40" r="1.4" />
-                    <circle cx="52" cy="40" r="1.4" />
-                  </svg>
-                </span>
+            </section>
+            <div className="classic-badges" aria-label="Our commitments">
+              <span>AD-FREE</span>
+              <span>HUMANS ONLY</span>
+              <span>YOUR DATA</span>
+            </div>
+          </aside>
+          <div className="classic-content">
+            <section className="classic-welcome classic-box">
+              <h1>a late 90s style social network</h1>
+              <div className="classic-box-body">
+                <p className="classic-promise">
+                  No ads. No influencers. No algorithm.
+                </p>
+                <p>
+                  Just your friends, your family, and what they’ve been up to. A
+                  wall of your own. A feed in time order. A little corner of the
+                  internet that feels personal again.
+                </p>
+                <p>
+                  <strong>For the public good. Funded by philanthropy.</strong>{" "}
+                  We’re building Porchday for nonprofit stewardship, with no ads
+                  and no sale of your data.
+                </p>
+                <div className="classic-welcome-links">
+                  <a href="/join">Join with an invitation</a>
+                  <span aria-hidden="true"> | </span>
+                  <a href="/about">Read the idea</a>
+                </div>
+              </div>
+            </section>
+            <section className="classic-box">
+              <h2>A few things we believe in</h2>
+              <dl className="classic-features">
                 <div>
-                  <h3>Jamie’s little corner</h3>
-                  <p>books · plants · very slow Sundays</p>
+                  <dt>Friends, not followers</dt>
+                  <dd>
+                    Up to 300 mutual connections, including family. Real people
+                    operating their own accounts. No AI agents.
+                  </dd>
                 </div>
-                <span className="mini-tag">feeling good ☀</span>
+                <div>
+                  <dt>Newest posts first</dt>
+                  <dd>
+                    Your people’s eligible posts, in chronological order. No
+                    recommendations, sponsored posts, or engagement ranking.
+                  </dd>
+                </div>
+                <div>
+                  <dt>Your own little corner</dt>
+                  <dd>
+                    Personalize your wall, share photos, make named groups,
+                    leave comments, and add more than one reaction.
+                  </dd>
+                </div>
+                <div>
+                  <dt>Some moments can expire</dt>
+                  <dd>
+                    Set a timer for a post or comment. Replies inherit its
+                    deadline, and can disappear sooner.
+                  </dd>
+                </div>
+                <div>
+                  <dt>You control your data</dt>
+                  <dd>
+                    Export, integrate, migrate, or delete. Private social
+                    content is encrypted on your device.{" "}
+                    <a href="/privacy">How privacy works »</a>
+                  </dd>
+                </div>
+              </dl>
+            </section>
+            <section
+              className="classic-box classic-profile-example"
+              aria-label="Illustrated personal wall preview, not a real member"
+            >
+              <h2>
+                A wall of your own{" "}
+                <small>Illustrated example — no public posts</small>
+              </h2>
+              <div className="classic-profile-columns">
+                <div className="classic-profile-about">
+                  <h3>Jamie’s page</h3>
+                  <div className="classic-example-avatar" aria-hidden="true">
+                    J<span>✳</span>
+                  </div>
+                  <p>“probably watering my plants”</p>
+                  <table>
+                    <caption>About this illustrated profile</caption>
+                    <tbody>
+                      <tr>
+                        <th>Interests</th>
+                        <td>books, plants, slow Sundays</td>
+                      </tr>
+                      <tr>
+                        <th>Mood</th>
+                        <td>feeling good ☀</td>
+                      </tr>
+                      <tr>
+                        <th>Theme</th>
+                        <td>my little garden</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <div className="classic-example-wall">
+                  <h3>Jamie’s wall</h3>
+                  <article>
+                    <strong>Jamie</strong> <small>Today · Friends</small>
+                    <p>The best plans are sometimes no plans at all.</p>
+                    <div
+                      className="classic-example-photo"
+                      role="img"
+                      aria-label="Simple illustration of a sunny window and a plant"
+                    >
+                      <span aria-hidden="true">☀</span>
+                      <span aria-hidden="true">🪴</span>
+                    </div>
+                    <p className="classic-example-reactions">
+                      ♡ 3 &nbsp; ☀ 2 &nbsp; · &nbsp; 2 comments
+                    </p>
+                  </article>
+                  <div className="classic-example-comment">
+                    <strong>Sam:</strong> This looks like a good Sunday.
+                  </div>
+                </div>
               </div>
-              <div className="preview-post">
-                <div className="preview-post-head">
-                  <span className="mini-avatar">J</span>
-                  <div>
-                    <strong>Jamie</strong>
-                    <small>Today, 10:42 am · Friends</small>
-                  </div>
-                  <Icon name="more" size={18} />
-                </div>
-                <p>The best plans are sometimes no plans at all.</p>
-                <div
-                  className="garden-picture"
-                  role="img"
-                  aria-label="Illustration of a sunny windowsill with houseplants"
-                >
-                  <div className="window-light" />
-                  <div className="plant plant-one">
-                    <i />
-                    <i />
-                    <i />
-                    <i />
-                    <span />
-                  </div>
-                  <div className="plant plant-two">
-                    <i />
-                    <i />
-                    <i />
-                    <span />
-                  </div>
-                  <div className="coffee">
-                    <i />
-                  </div>
-                  <div className="table-line" />
-                </div>
-                <div className="preview-reactions">
-                  <span>♡ &nbsp; 3</span>
-                  <span>☀ &nbsp; 2</span>
-                  <small>2 comments</small>
-                </div>
+            </section>
+            <section className="classic-box">
+              <h2>A different kind of social network</h2>
+              <div className="classic-box-body">
+                <p>
+                  We believe the places where society connects should serve the
+                  public good. Porchday is being built for nonprofit stewardship
+                  and philanthropic funding.
+                </p>
+                <p>
+                  We’re an early, invitation-only pilot. Legal nonprofit status,
+                  governance, and public financial reporting are being
+                  established. We aren’t accepting tax-deductible donations
+                  here.
+                </p>
+                <p>
+                  Our planned <strong>Apache 2.0</strong> source release will
+                  make how it works open to everyone. The development repository
+                  is private for now.
+                </p>
+                <a href="/about">More about the project »</a>
               </div>
-              <div className="preview-bottom">
-                <Icon name="check" size={12} /> A quiet moment. Shared with your
-                people.
-              </div>
-            </div>
-            <div className="floating-note">
-              <span>✶</span> more catching up.
-              <br />
-              <em>less keeping up.</em>
-            </div>
-            <small className="illustration-label">
-              An illustrated preview. No public posts.
-            </small>
-          </div>
-        </section>
-        <div className="belief-strip">
-          <div className="wrap">
-            <span>
-              <Icon name="people" />
-              Friends, not followers
-            </span>
-            <span>
-              <Icon name="clock" />
-              Newest first. Always.
-            </span>
-            <span>
-              <Icon name="lock" />
-              Your life stays yours
-            </span>
-            <span>
-              <Icon name="sun" />A little more you
-            </span>
+            </section>
           </div>
         </div>
-        <section className="section wrap">
-          <div className="section-heading">
-            <span className="eyebrow">
-              REMEMBER WHEN THE INTERNET FELT PERSONAL?
-            </span>
-            <h2>Let’s bring a little of that back.</h2>
-            <p>
-              A space for the people you actually know. And the things you
-              actually want to share.
-            </p>
-          </div>
-          <div className="promise-grid">
-            <article>
-              <span className="feature-icon apricot">
-                <Icon name="people" size={26} />
-              </span>
-              <h3>
-                Your circle.{" "}
-                <br />
-                Not an audience.
-              </h3>
-              <p>
-                Up to 300 friends, including family. Mutual connections,
-                ordinary moments, and no follower counts to chase.
-              </p>
-              <span className="tiny-label">REAL PEOPLE. NO AI AGENTS.</span>
-            </article>
-            <article>
-              <span className="feature-icon sage">
-                <Icon name="clock" size={26} />
-              </span>
-              <h3>
-                Catch up.{" "}
-                <br />
-                Then carry on.
-              </h3>
-              <p>
-                Every eligible post from your people, newest first. No
-                recommendations, sponsored surprises, or engagement ranking.
-              </p>
-              <span className="tiny-label">
-                YOUR FEED, IN CHRONOLOGICAL ORDER.
-              </span>
-            </article>
-            <article>
-              <span className="feature-icon lavender">
-                <Icon name="wall" size={26} />
-              </span>
-              <h3>
-                A wall that feels{" "}
-                <br />
-                like your room.
-              </h3>
-              <p>
-                Pick your colors. Share a photo. Make a group. Leave a comment,
-                a little love, or a post that disappears tomorrow.
-              </p>
-              <span className="tiny-label">PERSONAL, IN THE BEST WAY.</span>
-            </article>
-          </div>
-        </section>
-        <section className="ownership wrap">
-          <div className="ownership-art" aria-hidden="true">
-            <div className="data-folder">
-              <Icon name="leaf" size={52} />
-              <span>
-                your memories.
-                <br />
-                <em>your choice.</em>
-              </span>
-            </div>
-            <span className="ownership-stamp">
-              YOURS
-              <br />
-              TO KEEP
-              <br />↗
-            </span>
-          </div>
-          <div>
-            <span className="eyebrow">
-              A GOOD SOCIAL NETWORK KNOWS ITS PLACE
-            </span>
-            <h2>
-              You control{" "}
-              <br />
-              your data.
-            </h2>
-            <p>
-              Export it. Connect your tools. Move to another platform. Or delete
-              it. Your memories belong to you.
-            </p>
-            <p className="small-copy">
-              Private social content is encrypted on your device. Our planned
-              Apache 2.0 source release will make how it works open to everyone;
-              the development repository is private for now.
-            </p>
-            <a href="/privacy" className="text-link">
-              Read our privacy promise <Icon name="arrow" size={18} />
-            </a>
-          </div>
-        </section>
-        <section className="mission-panel wrap">
-          <span className="eyebrow">GOOD COMPANY. A BETTER PURPOSE.</span>
-          <h2>
-            Built for people.
-            <br />
-            Supported by people.
-          </h2>
-          <p>
-            We believe the places where society connects should serve the public
-            good. Porchday is being built for nonprofit stewardship and
-            philanthropic funding, with no ads and no sale of your data.
-          </p>
-          <p className="mission-fine">
-            We’re an early, invitation-only pilot. Legal nonprofit status,
-            governance, and public financial reporting are being established. We
-            aren’t accepting tax-deductible donations here.
-          </p>
-          <a href="/about" className="button outline">
-            Meet the idea <Icon name="arrow" size={18} />
-          </a>
-          <span className="mission-daisy" aria-hidden="true">
-            ✳
-          </span>
-        </section>
-        <section className="closing wrap">
-          <span className="eyebrow">PULL UP A CHAIR</span>
-          <h2>There’s room for a kinder internet.</h2>
-          <a href="/join" className="button primary">
-            Join the Porchday pilot <Icon name="arrow" size={18} />
-          </a>
-          <p>For adults 18 and older. Invitation required.</p>
-        </section>
       </main>
       <PublicFooter />
     </>
@@ -447,9 +340,7 @@ export function AuthPage({
         <aside className="auth-aside">
           <span className="eyebrow">WELCOME TO YOUR LITTLE CORNER</span>
           <h1>
-            Good to{" "}
-            <br />
-            see you<span className="coral">.</span>
+            Good to see you<span className="coral">.</span>
           </h1>
           <p>
             A place for everyday moments,
@@ -670,12 +561,12 @@ export function AuthPage({
 }
 export function StolenAccount() {
   const action = useAction();
-  const [done, setDone] = useState("");
+  const [done, setDone] = useState(false);
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(e.currentTarget));
     await action.run(async () => {
-      const r = await post("/api/account-recovery/reports", {
+      await post("/api/account-recovery/reports", {
         accountReference: data.account_identifier,
         safeEmail: data.contact_email,
         compromisedAt: data.compromised_at
@@ -684,11 +575,7 @@ export function StolenAccount() {
         trustedMethod: data.trusted_method,
         description: data.description,
       });
-      setDone(
-        r.case_reference ||
-          r.reference ||
-          "Check your safe contact inbox for next steps.",
-      );
+      setDone(true);
     });
   }
   return (
@@ -696,19 +583,16 @@ export function StolenAccount() {
       <PublicHeader />
       <main id="main-content" className="narrow-page">
         <span className="eyebrow">ACCOUNT SAFETY</span>
-        <h1>
-          Let’s help you find
-          <br />
-          your way back.
-        </h1>
+        <h1>Let’s help you find your way back.</h1>
         <p>
           You can report a stolen account even if its email or password was
           changed. This report does not freeze or transfer an account by itself.
         </p>
         {done ? (
           <Alert success>
-            We received your request. If eligible, you’ll receive verification
-            at your safe contact address. Case reference: {done}
+            We received your request. Check your safe contact inbox for a
+            verification link and next steps. This response does not confirm
+            whether an account exists.
           </Alert>
         ) : (
           <form className="panel form-stack" onSubmit={submit}>

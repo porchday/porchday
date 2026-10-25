@@ -30,6 +30,7 @@ import { StaffConsole } from "./Staff";
 import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
 import "./styles.css";
+import "./retro.css";
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { failed: boolean }
