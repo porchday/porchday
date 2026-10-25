@@ -12,6 +12,7 @@ import { cleanupExpired, withMember } from './db';
 import { authPool } from './auth';
 import { event,normalizedRoute } from './telemetry';
 import type {Env,Variables} from './types';
+import {scheduleMediaBackup,processMediaBackup} from './media-backup';
 import {cleanupDeletedIdentities} from './identity-cleanup';
 import {cleanupAuthenticationMetadata} from './metadata-cleanup';
 import {processWebPush} from './social-push';
@@ -25,14 +26,14 @@ app.use('*',secureHeaders({
  contentSecurityPolicy:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'blob:','data:'],fontSrc:["'self'"],connectSrc:["'self'"],workerSrc:["'self'",'blob:'],objectSrc:["'none'"],baseUri:["'none'"],formAction:["'self'"],frameAncestors:["'none'"]},
  referrerPolicy:'no-referrer',xFrameOptions:'DENY',permissionsPolicy:{camera:[],microphone:[],geolocation:[]},
 }));
-app.use('/api/*',bodyLimit({maxSize:25*1024*1024,onError:c=>c.json({error:{code:'TOO_LARGE',message:'This upload is too large.'}},413)}));
 app.use('*',async(c,next)=>{
  const start=Date.now();c.set('requestId',crypto.randomUUID());
  await next();
  if(c.req.path.startsWith('/api/'))c.header('Cache-Control','private, no-store');
  c.header('X-Request-ID',c.get('requestId'));
- event('request',{route:normalizedRoute(c.req.path),method:c.req.method,status:c.res.status,durationMs:Date.now()-start,environment:c.env.ENVIRONMENT});
+ event('request',{route:normalizedRoute(c.req.path),method:c.req.method,status:c.res.status,durationMs:Date.now()-start},c.env);
 });
+app.use('/api/*',bodyLimit({maxSize:25*1024*1024,onError:c=>c.json({error:{code:'TOO_LARGE',message:'This upload is too large.'}},413)}));
 app.use('/api/*',async(c,next)=>{
  if(!['GET','HEAD','OPTIONS'].includes(c.req.method) && c.req.path!=='/api/integration/token'){
   const origin=c.req.header('Origin');
@@ -78,16 +79,19 @@ app.route('/api/v1',createSocialRoutes());
 app.route('/api/v1',createIntegrationConsentRoutes());
 app.all('/api/*',c=>c.json({error:{code:'NOT_FOUND'}},404));
 app.get('*',c=>c.env.ASSETS.fetch(c.req.raw));
-app.onError((_error,c)=>{event('error',{code:'request_failed',environment:c.env.ENVIRONMENT});return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
+app.onError((_error,c)=>{event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
 
 export { app };
 export default {
  fetch:app.fetch,
- async scheduled(_controller:ScheduledController,env:Env,ctx:ExecutionContext){
-  ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
+ async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext){
+  if(controller.cron==='17 3 * * *'){
+   if(env.MEDIA_BACKUP_ENABLED==='true')ctx.waitUntil(env.JOBS.send({kind:'media_backup_start'}));
+  }else ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
  },
  async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){
-  try {
+  const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start'].includes(m.body.kind));
+  if(cleanup.length)try {
    const results=await withPrivacyJournal(env,async()=>{
     const expired=await cleanupExpired(env);
     await cleanupDeletedIdentities(env);
@@ -98,8 +102,12 @@ export default {
    await processNativePush(env);
    await processAccountEmails(env);
    await recordCleanupSuccess(env);
-   event('job',{code:'cleanup_complete',count:results.deleted_objects,environment:env.ENVIRONMENT});
-   batch.ackAll();
-  }catch{event('error',{code:'cleanup_retry',environment:env.ENVIRONMENT});batch.retryAll({delaySeconds:60});}
+   event('job',{code:'cleanup_complete',count:results.deleted_objects},env);
+   for(const message of cleanup)message.ack();
+  }catch{event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
+  for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
+   try{if(message.body.kind==='media_backup_start'){await scheduleMediaBackup(env);message.ack();continue;}if(!message.body.id)throw Error('BACKUP_ID_REQUIRED');const result=await processMediaBackup(env,message.body.id);if(result==='busy')message.retry({delaySeconds:60});else message.ack();}
+   catch{event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
+  }
  }
 } satisfies ExportedHandler<Env,{kind:string;id?:string}>;

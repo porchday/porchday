@@ -16,10 +16,22 @@ base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev
 base['vars'].update(APP_URL='https://'+host,ENVIRONMENT=name)
 base['hyperdrive']=[{'binding':'HYPERDRIVE_'+r.upper(),'id':env['hyperdrive_'+r]} for r in ['auth','social','jobs']]
 base['r2_buckets']=[{'binding':'MEDIA','bucket_name':env['bucket']},{'binding':'RECOVERY_JOURNAL','bucket_name':env['recovery_journal_bucket']}]
+base['vars']['MEDIA_BACKUP_ENABLED']='false'
+if env.get('media_backup_enabled'):
+ if env.get('verified_pitr_days',0)<7 or not env.get('media_backup_bucket') or env['media_backup_bucket'] in [env['bucket'],env['recovery_journal_bucket']]:
+  raise SystemExit('Backup requires a separate private bucket and verified database PITR window of seven days.')
+ base['r2_buckets'].append({'binding':'MEDIA_BACKUP','bucket_name':env['media_backup_bucket']})
+ base['vars']['MEDIA_BACKUP_ENABLED']='true'
 base['vars']['VAPID_SUBJECT']='https://porchday.com/contact'
 base['queues']={'producers':[{'binding':'JOBS','queue':env['queue']}],'consumers':[{'queue':env['queue'],'max_batch_size':1,'max_batch_timeout':5,'max_retries':8,'dead_letter_queue':env['dead_letter_queue']}]}
-base['triggers']={'crons':['* * * * *']}
+base['triggers']={'crons':['* * * * *','17 3 * * *']}
 base['limits']={'cpu_ms':30000}
+# Disabling invocation logs alone does not establish that provider-enriched
+# console/error records omit token-bearing request URLs. Keep application log
+# persistence/tracing off; aggregate metrics and the independent monitor remain.
+base['observability']={'enabled':False,'logs':{'enabled':False,'invocation_logs':False},'traces':{'enabled':False}}
+base['logpush']=False
+base['analytics_engine_datasets']=[{'binding':'METRICS','dataset':'porchday_'+name+'_operations_v1'}]
 base['routes']=[{'pattern':host,'custom_domain':True}]
 for key in ['STAFF_ACCESS_ISSUER','STAFF_ACCESS_AUDIENCE']:
  if env.get(key.lower()):base['vars'][key]=env[key.lower()]

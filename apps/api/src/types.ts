@@ -1,8 +1,11 @@
 export interface Env {
+  METRICS?: AnalyticsEngineDataset;
   HYPERDRIVE_AUTH: Hyperdrive;
   HYPERDRIVE_SOCIAL: Hyperdrive;
   HYPERDRIVE_JOBS: Hyperdrive;
   MEDIA: R2Bucket;
+  MEDIA_BACKUP?: R2Bucket;
+  MEDIA_BACKUP_ENABLED?: string;
   RECOVERY_JOURNAL?: R2Bucket;
   ASSETS: Fetcher;
   EMAIL: SendEmail;

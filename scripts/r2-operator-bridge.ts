@@ -4,16 +4,16 @@ import {resolve4,resolve6,resolveCname,Resolver} from 'node:dns/promises';
 import {request as httpsRequest} from 'node:https';
 import type {JournalStore} from '../apps/api/src/privacy-journal.js';
 
-type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>};
+type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>;verifyMediaObject(value:{key:string;canonicalSha256:string;byteSize:number}):Promise<void>;restoreMediaObject(value:{snapshotId:string;key:string;sha256:string;byteSize:number}):Promise<void>};
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 /** A temporary private capability, never written to stdout, disk or command arguments. */
-export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucket?:string;journalAccess?:'read-only'|'read-write';hostname?:string;onProgress?:(phase:string)=>void},work:(bridge:Bridge)=>Promise<T>):Promise<T> {
+export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucket?:string;backupBucket?:string;journalAccess?:'read-only'|'read-write';hostname?:string;onProgress?:(phase:string)=>void},work:(bridge:Bridge)=>Promise<T>):Promise<T> {
   const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
   if(!account||!token)throw Error('CLOUDFLARE_OPERATOR_CREDENTIALS_REQUIRED');
   const hostname=options.hostname??'ops.porchday.com';
   if(!/^ops(?:-[a-f0-9]{8})?\.porchday\.com$/.test(hostname))throw Error('OPERATOR_HOSTNAME_INVALID');
-  for(const name of [options.journalBucket,options.mediaBucket].filter(Boolean))if(!/^porchday-[a-z0-9-]+$/.test(name!))throw Error('OPERATOR_BUCKET_INVALID');
-  if(options.mediaBucket===options.journalBucket)throw Error('OPERATOR_BUCKETS_MUST_DIFFER');
+  for(const name of [options.journalBucket,options.mediaBucket,options.backupBucket].filter(Boolean))if(!/^porchday-[a-z0-9-]+$/.test(name!))throw Error('OPERATOR_BUCKET_INVALID');
+  if(options.mediaBucket===options.journalBucket||(options.backupBucket&&[options.journalBucket,options.mediaBucket].includes(options.backupBucket)))throw Error('OPERATOR_BUCKETS_MUST_DIFFER');
   const bearer=randomBytes(32).toString('base64url'),script='porchday-ops-'+randomUUID().replaceAll('-','');
   async function api(path:string,method='GET',body?:unknown):Promise<any> {
     let response:Response;
@@ -58,6 +58,8 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
     async put(key,value,condition){const response=await call('/journal/put',{key,value,ifMatch:condition?.onlyIf?.etagMatches,ifNoneMatch:condition?.onlyIf?.etagDoesNotMatch});if(response.status===412)return null;if(!response.ok)throw Error('OPERATOR_WRITE_FAILED');const result=await response.json() as {etag:string};if(typeof result.etag!=='string')throw Error('OPERATOR_RESPONSE_INVALID');return {etag:result.etag};},
   };
   const bridge:Bridge={journal,
+    async verifyMediaObject(value){if(!(await call('/media/verify',value)).ok)throw Error('OPERATOR_MEDIA_VERIFICATION_FAILED');},
+    async restoreMediaObject(value){if(!(await call('/backup/restore',value)).ok)throw Error('OPERATOR_MEDIA_RESTORE_FAILED');},
     async deleteMediaObject(key){if(!(await call('/media/delete',{key})).ok)throw Error('OPERATOR_MEDIA_DELETE_FAILED');},
     async verifyConditionalWrites(){
       const key='probes/'+randomUUID()+'.json';
@@ -71,7 +73,7 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
     },
   };
   try{
-    const metadata={main_module:'operator.mjs',compatibility_date:'2026-10-01',observability:{enabled:false},bindings:[{type:'secret_text',name:'OPERATOR_BEARER',text:bearer},{type:'plain_text',name:'OPERATOR_EXPIRES_AT',text:String(Date.now()+60*60*1000)},{type:'plain_text',name:'JOURNAL_ACCESS',text:options.journalAccess??'read-write'},{type:'r2_bucket',name:'JOURNAL',bucket_name:options.journalBucket},...(options.mediaBucket?[{type:'r2_bucket',name:'MEDIA',bucket_name:options.mediaBucket}]:[])]};
+    const metadata={main_module:'operator.mjs',compatibility_date:'2026-10-01',observability:{enabled:false},bindings:[{type:'secret_text',name:'OPERATOR_BEARER',text:bearer},{type:'plain_text',name:'OPERATOR_EXPIRES_AT',text:String(Date.now()+60*60*1000)},{type:'plain_text',name:'JOURNAL_ACCESS',text:options.journalAccess??'read-write'},{type:'r2_bucket',name:'JOURNAL',bucket_name:options.journalBucket},...(options.mediaBucket?[{type:'r2_bucket',name:'MEDIA',bucket_name:options.mediaBucket}]:[]),...(options.backupBucket?[{type:'r2_bucket',name:'BACKUP',bucket_name:options.backupBucket}]:[])]};
     const form=new FormData();form.set('metadata',JSON.stringify(metadata));form.set('operator.mjs',new Blob([await readFile(new URL('./r2-operator-worker.mjs',import.meta.url),'utf8')],{type:'application/javascript+module'}),'operator.mjs');
     await api('/accounts/'+account+'/workers/scripts/'+script,'PUT',form);deployed=true;
     const domain=await api('/accounts/'+account+'/workers/domains','PUT',{hostname,service:script,enabled:true,previews_enabled:false,zone_id:zone});domainId=domain.id;if(typeof domainId!=='string')throw Error('OPERATOR_DOMAIN_RESPONSE_INVALID');options.onProgress?.('domain-attached-enabled-'+String(domain.enabled));

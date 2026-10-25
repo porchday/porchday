@@ -1,10 +1,12 @@
 import postgres from 'postgres';
+import {restoreMediaSnapshot} from './restore-media.js';
+import {backupReaderFromEnvironment} from './r2-backup-reader.js';
 import {withOperatorR2} from './r2-operator-bridge.js';
 import {initializePrivacyJournal,checkpointJournal,quarantineJournal,readJournalControl,verifyJournalChain,type JournalDatabase,JournalError} from '../apps/api/src/privacy-journal.js';
 import {replayPrivacyJournal,releasePrivacyQuarantine,reconcileDurableReceipts} from '../apps/api/src/restore-journal.js';
 
 const command=process.argv[2];
-const commands=['initialize','quarantine','verify','checkpoint-original','reconcile-receipts','replay','release'];
+const commands=['initialize','quarantine','verify','checkpoint-original','reconcile-receipts','replay','restore-media','release'];
 if(!command||!commands.includes(command))throw new Error('Use restore-safety.ts '+commands.join('|'));
 const bucket=process.env.RECOVERY_JOURNAL_BUCKET;
 if(!bucket)throw new Error('RECOVERY_JOURNAL_BUCKET is required.');
@@ -12,16 +14,18 @@ let sql:ReturnType<typeof postgres>|undefined;
 function database(original=false) {
   const url=original?process.env.ORIGINAL_DATABASE_MIGRATION_URL:process.env.DATABASE_MIGRATION_URL;
   if(!url)throw new Error(original?'ORIGINAL_DATABASE_MIGRATION_URL_REQUIRED':'DATABASE_MIGRATION_URL_REQUIRED');
-  sql=postgres(url,{max:1,prepare:false,fetch_types:false,ssl:process.env.PG_LOCAL==='true'?false:'verify-full',onnotice:()=>{}});
+  sql=postgres(url,{max:1,prepare:false,fetch_types:false,idle_timeout:0,ssl:process.env.PG_LOCAL==='true'?false:'verify-full',onnotice:()=>{}});
   const db:JournalDatabase={async status(){const[r]=await sql!`select app.safety_status() as value`;return r.value;},async page(after){const[r]=await sql!`select app.safety_page(${after}::bigint,200) as value`;return r.value;}};
   return db;
 }
 try {
-  const mediaBucket=command==='replay'?process.env.MEDIA_BUCKET:undefined;
-  if(command==='replay'&&(!mediaBucket||mediaBucket===bucket))throw new Error('SEPARATE_MEDIA_BUCKET_REQUIRED');
+  const mediaBucket=['replay','restore-media','release'].includes(command)?process.env.MEDIA_BUCKET:undefined;
+  const backupBucket=command==='restore-media'?process.env.MEDIA_BACKUP_BUCKET:undefined;
+  if(command==='restore-media'&&(!backupBucket||[bucket,mediaBucket].includes(backupBucket)))throw Error('SEPARATE_BACKUP_BUCKET_REQUIRED');
+  if(['replay','restore-media'].includes(command)&&(!mediaBucket||mediaBucket===bucket))throw new Error('SEPARATE_MEDIA_BUCKET_REQUIRED');
   // The native binding transport probes authentication and atomic conditional
   // writes before entering this callback, and tears down its temporary endpoint.
-  await withOperatorR2({journalBucket:bucket,mediaBucket,journalAccess:command==='verify'?'read-only':'read-write'},async({journal:store,deleteMediaObject})=>{
+  await withOperatorR2({journalBucket:bucket,mediaBucket,backupBucket,journalAccess:command==='verify'?'read-only':'read-write'},async({journal:store,deleteMediaObject,restoreMediaObject,verifyMediaObject})=>{
   if(command==='initialize') {
     await initializePrivacyJournal(store,database());
     console.log('Independent checkpoint initialized in quarantine. Review and release explicitly.');
@@ -51,10 +55,14 @@ try {
     database();
     console.log(JSON.stringify(await replayPrivacyJournal(store,sql!,deleteMediaObject)));
     console.log('Reconciliation complete; quarantine remains active. Revalidate staff Access roles before restoring staff access.');
+  } else if(command==='restore-media') {
+    const id=process.env.MEDIA_RESTORE_SNAPSHOT_ID,paired=process.env.MEDIA_RESTORE_PITR_AT;
+    if(!id||!paired)throw Error('MEDIA_SNAPSHOT_AND_PITR_TIME_REQUIRED');
+    database();console.log(JSON.stringify(await restoreMediaSnapshot({journal:store,sql:sql!,backup:backupReaderFromEnvironment(backupBucket!) as never,snapshotId:id,pairedTime:paired,restoreObject:restoreMediaObject})));
   } else if(command==='release') {
     database();const current=await readJournalControl(store);
     if(process.env.RESTORE_REVIEWED_SEQUENCE!==current.value.sequence)throw new Error('REVIEWED_CHECKPOINT_SEQUENCE_REQUIRED');
-    await releasePrivacyQuarantine(store,sql!);console.log('Reviewed checkpoint released. Reopen traffic only after application checks pass.');
+    await releasePrivacyQuarantine(store,sql!,async item=>{if(!mediaBucket)throw Error('MEDIA_BUCKET_REQUIRED');await verifyMediaObject(item);});console.log('Reviewed checkpoint released. Reopen traffic only after application checks pass.');
   }
   });
 } catch(error) {

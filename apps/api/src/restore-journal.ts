@@ -67,8 +67,19 @@ export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedi
   return {replayed,deletedObjects,heldAccounts:hold.size,sequence:verified.control.sequence};
 }
 
+export type MediaVerification = (item:{key:string;canonicalSha256:string;byteSize:number})=>Promise<void>;
+/** Bounded scan, no object bytes or SQL locks retained across the callback. */
+export async function verifyRestoredMedia(sql:Sql,verify?:MediaVerification){
+ let cursor='',verified=0;
+ for(;;){const rows=await sql`select object_key,envelope_sha256,byte_size from app.media_assets where object_key>${cursor} and state in('ready','attached') and(app.media_deadline(id) is null or app.media_deadline(id)>now()) order by object_key limit 50`;
+  if(!rows.length)return verified;
+  if(!verify)throw new JournalError('RESTORE_MEDIA_VERIFICATION_REQUIRED');
+  for(const row of rows){if(!/^[a-f0-9]{64}$/.test(row.envelope_sha256??''))throw new JournalError('RESTORE_MEDIA_DIGEST_MISSING');await verify({key:row.object_key,canonicalSha256:row.envelope_sha256,byteSize:Number(row.byte_size)});verified++;cursor=row.object_key;}
+ }
+}
+
 /** This explicit operator step never resolves uncertain intents or skips media. */
-export async function releasePrivacyQuarantine(store:JournalStore,sql:Sql) {
+export async function releasePrivacyQuarantine(store:JournalStore,sql:Sql,verifyMedia?:MediaVerification) {
   const {control}=await verifyJournalChain(store);
   const [local]=await sql`select app.safety_status() as value`;
   if(local.value.generation!==control.generation||local.value.sequence!==control.sequence)throw new JournalError('RESTORE_CHECKPOINT_MISMATCH');
@@ -81,6 +92,9 @@ export async function releasePrivacyQuarantine(store:JournalStore,sql:Sql) {
     or exists(select from public.auth_verification)
     or exists(select from app.integration_grants) as value`;
   if(blocked.value)throw new JournalError('RESTORE_CLEANUP_INCOMPLETE');
+  await verifyRestoredMedia(sql,verifyMedia);
+  const[aged]=await sql`select exists(select from app.posts where expires_at<=now()) or exists(select from app.comments where app.comment_deadline(id)<=now()) or exists(select from app.deletion_outbox where completed_at is null) as value`;
+  if(aged.value)throw new JournalError('RESTORE_CLEANUP_INCOMPLETE');
   const current=await readJournalControl(store);
   if(JSON.stringify(current.value)!==JSON.stringify(control))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
   await sql`update app.safety_journal_state set restore_quarantined=false where id`;

@@ -5,9 +5,14 @@ import {join} from 'node:path';
 import {randomUUID,createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import postgres,{type Sql} from 'postgres';
+import {Hono} from 'hono';
+import {createSocialRoutes} from '../apps/api/src/social.js';
+import type {Env,Variables} from '../apps/api/src/types.js';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
-import {generateDeviceKeys,unlockPrivateKey,encryptObject,decryptObject,type ContentContext,type EncryptedEnvelope} from '../packages/crypto/src/index.js';
+import {canonicalJson,generateDeviceKeys,unlockPrivateKey,encryptObject,decryptObject,type ContentContext,type EncryptedEnvelope} from '../packages/crypto/src/index.js';
 import {initializePrivacyJournal,readJournalControl,assertJournalReadable,beginPrivacyIntent,completePrivacyIntent,quarantineJournal,verifyJournalChain,type JournalDatabase,type JournalStore} from '../apps/api/src/privacy-journal.js';
+import {restoreMediaSnapshot} from './restore-media.js';
+import {beginMediaBackup,copyMediaBackupPage,verifyMediaBackup,backupDatabase} from '../apps/api/src/media-backup.js';
 import {replayPrivacyJournal,releasePrivacyQuarantine} from '../apps/api/src/restore-journal.js';
 
 // Creates two NEW databases only. Never selects the main application database,
@@ -26,7 +31,7 @@ let sourceCreated=false,targetCreated=false;
 const started=performance.now();
 function database(name:string){const url=new URL(adminUrl);url.pathname='/'+name;return postgres(url.toString(),{max:2,prepare:false,onnotice:()=>{}});}
 function journalDb(sql:Sql):JournalDatabase{return{async status(){const[r]=await sql`select app.safety_status() value`;return r.value;},async page(after){const[r]=await sql`select app.safety_page(${after}::bigint,200) value`;return r.value;}};}
-function r2(){return new Miniflare(convertV4MiniflareOptions({name:'restore-drill',modules:true,script:'export default {fetch(){return new Response("not exposed",{status:404})}}',compatibilityDate:'2026-10-01',resourcePersistencePath:join(directory,'r2'),r2Buckets:{JOURNAL:'drill-independent-journal',SOURCE_MEDIA:'drill-source-media',TARGET_MEDIA:'drill-target-media'}}));}
+function r2(){return new Miniflare(convertV4MiniflareOptions({name:'restore-drill',modules:true,script:'export default {fetch(){return new Response("not exposed",{status:404})}}',compatibilityDate:'2026-10-01',resourcePersistencePath:join(directory,'r2'),r2Buckets:{JOURNAL:'drill-independent-journal',SOURCE_MEDIA:'drill-source-media',TARGET_MEDIA:'drill-target-media',BACKUP:'drill-ciphertext-backup',RECONCILED_MEDIA:'drill-reconciled-media'}}));}
 async function docker(args:string[],input?:Uint8Array):Promise<Buffer>{return new Promise((resolve,reject)=>{
  const child=spawn('docker',['exec',...(input?['-i']:[]),container,...args],{stdio:['pipe','pipe','pipe']});const out:Buffer[]=[];let size=0;
  const timer=setTimeout(()=>{child.kill();reject(Error('LOCAL_DRILL_PROCESS_TIMEOUT'));},60_000);
@@ -63,10 +68,15 @@ try {
  for(const name of['deleted','timed','edited','surviving','shared'] as const){const id=ids[name],body=await envelope(id,'post',1,null,name==='shared'?'connections':'only_me');postEnvelopes.set(id,body);await source`insert into app.posts(id,author_id,audience,envelope,epoch,created_at) values(${id},${alice},${body.context.audience},${source.json(body)},1,${created})`;for(const recipient of body.recipients)await source`insert into app.post_recipients(post_id,device_id,member_id) values(${id},${recipient.deviceId},${recipient.memberId})`;}
  for(const [id,parent] of[[ids.deletedComment,ids.deleted],[ids.timedComment,ids.timed]]){const body=await envelope(id,'comment',1,parent);await source`insert into app.comments(id,post_id,author_id,envelope,created_at) values(${id},${parent},${alice},${source.json(body)},${created})`;}
  const mediaRecords: {key:string;file:string;sha256:string}[]=[];
+ const uploadApp=new Hono<{Bindings:Env;Variables:Variables}>();uploadApp.use('*',async(c,next)=>{c.set('memberId',alice);c.set('authTime',Date.now());await next();});uploadApp.route('/',createSocialRoutes());
+ const uploadURL=new URL(adminUrl);uploadURL.pathname='/'+sourceName;const uploadEnv={HYPERDRIVE_SOCIAL:{connectionString:uploadURL.toString()},MEDIA:sourceMedia} as unknown as Env;
  for(const [id,parent] of[[ids.deletedMedia,ids.deleted],[ids.survivingMedia,ids.surviving]]){
   const body=await envelope(id,'media',1,parent,'only_me',{mime:'image/jpeg',data:'synthetic-photo-bytes',alt:'Synthetic photo'}),bytes=Buffer.from(JSON.stringify(body));const key='media/'+alice+'/'+id;
-  await sourceMedia.put(key,bytes);const {ciphertext,...metadata}=body;
-  await source`insert into app.media_assets(id,owner_id,post_id,object_key,envelope,envelope_sha256,byte_size,state,created_at) values(${id},${alice},${parent},${key},${source.json(metadata)},${digest(bytes)},${bytes.length},'attached',${created})`;
+  assert.notEqual(digest(bytes),digest(canonicalJson(body)),'Real upload encoding must differ from canonical digest to cover backup regression');
+  const reserved=await uploadApp.request('https://porchday.test/media',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,envelope:body,byte_size:bytes.length})},uploadEnv);assert.equal(reserved.status,201);
+  const uploaded=await uploadApp.request('https://porchday.test/media/'+id+'/bytes',{method:'PUT',headers:{'content-type':'application/octet-stream'},body:bytes},uploadEnv);assert.equal(uploaded.status,200);
+  assert.equal((await source`select envelope_sha256 from app.media_assets where id=${id}`)[0].envelope_sha256,digest(canonicalJson(body)));
+  await source`update app.media_assets set post_id=${parent},state='attached' where id=${id}`;
   const file='media-'+id+'.json';await writeFile(join(directory,file),bytes,{mode:0o600});mediaRecords.push({key,file,sha256:digest(bytes)});
  }
  for(const member of[alice,bob])await source`insert into public.auth_session(id,"userId",token,"expiresAt") values(${randomUUID()},${member},${randomUUID()},now()+interval '1 day')`;
@@ -79,6 +89,9 @@ try {
  assert(await journal.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}}));
  await assertJournalReadable(journal,sourceDb);
  phase='BACKUP_DATABASE_AND_MEDIA';
+ const backup=await mf.getR2Bucket('BACKUP') as unknown as R2Bucket;const backupStorage={source:sourceMedia as unknown as R2Bucket,backup,journal,db:backupDatabase(source)};const backupID=await beginMediaBackup(backupStorage);
+ while(await copyMediaBackupPage(backupStorage,backupID)!=='complete'){}
+ const backupInfo=await backupStorage.db.info(backupID);assert.equal((await verifyMediaBackup(backup,backupID,backupInfo.restore_at)).objects,2);
  const dump=await docker(['pg_dump','--format=custom','--username=postgres','--dbname='+sourceName]);assert(dump.byteLength>1000);
  await writeFile(join(directory,'database.dump'),dump,{mode:0o600});await writeFile(join(directory,'media-manifest.json'),JSON.stringify({version:1,objects:mediaRecords}),{mode:0o600});
  const snapshotStatus=await sourceDb.status();
@@ -98,7 +111,8 @@ try {
  assert.equal((await readJournalControl(journal)).value.sequence,latest.sequence);
  phase='RESTORE_ISOLATED_DATABASE_AND_MEDIA';
  await docker(['pg_restore','--exit-on-error','--username=postgres','--dbname='+targetName],await readFile(join(directory,'database.dump')));
- const targetMedia=await mf.getR2Bucket('TARGET_MEDIA');for(const record of mediaRecords){const bytes=await readFile(join(directory,record.file));assert.equal(digest(bytes),record.sha256);await targetMedia.put(record.key,bytes);}
+ const targetMedia=await mf.getR2Bucket('TARGET_MEDIA');
+ await verifyMediaBackup(await mf.getR2Bucket('BACKUP') as unknown as R2Bucket,backupID,backupInfo.restore_at,async(item,bytes)=>{assert(bytes);await targetMedia.put(item.object_key,bytes);});
  const targetDb=journalDb(target);assert.equal((await targetDb.status()).sequence,snapshotStatus.sequence);
  assert.equal((await target`select count(*)::int n from app.posts`)[0].n,5);assert(await targetMedia.get('media/'+alice+'/'+ids.deletedMedia));
  const beforeReplay=await target.begin(async tx=>{await tx`set local role porchday_social`;await tx`select set_config('app.member_id',${alice},true)`;return tx`select id from app.posts`;});assert.equal(beforeReplay.length,5,'Restored RLS grants must be real, not absent');
@@ -120,7 +134,16 @@ try {
  assert.equal(await targetMedia.get('media/'+alice+'/'+ids.deletedMedia),null);
  assert.equal((await target`select id from app.deletion_outbox where completed_at is null`).length,0);
  await assert.rejects(assertJournalReadable(journal,targetDb),/RESTORE_QUARANTINED/);
- phase='EXPLICIT_RELEASE_AND_MEMBER_CHECKS';await releasePrivacyQuarantine(journal,target);await assertJournalReadable(journal,targetDb);
+ phase='RESTORE_ONLY_STILL_LIVE_BACKUP_OBJECTS';
+ const reconciled=await mf.getR2Bucket('RECONCILED_MEDIA'),persistedBackup=await mf.getR2Bucket('BACKUP');
+ const restoredMedia=await restoreMediaSnapshot({journal,sql:target,backup:persistedBackup as unknown as R2Bucket,snapshotId:backupID,pairedTime:backupInfo.restore_at,restoreObject:async item=>{
+  const sourceObject=await persistedBackup.get('snapshots/'+item.snapshotId+'/objects/'+item.key.slice(6));assert(sourceObject);const bytes=await sourceObject.arrayBuffer();assert.equal(digest(new Uint8Array(bytes)),item.sha256);assert.equal(bytes.byteLength,item.byteSize);await reconciled.put(item.key,bytes,{onlyIf:{etagDoesNotMatch:'*'}});
+ }});assert.equal(restoredMedia.copied,1);assert.equal(restoredMedia.discarded,1);assert.equal(await reconciled.get('media/'+alice+'/'+ids.deletedMedia),null);
+ phase='EXPLICIT_RELEASE_AND_MEMBER_CHECKS';
+ await assert.rejects(releasePrivacyQuarantine(journal,target),/RESTORE_MEDIA_VERIFICATION_REQUIRED/);
+ await assert.rejects(releasePrivacyQuarantine(journal,target,async()=>{throw Error('SYNTHETIC_MEDIA_VERIFY_FAILED');}),/SYNTHETIC_MEDIA_VERIFY_FAILED/);
+ await assert.rejects(assertJournalReadable(journal,targetDb),/RESTORE_QUARANTINED/);
+ await releasePrivacyQuarantine(journal,target,async item=>{const object=await reconciled.get(item.key);assert(object);const bytes=await object.arrayBuffer();assert.equal(bytes.byteLength,item.byteSize);assert.equal(digest(canonicalJson(JSON.parse(new TextDecoder().decode(bytes)))),item.canonicalSha256);});await assertJournalReadable(journal,targetDb);
  const own=await target.begin(async tx=>{await tx`set local role porchday_social`;await tx`select set_config('app.member_id',${alice},true)`;return tx`select id,envelope from app.posts order by id`;});assert.equal(own.length,2);
  for(const actor of[bob,outsider]){const rows=await target.begin(async tx=>{await tx`set local role porchday_social`;await tx`select set_config('app.member_id',${actor},true)`;return tx`select id from app.posts`;});assert.equal(rows.length,0);}
  await assert.rejects(target.begin(async tx=>{await tx`set local role porchday_social`;return tx`select * from public.auth_session`;}),{code:'42501'});
@@ -128,7 +151,7 @@ try {
  assert.deepEqual(await decryptObject({envelope:restored,expectedContext:postEnvelopes.get(ids.surviving)!.context,privateKey,authorPublicKey:keys.publicKey}),{text:'Synthetic private restore fixture'});
  const photoObject=await targetMedia.get('media/'+alice+'/'+ids.survivingMedia);assert(photoObject);const photo=JSON.parse(await photoObject.text()) as EncryptedEnvelope;
  assert.deepEqual(await decryptObject({envelope:photo,expectedContext:photo.context,privateKey,authorPublicKey:keys.publicKey}),{mime:'image/jpeg',data:'synthetic-photo-bytes',alt:'Synthetic photo'});
- console.log(JSON.stringify({passed:true,scope:'synthetic local PostgreSQL dump/restore and native R2',snapshotSequence:snapshotStatus.sequence,replayed:result.replayed,deletedObjects:result.deletedObjects,heldAccounts:result.heldAccounts,survivingPosts:own.length,encryptedMediaVerified:true,rlsAndAuthRevocationVerified:true,persistedIndependentJournalVerified:true,failedCleanupRetryVerified:true,elapsedMs:Math.round(performance.now()-started)}));
+ console.log(JSON.stringify({passed:true,scope:'synthetic local PostgreSQL dump/restore and native R2',snapshotSequence:snapshotStatus.sequence,replayed:result.replayed,deletedObjects:result.deletedObjects,heldAccounts:result.heldAccounts,survivingPosts:own.length,encryptedMediaVerified:true,rlsAndAuthRevocationVerified:true,persistedIndependentJournalVerified:true,failedCleanupRetryVerified:true,scheduledBackupManifestVerified:true,actualHttpUploadDigestRegressionVerified:true,privacyFilteredMediaRestoreVerified:true,releaseRequiresLiveMediaVerification:true,elapsedMs:Math.round(performance.now()-started)}));
 } catch(error) {
  const code=(error as {code?:string}).code;console.error(JSON.stringify({passed:false,phase,code:typeof code==='string'&&/^[A-Z0-9_]+$/.test(code)?code:'LOCAL_DRILL_FAILED'}));process.exitCode=1;
 } finally {
