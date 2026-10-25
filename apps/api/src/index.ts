@@ -20,6 +20,7 @@ import {processAccountEmails} from './email-outbox';
 import {processNativePush} from './social-native-push';
 import {privacyReadGuard,privacyMutationMiddleware,withPrivacyJournal} from './privacy-journal';
 import {requireOperations,readOperationalHealth,recordCleanupSuccess} from './operations-health';
+import {incidentControls} from './incident-controls';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
 app.use('*',secureHeaders({
@@ -41,7 +42,7 @@ app.use('/api/*',async(c,next)=>{
  return generalBodyLimit(c,next);
 });
 app.use('/api/*',async(c,next)=>{
- if(!['GET','HEAD','OPTIONS'].includes(c.req.method) && c.req.path!=='/api/integration/token'){
+ if(!['GET','HEAD','OPTIONS'].includes(c.req.method) && !['/api/integration/token','/api/integration/v1/token'].includes(c.req.path)){
   const origin=c.req.header('Origin');
   if(origin!==c.env.APP_URL)return c.json({error:{code:'ORIGIN_DENIED',message:'This request could not be verified.'}},403);
  }
@@ -69,8 +70,11 @@ app.use('/api/staff/moderation/*',privacyMutationMiddleware);
 app.route('/api/staff/moderation',createModerationRoutes());
 app.use('/api/member-appeals/*',requireAppealMember);
 app.route('/api/member-appeals',createAppealRoutes());
+// Register the versioned surface before the legacy route's catch-all.
+app.route('/api/integration/v1',createIntegrationTokenRoutes());
 app.route('/api/integration',createIntegrationTokenRoutes());
 app.use('/api/v1/*',requireMember);
+app.use('/api/v1/*',incidentControls);
 app.use('/api/v1/*',privacyMutationMiddleware);
 app.delete('/api/v1/account',async c=>{
  if(Date.now()-c.get('authTime')>15*60_000)return c.json({error:{code:'RECENT_AUTH_REQUIRED'}},403);

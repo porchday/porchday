@@ -15,6 +15,9 @@ export interface Env {
   BETTER_AUTH_SECRET: string;
   EMAIL_FROM: string;
   SIGNUP_ENABLED?: string;
+  CONTENT_WRITES_PAUSED?: string;
+  MEDIA_UPLOADS_PAUSED?: string;
+  SOCIAL_INVITATIONS_PAUSED?: string;
   OPERATIONS_HEALTH_TOKEN?: string;
   STAFF_ACCESS_ISSUER?: string;
   STAFF_ACCESS_AUDIENCE?: string;

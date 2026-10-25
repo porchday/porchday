@@ -14,6 +14,11 @@ base=json.loads(Path('apps/api/wrangler.local.jsonc').read_text())
 host='porchday.com' if name=='production' else 'staging.porchday.com'
 base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev=False)
 base['vars'].update(APP_URL='https://'+host,ENVIRONMENT=name)
+for flag in ['CONTENT_WRITES_PAUSED','MEDIA_UPLOADS_PAUSED','SOCIAL_INVITATIONS_PAUSED']:
+ value=env.get(flag.lower(),False)
+ if type(value) is not bool:
+  raise SystemExit(flag.lower()+' must be a JSON boolean in infra/resources.json.')
+ base['vars'][flag]='true' if value else 'false'
 base['hyperdrive']=[{'binding':'HYPERDRIVE_'+r.upper(),'id':env['hyperdrive_'+r]} for r in ['auth','social','jobs']]
 base['r2_buckets']=[{'binding':'MEDIA','bucket_name':env['bucket']},{'binding':'RECOVERY_JOURNAL','bucket_name':env['recovery_journal_bucket']}]
 base['vars']['MEDIA_BACKUP_ENABLED']='false'

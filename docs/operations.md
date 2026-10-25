@@ -64,6 +64,8 @@ Protected staging/production readiness also requires configured encrypted media 
 
 ## Incident handling
 
+See [incident response](incident-response.md) for persistent per-environment posting/upload/invitation pauses, deployment and recovery checks, compromised credentials, storage failures, lost administrator access, abuse surges and mistaken moderation. These selective controls preserve authorized reads and account safety actions; they are not a substitute for full privacy quarantine or a tested key-rotation procedure.
+
 For suspected takeover, an unverified report never freezes or transfers an account. Verify the claimant's safe contact, then have authorized staff review corroborating evidence. A confirmed hold must revoke all login sessions and integration grants, block export/deletion/credential changes, preserve recovery and appeals, and keep ordinary content timers expiring. Recovery of account ownership cannot recover missing encryption keys. Two distinct authorized reviewers are required where trusted methods are lost.
 
 Staff workflow code is implemented and covered by local tests; real reviewer provisioning and Cloudflare Access policy configuration remain outstanding. Current token requests for Access organizations/apps/identity providers return403; the owner has been asked for the account-scoped Access administration permissions. Do not manually change ownership through the database as a substitute for the reviewed workflow.
