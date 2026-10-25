@@ -12,9 +12,9 @@ The bounded selection found no suitable existing B-authored private text post. U
 
 All evidence files are mode `0600` beneath the protected, ignored `artifacts/private/hosted-smoke/` directory, using the prefix `recovery-prehold-4a2c7e10`. The `.session.json` file contains the captured session capability and must never be published. The `.intent.json`, `.canary-intent.json`, `.old-ciphertext.json`, `.baseline.json` and `.result.json` preserve the exact boundaries and expected evidence. No passwords, cookies, private keys, email addresses, subject/member identifiers or decrypted content appear in this document.
 
-## Deliberately outstanding session and canary
+## Baseline session and canary obligations
 
-**One new session remains intentionally live** so the human-applied hold can demonstrate its revocation. Four pre-existing B session rows were also observed; this baseline did not revoke or attribute them. It does not claim that all sessions are closed.
+**At the pre-hold checkpoint, one new session remained intentionally live** so the human-applied hold could demonstrate its revocation. Four pre-existing B session rows were also observed; the baseline did not revoke or attribute them. The later hold check below fulfills the saved-session revocation obligation. Canary cleanup remains outstanding.
 
 The coordinating operator and the service task own these cleanup obligations:
 
@@ -28,3 +28,21 @@ At this checkpoint the operator had separately verified the two staging recovery
 ## Preserved initial guard failure
 
 Attempt `2fbb68d9` stopped at **21:13:45.847 UTC** because the harness incorrectly required an encrypted profile for B. The actual null profile is a valid fixture state, not an application defect. This attempt made no profile/content change or recovery decision. Its new session was normally signed out, and the saved cookie was independently rejected with HTTP 401. The failed receipt remains unchanged. The later attempt accepts the known null profile explicitly and supplies separate, authorized old-ciphertext evidence instead of manufacturing a profile.
+
+## Human holds and saved-session denial
+
+Both nominated people confirmed that they could view the recovery queue after their roles were granted. Independent exact-case audit inspection corroborated their post-grant queue access. The owner recorded a hold at **22:15:19.370 UTC**, followed by the other authorized reviewer at **22:16:20.704 UTC**. There was one corresponding hold audit per reviewer and no restoration approval or unknown actor.
+
+The initial operator check expected only the owner's hold and therefore preserved a failed expectation receipt. A bounded follow-up at **22:18:06.321 UTC** established the two authorized holds and the assignment to the second reviewer. This was an extra human Hold action, not an application failure; no decision or original receipt was rewritten. Further human instructions must explicitly select **Approve restoration (two reviewers required)** rather than repeat Hold.
+
+At **22:18:05.435 UTC**, the captured pre-hold cookie returned **HTTP 401** on both `/api/v1/me` and the exact saved canary's read endpoint. A read-only transaction independently verified:
+
+- B was on hold, with the previous `active` status preserved, and the exact contact-verified case was on hold.
+- **Zero B session rows remained**, including the deliberately retained test session and the four rows observed before it.
+- The full profile hash and null profile envelope were unchanged.
+- The device roster hash and encrypted recovery-backup hash were unchanged; the existing device was still recorded as active at this hold stage.
+- The canary remained unexpired with identical ciphertext and its original expiration deadline.
+
+These checks used exactly two GET requests with the saved cookie and read-only metadata inspection. They created no login, hold, approval, restoration, email or content mutation, and made no redundant sign-out call. Fixed results are preserved privately as `recovery-hold-4a2c7e10.intent.json` and `.result.json`; no authentication/recovery token hashes were queried.
+
+The saved-session cleanup obligation is now fulfilled by verified revocation. Two distinct human restoration approvals, claimant use of the resulting email, restored-account/key-history checks and normal canary deletion remain outstanding. A hold intentionally stops access without deleting encrypted history; this checkpoint is not a completed account recovery.
