@@ -17,7 +17,10 @@ struct ProfileEditor: View {
     @State private var slot="avatar"
     @State private var selection:PhotosPickerItem?
     @State private var assets:[String:PreparedPhoto]=[:]
+    @State private var removedAssets: Set<String> = []
+    @State private var committedProfile: JSON?
     @State private var busy=false
+    private var currentProfile: JSON { committedProfile ?? profile }
     var body:some View {
         Form {
             Section("The person behind the handle") {
@@ -35,7 +38,20 @@ struct ProfileEditor: View {
                             Text(key.capitalized).font(.headline)
                             if let image=UIImage(data:asset.bytes) { Image(uiImage:image).resizable().scaledToFit().frame(maxHeight:130) }
                             TextField("Photo description",text:Binding(get:{assets[key]?.alt ?? ""},set:{value in assets[key]?.alt=value}))
-                            Button("Remove selected photo",role:.destructive) { assets.removeValue(forKey:key) }
+                            Button("Cancel selected photo") { assets.removeValue(forKey:key) }
+                        }
+                    } else if currentProfile[key]["id"].string != nil {
+                        VStack(alignment: .leading) {
+                            Text(key.capitalized).font(.headline)
+                            if removedAssets.contains(key) {
+                                Text("This photo will be removed when you save. Copies already saved by others cannot be recalled.").font(.footnote)
+                                Button("Undo removal") { removedAssets.remove(key) }
+                                    .accessibilityLabel("Undo removal of \(key) photo")
+                            } else {
+                                EncryptedPhotoView(photo: currentProfile[key]).frame(maxHeight: 130)
+                                Button("Remove current photo", role: .destructive) { removedAssets.insert(key) }
+                                    .accessibilityLabel("Remove current \(key) photo")
+                            }
                         }
                     }
                 }
@@ -48,15 +64,16 @@ struct ProfileEditor: View {
                 Text("These details are encrypted for your current connections. Share your profile again after accepting new connections.").font(.footnote)
                 Button(busy ? "Encrypting your profile…":"Save and share profile") { Task { await save() } }.disabled(busy || name.count>80 || bio.count>1000 || status.count>100 || interests.count>300)
             }
-        }.navigationTitle("Your personal space").toolbar { Button("Cancel") { dismiss() } }
+        }.disabled(busy).navigationTitle("Your personal space").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
             .task { name=profile["displayName"].string ?? "";bio=profile["bio"].string ?? "";interests=profile["interests"].string ?? "";status=profile["status"].string ?? "";theme=profile["theme"].string ?? "sage";font=profile["font"].string ?? "serif";order=profile["sectionOrder"].string ?? "about-first" }
-            .onChange(of:selection) { _,item in let targetSlot=slot;Task { await model.perform { if let data=try await item?.loadTransferable(type:Data.self) { assets[targetSlot]=try PhotoPipeline.prepare(data) } } } }
+            .onChange(of:selection) { _,item in let targetSlot=slot;Task { await model.perform { if let data=try await item?.loadTransferable(type:Data.self) { assets[targetSlot]=try PhotoPipeline.prepare(data);removedAssets.remove(targetSlot) } } } }
     }
     private func save() async {
         busy=true;defer{busy=false}
         await model.perform {
             guard let member=model.member else{return}
-            var payload=profile.replacing("displayName",with:.string(name)).replacing("bio",with:.string(bio)).replacing("interests",with:.string(interests)).replacing("status",with:.string(status)).replacing("theme",with:.string(theme)).replacing("font",with:.string(font)).replacing("sectionOrder",with:.string(order))
+            let plan = SurfacePhotoRemoval(payload: currentProfile, slots: ["avatar", "cover", "background"], removed: removedAssets, replaced: Set(assets.keys))
+            var payload=plan.payload.replacing("displayName",with:.string(name)).replacing("bio",with:.string(bio)).replacing("interests",with:.string(interests)).replacing("status",with:.string(status)).replacing("theme",with:.string(theme)).replacing("font",with:.string(font)).replacing("sectionOrder",with:.string(order))
             var attachments:[(String,String)]=[]
             for (slot,photo) in assets {
                 let meta:JSON = .object(["id":.string(photo.id),"mime":.string("image/jpeg"),"alt":.string(photo.alt),"width":.number(Double(photo.width)),"height":.number(Double(photo.height))])
@@ -71,7 +88,12 @@ struct ProfileEditor: View {
             let previous=try await model.api.social("/me")["envelope"]["context"]
             let original:JSON = .object(["id":.string(member.id),"kind":.string("profile"),"createdAt":.string(PorchDate.string()),"revision":.number(Double((previous["revision"].integer ?? 0)+1))])
             let envelope=try await vault.seal(payload,member:member,kind:"profile",audience:"connections",id:member.id,original:original)
-            _ = try await model.api.social("/profiles/me",method:"PUT",body:.object(["envelope":envelope]))
+            do {
+                _ = try await model.api.social("/profiles/me",method:"PUT",body:.object(["envelope":envelope, "remove_media": plan.removals]))
+            } catch PorchError.api(let code, _, _) where ["MEDIA_ATTACHMENT_CHANGED", "REVISION_CHANGED"].contains(code) {
+                throw PorchError.message("Your profile changed elsewhere. Close this editor and reopen it to review the current photos before removing one.")
+            }
+            committedProfile = payload; assets.removeAll(); removedAssets.removeAll()
             for (photoID,slot) in attachments { _ = try await model.api.social("/media/"+photoID+"/attachment",method:"PUT",body:.object(["kind":.string("profile"),"target_id":.string(member.id),"slot":.string(slot)])) }
             submitted();dismiss()
         }
