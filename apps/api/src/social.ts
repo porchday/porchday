@@ -52,7 +52,7 @@ async function snapshot(db: Db, audience: string, groupId: string | null = null,
     const devices = [...new Map([...own, ...staff].map(d => [d.id, d])).values()].sort((a, b) => a.id.localeCompare(b.id));
     return { epoch: Number(r.epoch), devices, pending_members: [] };
 } const devices = await db `select * from app.audience_devices(${audience},${groupId}::uuid,${postId}::uuid)`; const pending = await db `select member_id from app.pending_audience_members(${audience},${groupId}::uuid,${postId}::uuid)`; return { epoch: Number(r.epoch), devices, pending_members: pending.map(r => r.member_id) }; }
-async function checkEnvelope(db: Db, member: string, envelope: EncryptedEnvelope, kind: string, options: {
+async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnvelope,'context'|'recipients'>, kind: string, options: {
     postId?: string;
     skipEpoch?: boolean;
     allowPast?: boolean;

@@ -63,7 +63,7 @@ test('actual request middleware records status and latency without URL, cookie, 
  expect(health.status).toBe(200);expect(points.at(-1)?.blobs).toEqual(['porchday_metrics_v1','production','request','/health','GET','none','2xx']);
  const denied=await app.request('https://porchday.test/api/auth/reset-password/private-link?token=private-token',{method:'POST',headers:{Origin:'https://wrong.example'},body:'private-password'},env);
  expect(denied.status).toBe(403);expect(points.at(-1)?.blobs?.[3]).toBe('/api/auth/*');expect(points.at(-1)?.doubles?.[0]).toBe(403);
- const tooLarge=await app.request('https://porchday.test/api/v1/media',{method:'POST',headers:{Origin:env.APP_URL,'Content-Length':String(25*1024*1024+1)},body:'synthetic'},env);
+ const tooLarge=await app.request('https://porchday.test/api/v1/posts',{method:'POST',headers:{Origin:env.APP_URL,'Content-Length':String(25*1024*1024+1)},body:'synthetic'},env);
  expect(tooLarge.status).toBe(413);expect(points.at(-1)?.doubles?.[0]).toBe(413);
  const failed=await app.request('https://porchday.test/private-path?token=hidden',{},env);
  expect(failed.status).toBe(503);expect(points.at(-1)?.blobs?.[3]).toBe('/assets/*');

@@ -30,12 +30,18 @@ export async function cleanupExpired(env: Pick<Env, 'HYPERDRIVE_JOBS' | 'MEDIA'>
         const pending = await sql.begin(async (db) => db `
       update app.deletion_outbox set attempts=attempts+1,next_retry=now()+interval '5 minutes'
       where id in(select id from app.deletion_outbox where completed_at is null and next_retry<=now() order by id limit 100 for update skip locked)
-      returning id,object_key,attempts`);
+      returning id,object_key,attempts,created_at`);
         let deleted = 0;
         for (const object of pending) {
             try {
                 await env.MEDIA.delete(object.object_key);
-                await sql `update app.deletion_outbox set completed_at=now() where id=${object.id}`;
+                // Revoke reads immediately, delete immediately, then verify
+                // absence again after bounded (<=2 minute) pending uploads have
+                // stopped. A writer crash after an outbox-first delete cannot
+                // leave a late-created private object indefinitely.
+                await sql `update app.deletion_outbox set
+                  completed_at=case when created_at<=now()-interval '10 minutes' then now() else null end,
+                  next_retry=greatest(created_at+interval '10 minutes',now()) where id=${object.id}`;
                 deleted++;
             }
             catch {

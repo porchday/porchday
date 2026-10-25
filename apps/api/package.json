@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@porchday/crypto": "0.1.0",
+    "@streamparser/json": "0.0.26",
     "better-auth": "1.7.12",
     "hono": "^4.9.0",
     "jose": "^6.2.13",

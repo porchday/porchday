@@ -1,6 +1,7 @@
 import {serve} from '@hono/node-server';
 import {Pool} from 'pg';
-import {mkdir,readFile,writeFile,unlink,stat} from 'node:fs/promises';
+import {mkdir,readFile,writeFile,unlink} from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import {resolve} from 'node:path';
 import {app} from '../apps/api/src/index.ts';
 import type {Env} from '../apps/api/src/types.ts';
@@ -18,9 +19,9 @@ const env={
  HYPERDRIVE_JOBS:{connectionString:'postgres://porchday_jobs:porchday-local-jobs@localhost:54329/porchday'},
  EMAIL:{async send(message:unknown){const path=resolve(root,'email-'+crypto.randomUUID()+'.json');await writeFile(path,JSON.stringify(message),{mode:0o600});console.log('Synthetic email captured privately.');return {messageId:'development'};}},
  MEDIA:{
-  async put(key:string,value:ReadableStream|ArrayBuffer|Uint8Array,options?:unknown){const bytes=new Uint8Array(await new Response(value as BodyInit).arrayBuffer());const name=encodeURIComponent(key);await writeFile(resolve(root,name),bytes,{mode:0o600});return {key,size:bytes.length};},
-  async get(key:string){try{const bytes=await readFile(resolve(root,encodeURIComponent(key)));return {body:new Blob([bytes]).stream(),size:bytes.length,arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)};}catch{return null;}},
-  async head(key:string){try{return {key,size:(await stat(resolve(root,encodeURIComponent(key)))).size};}catch{return null;}},
+  async put(key:string,value:ReadableStream|ArrayBuffer|Uint8Array,options?:{onlyIf?:{etagDoesNotMatch?:string}}){const bytes=new Uint8Array(await new Response(value as BodyInit).arrayBuffer());const name=encodeURIComponent(key);try{await writeFile(resolve(root,name),bytes,{mode:0o600,flag:options?.onlyIf?.etagDoesNotMatch==='*'?'wx':'w'});}catch(error){if((error as NodeJS.ErrnoException).code==='EEXIST')return null;throw error;}return {key,size:bytes.length,etag:createHash('sha256').update(bytes).digest('hex')};},
+  async get(key:string){try{const bytes=await readFile(resolve(root,encodeURIComponent(key)));return {body:new Blob([bytes]).stream(),size:bytes.length,etag:createHash('sha256').update(bytes).digest('hex'),arrayBuffer:async()=>bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength)};}catch{return null;}},
+  async head(key:string){try{const bytes=await readFile(resolve(root,encodeURIComponent(key)));return {key,size:bytes.length,etag:createHash('sha256').update(bytes).digest('hex')};}catch{return null;}},
   async delete(key:string|string[]){await Promise.all((Array.isArray(key)?key:[key]).map(k=>unlink(resolve(root,encodeURIComponent(k))).catch(()=>{})));},
  },
  ASSETS:{fetch:async()=>new Response('Use the Vite frontend on localhost:5173.',{status:404})},

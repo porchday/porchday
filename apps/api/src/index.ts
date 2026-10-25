@@ -33,7 +33,13 @@ app.use('*',async(c,next)=>{
  c.header('X-Request-ID',c.get('requestId'));
  event('request',{route:normalizedRoute(c.req.path),method:c.req.method,status:c.res.status,durationMs:Date.now()-start},c.env);
 });
-app.use('/api/*',bodyLimit({maxSize:25*1024*1024,onError:c=>c.json({error:{code:'TOO_LARGE',message:'This upload is too large.'}},413)}));
+const generalBodyLimit=bodyLimit({maxSize:25*1024*1024,onError:c=>c.json({error:{code:'TOO_LARGE',message:'This upload is too large.'}},413)});
+app.use('/api/*',async(c,next)=>{
+ // The media handlers count actual streamed bytes after authorization. Avoid
+ // the generic middleware retaining an extra complete unknown-length upload.
+ if((c.req.method==='POST'&&c.req.path==='/api/v1/media')||(c.req.method==='PUT'&&/^\/api\/v1\/media\/[0-9a-f-]{36}\/bytes$/i.test(c.req.path)))return next();
+ return generalBodyLimit(c,next);
+});
 app.use('/api/*',async(c,next)=>{
  if(!['GET','HEAD','OPTIONS'].includes(c.req.method) && c.req.path!=='/api/integration/token'){
   const origin=c.req.header('Origin');

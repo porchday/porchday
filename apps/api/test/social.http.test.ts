@@ -1,12 +1,13 @@
-import { beforeAll, afterAll, describe, it, expect } from 'vitest';
+import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import postgres, { type Sql } from 'postgres';
 import { readFile } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { generateDeviceKeys, unlockPrivateKey, encryptObject, decryptObject, signStatement, authorizeDevice, createReactionSecret, reactionTag, type UnlockedPrivateKey, type ContentContext } from '@porchday/crypto';
 import { createSocialRoutes } from '../src/social';
 import { createIntegrationConsentRoutes, createIntegrationTokenRoutes } from '../src/social-integrations';
 import type { Env, Variables } from '../src/types';
+import * as database from '../src/db';
 const url = process.env.SOCIAL_HTTP_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 let sql: Sql;
@@ -22,6 +23,14 @@ interface Person {
     publicKey: string;
 }
 const objects = new Map<string, ArrayBuffer>();
+const writing=new Set<string>();
+const objectMetadata=(key:string)=>{const bytes=objects.get(key);return bytes?{key,size:bytes.byteLength,etag:createHash('sha256').update(new Uint8Array(bytes)).digest('hex')}:null;};
+const memoryBucket={
+ async put(key:string,body:BodyInit){if(objects.has(key)||writing.has(key))return null;writing.add(key);try{objects.set(key,await new Response(body).arrayBuffer());return objectMetadata(key);}finally{writing.delete(key);}},
+ async get(key:string){const bytes=objects.get(key);return bytes?{...objectMetadata(key),body:new Response(bytes).body,arrayBuffer:async()=>bytes,json:()=>new Response(bytes).json()}:null;},
+ async head(key:string){return objectMetadata(key);},
+ async delete(key:string){objects.delete(key);},
+};
 async function request(member: string, path: string, method = 'GET', value?: unknown) { const init: RequestInit = { method, headers: { 'x-test-member': member, ...(value ? { 'content-type': 'application/json' } : {}) }, ...(value ? { body: JSON.stringify(value) } : {}) }; const response = await app.request('https://porchday.test' + path, init, env); const data = await response.json(); if (response.status >= 500)
     throw Error(JSON.stringify({ path, status: response.status, data })); return { status: response.status, data }; }
 async function person() { const id = randomUUID(), deviceId = randomUUID(); await sql `insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`; await sql `insert into app.profiles(member_id,handle) values(${id},${'t_' + id.replaceAll('-', '').slice(0, 20)})`; const keys = await generateDeviceKeys(id, deviceId); const recovery = await generateDeviceKeys(id, 'recovery', keys.recoverySecret); const { status } = await request(id, '/devices', 'POST', { id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, authorization: { type: 'initial' }, recovery_public_key: recovery.publicKey, backup: { v: 1, devices: [{ id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, encrypted_private_key: keys.encryptedPrivateKey }], recovery: { public_key: recovery.publicKey, fingerprint: recovery.fingerprint, encrypted_private_key: recovery.encryptedPrivateKey } } }); expect(status).toBe(201); return { id, deviceId, key: await unlockPrivateKey(keys.encryptedPrivateKey, keys.recoverySecret), publicKey: keys.publicKey }; }
@@ -30,9 +39,51 @@ async function seal(a: Person, payload: unknown, override: Partial<ContentContex
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: { put: async (k: string, b: ArrayBuffer) => { objects.set(k, b); }, get: async (k: string) => objects.has(k) ? { body: objects.get(k) } : null, delete: async (k: string) => { objects.delete(k); } } } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('preserves a committed upload after an ambiguous COMMIT response even when an account hold hides it under RLS',async()=>{
+        const a=await person(),mediaId=randomUUID();
+        const envelope=await seal(a,{mime:'image/jpeg',bytes:'c2FtcGxl',alt:'Ambiguous commit fixture'},{id:mediaId,kind:'media',parentId:a.id});
+        const bytes=new TextEncoder().encode(JSON.stringify(envelope)),key='media/'+a.id+'/'+mediaId;
+        expect((await request(a.id,'/media','POST',{id:mediaId,envelope,byte_size:bytes.length})).status).toBe(201);
+        const original=database.withMember;let calls=0;
+        const intercepted=vi.spyOn(database,'withMember').mockImplementation(async(env,member,work)=>{
+            const result=await original(env,member,work);
+            if(member===a.id&&++calls===3){await sql`update app.members set status='hold' where id=${a.id}`;throw Error('Synthetic lost COMMIT response');}
+            return result;
+        });
+        try{
+            const response=await app.request('https://porchday.test/media/'+mediaId+'/bytes',{method:'PUT',headers:{'x-test-member':a.id,'content-type':'application/octet-stream'},body:bytes},env);
+            expect(response.status).toBe(503);expect({calls,stored:objects.has(key),state:(await sql`select state from app.media_assets where id=${mediaId}`)[0]?.state,status:(await sql`select status from app.members where id=${a.id}`)[0]?.status}).toEqual({calls:4,stored:true,state:'ready',status:'hold'});
+            expect((await sql`select state from app.media_assets where id=${mediaId}`)[0].state).toBe('ready');
+            const state=await original(env,a.id,async db=>({visible:await db`select state from app.media_assets where id=${mediaId}`,cleanup:(await db`select app.lock_media_upload_cleanup(${mediaId}) as state`)[0].state}));
+            expect(state.visible).toHaveLength(0);expect(state.cleanup).toBe('ready');
+            const stranger=await person();expect(await original(env,stranger.id,async db=>(await db`select app.lock_media_upload_cleanup(${mediaId}) as state`)[0].state)).toBe('unavailable');
+        }finally{intercepted.mockRestore();}
+    });
+    it('cleans an upload whose reservation is deleted during streaming and confirms absence again after the bounded late-writer window',async()=>{
+        const a=await person(),mediaId=randomUUID();
+        const envelope=await seal(a,{mime:'image/jpeg',bytes:'c2FtcGxl',alt:'Deleted stream fixture'},{id:mediaId,kind:'media',parentId:a.id});
+        const bytes=new TextEncoder().encode(JSON.stringify(envelope)),key='media/'+a.id+'/'+mediaId;
+        expect((await request(a.id,'/media','POST',{id:mediaId,envelope,byte_size:bytes.length})).status).toBe(201);
+        const jobs={HYPERDRIVE_JOBS:{connectionString:url!},MEDIA:memoryBucket} as unknown as Env;
+        const intercepted=vi.spyOn(memoryBucket,'put').mockImplementation(async(k,body)=>{
+            const buffered=await new Response(body).arrayBuffer();
+            await sql`delete from app.media_assets where id=${mediaId}`;
+            await database.cleanupExpired(jobs); // Outbox runs before the final storage write.
+            expect((await sql`select completed_at from app.deletion_outbox where object_key=${key}`)[0].completed_at).toBeNull();
+            objects.set(k,buffered);return objectMetadata(k);
+        });
+        try{
+            const response=await app.request('https://porchday.test/media/'+mediaId+'/bytes',{method:'PUT',headers:{'x-test-member':a.id,'content-type':'application/octet-stream'},body:bytes},env);
+            expect(response.status).toBe(404);expect(objects.has(key)).toBe(false);
+            // Model process death after the late R2 write, before handler cleanup.
+            objects.set(key,bytes.buffer);await sql`update app.deletion_outbox set created_at=now()-interval '11 minutes',next_retry=now() where object_key=${key}`;
+            await database.cleanupExpired(jobs);expect(objects.has(key)).toBe(false);
+            expect((await sql`select completed_at from app.deletion_outbox where object_key=${key}`)[0].completed_at).not.toBeNull();
+        }finally{intercepted.mockRestore();}
+    });
     it('paginates tied feed dates without widening historic, family, private, group, expired, muted or blocked audiences', async () => {
         const viewer = await person(), relative = await person(), friend = await person(), newcomer = await person();
         const visible: {id: string; at: string}[] = [];
