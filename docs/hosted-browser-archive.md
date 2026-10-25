@@ -1,0 +1,31 @@
+# Hosted browser archive acceptance
+
+This bounded staging check uses synthetic member A and the existing dedicated Chromium profile at `artifacts/private/hosted-smoke/isolated-browser-profile`. It never attaches to the user's browser, accesses B's recovery case, authenticates deleted C, uses a staff identity, or runs SQL. The root operator must coordinate a quiet fixture window with performance and restore checks first.
+
+```sh
+npx tsx scripts/hosted-browser-archive.ts --run --attempt=<fresh-eight-hex-digits>
+```
+
+The exact invocation is required before any private state or network access. The existing synthetic A account, saved device ID, healthy staging origin and known unexpired interoperability photo are mandatory. An exclusive private intent prevents replay of the same attempt after an uncertain result. A deliberate new attempt requires inspecting the earlier private receipts and cleanup state first.
+
+An explicitly coordinated `--photo-only` diagnostic stops after reading and checking the original photo, then signs out. It performs no export or import.
+
+The script performs ordinary login and recovery unlock, verifies the saved device already exists and no new device is enrolled, then opens the original post in the shipped UI. It waits for the actual 16×16 blob image to decode and compares every RGBA pixel with a separately decoded checked-in synthetic JPEG. That reference file's SHA-256 must equal the earlier interoperability fixture's expected hash. The production content security policy remains unchanged; the test does not fetch blob URLs or relax browser restrictions. Exact original JPEG bytes are verified in the protected export.
+
+The export checkbox must retain its default protected setting. The actual UI downloads the archive; files are saved only beneath the private artifact directory with mode 0600. The generated archive secret is read from the rendered UI into process memory and never printed or written to a receipt. Local OpenPGP decryption and the shipped archive parser check part completeness, account ownership, the known post and photo, and every exported photo checksum. No decrypted archive or secret-bearing screenshot is saved.
+
+The actual protected downloads are selected through the import UI. The preview must appear; profile replacement is explicitly unchecked. The request observer does not alter or synthesize encrypted requests. Before each allowed new media reservation or import submission, it durably records only new IDs, routing metadata and source references in an exclusive private receipt. It refuses other authors or recipients, nonprivate audiences, original IDs, changed source deadlines, profile replacement and unexpected mutations. This synthetic check bounds itself to four archive parts, 80 authored source entries, 100 attempted imported posts and 32 photos of at most 2 MiB each; these are test limits, not changes to product limits.
+
+Imported entries are checked using ordinary member reads and signed decryption, including ownership, private audience, original deadlines and provenance. The known imported post and photo must also render and decode in the real browser. This is explicitly a **same-account roundtrip**. It exercises the portable file format and the shipped importer, but does not claim that another platform accepts the format or that the archive proves an exporter's identity.
+
+Cleanup uses normal member DELETE endpoints for only the new IDs recorded by this attempt. The observer stops further writes before cleanup and waits for tracked requests to finish. Existing post/photo, profile and device set must remain unchanged. API absence is verified for captured imports and uploads; physical R2 deletion is not claimed by this check. The ordinary account-deletion check separately observes delayed physical cleanup. Import job metadata and downloaded private files remain subject to their normal retention/operator handling.
+
+Finally, UI signout is followed by saved-cookie replay against the ordinary auth endpoints. Failure cleanup uses the normal signout endpoint, clears remembered keys and cookies in the isolated profile, and reports fixed warnings when completion cannot be confirmed. Raw Playwright errors, provider bodies, traces, archive keys, cookies and content are never logged. Private receipts remain available for the operator; the repository and its release gate remain private.
+
+## Hosted result
+
+On October 25, 2026, attempt `c5832db0` passed at **18:20:41.129 UTC** against staging revision `a19cb86`, Worker release `f384074f-8b17-41ec-b1a6-df33f5927ecb`. One protected archive part containing five authored entries and three photos was downloaded and decrypted locally. Five newly imported private entries passed the ownership, provenance, audience and deadline checks; these entries and three newly uploaded photos were removed through ordinary member endpoints. Both the original and imported known photos decoded successfully and matched the independently decoded reference pixels. All exported JPEG checksums and the known historical text matched. The original known post/photo, saved profile and two-device set were unchanged. Saved-cookie replay was denied after UI signout; final local-key/cookie cleanup and browser shutdown emitted no warnings.
+
+The first attempt (`7e9231c4`) failed before export at the photo assertion. Two bounded photo-only diagnostics (`1d804a9e`, `4a618dc2`) established that the image and text were present, the media response was 200, and decoding succeeded; the test's subsequent `fetch(blob:)` was blocked by the existing `connect-src` policy. The test was corrected to compare decoded canvas pixels. No application code or security policy was changed, and these unsuccessful attempts created no imported content. Their private intents and fixed diagnostic receipts remain separate from the successful result.
+
+This result proves the exercised same-account browser roundtrip. It does not prove another platform's import compatibility, App Store delivery, broad capacity, or immediate physical deletion of import ciphertext from live R2 and retained backups. Normal asynchronous deletion processing remains in place. Three focused guard tests and targeted TypeScript checks passed.
