@@ -20,4 +20,6 @@ On 2026-10-25, `scripts/probe-media-workerd.ts --run --upload --overlap` loaded 
 
 An independent adversarial accumulator check measured roughly 2 MiB retained heap for 4 MiB of repeated lone-surrogate escapes, versus roughly 37 MiB with the unadapted dependency. Differential checks against fatal UTF-8 decoding plus JSON.parse also preserved raw/escaped U+FEFF and negative zero and rejected malformed UTF-8. These focused checks do not replace the hosted exact-limit and malformed-content probes.
 
+The completed hosted exact-limit, malformed-input and backup/restore sequence is documented in [media backup verification](media-backups.md#hosted-maximum-size-verification), with a [sanitized result artifact](verification/media-cloud-2026-10-25.json). Its synthetic database adapter does not establish hosted PostgreSQL, authentication or production capacity.
+
 Upstream references: [parser documentation](https://github.com/juanjoDiaz/streamparser-json/tree/main/packages/plainjs), [accumulator source](https://github.com/juanjoDiaz/streamparser-json/blob/main/packages/plainjs/src/utils/bufferedString.ts). The dependency is MIT licensed and pinned in the lockfile.

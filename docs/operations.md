@@ -28,6 +28,12 @@ Development email is captured privately in ignored `artifacts/private/dev` files
 
 Run crypto tests plus real database tests. `TEST_DATABASE_URL` supplies the auth test database; `SOCIAL_TEST_DATABASE_URL` and `SOCIAL_HTTP_DATABASE_URL` must point to separate disposable databases whose names contain `test`. Social test suites reset only their app schema. CI creates these separate databases explicitly.
 
+## Photo uploads
+
+Encrypted media uploads are limited to 22,020,096 bytes. The authenticated media routes count streamed bytes even when `Content-Length` is absent or incorrect. Uploads use private, create-only pending R2 objects; only validated uploads become readable. Finalization rechecks ownership, account state, reservation state and expiry. Cleanup after an ambiguous database commit must not delete an object that reached ready/attached state.
+
+Large envelope parsing and hashing use one nonwaiting permit per Worker isolate. Overlapping work returns `429 MEDIA_BUSY` with `Retry-After: 1`; the clients retain the draft and selected photos, and a manual retry creates fresh upload identities. This is a resource guard, not a load-test result. The pinned `@streamparser/json` dependency has a local bounded accumulator adapter for Unicode preservation and allocation limits; keep its differential JSON/UTF-8 regressions when upgrading. See `docs/media-upload-memory.md` for the implementation constraints and measured evidence; production throughput requires separate load testing.
+
 ## Invitations
 
 `python3 scripts/with-secrets.py node scripts/invite.ts EMAIL` creates a one-use invitation and writes its link into a 0600 file under the private configuration directory, never stdout. Invitation codes are hashed in PostgreSQL and expire after seven days. Never distribute real invitations before the admission gates are satisfied.
@@ -35,6 +41,8 @@ Run crypto tests plus real database tests. `TEST_DATABASE_URL` supplies the auth
 ## Deletion and expiry
 
 Reads deny expired data immediately, even when jobs are offline. Cron enqueues expiry work. The queue consumer deletes expired metadata and retries ciphertext deletion through a durable PostgreSQL outbox. Every queue run is idempotent; completed R2 deletions can be retried safely. Identity deletion has a separate outbox so a transient auth-database failure cannot leave a deleted member usable.
+
+Media cleanup deletes bytes immediately, then performs another deletion after the outbox entry is at least ten minutes old before marking it complete. This catches a pending writer that finishes after the first delete and crashes before its own cleanup. Uploads have a two-minute deadline; the delayed pass does not extend authorization or content expiry. Storage errors retain the outbox entry for retry.
 
 During restoration, apply deletion-ledger decisions and expiration before resuming member traffic. A completed database restore alone is not a successful media restore. Test the documented 24-hour RPO/8-hour RTO targets before making availability promises. Full staging restore drill remains outstanding.
 
