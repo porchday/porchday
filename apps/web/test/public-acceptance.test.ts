@@ -26,6 +26,28 @@ describe("public pilot acceptance contract", () => {
     );
     expect((html.match(/type="checkbox" required=""/g) || []).length).toBe(2);
   });
+  it("does not infer email-change completion from the shared two-step callback", () => {
+    locationFor("?emailChanged=1");
+    const html = renderToStaticMarkup(
+      createElement(AuthPage, { mode: "login", onSignedIn: () => {} }),
+    );
+    expect(html).toContain('role="status"');
+    expect(html).toContain("approval at your current");
+    expect(html).toContain("address and verification at the new one");
+    expect(html).toContain("check your new inbox");
+    expect(html).not.toContain("Your email change is complete");
+    expect(html).not.toContain('class="alert success"');
+
+    locationFor("?emailChanged=1&error=private-provider-detail");
+    const failed = renderToStaticMarkup(
+      createElement(AuthPage, { mode: "login", onSignedIn: () => {} }),
+    );
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain("This email-change step could not be completed");
+    expect(failed).not.toContain('role="status"');
+    expect(failed).not.toContain('class="alert success"');
+    expect(failed).not.toContain("private-provider-detail");
+  });
   it("keeps stolen-account reporting independent of login and matches the server description limit", () => {
     locationFor();
     const html = renderToStaticMarkup(createElement(StolenAccount));

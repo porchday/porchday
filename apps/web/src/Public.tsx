@@ -425,9 +425,21 @@ export function AuthPage({
                 </Alert>
               )}
               {query.has("emailChanged") && (
-                <Alert success>
-                  Your email change is complete. Log in with your new address.
-                </Alert>
+                query.has("error") ? (
+                  <Alert>
+                    This email-change step could not be completed. Sign in with
+                    your currently verified address to request a fresh change
+                    if needed.
+                  </Alert>
+                ) : (
+                  <div className="report-preview" role="status">
+                    Changing your email requires approval at your current
+                    address and verification at the new one. If you just
+                    approved the request, check your new inbox for the
+                    verification link. Once you’ve verified the new address,
+                    log in with it.
+                  </div>
+                )
               )}
               {!reset && !secondFactor && (
                 <Field
