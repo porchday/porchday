@@ -6,7 +6,7 @@ import {
   type Audience,
 } from "@porchday/crypto";
 import { post, request, type MediaPayload } from "./api";
-import { preparePhoto } from "./Social";
+import { EncryptedPhoto, preparePhoto } from "./Social";
 import { Alert, Button, Icon, useAction } from "./ui";
 import { useVault } from "./vault";
 import { jpegDimensions } from "./photo-safety";
@@ -26,16 +26,34 @@ export function AssetPicker({
   label,
   onChange,
   asset,
+  current,
+  removed = false,
+  onRemovalChange,
+  disabled = false,
 }: {
   slot: PendingAsset["slot"];
   label: string;
   onChange: (asset: PendingAsset | null) => void;
   asset: PendingAsset | null;
+  current?: MediaPayload;
+  removed?: boolean;
+  onRemovalChange?: (removed: boolean) => void;
+  disabled?: boolean;
 }) {
   const action = useAction();
   return (
-    <div className="asset-picker">
+    <div
+      className="asset-picker"
+      data-unsaved-draft={Boolean(asset || removed) || undefined}
+    >
       <span className="field-label">{label}</span>
+      {current && !asset && !removed && (
+        <div
+          className={`current-asset ${slot === "avatar" ? "asset-avatar" : ""}`}
+        >
+          <EncryptedPhoto media={current} />
+        </div>
+      )}
       {asset && (
         <img
           className={slot === "avatar" ? "asset-avatar" : ""}
@@ -48,6 +66,7 @@ export function AssetPicker({
         {asset ? "Choose another photo" : "Choose a photo"}
         <input
           type="file"
+          disabled={disabled || action.busy}
           accept="image/jpeg,image/png,image/webp"
           onChange={(e) => {
             const file = e.target.files?.[0];
@@ -75,16 +94,37 @@ export function AssetPicker({
             <span>Image description</span>
             <input
               value={asset.alt}
+              disabled={disabled || action.busy}
               maxLength={1000}
               onChange={(e) => onChange({ ...asset, alt: e.target.value })}
             />
           </label>
           <button
             type="button"
+            disabled={disabled || action.busy}
             className="text-button"
             onClick={() => onChange(null)}
           >
             Cancel this photo change
+          </button>
+        </>
+      )}
+      {current && !asset && onRemovalChange && (
+        <>
+          {removed && (
+            <p className="small-copy" role="status">
+              This photo will be removed when you save. Copies already saved by
+              others cannot be recalled.
+            </p>
+          )}
+          <button
+            type="button"
+            className="text-button"
+            disabled={disabled || action.busy}
+            aria-label={`${removed ? "Undo removal of" : "Remove current"} ${label.toLowerCase()}`}
+            onClick={() => onRemovalChange(!removed)}
+          >
+            {removed ? "Undo removal" : "Remove current photo"}
           </button>
         </>
       )}

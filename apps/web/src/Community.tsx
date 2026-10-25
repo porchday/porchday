@@ -26,6 +26,7 @@ import { Composer, Feed, EncryptedPhoto } from "./Social";
 import type { MediaPayload, Device } from "./api";
 import { AssetPicker, useAssetUpload, type PendingAsset } from "./Media";
 import { Fingerprint } from "./vault";
+import { planSurfacePhotos } from "./surface-media";
 export function Connections() {
   const vault = useVault();
   const [data, setData] = useState<Json | null>(null);
@@ -549,6 +550,7 @@ export function GroupDetail({ id }: { id: string }) {
   const [manage, setManage] = useState(false);
   const [handle, setHandle] = useState("");
   const [image, setImage] = useState<PendingAsset | null>(null);
+  const [removeImage, setRemoveImage] = useState(false);
   const uploadAsset = useAssetUpload();
   const action = useAction();
   async function refresh() {
@@ -574,9 +576,15 @@ export function GroupDetail({ id }: { id: string }) {
   async function reshare() {
     if (!content || !data) return;
     await action.run(async () => {
-      const next = { ...content };
-      const imageSource = image || (content.image as MediaPayload | undefined);
-      if (imageSource) next.image = await uploadAsset(imageSource, id, id);
+      const plan = planSurfacePhotos(
+        content,
+        ["image"],
+        { image },
+        { image: removeImage },
+      );
+      const next = plan.payload;
+      for (const { asset } of plan.uploads)
+        next.image = await uploadAsset(asset, id, id);
       const envelope = await vault.seal(next, {
         id,
         kind: "group",
@@ -587,14 +595,17 @@ export function GroupDetail({ id }: { id: string }) {
       });
       await request(`/groups/${id}`, {
         method: "PUT",
-        body: JSON.stringify({ envelope }),
+        body: JSON.stringify({ envelope, remove_media: plan.remove_media }),
       });
+      setData({ ...data, group: { ...data.group, envelope } });
+      setContent(next);
+      setImage(null);
+      setRemoveImage(false);
       if (next.image)
         await request(`/media/${(next.image as MediaPayload).id}/attachment`, {
           method: "PUT",
           body: JSON.stringify({ kind: "group", target_id: id, slot: "image" }),
         });
-      setImage(null);
       await refresh();
     }, "Group details shared with current members. Existing posts remain unchanged.");
   }
@@ -753,7 +764,14 @@ export function GroupDetail({ id }: { id: string }) {
                 slot="image"
                 label="Group image"
                 asset={image}
-                onChange={setImage}
+                current={content?.image as MediaPayload | undefined}
+                removed={removeImage}
+                disabled={action.busy}
+                onRemovalChange={setRemoveImage}
+                onChange={(asset) => {
+                  setImage(asset);
+                  if (asset) setRemoveImage(false);
+                }}
               />
               <Button variant="outline" busy={action.busy} onClick={reshare}>
                 Save group details & share with current members

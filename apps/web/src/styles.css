@@ -4180,18 +4180,23 @@ hr {
   font-weight: 600;
   color: #5a704e;
 }
-.asset-picker > img {
+.asset-picker > img,
+.asset-picker .current-asset img {
   height: 95px;
   width: 100%;
   object-fit: cover;
   border: 1px solid var(--line);
   border-radius: 6px;
 }
-.asset-picker > img.asset-avatar {
+.asset-picker > img.asset-avatar,
+.asset-picker .current-asset.asset-avatar img {
   height: 85px;
   width: 85px;
   align-self: center;
   border-radius: 50%;
+}
+.asset-picker .current-asset figure {
+  margin: 0;
 }
 .asset-picker .file-button {
   font-size: 10px;
@@ -4266,7 +4271,8 @@ hr {
     grid-template-columns: 1fr;
     gap: 24px;
   }
-  .asset-picker > img {
+  .asset-picker > img,
+  .asset-picker .current-asset img {
     max-width: 280px;
     height: 130px;
   }

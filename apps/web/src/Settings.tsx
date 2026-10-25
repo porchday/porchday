@@ -35,6 +35,7 @@ import { AssetPicker, useAssetUpload, type PendingAsset } from "./Media";
 import { DataTransfer } from "./DataTransfer";
 import { TimeSettings } from "./TimeSettings";
 import { enableCurrentPush, disableAllPush } from "./push";
+import { PROFILE_SLOTS, planSurfacePhotos } from "./surface-media";
 export function Settings({
   tab = "profile",
   onLogout,
@@ -99,6 +100,9 @@ function ProfileSettings() {
     cover: null,
     background: null,
   });
+  const [removedAssets, setRemovedAssets] = useState<Record<string, boolean>>(
+    {},
+  );
   const uploadAsset = useAssetUpload();
   const action = useAction();
   useEffect(() => {
@@ -122,20 +126,23 @@ function ProfileSettings() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     await action.run(async () => {
-      const next = { ...profile };
+      const plan = planSurfacePhotos(
+        profile,
+        PROFILE_SLOTS,
+        assets,
+        removedAssets,
+      );
+      const next = plan.payload;
       const uploaded: { id: string; slot: string }[] = [];
-      for (const slot of ["avatar", "cover", "background"] as const) {
-        const asset = assets[slot] || profile[slot];
-        if (asset) {
-          const result = await uploadAsset(
-            asset,
-            vault.member.id,
-            null,
-            profileAudience,
-          );
-          next[slot] = result;
-          uploaded.push({ id: result.id, slot });
-        }
+      for (const { slot, asset } of plan.uploads) {
+        const result = await uploadAsset(
+          asset,
+          vault.member.id,
+          null,
+          profileAudience,
+        );
+        next[slot] = result;
+        uploaded.push({ id: result.id, slot });
       }
       const envelope = await vault.seal(next, {
         id: vault.member.id,
@@ -146,8 +153,14 @@ function ProfileSettings() {
       });
       await request("/profiles/me", {
         method: "PUT",
-        body: JSON.stringify({ envelope }),
+        body: JSON.stringify({ envelope, remove_media: plan.remove_media }),
       });
+      // The revised profile and removals have committed even if a later new-photo
+      // attachment needs retrying. Keep the revision current for that retry.
+      setOld(envelope);
+      setProfile(next);
+      setAssets({ avatar: null, cover: null, background: null });
+      setRemovedAssets({});
       for (const asset of uploaded)
         await request(`/media/${asset.id}/attachment`, {
           method: "PUT",
@@ -157,9 +170,6 @@ function ProfileSettings() {
             slot: asset.slot,
           }),
         });
-      setOld(envelope);
-      setProfile(next);
-      setAssets({ avatar: null, cover: null, background: null });
     }, "Your corner feels a little more you.");
   }
   if (vault.member.status === "restricted")
@@ -233,7 +243,7 @@ function ProfileSettings() {
           this device before upload.
         </p>
         <div className="profile-asset-grid">
-          {(["avatar", "cover", "background"] as const).map((slot) => (
+          {PROFILE_SLOTS.map((slot) => (
             <AssetPicker
               key={slot}
               slot={slot}
@@ -245,7 +255,16 @@ function ProfileSettings() {
                     : "Wall background"
               }
               asset={assets[slot]}
-              onChange={(asset) => setAssets((p) => ({ ...p, [slot]: asset }))}
+              current={profile[slot]}
+              removed={removedAssets[slot]}
+              disabled={action.busy}
+              onRemovalChange={(removed) =>
+                setRemovedAssets((p) => ({ ...p, [slot]: removed }))
+              }
+              onChange={(asset) => {
+                setAssets((p) => ({ ...p, [slot]: asset }));
+                if (asset) setRemovedAssets((p) => ({ ...p, [slot]: false }));
+              }}
             />
           ))}
         </div>
