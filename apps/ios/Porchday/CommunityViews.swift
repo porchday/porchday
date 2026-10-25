@@ -2,7 +2,10 @@ import SwiftUI
 
 struct ConnectionsView: View {
     @EnvironmentObject var model: AppModel
-    @State private var data: JSON = .null, handle = "", kind = "friend", searched: JSON?
+    @State private var data: JSON = .null
+    @State private var handle = ""
+    @State private var kind = "friend"
+    @State private var searched: JSON?
     var body: some View { List {
         Section { Text("\(data["items"].array.count) of 300 friends, including family").font(.headline); TextField("Find an exact @handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled(); Picker("Connection", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }; Button("Send connection request") { Task { await model.perform { _ = try await model.api.social("/connections/requests", method: "POST", body: .object(["handle": .string(handle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "")), "kind": .string(kind)])); handle = ""; await refresh() } } }.disabled(handle.isEmpty); Text("A new connection sees future posts. Historical encrypted content needs an explicit share from its author.").font(.caption).foregroundStyle(.secondary) }
         Section("Pending requests") { ForEach(Array(data["requests"].array.enumerated()), id: \.offset) { _, request in VStack(alignment: .leading) { Text("@" + name(request["sender"].string == model.member?.id ? request["recipient"].string : request["sender"].string)); HStack { if request["recipient"].string == model.member?.id { Button("Accept \(request["kind"].string ?? "friend")") { Task { await action("/connections/requests/\(request["id"].string ?? "")/accept") } } }; Button(request["sender"].string == model.member?.id ? "Cancel" : "Decline", role: .destructive) { Task { await action("/connections/requests/\(request["id"].string ?? "")/decline") } } } } } }
@@ -21,7 +24,9 @@ struct ProfileView: View {
     let memberID: String; let handle: String
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var profile: JSON = .null, edit = false, compose = false
+    @State private var profile: JSON = .null
+    @State private var edit = false
+    @State private var compose = false
     var body: some View { VStack(spacing: 0) {
         VStack(alignment: .leading, spacing: 8) { if profile["cover"] != .null { EncryptedPhotoView(photo:profile["cover"]).frame(maxHeight:140).clipped() };if profile["avatar"] != .null { EncryptedPhotoView(photo:profile["avatar"]).frame(width:80,height:80).clipShape(Circle()) };Label(profile["displayName"].string ?? "@" + handle, systemImage: "person.crop.circle").font(.title2.bold()); if let bio = profile["bio"].string { Text(bio) }; if let interests = profile["interests"].string { Text(interests).font(.footnote).foregroundStyle(.secondary) }; if memberID == model.member?.id { HStack { Button("Make this space yours") { edit = true }; Button("Post to my wall") { compose = true } }.font(.callout) } }.frame(maxWidth: .infinity, alignment: .leading).padding().background(profile["theme"].string == "apricot" ? Color.orange.opacity(0.08) : profile["theme"].string == "ink" ? Color.blue.opacity(0.08) : Color.green.opacity(0.08))
         FeedView(title: "@" + handle, endpoint: "/walls/" + memberID)
@@ -31,7 +36,11 @@ struct ProfileView: View {
 struct GroupsView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var groups: [(id: String, name: String)] = [], invitations: [JSON] = [], create = false, name = "", description = ""
+    @State private var groups: [(id: String, name: String)] = []
+    @State private var invitations: [JSON] = []
+    @State private var create = false
+    @State private var name = ""
+    @State private var description = ""
     var body: some View { List {
         Section { Text("Private spaces for shared interests. Group membership is separate from your 300 connections.").font(.footnote); Button("Create a named group") { create = true } }
         Section("Your groups") { ForEach(groups, id: \.id) { group in NavigationLink(group.name) { GroupView(id: group.id, title: group.name) } } }
@@ -45,7 +54,10 @@ struct GroupView: View {
     let id: String; let title: String
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var manage = false, data: JSON = .null, handle = "", groupPayload: JSON = .null
+    @State private var manage = false
+    @State private var data: JSON = .null
+    @State private var handle = ""
+    @State private var groupPayload: JSON = .null
     var body: some View { FeedView(title: title, endpoint: "/groups/\(id)/posts", showComposer: true, groupID: id)
         .toolbar { Button("Members") { manage = true } }
         .sheet(isPresented: $manage) { NavigationStack { List {
@@ -67,6 +79,8 @@ struct ReportView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @Environment(\.dismiss) private var dismiss
-    @State private var reason = "harassment", description = "", disclose = false
+    @State private var reason = "harassment"
+    @State private var description = ""
+    @State private var disclose = false
     var body: some View { Form { Section { Text("Moderators cannot browse private posts. This report shares the content reference, author reference, category, and your identity. Select the checkbox only if you want to disclose encrypted evidence.") }; Picker("Concern", selection: $reason) { Text("Harassment").tag("harassment"); Text("AI agent / automated account").tag("agent"); Text("Impersonation").tag("impersonation"); Text("Spam").tag("spam"); Text("Safety").tag("safety"); Text("Other").tag("other") }; if item.payload != nil { Toggle("Disclose this text and my explanation to moderators", isOn: $disclose) }; if disclose { Section("Exact evidence to disclose") { Text(item.text); TextField("Explanation", text: $description, axis: .vertical); Text("Photos and unrelated comments are not included.").font(.caption) } }; Button("Submit report") { Task { await model.perform { guard let member = model.member else { return }; var evidence: JSON = .null; if disclose { evidence = try await vault.seal(.object(["selectedText": .string(item.text), "description": .string(description), "sourceId": .string(item.id), "sourceAuthorId": .string(item.authorID)]), member: member, kind: "report", audience: "moderators", parent: item.id) }; _ = try await model.api.social("/reports", method: "POST", body: .object(["target_member": .string(item.authorID), "target_id": .string(item.id), "reason": .string(reason), "evidence_envelope": evidence, "evidence_disclosed": .bool(disclose)])); dismiss() } } } }.navigationTitle("Report a concern").toolbar { Button("Cancel") { dismiss() } } }
 }

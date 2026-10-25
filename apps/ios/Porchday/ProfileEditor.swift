@@ -7,7 +7,14 @@ struct ProfileEditor: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @Environment(\.dismiss) private var dismiss
-    @State private var name="",bio="",interests="",status="",theme="sage",font="serif",order="about-first",slot="avatar"
+    @State private var name=""
+    @State private var bio=""
+    @State private var interests=""
+    @State private var status=""
+    @State private var theme="sage"
+    @State private var font="serif"
+    @State private var order="about-first"
+    @State private var slot="avatar"
     @State private var selection:PhotosPickerItem?
     @State private var assets:[String:PreparedPhoto]=[:]
     @State private var busy=false

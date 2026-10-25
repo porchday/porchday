@@ -20,7 +20,8 @@ struct EncryptedPhotoView: View {
     let photo: JSON
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var image: UIImage?, error = ""
+    @State private var image: UIImage?
+    @State private var error = ""
     var body: some View { VStack(alignment: .leading) { if let image { Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel(photo["alt"].string ?? "Shared photo"); if let alt = photo["alt"].string, !alt.isEmpty { Text(alt).font(.caption).foregroundStyle(.secondary) } } else { Label(error.isEmpty ? "Opening encrypted photo…" : error, systemImage: "photo").font(.caption).padding() } }.task(id: photo["id"].string) { do { guard let id = photo["id"].string else { return }; let bytes = try await model.api.bytes("/api/v1/media/\(id)/bytes"), envelope = try JSONDecoder().decode(JSON.self, from: bytes); let payload = try await vault.open(.object(["id": .string(id), "envelope": envelope])); guard payload["mime"].string == "image/jpeg", let encoded = payload["bytes"].string, let imageData = Data(base64Encoded: encoded) else { throw PorchError.message("Unsupported encrypted photo format.") }; image = try PhotoPipeline.safelyDecode(imageData) } catch { self.error = error.localizedDescription } } }
 }
 struct CameraView: UIViewControllerRepresentable {

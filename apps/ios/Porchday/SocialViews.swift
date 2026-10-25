@@ -10,7 +10,11 @@ struct FeedView: View {
     var groupID: String?
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var rows: [SocialItem] = [], cursor: String?, busy = false, compose = false, loaded = false
+    @State private var rows: [SocialItem] = []
+    @State private var cursor: String?
+    @State private var busy = false
+    @State private var compose = false
+    @State private var loaded = false
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
@@ -52,25 +56,36 @@ struct PostDetailView: View {
     let id: String
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var post: SocialItem?, comments: [SocialItem] = [], reactions: [JSON] = [], commentReactions: [JSON] = []
-    @State private var reply: SocialItem?, report: SocialItem?, edit: SocialItem?, deleted = false
+    @State private var post: SocialItem?
+    @State private var comments: [SocialItem] = []
+    @State private var reactions: [JSON] = []
+    @State private var commentReactions: [JSON] = []
+    @State private var reply: SocialItem?
+    @State private var report: SocialItem?
+    @State private var edit: SocialItem?
+    @State private var removing: SocialItem?
+    @State private var deleted = false
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
                 if let post, post.active, !deleted {
                     Section { MomentCard(item: post); ReactionBar(item: post, reactions: reactions, postID: id, changed: refresh); Button("Write a comment") { reply = post } }
-                    if post.authorID == model.member?.id { Section { Button("Edit or shorten timer") { edit = post }; Button("Delete post and comments", role: .destructive) { Task { await model.perform { _ = try await model.api.social("/posts/" + id, method: "DELETE"); deleted = true } } } } }
+                    if post.authorID == model.member?.id { Section { Button("Edit or shorten timer") { edit = post }; Button("Delete post and comments", role: .destructive) { removing = post } } }
                     Section("Comments") {
                         ForEach(threadedComments) { item in VStack(alignment: .leading, spacing: 8) {
                             if let parent = item.raw["parent_id"].string { Label("Reply in thread", systemImage: "arrow.turn.down.right").font(.caption).accessibilityHint("Reply to comment \(parent)") }
                             MomentCard(item: item)
                             ReactionBar(item: item, reactions: commentReactions.filter { $0["comment_id"].string == item.id }, postID: id, changed: refresh)
-                            HStack { Button("Reply") { reply = item }; Button("Report") { report = item }; if item.authorID == model.member?.id || post.authorID == model.member?.id { Button("Delete", role: .destructive) { Task { await model.perform { _ = try await model.api.social("/comments/" + item.id, method: "DELETE"); await refresh() } } } } } }.padding(.leading, item.raw["parent_id"].string == nil ? 0 : 12) }
+                            HStack { Button("Reply") { reply = item }; Button("Report") { report = item };if item.authorID == model.member?.id { Button("Edit") { edit = item } }; if item.authorID == model.member?.id || post.authorID == model.member?.id { Button("Delete", role: .destructive) { removing = item } } } }.padding(.leading, item.raw["parent_id"].string == nil ? 0 : 12) }
                     }
                     Section { Button("Report a concern") { report = post } }
                 } else { ContentUnavailableView("This moment isn’t here", systemImage: "clock", description: Text("It may have expired, been removed, or no longer be shared with you.")) }
             }
         }.navigationTitle("A moment together").navigationBarTitleDisplayMode(.inline).task(id: id) { await refresh() }.refreshable { await refresh() }
+            .confirmationDialog("Delete this content and its replies?",isPresented:Binding(get:{removing != nil},set:{if !$0 { removing=nil }}),titleVisibility:.visible) {
+                Button("Delete permanently",role:.destructive) { guard let item=removing else{return};Task { await model.perform { _ = try await model.api.social("/"+(item.isComment ? "comments/":"posts/")+item.id,method:"DELETE");if item.isComment { await refresh() } else { deleted=true };removing=nil } } }
+                Button("Cancel",role:.cancel) { removing=nil }
+            } message: { Text("Saved copies cannot be recalled.") }
             .sheet(item: $reply) { item in if let post { NavigationStack { ComposerView(post: post, parent: item) { Task { await refresh() } } } } }
             .sheet(item: $edit) { item in NavigationStack { EditContentView(item: item, postID: id) { Task { await refresh() } } } }
             .sheet(item: $report) { item in NavigationStack { ReportView(item: item) } }
@@ -120,8 +135,12 @@ struct ComposerView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @Environment(\.dismiss) private var dismiss
-    @State private var text = "", audience = "connections", timer = 0, busy = false
-    @State private var photoSelection: [PhotosPickerItem] = [], photos: [PreparedPhoto] = []
+    @State private var text = ""
+    @State private var audience = "connections"
+    @State private var timer = 0
+    @State private var busy = false
+    @State private var photoSelection: [PhotosPickerItem] = []
+    @State private var photos: [PreparedPhoto] = []
     @State private var camera = false
     private var inheritedExpiry: Date? { parent?.expiry ?? post?.expiry }
     var body: some View { Form {
@@ -154,6 +173,7 @@ struct EditContentView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @Environment(\.dismiss) private var dismiss
-    @State private var text = "", timer = 0
+    @State private var text = ""
+    @State private var timer = 0
     var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000) }.navigationTitle("Edit moment").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
 }

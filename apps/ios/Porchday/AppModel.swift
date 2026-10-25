@@ -12,7 +12,7 @@ import Combine
     let api = API.shared
     func restore() async {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-testing") { loading = false; return }
+        if ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { loading = false; return }
         #endif
         loading = true; defer { loading = false }
         do { let session = try await api.auth("get-session", method: "GET"); guard session["user"]["id"].string != nil else { member = nil; vault.clear(); return }; let member = try Member(try await api.social("/me")); self.member = member; try await vault.load(member: member) }
@@ -26,7 +26,12 @@ import Combine
     func finishSignIn() async throws { let member = try Member(try await api.social("/me")); self.member = member; needsTwoFactor = false; try await vault.load(member: member) }
     func verifySecondFactor(code:String,backup:Bool) async throws { _ = try await api.auth(backup ? "two-factor/verify-backup-code":"two-factor/verify-totp",body:.object(["code":.string(code),"trustDevice":.bool(false)])); try await finishSignIn() }
     func signOut() async {
-        _ = try? await api.auth("sign-out", body: .object([:])); await api.clearSession(); vault.clear(); SecureStore.clear(); member = nil; needsTwoFactor = false
+        _ = try? await api.auth("sign-out", body: .object([:])); await api.clearSession(); vault.clear(); SecureStore.clear(); clearTemporaryArchives(); member = nil; needsTwoFactor = false
+    }
+    private func clearTemporaryArchives() {
+        let root=FileManager.default.temporaryDirectory
+        guard let files=try? FileManager.default.contentsOfDirectory(at:root,includingPropertiesForKeys:nil) else{return}
+        for url in files where url.lastPathComponent.hasPrefix("porchday-import-") || url.lastPathComponent.hasPrefix("porchday-export-") { try? FileManager.default.removeItem(at:url) }
     }
     func handleURL(_ url: URL) {
         guard url.scheme == "https", url.host == "porchday.com" else { return }

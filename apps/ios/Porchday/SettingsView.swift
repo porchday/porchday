@@ -4,9 +4,23 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var sessions: [JSON] = [], grants: [JSON] = [], blocks: [JSON] = [], mutes: [JSON] = []
-    @State private var currentPassword = "", newPassword = "", confirm = "", archiveKey = "", importKey = "", progress = ""
-    @State private var inApp = true, plaintext = false, choosing = false, sharing = false, busy = false, deleting = false
+    @State private var sessions: [JSON] = []
+    @State private var grants: [JSON] = []
+    @State private var blocks: [JSON] = []
+    @State private var mutes: [JSON] = []
+    @State private var currentPassword = ""
+    @State private var newPassword = ""
+    @State private var confirm = ""
+    @State private var archiveKey = ""
+    @State private var importKey = ""
+    @State private var progress = ""
+    @State private var inApp = true
+    @State private var pushPreference=false
+    @State private var plaintext = false
+    @State private var choosing = false
+    @State private var sharing = false
+    @State private var busy = false
+    @State private var deleting = false
     @State private var files: [URL] = []
     @State private var preview: ArchiveSelection?
     var body: some View {
@@ -34,7 +48,7 @@ struct SettingsView: View {
             }
             Section("Encryption devices") { ForEach(vault.devices) { device in VStack(alignment:.leading) { Text(device.id == vault.device?.id ? "This device" : "Trusted device"); Text(device.fingerprint).font(.system(.caption,design:.monospaced)).textSelection(.enabled); if device.revoked { Text("Revoked").foregroundStyle(.secondary) } else { Button("Revoke this device",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/devices/"+device.id,method:"DELETE"); if device.id == vault.device?.id { await model.signOut() } else { await refresh() } } } } } } }; Text("Revoking a device stops future sharing. It cannot erase content already saved on that device.").font(.footnote) }
             Section("Privacy and notifications") {
-                Toggle("In-app updates",isOn:$inApp).onChange(of:inApp) { _,value in Task { await model.perform { _ = try await model.api.social("/me",method:"PATCH",body:.object(["notification_preferences":.object(["in_app":.bool(value),"push":.bool(false)])])) } } }
+                Toggle("In-app updates",isOn:$inApp).onChange(of:inApp) { _,value in Task { await model.perform { _ = try await model.api.social("/me",method:"PATCH",body:.object(["notification_preferences":.object(["in_app":.bool(value),"push":.bool(pushPreference)])])) } } }
                 NavigationLink("Your notifications") { NotificationsView() }
                 ForEach(Array(mutes.enumerated()),id:\.offset) { _, item in Button("Unmute " + (item["target"].string ?? "person")) { Task { await remove("/mutes/",item) } } }
                 ForEach(Array(blocks.enumerated()),id:\.offset) { _, item in Button("Unblock " + (item["target"].string ?? "person")) { Task { await remove("/blocks/",item) } } }
@@ -49,7 +63,7 @@ struct SettingsView: View {
             .sheet(isPresented:$sharing) { ShareArchiveFiles(urls:files) }
             .sheet(isPresented:$deleting) { NavigationStack { Form { Text("This permanently removes your profile and contributions and revokes sessions. Transfer or delete groups you own first. Saved exports cannot be recalled. A recent sign-in is required."); TextField("Type DELETE",text:$confirm).textInputAutocapitalization(.characters); Button("Permanently delete my account",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/account",method:"DELETE",body:.object(["confirm":.string("DELETE")])); await model.signOut(); deleting = false } } }.disabled(confirm != "DELETE") }.navigationTitle("Delete your account?").toolbar { Button("Cancel") { deleting = false } } } }
     }
-    private func refresh() async { await model.perform { let s = try await model.api.auth("list-sessions",method:"GET"); sessions = s.array; grants = try await model.api.social("/integrations")["grants"].array; blocks = try await model.api.social("/blocks")["items"].array; mutes = try await model.api.social("/mutes")["items"].array; if let member = model.member { try await vault.load(member:member); inApp = member.raw["notification_preferences"]["in_app"].boolean } } }
+    private func refresh() async { await model.perform { let s = try await model.api.auth("list-sessions",method:"GET"); sessions = s.array; grants = try await model.api.social("/integrations")["grants"].array; if model.member?.raw["status"].string != "suspended" { blocks = try await model.api.social("/blocks")["items"].array; mutes = try await model.api.social("/mutes")["items"].array }; if let member = model.member { try await vault.load(member:member); inApp = member.raw["notification_preferences"]["in_app"].boolean;pushPreference=member.raw["notification_preferences"]["push"].boolean } } }
     private func remove(_ path:String,_ item:JSON) async { await model.perform { _ = try await model.api.social(path+(item["target"].string ?? ""),method:"DELETE"); await refresh() } }
     private func export() async { busy = true; defer { busy = false }; await model.perform { progress = "Preparing encrypted records…"; let result = try await model.exportOwned(plaintext:plaintext) { progress = $0 }; files = result.urls; archiveKey = result.secret ?? ""; progress = "\(files.count) archive parts are ready. Save every part and keep the secret separately." } }
 }

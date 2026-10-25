@@ -43,8 +43,16 @@ struct MainTabs: View {
 }
 struct LoginView: View {
     @EnvironmentObject var model: AppModel
-    @State private var email = "", password = "", handle = "", invitation = ""
-    @State private var joining = false, adult = false, rules = false, busy = false, info = "", recovery = false
+    @State private var email = ""
+    @State private var password = ""
+    @State private var handle = ""
+    @State private var invitation = ""
+    @State private var joining = false
+    @State private var adult = false
+    @State private var rules = false
+    @State private var busy = false
+    @State private var info = ""
+    @State private var recovery = false
     var body: some View {
         NavigationStack {
             Form {
@@ -67,7 +75,9 @@ struct UnlockView: View {
     let member: Member
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var secret = "", saved = false, busy = false
+    @State private var secret = ""
+    @State private var saved = false
+    @State private var busy = false
     var body: some View {
         NavigationStack { Form {
             Section { Label("Only you hold the key", systemImage: "lock.shield").font(.title2); Text("Your encryption recovery secret is separate from your login password. Support cannot restore encrypted history without it.") }
@@ -82,12 +92,16 @@ struct UnlockView: View {
 struct StolenAccountView: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
-    @State private var account = "", safeEmail = "", sent = false
+    @State private var account = ""
+    @State private var safeEmail = ""
+    @State private var sent = false
     var body: some View { Form { Section { Text("Report a stolen account even if you cannot sign in. Use an email address only you can access. Submitting a report does not automatically suspend or grant access to an account.") }; Section { TextField("Account email or handle", text: $account).textInputAutocapitalization(.never); TextField("Safe contact email", text: $safeEmail).keyboardType(.emailAddress).textInputAutocapitalization(.never); Button("Send recovery report") { Task { await model.perform { _ = try await model.api.request("/api/account-recovery/reports", method: "POST", body: .object(["accountReference": .string(account), "safeEmail": .string(safeEmail)])); sent = true } } }.disabled(account.isEmpty || safeEmail.isEmpty); if sent { Text("Check your safe contact email for the next step. Support cannot decrypt your old content.") } } }.navigationTitle("Account stolen?").toolbar { Button("Done") { dismiss() } } }
 }
 
 struct TwoFactorLoginView:View {
     @EnvironmentObject var model:AppModel
-    @State private var code="",backup=false,busy=false
+    @State private var code=""
+    @State private var backup=false
+    @State private var busy=false
     var body:some View { NavigationStack { Form { Section { Label("One more check",systemImage:"lock.shield");Text("Enter your authenticator code or a single-use backup code.") };Toggle("Use a backup code",isOn:$backup);SecureField(backup ? "Backup code":"Six-digit authenticator code",text:$code).textContentType(.oneTimeCode).keyboardType(backup ? .default:.numberPad);Button("Verify and log in") { Task { busy=true;defer{busy=false};await model.perform { try await model.verifySecondFactor(code:code.trimmingCharacters(in:.whitespacesAndNewlines),backup:backup);code="" } } }.disabled(code.isEmpty || busy);Button("Cancel") { Task { await model.signOut() } } }.navigationTitle("Verify your login") } }
 }
