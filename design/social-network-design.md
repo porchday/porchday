@@ -1,7 +1,7 @@
 # Porchday Social Network Design
 
-Status: Proposed design  
-Date: October 24, 2026  
+Status: Implementation reference; pilot admission remains closed  
+Updated: October 25, 2026  
 Working name: Porchday  
 Domain: porchday.com
 
@@ -40,7 +40,7 @@ The owner authorized up to $1,000 total spending while setting up the MVP on Oct
 
 The initial repository is private `bobbyhwilder/porchday` (https://github.com/bobbyhwilder/porchday). Keep it private during development; Apache-2.0 remains the intended license and public source release remains a later launch milestone. Do not advertise source availability before publication. Never commit credentials; the existing secrets file remains outside the repository.
 
-Workers Paid is reported enabled. R2 API access is verified, with isolated private media and recovery-journal buckets for staging and production. PlanetScale billing activation through Cloudflare is confirmed, and organization `andykonwinski` is linked; database/Hyperdrive provisioning still awaits PlanetScale CLI authentication. Cloudflare Email Sending for porchday.com is enabled and DNS is configured (bounce MX, SPF, DKIM, and DMARC); end-to-end delivery testing remains pending. The private GitHub repository has received implementation commits and successful Linux and hosted iOS simulator CI runs. A $10 Cloudflare usage-budget alert is enabled for the account owner; exact accrued billing and alert delivery remain unverified. Current evidence and remaining gates are recorded in `docs/build-status.md` and `docs/cost-ledger.md`.
+Workers Paid, separate staging/production PlanetScale databases, six restricted Hyperdrive bindings, and private media/recovery-journal/backup buckets are provisioned. The linked PlanetScale organization is `andykonwinski`; both databases have 42 migrations through `041_deletion_pass_health.sql`. Cloudflare Email Sending and sender DNS are configured, and the owner confirmed receipt and successful use of three real synthetic signup links. Separate Cloudflare monitors and the hosted restore drill have passed their documented checks. Linux CI and hosted iOS simulator builds have passed; this is not evidence that every native interaction or recovery workflow has been verified. A $10 Cloudflare usage-budget alert is enabled for the account owner; its delivery and exact recent accrued billing remain unverified. The owner confirmed the separate service-monitor attention/recovery email pair. Current deployment versions, test scope, outstanding acceptance and admission gates, and costs are recorded in `docs/build-status.md` and `docs/cost-ledger.md`; provisioning alone does not establish pilot readiness.
 
 ## Scope and confirmed decisions
 
