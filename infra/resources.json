@@ -38,7 +38,8 @@
       "hyperdrive_jobs": "4f8a6695784047dc98d3daa262051299",
       "media_backup_bucket": "porchday-staging-media-backup",
       "media_backup_enabled": true,
-      "verified_pitr_days": 7
+      "verified_pitr_days": 7,
+      "signup_enabled": true
     },
     "production": {
       "bucket": "porchday-production-media",

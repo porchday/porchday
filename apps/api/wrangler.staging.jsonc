@@ -20,7 +20,7 @@
   "vars": {
     "APP_URL": "https://staging.porchday.com",
     "ENVIRONMENT": "staging",
-    "SIGNUP_ENABLED": "false",
+    "SIGNUP_ENABLED": "true",
     "CONTENT_WRITES_PAUSED": "false",
     "MEDIA_UPLOADS_PAUSED": "false",
     "SOCIAL_INVITATIONS_PAUSED": "false",

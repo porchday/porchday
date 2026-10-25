@@ -1,12 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
   <rect width="192" height="192" fill="#974013"/>
-  <!-- A continuous white cob, with rounded kernel bumps along its exposed edge. -->
-  <path d="M94 35c7 0 15 4 15 11 7-2 13 5 9 12 8 0 13 7 7 12 8 1 10 8 4 12 8 2 9 9 2 12 8 4 7 10 0 12 6 6 4 12-4 12 4 7 0 13-5 12 2 7-3 13-8 12 0 6-6 12-10 11-2 3-3 4-5 5-13-26-18-50-17-73 0-20 5-38 12-50Z" fill="#fff"/>
-  <!-- The left husk is an outlined sub-oval, with fine curved leaf strokes. -->
-  <path d="M94 35C75 44 62 67 61 91c-1 29 16 56 38 67 9-28 8-53 3-77-3-20-6-38-8-46Z" fill="#974013" stroke="#fff" stroke-width="3.5" stroke-linejoin="round"/>
-  <g fill="none" stroke="#fff" stroke-linecap="round">
-    <path d="M84 55c-17 26-12 67 9 88" stroke-width="2.5"/>
-    <path d="M88 70c-9 21-5 46 8 64" stroke-width="2"/>
+  <!-- One-color corn mark: a scalloped cob framed by a pointed, peeling husk. -->
+  <g fill="#fff">
+    <path d="M90 46c0-12 9-20 18-13 6-4 14 0 14 6 8-1 13 6 9 12 8 2 11 9 6 15 7 4 9 11 3 16 6 5 6 12 0 17l-25 31-13-55Z"/>
+    <path d="M77 23c14 10 23 29 28 51 5 21 8 42 9 61-13-14-27-25-43-33-2-22 1-41 6-59 3-9 4-14 0-20Z"/>
+    <path d="M48 79c24 8 44 25 57 47 9 15 14 29 14 43-28 3-47-13-49-39-2-22-8-39-22-51Z"/>
+    <path d="M151 72c-2 23-3 48-8 69-3 18-12 27-25 29-2-18-7-34-16-48 13-23 29-40 49-50Z"/>
+    <path d="M104 163h13v12a6.5 6.5 0 0 1-13 0Z"/>
   </g>
-  <path d="m95 156-1 8h8l1-9Z" fill="#fff"/>
+  <!-- Background-colored cuts keep the overlapping leaves readable at icon size. -->
+  <g fill="none" stroke="#974013" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M89 28C99 53 106 99 108 140" stroke-width="4"/>
+    <path d="M159 67C137 77 118 101 107 121" stroke-width="4"/>
+    <path d="M57 91C91 109 111 140 115 164c1 7 5 12 10 16" stroke-width="4"/>
+  </g>
 </svg>

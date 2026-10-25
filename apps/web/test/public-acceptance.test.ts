@@ -3,14 +3,26 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { AuthPage, Landing, StolenAccount, Policy } from "../src/Public";
 afterEach(() => vi.unstubAllGlobals());
-function locationFor(search = "") {
+function locationFor(search = "", hash = "") {
   vi.stubGlobal("location", {
     origin: "https://porchday.test",
     pathname: "/join",
     search,
+    hash,
   });
 }
 describe("public pilot acceptance contract", () => {
+  it.each([
+    ["", "#invite=fragment-invitation", "fragment-invitation"],
+    ["?invite=legacy-invitation", "", "legacy-invitation"],
+    ["?invite=legacy-invitation", "#invite=fragment-invitation", "fragment-invitation"],
+  ])("prefills the invitation from signup links (%s, %s)", (search, hash, expected) => {
+    locationFor(search, hash);
+    const html = renderToStaticMarkup(
+      createElement(AuthPage, { mode: "join", onSignedIn: () => {} }),
+    );
+    expect(html).toContain(`value="${expected}"`);
+  });
   it("requires an invitation, adult attestation, rules consent, and a human operator without OAuth buttons", () => {
     locationFor();
     const html = renderToStaticMarkup(

@@ -245,7 +245,10 @@ export function AuthPage({
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [handle, setHandle] = useState("");
-  const [invite, setInvite] = useState(query.get("invite") || "");
+  const [invite, setInvite] = useState(() =>
+    new URLSearchParams((location.hash || "").slice(1)).get("invite") ||
+    query.get("invite") || "",
+  );
   const [adult, setAdult] = useState(false);
   const [rules, setRules] = useState(false);
   const [done, setDone] = useState(false);

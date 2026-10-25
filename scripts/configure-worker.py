@@ -14,6 +14,9 @@ base=json.loads(Path('apps/api/wrangler.local.jsonc').read_text())
 host='porchday.com' if name=='production' else 'staging.porchday.com'
 base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev=False)
 base['vars'].update(APP_URL='https://'+host,ENVIRONMENT=name)
+signup=env.get('signup_enabled',False)
+if type(signup) is not bool:raise SystemExit('signup_enabled must be a JSON boolean.')
+base['vars']['SIGNUP_ENABLED']='true' if signup else 'false'
 for flag in ['CONTENT_WRITES_PAUSED','MEDIA_UPLOADS_PAUSED','SOCIAL_INVITATIONS_PAUSED']:
  value=env.get(flag.lower(),False)
  if type(value) is not bool:
@@ -41,4 +44,4 @@ base['routes']=[{'pattern':host,'custom_domain':True}]
 for key in ['STAFF_ACCESS_ISSUER','STAFF_ACCESS_AUDIENCE']:
  if env.get(key.lower()):base['vars'][key]=env[key.lower()]
 path=Path('apps/api/wrangler.'+name+'.jsonc');path.write_text(json.dumps(base,indent=2)+'\n')
-print('Wrote '+str(path)+'; registration remains closed until admission gates pass.')
+print('Wrote '+str(path)+'; invited registration is '+('enabled' if signup else 'closed')+'.')
