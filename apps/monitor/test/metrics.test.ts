@@ -15,7 +15,7 @@ describe('Bounded private aggregate metrics consumer',()=>{
   expect(await readMetrics(env,now,fetcher)).toEqual([{route:'/api/v1/feed',requests:200,observations:100,server_errors:0,p95_ms:100,latest:now}]);
   const [url,options]=fetcher.mock.calls[0];
   expect(url).toBe('https://api.cloudflare.com/client/v4/accounts/'+'a'.repeat(32)+'/analytics_engine/sql');
-  expect(options).toMatchObject({method:'POST',redirect:'error',headers:{Authorization:'Bearer '+env.CLOUDFLARE_ANALYTICS_READ_TOKEN}});
+  expect(options).toMatchObject({method:'POST',redirect:'manual',headers:{Authorization:'Bearer '+env.CLOUDFLARE_ANALYTICS_READ_TOKEN}});
   expect(options.body).toBe(metricsQuery('staging'));
   expect(options.body).toContain('sum(_sample_interval)');expect(options.body).toContain('count() AS observations');expect(options.body).toContain('quantileExactWeighted(0.95)(double2,_sample_interval)');
   expect(options.body).not.toContain('/api/operations/health');expect(options.body).toContain("blob2='staging'");expect(options.body).toContain("blob5 IN ('POST','PUT','PATCH','DELETE')");expect(options.body).not.toContain(env.CLOUDFLARE_ANALYTICS_READ_TOKEN);
@@ -23,6 +23,11 @@ describe('Bounded private aggregate metrics consumer',()=>{
   expect(metricsConfigured(broad)).toBe(false);expect(await readMetrics(broad,now,fetcher)).toBeNull();expect(fetcher).toHaveBeenCalledTimes(1);
   expect(await readMetrics({...env,ANALYTICS_ACCOUNT_ID:'../../other'},now,fetcher)).toBeNull();
   expect(()=>metricsQuery('private-injected SQL' as any)).toThrow('METRICS_ENVIRONMENT');
+ });
+ it('rejects redirects without following the query or heartbeat target',async()=>{
+  const fetcher=vi.fn().mockImplementation(async()=>new Response(null,{status:307,headers:{Location:'https://attacker.test'}}));
+  expect(await readMetrics(env,Date.now(),fetcher)).toBeNull();expect(await heartbeat('staging',fetcher)).toBe(false);
+  expect(fetcher).toHaveBeenCalledTimes(2);for(const [,options] of fetcher.mock.calls)expect(options.redirect).toBe('manual');
  });
  it('limits body bytes and rejects malformed, excessive, duplicate or contradictory sample evidence',async()=>{
   vi.useFakeTimers();vi.setSystemTime(now);

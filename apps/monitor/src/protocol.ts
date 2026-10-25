@@ -14,7 +14,9 @@ export async function probe(environment:Environment,token:string,request:typeof 
     // Race also bounds injected/misbehaving transports that ignore AbortSignal.
     const timeout=new Promise<never>((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('PROBE_TIMEOUT'));},10000);});
     return await Promise.race([timeout,(async()=>{
-      const response=await request(`https://${host}/api/operations/health`,{headers:{Authorization:'Bearer '+token},redirect:'error',signal:controller.signal});
+      // workerd rejects redirect:'error' before sending. Manual returns the 3xx
+      // without forwarding this capability; the strict 200 check rejects it.
+      const response=await request(`https://${host}/api/operations/health`,{headers:{Authorization:'Bearer '+token},redirect:'manual',signal:controller.signal});
       if(response.status!==200){await response.body?.cancel();return{healthy:false};}
       // Bound response bytes and never persist/log the protected diagnostics.
       const reader=response.body?.getReader();if(!reader)return{healthy:false};

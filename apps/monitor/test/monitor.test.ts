@@ -25,7 +25,8 @@ describe('Independent operational monitor',()=>{
     const fetcher=vi.fn().mockResolvedValue(healthy());
     expect(await probe('staging','x'.repeat(40),fetcher)).toEqual({healthy:true});
     expect(fetcher.mock.calls[0][0]).toBe('https://staging.porchday.com/api/operations/health');
-    expect(fetcher.mock.calls[0][1]).toMatchObject({redirect:'error',headers:{Authorization:'Bearer '+'x'.repeat(40)}});
+    expect(fetcher.mock.calls[0][1]).toMatchObject({redirect:'manual',headers:{Authorization:'Bearer '+'x'.repeat(40)}});
+    fetcher.mockResolvedValue(new Response(null,{status:302,headers:{Location:'https://attacker.test'}}));expect(await probe('staging','x'.repeat(40),fetcher)).toEqual({healthy:false});expect(fetcher).toHaveBeenCalledTimes(2);
     fetcher.mockResolvedValue(new Response('private error text',{status:503}));expect(await probe('production','x'.repeat(40),fetcher)).toEqual({healthy:false});
     fetcher.mockResolvedValue(new Response('x'.repeat(16385)));expect(await probe('staging','x'.repeat(40),fetcher)).toEqual({healthy:false});
     fetcher.mockResolvedValue(new Response(JSON.stringify({status:'ok',issues:['private secret'],snapshot:{}})));expect(await probe('staging','x'.repeat(40),fetcher)).toEqual({healthy:false});

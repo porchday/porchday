@@ -68,13 +68,13 @@ export function parseAggregates(value:unknown,now:number):Aggregate[] {
 export async function readMetrics(env:MetricsConfig,now:number,request:typeof fetch=fetch):Promise<Aggregate[]|null> {
  if(!metricsConfigured(env))return null;
  try{return await bounded(async signal=>parseAggregates(await readJson(await request(`https://api.cloudflare.com/client/v4/accounts/${env.ANALYTICS_ACCOUNT_ID}/analytics_engine/sql`,{
-  method:'POST',headers:{Authorization:'Bearer '+env.CLOUDFLARE_ANALYTICS_READ_TOKEN,'Content-Type':'text/plain'},body:metricsQuery(env.ENVIRONMENT),redirect:'error',signal,
+  method:'POST',headers:{Authorization:'Bearer '+env.CLOUDFLARE_ANALYTICS_READ_TOKEN,'Content-Type':'text/plain'},body:metricsQuery(env.ENVIRONMENT),redirect:'manual',signal,
  })),now));}catch{return null;}
 }
 export async function heartbeat(environment:Environment,request:typeof fetch=fetch):Promise<boolean> {
  if(!['staging','production'].includes(environment))return false;
  try{return await bounded(async signal=>{
-  const value=await readJson(await request(`https://${environment==='production'?'porchday.com':'staging.porchday.com'}/health`,{method:'GET',redirect:'error',cache:'no-store',signal}));
+  const value=await readJson(await request(`https://${environment==='production'?'porchday.com':'staging.porchday.com'}/health`,{method:'GET',redirect:'manual',cache:'no-store',signal}));
   return !!value&&typeof value==='object'&&(value as any).status==='ok'&&(value as any).service==='porchday'&&(value as any).environment===environment;
  });}catch{return false;}
 }

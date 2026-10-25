@@ -24,7 +24,7 @@
   "vars": {
     "ENVIRONMENT": "staging",
     "EMAIL_FROM": "Porchday <accounts@porchday.com>",
-    "METRICS_ENABLED": "false",
+    "METRICS_ENABLED": "true",
     "ANALYTICS_ACCOUNT_ID": "8e992aa185989f80520215b6489bfacb"
   },
   "observability": {
