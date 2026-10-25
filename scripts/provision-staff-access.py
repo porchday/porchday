@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Provision dedicated Porchday staff Access apps. Never enroll users or grant DB roles.
 
-Run through with-secrets.py. --check is read-only. Output contains public resource
-IDs only; merge it into infra/resources.json separately after verification.
+Run through with-secrets.py. --check is read-only. --update-roster staging permits
+one reviewed owner-only to owner-plus-reviewer change. Output contains public
+resource IDs only; merge it into infra/resources.json separately after verification.
 """
 import argparse
 import copy
@@ -16,6 +17,10 @@ import urllib.request
 HOSTS = {'staging': 'staging.porchday.com', 'production': 'porchday.com'}
 AUTHENTICATORS = ['security_key', 'biometrics']
 MFA = {'allowed_authenticators': AUTHENTICATORS, 'session_duration': '1h', 'mfa_disabled': False}
+POLICY_WRITABLE = {'name', 'decision', 'include', 'require', 'exclude', 'session_duration',
+    'mfa_config', 'approval_groups', 'approval_required', 'connection_rules',
+    'isolation_required', 'purpose_justification_prompt', 'purpose_justification_required'}
+POLICY_READONLY = {'id', 'account_id', 'app_count', 'created_at', 'updated_at', 'reusable'}
 
 
 class AccessError(RuntimeError):
@@ -65,16 +70,40 @@ def mfa_matches(value):
         value.get('session_duration') == '1h' and sorted(value.get('allowed_authenticators', [])) == sorted(AUTHENTICATORS)
 
 
-def policy_body(environment, email, idp_id):
+def private_email(value, label):
+    email = value.strip().lower()
+    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254:
+        raise AccessError('A valid private ' + label + ' email must be configured.')
+    return email
+
+
+def reviewer_roster(owner_email, reviewers):
+    email = private_email(owner_email, 'owner (cloudflare_username)')
+    reviewers = reviewers or {}
+    if set(reviewers) - set(HOSTS):
+        raise AccessError('Unknown staff roster environment.')
+    roster = {}
+    for env in HOSTS:
+        reviewer = reviewers.get(env, '')
+        if reviewer:
+            reviewer = private_email(reviewer, env + ' recovery reviewer')
+            if reviewer == email:
+                raise AccessError('Recovery reviewer must have a distinct configured email.')
+        roster[env] = reviewer
+    return email, roster
+
+
+def policy_body(environment, email, idp_id, reviewer=''):
     return {'name': 'Porchday staff owner ' + environment, 'decision': 'allow',
-        'include': [{'email': {'email': email}}], 'require': [{'login_method': {'id': idp_id}}],
+        'include': [{'email': {'email': value}} for value in [email, reviewer] if value],
+        'require': [{'login_method': {'id': idp_id}}],
         'exclude': [], 'session_duration': '1h', 'mfa_config': copy.deepcopy(MFA)}
 
 
 def verify_policy(actual, desired):
     for key in ['name', 'decision', 'include', 'require', 'exclude', 'session_duration']:
         if actual.get(key, [] if key in ['require', 'exclude'] else None) != desired[key]:
-            raise AccessError('Staff policy differs from the exact owner/OTP allow policy; manual review required.')
+            raise AccessError('Staff policy differs from the exact owner/reviewer/OTP allow policy; manual review required.')
     if not mfa_matches(actual.get('mfa_config')):
         raise AccessError('Staff policy independent MFA is missing or differs from the required settings.')
 
@@ -112,10 +141,8 @@ def verify_app(actual, desired):
         raise AccessError('Staff application audience is missing or invalid.')
 
 
-def provision(api, owner_email, team='porchday-staff', check=False):
-    email = owner_email.strip().lower()
-    if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254:
-        raise AccessError('A valid private owner email must be configured as cloudflare_username.')
+def provision(api, owner_email, team='porchday-staff', check=False, reviewers=None):
+    email, roster = reviewer_roster(owner_email, reviewers)
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', team) or len(team) > 63:
         raise AccessError('Invalid Access team name.')
     organization = api('/access/organizations')
@@ -129,6 +156,27 @@ def provision(api, owner_email, team='porchday-staff', check=False):
         raise AccessError('Unrelated Access applications exist; refuse global changes without manual review.')
     for name in expected_names:
         unique_named(apps, name)
+    otp = [idp for idp in idps if idp.get('type') == 'onetimepin']
+    if len(otp) > 1:
+        raise AccessError('Multiple OTP identity providers exist; manual review required.')
+    # Validate every existing policy/application before the first possible write,
+    # including production when a staging change is requested. No drift repair.
+    if not otp and (apps or policies):
+        raise AccessError('Existing staff resources have no unambiguous OTP provider.')
+    if otp and api('/access/identity_providers/' + otp[0]['id']).get('type') != 'onetimepin':
+        raise AccessError('Staff OTP provider verification failed.')
+    for env in HOSTS:
+        policy = unique_named(policies, 'Porchday staff owner ' + env)
+        app = unique_named(apps, 'Porchday staff ' + env)
+        if not policy and roster[env]:
+            raise AccessError('Reviewer configuration requires an existing reviewed policy; provision owner-only first.')
+        if policy:
+            policy = api('/access/policies/' + policy['id'])
+            verify_policy(policy, policy_body(env, email, otp[0]['id'], roster[env]))
+        if app:
+            if not policy:
+                raise AccessError('Existing staff application has no expected policy.')
+            verify_app(api('/access/apps/' + app['id']), app_body(env, otp[0]['id'], policy['id']))
     domain = team + '.cloudflareaccess.com'
     if organization.get('auth_domain') != domain and (apps or users):
         raise AccessError('Refusing to rename an Access team with existing applications or users.')
@@ -147,7 +195,7 @@ def provision(api, owner_email, team='porchday-staff', check=False):
     desired_org['mfa_config'] = {**(organization.get('mfa_config') or {}),
         'allowed_authenticators': AUTHENTICATORS, 'session_duration': '1h', 'amr_matching_enabled': False}
     if current_org != desired_org:
-        if check:
+        if check or apps or policies or users:
             raise AccessError('Organization/team/independent MFA configuration is not ready.')
         api('/access/organizations', 'PUT', desired_org)
     verified_org = api('/access/organizations')
@@ -157,9 +205,6 @@ def provision(api, owner_email, team='porchday-staff', check=False):
             sorted(verified_org.get('mfa_config', {}).get('allowed_authenticators', [])) != sorted(AUTHENTICATORS) or \
             verified_org.get('mfa_config', {}).get('session_duration') != '1h':
         raise AccessError('Organization independent MFA verification failed.')
-    otp = [idp for idp in idps if idp.get('type') == 'onetimepin']
-    if len(otp) > 1:
-        raise AccessError('Multiple OTP identity providers exist; manual review required.')
     if not otp:
         if check:
             raise AccessError('Staff email OTP provider is not ready.')
@@ -169,7 +214,7 @@ def provision(api, owner_email, team='porchday-staff', check=False):
         raise AccessError('Staff OTP provider verification failed.')
     output = {'staff_access_issuer': 'https://' + domain, 'staff_access_identity_provider_id': idp_id, 'environments': {}}
     for env in HOSTS:
-        desired_policy = policy_body(env, email, idp_id)
+        desired_policy = policy_body(env, email, idp_id, roster[env])
         policy = unique_named(policies, desired_policy['name'])
         if not policy:
             if check:
@@ -191,17 +236,96 @@ def provision(api, owner_email, team='porchday-staff', check=False):
             'staff_access_policy_id': policy['id']}
     if len({v['staff_access_audience'] for v in output['environments'].values()}) != 2:
         raise AccessError('Environments must have distinct Access audiences.')
+    if len({v['staff_access_policy_id'] for v in output['environments'].values()}) != 2:
+        raise AccessError('Environments must have distinct staff policies.')
     return output
+
+
+def policy_update_body(policy):
+    if set(policy) - POLICY_WRITABLE - POLICY_READONLY:
+        raise AccessError('Unrecognized policy settings; manual review required before roster update.')
+    if policy.get('app_count', 1) != 1:
+        raise AccessError('Staff policy is shared with another application; roster update refused.')
+    return {key: copy.deepcopy(value) for key, value in policy.items() if key in POLICY_WRITABLE}
+
+
+def ready_snapshot(api, email, team, reviewers):
+    snapshot = {}
+    def read(path, method='GET', body=None):
+        if method != 'GET':
+            raise AccessError('Roster preflight must remain read-only.')
+        value = api(path)
+        if path in snapshot and snapshot[path] != value:
+            raise AccessError('Staff configuration changed during preflight; no update attempted.')
+        snapshot[path] = copy.deepcopy(value)
+        return value
+    output = provision(read, email, team, check=True, reviewers=reviewers)
+    return snapshot, output
+
+
+def update_roster(api, owner_email, reviewers, environment, team='porchday-staff'):
+    email, roster = reviewer_roster(owner_email, reviewers)
+    if environment != 'staging' or not roster['staging'] or roster['production']:
+        raise AccessError('Only staging expansion with one configured reviewer and owner-only production is supported.')
+    policies = api('/access/policies')
+    candidate = unique_named(policies, 'Porchday staff owner staging')
+    if not candidate:
+        raise AccessError('Existing staging owner policy is required before roster update.')
+    candidate = api('/access/policies/' + candidate['id'])
+    owner_include = [{'email': {'email': email}}]
+    desired_include = owner_include + [{'email': {'email': roster['staging']}}]
+    if candidate.get('include') not in [owner_include, desired_include]:
+        raise AccessError('Staging roster is neither owner-only nor the exact configured roster; update refused.')
+    current_roster = {'staging': roster['staging'] if candidate['include'] == desired_include else ''}
+    before, output = ready_snapshot(api, email, team, current_roster)
+    policy_id = output['environments']['staging']['staff_access_policy_id']
+    policy_path = '/access/policies/' + policy_id
+    if candidate != before[policy_path]:
+        raise AccessError('Staff configuration changed during preflight; no update attempted.')
+    body = policy_update_body(before[policy_path])
+    # Re-read the full protected configuration immediately before the sole PUT.
+    # Cloudflare does not document conditional policy writes: this detects observed
+    # races, not a transaction with another administrator's simultaneous changes.
+    again, again_output = ready_snapshot(api, email, team, current_roster)
+    if again != before or again_output != output:
+        raise AccessError('Staff configuration changed before update; no update attempted.')
+    if body['include'] == desired_include:
+        return output
+    body['include'] = desired_include
+    try:
+        api(policy_path, 'PUT', body)
+        after, after_output = ready_snapshot(api, email, team, roster)
+    except (AccessError, KeyError, ValueError, TypeError):
+        raise AccessError('Roster write outcome requires manual review; verification did not complete. Do not retry automatically.') from None
+    expected = copy.deepcopy(before)
+    expected[policy_path]['include'] = desired_include
+    # The list can contain abbreviated policies; preserve every represented field.
+    for policy in expected['/access/policies']:
+        if policy.get('id') == policy_id and 'include' in policy:
+            policy['include'] = desired_include
+    for snapshot in [expected, after]:
+        snapshot[policy_path].pop('updated_at', None)
+        for policy in snapshot['/access/policies']:
+            if policy.get('id') == policy_id:
+                policy.pop('updated_at', None)
+    if after != expected or after_output != output:
+        raise AccessError('Roster write outcome requires manual review; configuration changed during verification. Do not retry automatically.')
+    return after_output
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--check', action='store_true', help='Read-only verification; do not create or change resources.')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--check', action='store_true', help='Read-only verification; do not create or change resources.')
+    mode.add_argument('--update-roster', choices=['staging'], help='Explicitly add the one privately configured staging recovery reviewer.')
     parser.add_argument('--team', default='porchday-staff', help='Access team name; existing populated teams cannot be renamed.')
     args = parser.parse_args()
     try:
-        result = provision(Cloudflare(os.environ.get('CLOUDFLARE_ACCOUNT_ID', ''), os.environ.get('CLOUDFLARE_API_TOKEN', '')),
-            os.environ.get('cloudflare_username', ''), args.team, args.check)
+        api = Cloudflare(os.environ.get('CLOUDFLARE_ACCOUNT_ID', ''), os.environ.get('CLOUDFLARE_API_TOKEN', ''))
+        owner = os.environ.get('cloudflare_username', '')
+        reviewers = {env: os.environ.get('STAFF_' + env.upper() + '_RECOVERY_REVIEWER_EMAIL', '') for env in HOSTS}
+        result = update_roster(api, owner, reviewers, args.update_roster, args.team) if args.update_roster else \
+            provision(api, owner, args.team, args.check, reviewers=reviewers)
         print(json.dumps(result, indent=2))
     except (AccessError, KeyError, ValueError, TypeError) as error:
         # AccessError contains only fixed messages/paths. Parsing/provider shape failures
