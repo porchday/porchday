@@ -75,17 +75,19 @@ export async function provisionRole(db:ReturnType<typeof postgres>,reference:Ref
  const work=async(tx:postgres.TransactionSql)=>{
   await tx`set local statement_timeout='5s'`;await tx`set local lock_timeout='2s'`;
   if(apply)await tx`lock table public.staff_users in share row exclusive mode`;
-  const rows=await tx<Row[]>`select subject,email,active,roles from public.staff_users where subject=${reference.subject} or lower(email)=${reference.email}`;
+  // JSON has a built-in driver parser even when fetch_types:false disables
+  // discovery of PostgreSQL array parsers in the operator's real connection.
+  const rows=await tx<Row[]>`select subject,email,active,to_json(roles) as roles from public.staff_users where subject=${reference.subject} or lower(email)=${reference.email}`;
   if(classifyRows(rows,reference)==='present')return 'already_present' as const;
   if(!apply)return 'would_create' as const;
   await tx`insert into public.staff_users(subject,email,active,roles) values(${reference.subject},${reference.email},true,ARRAY['recovery']::text[])`;
   // staff_subject identifies the affected staff identity; approval provenance is
   // retained in the protected operator receipt, never invented as a JWT actor.
   await tx`insert into public.security_audit(staff_subject,action) values(${reference.subject},'staff_recovery_role_provisioned')`;
-  const saved=await tx<Row[]>`select subject,email,active,roles from public.staff_users where subject=${reference.subject} or lower(email)=${reference.email}`;
+  const saved=await tx<Row[]>`select subject,email,active,to_json(roles) as roles from public.staff_users where subject=${reference.subject} or lower(email)=${reference.email}`;
   requireValue(classifyRows(saved,reference)==='present','STAFF_ROLE_READBACK_FAILED');return 'created' as const;
  };
  const status=apply?await db.begin(work):await db.begin('read only',work);
- if(apply){const saved=await db<Row[]>`select subject,email,active,roles from public.staff_users where subject=${reference.subject} or lower(email)=${reference.email}`;requireValue(classifyRows(saved,reference)==='present','STAFF_ROLE_READBACK_FAILED');}
+ if(apply){const saved=await db<Row[]>`select subject,email,active,to_json(roles) as roles from public.staff_users where subject=${reference.subject} or lower(email)=${reference.email}`;requireValue(classifyRows(saved,reference)==='present','STAFF_ROLE_READBACK_FAILED');}
  return status;
 }

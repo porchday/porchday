@@ -2,7 +2,7 @@ import {test,expect,describe,beforeAll,beforeEach,afterAll} from 'vitest';
 import postgres from 'postgres';
 import {mkdir,writeFile,chmod,rm,symlink} from 'node:fs/promises';
 import {randomUUID} from 'node:crypto';
-import {argumentsFor,expectedEmail,validateReference,readReference,verifyDirectory,verifyAccessInventory,stagingConnection,provisionRole,type Reference} from './provision-staff-role-support.js';
+import {argumentsFor,expectedEmail,validateReference,readReference,verifyDirectory,verifyAccessInventory,stagingConnection,classifyRows,provisionRole,type Reference} from './provision-staff-role-support.js';
 const reference:Reference={v:1,environment:'staging',subject:'678432db-b480-4e94-a566-e1d9c6715bb2',email:'reviewer@example.test',confirmedAt:new Date().toISOString(),source:'human-confirmed-signed-staff-identity'};
 const env={cloudflare_username:'owner@example.test',STAFF_STAGING_RECOVERY_REVIEWER_EMAIL:'reviewer@example.test',CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'synthetic-token'};
 
@@ -68,12 +68,18 @@ describe.skipIf(!databaseUrl)('real local database role transaction',()=>{
  let db:ReturnType<typeof postgres>;
  beforeAll(async()=>{
   const target=new URL(databaseUrl!);if(!['localhost','127.0.0.1'].includes(target.hostname)||target.pathname!=='/porchday_staff_role_test')throw Error('LOCAL_STAFF_ROLE_TEST_DATABASE_REQUIRED');
-  db=postgres(databaseUrl!,{max:4,prepare:false,onnotice:()=>{}});
+  db=postgres(databaseUrl!,{max:4,prepare:false,fetch_types:false,onnotice:()=>{}});
   await db`create table if not exists public.staff_users(subject text primary key,email text not null,active boolean not null,roles text[] not null)`;
   await db`create table if not exists public.security_audit(id bigint generated always as identity,staff_subject text,action text not null)`;
  });
  beforeEach(async()=>{await db`truncate public.staff_users,public.security_audit`;});
  afterAll(async()=>{await db?.end();});
+ test('operator driver preserves strict role validation using JSON without array type discovery',async()=>{
+  const [value]=await db`select ARRAY['recovery']::text[] as raw_roles,to_json(ARRAY['recovery']::text[]) as roles`;
+  expect(value.raw_roles).toBe('{recovery}');expect(value.roles).toEqual(['recovery']);
+  expect(()=>classifyRows([{subject:reference.subject,email:reference.email,active:true,roles:value.raw_roles}],reference)).toThrow('EXISTING_CONFIGURATION');
+  expect(classifyRows([{subject:reference.subject,email:reference.email,active:true,roles:value.roles}],reference)).toBe('present');
+ });
  test('default only reports prospective grant and writes neither row nor audit',async()=>{
   expect(await provisionRole(db,reference)).toBe('would_create');expect((await db`select count(*)::int n from public.staff_users`)[0].n).toBe(0);expect((await db`select count(*)::int n from public.security_audit`)[0].n).toBe(0);
  });
@@ -89,9 +95,9 @@ describe.skipIf(!databaseUrl)('real local database role transaction',()=>{
  });
  test('inactive or non-exact roles are never silently reactivated or expanded',async()=>{
   for(const row of [{active:false,roles:['recovery']},{active:true,roles:[]},{active:true,roles:['moderation']},{active:true,roles:['recovery','moderation']}]){
-   await db`truncate public.staff_users`;await db`insert into public.staff_users values(${reference.subject},${reference.email},${row.active},${db.array(row.roles)})`;
+   await db`truncate public.staff_users`;await db`insert into public.staff_users values(${reference.subject},${reference.email},${row.active},ARRAY(SELECT jsonb_array_elements_text(${db.json(row.roles)}::jsonb)))`;
    await expect(provisionRole(db,reference,true)).rejects.toThrow('EXISTING_CONFIGURATION');
-   expect((await db`select active,roles from public.staff_users`)[0]).toEqual(row);
+   expect((await db`select active,to_json(roles) as roles from public.staff_users`)[0]).toEqual(row);
   }
  });
  test('audit failure rolls back the role grant',async()=>{
