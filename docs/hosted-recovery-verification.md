@@ -45,4 +45,12 @@ At **22:18:05.435 UTC**, the captured pre-hold cookie returned **HTTP 401** on b
 
 These checks used exactly two GET requests with the saved cookie and read-only metadata inspection. They created no login, hold, approval, restoration, email or content mutation, and made no redundant sign-out call. Fixed results are preserved privately as `recovery-hold-4a2c7e10.intent.json` and `.result.json`; no authentication/recovery token hashes were queried.
 
-The saved-session cleanup obligation is now fulfilled by verified revocation. Two distinct human restoration approvals, claimant use of the resulting email, restored-account/key-history checks and normal canary deletion remain outstanding. A hold intentionally stops access without deleting encrypted history; this checkpoint is not a completed account recovery.
+The saved-session cleanup obligation is now fulfilled by verified revocation. At this hold checkpoint, the two distinct human restoration approvals, claimant use of the resulting email, restored-account/key-history checks and normal canary deletion were still outstanding. A hold intentionally stops access without deleting encrypted history; this checkpoint is not a completed account recovery.
+
+## Two-person approval and restoration-email checkpoint
+
+The other authorized reviewer approved restoration at **22:28:10.566 UTC**, followed by the owner at **22:29:02.224 UTC**. Both people confirmed their actions. An earlier read-only observation at **22:28:48 UTC** correctly showed only one approval and no restoration-link expiry; it predates the second approval and is retained as intermediate evidence.
+
+The coordinating operator's read-only inspection at **22:29:34.280 UTC** verified both eligible approvals on the exact case. The case remained on hold, with one `case_restore` email-outbox row, one provider-accepted delivery and zero failed deliveries. The restoration link expires at **2026-10-25 22:59:02.224 UTC**. Provider acceptance is not proof of inbox receipt or claimant use of the link.
+
+The human claimant has been asked to use the delivered restoration form with the separately prepared private password, then stop at **Your login access is restored** before signing in or unlocking encryption keys. The post-restoration harness is prepared and independently reviewed, but has not run. No additional hosted requests were made to create this documentation checkpoint. Claimant completion, old-password denial, recovery of the original ciphertext, one normal recovery-authorized device enrollment, private fixture-state reconciliation, canary deletion and final session cleanup remain pending.
