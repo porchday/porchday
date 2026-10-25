@@ -2,7 +2,8 @@
 """Provision dedicated Porchday staff Access apps. Never enroll users or grant DB roles.
 
 Run through with-secrets.py. --check is read-only. --update-roster staging permits
-one reviewed owner-only to owner-plus-reviewer change. Output contains public
+one reviewed owner-only to owner-plus-reviewer change. --enable-launcher adds
+the separate OTP enrollment entry point. Output contains public
 resource IDs only; merge it into infra/resources.json separately after verification.
 """
 import argparse
@@ -20,6 +21,7 @@ MFA = {'allowed_authenticators': AUTHENTICATORS, 'session_duration': '1h', 'mfa_
 POLICY_WRITABLE = {'name', 'decision', 'include', 'require', 'exclude', 'session_duration',
     'mfa_config', 'approval_groups', 'approval_required', 'connection_rules',
     'isolation_required', 'purpose_justification_prompt', 'purpose_justification_required'}
+LAUNCHER_POLICY_NAME = 'Porchday staff launcher'
 POLICY_READONLY = {'id', 'uid', 'account_id', 'app_count', 'created_at', 'updated_at', 'reusable'}
 
 
@@ -149,6 +151,50 @@ def verify_app(actual, desired):
         raise AccessError('Staff application audience is missing or invalid.')
 
 
+def launcher_policy_body(email, idp_id, roster):
+    # The Launcher is Cloudflare's MFA-enrollment bootstrap, explicitly exempt
+    # from organization MFA. Its separate OTP policy grants no staff app access.
+    members = list(dict.fromkeys(value for value in [email, roster['staging'], roster['production']] if value))
+    return {'name': LAUNCHER_POLICY_NAME, 'decision': 'allow',
+        'include': [{'email': {'email': value}} for value in members],
+        'require': [{'login_method': {'id': idp_id}}], 'exclude': [], 'session_duration': '1h'}
+
+
+def verify_launcher_policy(actual, desired):
+    verify_policy_id_alias(actual)
+    for key, value in desired.items():
+        if actual.get(key, [] if key in ['require', 'exclude'] else None) != value:
+            raise AccessError('Launcher policy differs from the exact approved OTP roster.')
+    if actual.get('mfa_config') not in [None, {}, {'mfa_disabled': True}]:
+        raise AccessError('Launcher bootstrap policy has unexpected independent MFA settings.')
+    if actual.get('app_count', 1) not in [0, 1]:
+        raise AccessError('Launcher policy is shared with another application.')
+
+
+def launcher_body(idp_id, policy_id):
+    # The documented app_launcher create shape omits name/domain: Cloudflare
+    # assigns the organization's Launcher. Link the closed policy at creation.
+    return {'type': 'app_launcher', 'allowed_idps': [idp_id],
+        'policies': [{'id': policy_id, 'precedence': 1}], 'session_duration': '1h',
+        'auto_redirect_to_identity': False, 'skip_app_launcher_login_page': False}
+
+
+def verify_launcher(actual, desired, domain):
+    for key in ['type', 'allowed_idps', 'session_duration', 'auto_redirect_to_identity', 'skip_app_launcher_login_page']:
+        default = False if key in ['auto_redirect_to_identity', 'skip_app_launcher_login_page'] else None
+        if actual.get(key, default) != desired[key]:
+            raise AccessError('Launcher application differs from the approved configuration: ' + key)
+    if actual.get('domain') not in [None, '', domain]:
+        raise AccessError('Launcher domain differs from this Access organization.')
+    links = actual.get('policies', [])
+    if len(links) != 1 or not isinstance(links[0], dict) or links[0].get('id') != desired['policies'][0]['id'] or links[0].get('precedence', 1) != 1:
+        raise AccessError('Launcher must have exactly its dedicated allow policy.')
+    if actual.get('destinations') or actual.get('mfa_config') not in [None, {}, {'mfa_disabled': True}]:
+        raise AccessError('Launcher has unexpected destinations or independent MFA settings.')
+    if not re.fullmatch(r'[a-f0-9]{64}', actual.get('aud', '')):
+        raise AccessError('Launcher audience is missing or invalid.')
+
+
 def provision(api, owner_email, team='porchday-staff', check=False, reviewers=None):
     email, roster = reviewer_roster(owner_email, reviewers)
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', team) or len(team) > 63:
@@ -160,7 +206,10 @@ def provision(api, owner_email, team='porchday-staff', check=False, reviewers=No
     policies = api('/access/policies')
     # This tool manages a dedicated account setup, not unrelated existing apps.
     expected_names = {'Porchday staff ' + env for env in HOSTS}
-    if any(app.get('name') not in expected_names for app in apps):
+    launchers = [app for app in apps if app.get('type') == 'app_launcher']
+    if len(launchers) > 1:
+        raise AccessError('Multiple Launcher applications exist; manual review required.')
+    if any(app.get('name') not in expected_names and app.get('type') != 'app_launcher' for app in apps):
         raise AccessError('Unrelated Access applications exist; refuse global changes without manual review.')
     for name in expected_names:
         unique_named(apps, name)
@@ -186,6 +235,15 @@ def provision(api, owner_email, team='porchday-staff', check=False, reviewers=No
                 raise AccessError('Existing staff application has no expected policy.')
             verify_app(api('/access/apps/' + app['id']), app_body(env, otp[0]['id'], policy['id']))
     domain = team + '.cloudflareaccess.com'
+    launcher_policy = unique_named(policies, LAUNCHER_POLICY_NAME)
+    if launcher_policy:
+        if not otp:
+            raise AccessError('Launcher has no verified OTP identity provider.')
+        verify_launcher_policy(api('/access/policies/' + launcher_policy['id']), launcher_policy_body(email, otp[0]['id'], roster))
+    if launchers:
+        if not launcher_policy:
+            raise AccessError('Launcher has no expected dedicated policy.')
+        verify_launcher(api('/access/apps/' + launchers[0]['id']), launcher_body(otp[0]['id'], launcher_policy['id']), domain)
     if organization.get('auth_domain') != domain and (apps or users):
         raise AccessError('Refusing to rename an Access team with existing applications or users.')
     current_org = copy.deepcopy(organization)
@@ -246,6 +304,8 @@ def provision(api, owner_email, team='porchday-staff', check=False, reviewers=No
         raise AccessError('Environments must have distinct Access audiences.')
     if len({v['staff_access_policy_id'] for v in output['environments'].values()}) != 2:
         raise AccessError('Environments must have distinct staff policies.')
+    if launchers:
+        output['launcher'] = {'application_id': launchers[0]['id'], 'policy_id': launcher_policy['id']}
     return output
 
 
@@ -335,18 +395,63 @@ def update_roster(api, owner_email, reviewers, environment, team='porchday-staff
     return after_output
 
 
+def enable_launcher(api, owner_email, reviewers, team='porchday-staff'):
+    email, roster = reviewer_roster(owner_email, reviewers)
+    if not roster['staging'] or roster['production']:
+        raise AccessError('Launcher setup requires the approved staging reviewer and owner-only production.')
+    before, output = ready_snapshot(api, email, team, roster)
+    again, again_output = ready_snapshot(api, email, team, roster)
+    if again != before or again_output != output:
+        raise AccessError('Staff configuration changed before Launcher setup; no update attempted.')
+    if output.get('launcher'):
+        return output
+    idp = output['staff_access_identity_provider_id']
+    policy = unique_named(before['/access/policies'], LAUNCHER_POLICY_NAME)
+    try:
+        if not policy:
+            policy = api('/access/policies', 'POST', launcher_policy_body(email, idp, roster))
+        verify_launcher_policy(api('/access/policies/' + policy['id']), launcher_policy_body(email, idp, roster))
+        app = api('/access/apps', 'POST', launcher_body(idp, policy['id']))
+        after, after_output = ready_snapshot(api, email, team, roster)
+        if after_output.get('launcher') != {'application_id': app['id'], 'policy_id': policy['id']}:
+            raise AccessError('Launcher identity verification failed.')
+        # Only the new app and (when absent before) new policy may be added.
+        # Keep organization, staff apps/policies, OTP and prior IDs byte-exact.
+        expected = copy.deepcopy(before)
+        normalized = copy.deepcopy(after)
+        normalized.pop('/access/apps/' + app['id'], None)
+        normalized['/access/apps'] = [item for item in normalized['/access/apps'] if item.get('id') != app['id']]
+        if not unique_named(before['/access/policies'], LAUNCHER_POLICY_NAME):
+            normalized.pop('/access/policies/' + policy['id'], None)
+            normalized['/access/policies'] = [item for item in normalized['/access/policies'] if item.get('id') != policy['id']]
+        else:
+            # A previously unattached policy gains exactly one application.
+            for snapshot in [expected, normalized]:
+                for item in [snapshot['/access/policies/' + policy['id']], *snapshot['/access/policies']]:
+                    if item.get('id') == policy['id']:
+                        item.pop('app_count', None)
+                        item.pop('updated_at', None)
+        if normalized != expected or {k: v for k, v in after_output.items() if k != 'launcher'} != output:
+            raise AccessError('Protected configuration changed during Launcher setup.')
+        return after_output
+    except (AccessError, KeyError, ValueError, TypeError):
+        raise AccessError('Launcher write outcome requires manual review; verification did not complete. Do not retry automatically.') from None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument('--check', action='store_true', help='Read-only verification; do not create or change resources.')
     mode.add_argument('--update-roster', choices=['staging'], help='Explicitly add the one privately configured staging recovery reviewer.')
+    mode.add_argument('--enable-launcher', action='store_true', help='Create the approved OTP-only MFA enrollment Launcher without changing staff access.')
     parser.add_argument('--team', default='porchday-staff', help='Access team name; existing populated teams cannot be renamed.')
     args = parser.parse_args()
     try:
         api = Cloudflare(os.environ.get('CLOUDFLARE_ACCOUNT_ID', ''), os.environ.get('CLOUDFLARE_API_TOKEN', ''))
         owner = os.environ.get('cloudflare_username', '')
         reviewers = {env: os.environ.get('STAFF_' + env.upper() + '_RECOVERY_REVIEWER_EMAIL', '') for env in HOSTS}
-        result = update_roster(api, owner, reviewers, args.update_roster, args.team) if args.update_roster else \
+        result = enable_launcher(api, owner, reviewers, args.team) if args.enable_launcher else \
+            update_roster(api, owner, reviewers, args.update_roster, args.team) if args.update_roster else \
             provision(api, owner, args.team, args.check, reviewers=reviewers)
         print(json.dumps(result, indent=2))
     except (AccessError, KeyError, ValueError, TypeError) as error:

@@ -303,3 +303,86 @@ def changed_precedence(path,method='GET',body=None):
 rejects(lambda:m.update_roster(changed_precedence,'owner@example.test',{'staging':'r@example.test'},'staging'),'outcome requires manual review')
 assert len(p.writes)==1
 `));
+
+test('Launcher creation is closed, isolated from staff MFA and idempotent',()=>run(String.raw`
+m.provision(p,'owner@example.test');roster={'staging':'reviewer@example.test'}
+m.update_roster(p,'owner@example.test',roster,'staging');p.embed_policies=True
+before=copy.deepcopy((p.org,p.apps,p.policies,p.idps));p.writes=[]
+out=m.enable_launcher(p,'owner@example.test',roster)
+assert [w[:2] for w in p.writes]==[('/access/policies','POST'),('/access/apps','POST')]
+assert (p.org,p.apps[:2],p.policies[:2],p.idps)==before
+policy=p.policies[-1];app=p.apps[-1]
+assert policy['include']==[{'email':{'email':'owner@example.test'}},{'email':{'email':'reviewer@example.test'}}]
+assert policy['require']==[{'login_method':{'id':p.idps[0]['id']}}]
+assert 'mfa_config' not in policy and 'mfa_config' not in app
+assert app['policies']==[{'id':policy['id'],'precedence':1}]
+assert app['type']=='app_launcher' and app['allowed_idps']==[p.idps[0]['id']]
+assert not app['skip_app_launcher_login_page']
+assert out['launcher']=={'application_id':app['id'],'policy_id':policy['id']}
+assert all(value not in json.dumps(out) for value in ['owner@example.test','reviewer@example.test'])
+p.writes=[]
+assert m.enable_launcher(p,'owner@example.test',roster)==out
+assert m.provision(p,'owner@example.test',check=True,reviewers=roster)==out
+assert p.writes==[]
+`));
+
+test('Launcher refuses unrelated/duplicate apps and invalid roster or staff drift before writes',()=>run(String.raw`
+m.provision(p,'owner@example.test');roster={'staging':'reviewer@example.test'}
+m.update_roster(p,'owner@example.test',roster,'staging');p.writes=[]
+for invalid in [{},{'production':'reviewer@example.test'},{'staging':'reviewer@example.test','production':'other@example.test'}]:
+ rejects(lambda:m.enable_launcher(p,'owner@example.test',invalid),'requires')
+p.apps[1]['mfa_config']['mfa_disabled']=True
+rejects(lambda:m.enable_launcher(p,'owner@example.test',roster),'MFA')
+assert p.writes==[]
+p.apps[1]['mfa_config']['mfa_disabled']=False
+m.enable_launcher(p,'owner@example.test',roster);p.writes=[]
+p.apps.append(copy.deepcopy(p.apps[-1]))
+rejects(lambda:m.enable_launcher(p,'owner@example.test',roster),'Multiple Launcher')
+assert p.writes==[]
+`));
+
+test('Launcher refuses a broader, shared or MFA-blocked enrollment policy',()=>run(String.raw`
+m.provision(p,'owner@example.test');roster={'staging':'reviewer@example.test'}
+m.update_roster(p,'owner@example.test',roster,'staging');m.enable_launcher(p,'owner@example.test',roster)
+saved=copy.deepcopy(p.policies[-1]);p.writes=[]
+for patch in [{'include':[{'everyone':{}}]},{'mfa_config':m.MFA},{'app_count':2}]:
+ p.policies[-1]={**copy.deepcopy(saved),**patch}
+ rejects(lambda:m.provision(p,'owner@example.test',check=True,reviewers=roster),'Launcher')
+p.policies[-1]=saved;p.apps[-1]['policies'].append({'id':'other'})
+rejects(lambda:m.provision(p,'owner@example.test',check=True,reviewers=roster),'exactly')
+assert p.writes==[]
+`));
+
+test('Launcher preflight races fail without writes and postflight drift is not retried',()=>run(String.raw`
+m.provision(p,'owner@example.test');roster={'staging':'reviewer@example.test'}
+m.update_roster(p,'owner@example.test',roster,'staging');p.writes=[]
+reads=0
+def race(path,method='GET',body=None):
+ global reads
+ if path=='/access/users':
+  reads+=1
+  if reads==2:p.users.append({'id':'new-user'})
+ return p(path,method,body)
+rejects(lambda:m.enable_launcher(race,'owner@example.test',roster),'changed before')
+assert p.writes==[]
+def changed(path,method='GET',body=None):
+ value=p(path,method,body)
+ if path=='/access/apps' and method=='POST':p.apps[1]['session_duration']='2h'
+ return value
+rejects(lambda:m.enable_launcher(changed,'owner@example.test',roster),'Do not retry automatically')
+assert len(p.writes)==2
+`));
+
+test('Launcher can explicitly resume a verified orphan policy without duplicating or opening it',()=>run(String.raw`
+m.provision(p,'owner@example.test');roster={'staging':'reviewer@example.test'}
+m.update_roster(p,'owner@example.test',roster,'staging')
+policy=p('/access/policies','POST',m.launcher_policy_body('owner@example.test',p.idps[0]['id'],{'staging':'reviewer@example.test','production':''}))
+p.policies[-1]['app_count']=0;p.writes=[]
+def provider(path,method='GET',body=None):
+ value=p(path,method,body)
+ if path=='/access/apps' and method=='POST':p.policies[-1]['app_count']=1
+ return value
+m.enable_launcher(provider,'owner@example.test',roster)
+assert [w[:2] for w in p.writes]==[('/access/apps','POST')]
+assert len(p.policies)==3
+`));

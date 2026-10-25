@@ -55,6 +55,25 @@ Before writing, the tool verifies both applications, both policies, the OTP prov
 
 The in-memory provider tests cover exact/idempotent rosters, preflight refusal before writes, preserved production and optional policy settings, observed preflight/postflight races, and fixed errors/output without private email values. These tests are not evidence that the hosted roster has been changed or that either reviewer has completed login.
 
+## App Launcher for MFA enrollment
+
+Cloudflare's [App Launcher](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/app-launcher/) is disabled until it has a separate allow policy. The Launcher is [exempt from global independent MFA](https://developers.cloudflare.com/cloudflare-one/access-controls/access-settings/independent-mfa/) so approved people can enroll their first authenticator. This exemption does not grant access to either staff application or remove their required MFA.
+
+After the approved staging reviewer is privately configured and both staff rosters pass verification, the explicit bounded command is:
+
+```sh
+python3 scripts/with-secrets.py python3 scripts/provision-staff-access.py --enable-launcher
+python3 scripts/with-secrets.py python3 scripts/provision-staff-access.py --check
+```
+
+It creates a dedicated reusable Launcher policy with exactly the owner and configured staging reviewer, requiring the existing email OTP provider. It then creates the `app_launcher` application with that policy already attached, the same OTP provider and a one-hour session. The [documented application create API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/applications/methods/create/) assigns the Launcher name/domain; this tool does not overwrite them or set staff-level independent MFA on the enrollment application. Production remains owner-only. No staff application, staff policy, organization setting, authenticator or database role is changed.
+
+The command takes two complete read-only preflight snapshots, refuses observed drift, and verifies all prior protected configuration after the bounded creates. A pre-existing exact Launcher is idempotent. Unrelated or duplicate applications, extra policy selectors, shared Launcher policy, unexpected MFA settings and unverified roster changes are rejected. An ambiguous provider response or postflight mismatch requires manual inspection; never retry automatically. A verified unattached Launcher policy can be explicitly resumed without creating another policy. Provider write/readback does not prove that a person enrolled MFA or authenticated successfully.
+
+Hosted configuration verified on 2026-10-25: the explicit create completed and its full postflight comparison passed. A separate read-only `--check` also passed. The Launcher has exactly the approved two-email OTP roster; staging remains two emails and production owner-only. Both staff applications, their policy IDs/audiences, OTP provider and organization/staff MFA settings were unchanged. No authenticators or database roles were created. The 26 focused in-memory provider tests passed; actual human enrollment/login remains a separate check.
+
+After configuration, the approved people personally open [the Launcher](https://porchday-staff.cloudflareaccess.com) or [the authenticator enrollment page](https://porchday-staff.cloudflareaccess.com/AddMfaDevice). Use email OTP, then Account → MFA devices. Never enroll or retain their authenticator for them. An already enrolled authenticator is required when adding or removing later MFA devices.
+
 ## Remaining enrollment and launch checks
 
 1. Once each hostname is online, verify unauthenticated `/staff`, `/staff/`, `/api/staff`, `/api/staff/recovery` and `/api/staff/moderation` requests are protected by Access. Verify ordinary member routes remain accessible according to their own application authorization. Keep alternate Worker origins disabled and verify the application's assertion checks reject absent, forged or wrong-audience assertions.
