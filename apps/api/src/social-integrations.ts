@@ -1,4 +1,4 @@
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import postgres from 'postgres';
 import type { Env, Variables } from './types.js';
@@ -7,6 +7,12 @@ const scopes = z.array(z.enum(['profile:read', 'content:read', 'media:read', 'ex
 function randomToken() { const b = crypto.getRandomValues(new Uint8Array(32)); return btoa(String.fromCharCode(...b)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''); }
 async function hash(s: string) { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))), b => b.toString(16).padStart(2, '0')).join(''); }
 async function challenge(s: string) { return btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''); }
+async function limited(sql:postgres.Sql,c:Context<{Bindings:Env;Variables:Variables}>,tokenHash:string,kind:'read'|'authorization_code'|'refresh_token',client:string|null=null){
+    const [row]=await sql`select app.integration_request_limit(${tokenHash},${kind},${client}::uuid) as retry_after`;
+    if(row.retry_after<0)throw Error('Invalid grant');
+    if(row.retry_after>0){c.header('Retry-After',String(row.retry_after));return c.json({error:{code:'RATE_LIMIT',message:'Wait before making another integration request.'}},429);}
+    return null;
+}
 const safeRedirect = (uri: string) => { const u = new URL(uri); if (u.username || u.password || u.hash)
     throw Error('Invalid redirect'); if (u.protocol !== 'https:' && !(u.protocol === 'http:' && u.hostname === '127.0.0.1' && u.port))
     throw Error('Invalid redirect'); return uri; };
@@ -39,12 +45,14 @@ export function createIntegrationTokenRoutes() {
         if (b.grant_type === 'authorization_code') {
             if (!b.code || !b.code_verifier || !b.redirect_uri)
                 throw Error('Invalid request');
-            rows = await sql `select app.exchange_integration_code(${b.client_id},${b.redirect_uri},${await hash(b.code)},${await challenge(b.code_verifier)},${await hash(access)},${await hash(refresh)}) as result`;
+            const codeHash=await hash(b.code),rate=await limited(sql,c,codeHash,'authorization_code',b.client_id);if(rate)return rate;
+            rows = await sql `select app.exchange_integration_code(${b.client_id},${b.redirect_uri},${codeHash},${await challenge(b.code_verifier)},${await hash(access)},${await hash(refresh)}) as result`;
         }
         else {
             if (!b.refresh_token)
                 throw Error('Invalid request');
-            rows = await sql `select app.refresh_integration(${b.client_id},${await hash(b.refresh_token)},${await hash(access)},${await hash(refresh)}) as result`;
+            const refreshHash=await hash(b.refresh_token),rate=await limited(sql,c,refreshHash,'refresh_token',b.client_id);if(rate)return rate;
+            rows = await sql `select app.refresh_integration(${b.client_id},${refreshHash},${await hash(access)},${await hash(refresh)}) as result`;
         }
         return c.json({ token_type: 'Bearer', access_token: access, refresh_token: refresh, ...rows[0].result });
     }
@@ -53,10 +61,11 @@ export function createIntegrationTokenRoutes() {
     } });
     app.get('/own/:resource', async (c) => { const map: Record<string, string> = { profile: 'profile:read', content: 'content:read', media: 'media:read', exports: 'export:read' }; const scope = map[c.req.param('resource')]; const token = c.req.header('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if (!scope || !token)
         throw Error('Invalid grant'); const sql = postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: false, fetch_types: false }); try {
+        const tokenHash=await hash(token),rate=await limited(sql,c,tokenHash,'read');if(rate)return rate;
         let afterId='';let snapshotAt=new Date().toISOString();
         if(c.req.query('cursor')){const cursor=z.object({id:z.string().max(256),at:z.string().datetime({offset:true})}).parse(JSON.parse(atob(c.req.query('cursor')!)));afterId=cursor.id;snapshotAt=cursor.at;}
         const section=scope==='content:read'?z.enum(['posts','comments','post_reactions','comment_reactions']).parse(c.req.query('section')??'posts'):scope==='profile:read'?'profile':scope==='media:read'?'media':'jobs';
-        const [r]=await sql`select app.integration_page(${await hash(token)},${scope},${section},${afterId},${snapshotAt}::timestamptz) as data`;
+        const [r]=await sql`select app.integration_page(${tokenHash},${scope},${section},${afterId},${snapshotAt}::timestamptz) as data`;
         const {next_id,snapshot_at,...data}=r.data;return c.json({...data,next_cursor:next_id?btoa(JSON.stringify({id:next_id,at:new Date(snapshot_at).toISOString()})):null,snapshot_at,...(scope==='content:read'?{sections:['posts','comments','post_reactions','comment_reactions']}:{})});
     }
     finally {
@@ -64,7 +73,8 @@ export function createIntegrationTokenRoutes() {
     } });
     app.get('/own/media/:id/bytes', async (c) => { const id = z.string().uuid().parse(c.req.param('id')); const token = c.req.header('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if (!token)
         throw Error('Invalid grant'); const sql = postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: false, fetch_types: false }); let path: string; try {
-        const [r] = await sql `select app.integration_media(${await hash(token)},${id}) as path`;
+        const tokenHash=await hash(token),rate=await limited(sql,c,tokenHash,'read');if(rate)return rate;
+        const [r] = await sql `select app.integration_media(${tokenHash},${id}) as path`;
         path = r.path;
     }
     finally {

@@ -5,7 +5,7 @@ export const scopeLabels: Record<string, string> = {
   "profile:read": "Your encrypted profile and public handle",
   "content:read": "Your own encrypted posts, comments, and reactions",
   "media:read": "Your own encrypted photos and their routing metadata",
-  "export:read": "Your own export status and encrypted export data",
+  "export:read": "Your own export job status",
 };
 export function IntegrationConsent() {
   const [client, setClient] = useState<Json | null>(null);

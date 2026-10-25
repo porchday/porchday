@@ -39,7 +39,7 @@ async function seal(a: Person, payload: unknown, override: Partial<ContentContex
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
     it('preserves a committed upload after an ambiguous COMMIT response even when an account hold hides it under RLS',async()=>{
@@ -257,6 +257,57 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(a.id, '/integrations/' + auth.data.grant_id, 'DELETE')).status).toBe(200);
         expect((await app.request('https://porchday.test/integration/own/profile', { headers: bearer }, env)).status).toBe(401);
     }, 30000);
+    it('denies integration media bytes immediately at their own deadline while preserving surviving owned photos',async()=>{
+        const a=await person(),mediaId=randomUUID(),liveId=randomUUID(),deadline=new Date(Date.now()+60_000).toISOString();
+        for(const [id,expiresAt] of [[mediaId,deadline],[liveId,null]] as const){
+            const envelope=await seal(a,{mime:'image/jpeg',bytes:'c2FtcGxl',alt:'Integration expiry fixture'},{id,kind:'media',parentId:a.id,audience:'only_me',expiresAt});
+            const bytes=new TextEncoder().encode(JSON.stringify(envelope));
+            expect((await request(a.id,'/media','POST',{id,envelope,byte_size:bytes.length})).status).toBe(201);
+            expect((await app.request('https://porchday.test/media/'+id+'/bytes',{method:'PUT',headers:{'x-test-member':a.id,'content-type':'application/octet-stream'},body:bytes},env)).status).toBe(200);
+        }
+        const client=await request(a.id,'/integrations/clients','POST',{name:'Expiry test',purpose:'Read owned photo ciphertext',redirect_uri:'https://migration.example/callback'}),verifier='B'.repeat(43),challenge=createHash('sha256').update(verifier).digest('base64url');
+        const grant=await request(a.id,'/integrations/authorize','POST',{client_id:client.data.id,redirect_uri:'https://migration.example/callback',scope:['media:read'],code_challenge:challenge,code_challenge_method:'S256',state:'media-expiry-test-state',consent:true});
+        const token=await request('', '/integration/token','POST',{grant_type:'authorization_code',client_id:client.data.id,redirect_uri:'https://migration.example/callback',code:new URL(grant.data.redirect_uri).searchParams.get('code'),code_verifier:verifier});expect(token.status).toBe(200);
+        const headers={authorization:'Bearer '+token.data.access_token},read=(id:string)=>app.request('https://porchday.test/integration/own/media/'+id+'/bytes',{headers},env);
+        expect((await read(mediaId)).status).toBe(200);
+        // Owner fixture simulates time passage without deleting ciphertext or
+        // waiting for cleanup; ordinary clients cannot make unsigned changes.
+        await sql`update app.media_assets set envelope=jsonb_set(envelope,'{context,expiresAt}',to_jsonb((now()-interval '1 second')::text)) where id=${mediaId}`;
+        expect(objects.has('media/'+a.id+'/'+mediaId)).toBe(true);
+        const bucketRead=vi.spyOn(memoryBucket,'get');
+        try{expect((await read(mediaId)).status).toBe(401);expect(bucketRead).not.toHaveBeenCalled();}
+        finally{bucketRead.mockRestore();}
+        expect((await read(liveId)).status).toBe(200);
+        const page=await(await app.request('https://porchday.test/integration/own/media',{headers},env)).json();expect(page.media.map((m:any)=>m.id)).toEqual([liveId]);
+    },30000);
+    it('persists per-grant token attempts, rotates refresh credentials and bounds concurrent read requests',async()=>{
+        const a=await person(),client=await request(a.id,'/integrations/clients','POST',{name:'Limits test',purpose:'Read own profile ciphertext',redirect_uri:'https://migration.example/callback'}),verifier='C'.repeat(43),challenge=createHash('sha256').update(verifier).digest('base64url');
+        const grant=await request(a.id,'/integrations/authorize','POST',{client_id:client.data.id,redirect_uri:'https://migration.example/callback',scope:['profile:read'],code_challenge:challenge,code_challenge_method:'S256',state:'rate-limit-test-state',consent:true});
+        const exchange={grant_type:'authorization_code',client_id:client.data.id,redirect_uri:'https://migration.example/callback',code:new URL(grant.data.redirect_uri).searchParams.get('code'),code_verifier:verifier};
+        for(let n=0;n<2;n++)expect((await request('','/integration/v1/token','POST',{...exchange,code_verifier:'D'.repeat(43)})).status).toBe(401);
+        expect(Number((await sql`select sum(count) as n from app.integration_rate_limits where grant_id=${grant.data.grant_id} and operation='token'`)[0].n)).toBe(2);
+        const token=await request('','/integration/v1/token','POST',exchange);expect(token.status).toBe(200);
+        const refreshed=await request('','/integration/v1/token','POST',{grant_type:'refresh_token',client_id:client.data.id,refresh_token:token.data.refresh_token});expect(refreshed.status).toBe(200);
+        expect((await request('','/integration/v1/token','POST',{grant_type:'refresh_token',client_id:client.data.id,refresh_token:token.data.refresh_token})).status).toBe(401);
+        expect((await app.request('https://porchday.test/integration/v1/own/profile',{headers:{authorization:'Bearer '+token.data.access_token}},env)).status).toBe(401);
+        // Seed both sides of a possible minute boundary; each bucket has only
+        // two remaining slots, even if the concurrent batch straddles a minute.
+        for(const operation of ['read','token'])await sql`insert into app.integration_rate_limits(grant_id,bucket,operation,count) select ${grant.data.grant_id},floor(extract(epoch from now())/60)::bigint+d,${operation},${operation==='read'?118:10} from generate_series(0,1) d on conflict(grant_id,bucket,operation) do update set count=excluded.count`;
+        const headers={authorization:'Bearer '+refreshed.data.access_token};
+        const reads=await Promise.all(Array.from({length:8},()=>app.request('https://porchday.test/integration/v1/own/profile',{headers},env)));
+        const readCounters=await sql`select count from app.integration_rate_limits where grant_id=${grant.data.grant_id} and operation='read'`;
+        const allowed=readCounters.reduce((n,r)=>n+Math.min(r.count-118,2),0);
+        expect(allowed).toBeGreaterThanOrEqual(2);expect(allowed).toBeLessThanOrEqual(4);
+        expect(reads.filter(r=>r.status===200)).toHaveLength(allowed);expect(reads.filter(r=>r.status===429)).toHaveLength(8-allowed);
+        expect(readCounters.every(r=>r.count<=121)).toBe(true);
+        for(const response of reads.filter(r=>r.status===429)){expect(Number(response.headers.get('Retry-After'))).toBeGreaterThanOrEqual(1);expect(Number(response.headers.get('Retry-After'))).toBeLessThanOrEqual(60);expect((await response.json()).error.code).toBe('RATE_LIMIT');}
+        const limited=await app.request('https://porchday.test/integration/v1/token',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({grant_type:'refresh_token',client_id:client.data.id,refresh_token:refreshed.data.refresh_token})},env);expect(limited.status).toBe(429);expect(limited.headers.get('Retry-After')).toBeTruthy();
+        await sql`update app.integration_rate_limits set count=1 where grant_id=${grant.data.grant_id} and operation='token'`;
+        const retried=await request('','/integration/v1/token','POST',{grant_type:'refresh_token',client_id:client.data.id,refresh_token:refreshed.data.refresh_token});expect(retried.status).toBe(200);
+        await sql`update app.integration_grants set revoked_at=now() where id=${grant.data.grant_id}`;
+        expect((await app.request('https://porchday.test/integration/v1/own/profile',{headers:{authorization:'Bearer '+retried.data.access_token}},env)).status).toBe(401);
+        await expect(database.withMember(env,a.id,db=>db`select * from app.integration_rate_limits`)).rejects.toMatchObject({code:'42501'});
+    },30000);
     it('rejects changed encrypted upload bytes and attaches profile photos with revocable connection access', async () => {
         const a=await person(),b=await person(),stranger=await person();await connection(a,b);
         const mediaId=randomUUID();const envelope=await seal(a,{mime:'image/jpeg',bytes:'c2FtcGxl',alt:'Profile fixture'},{id:mediaId,kind:'media',parentId:a.id});
