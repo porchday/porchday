@@ -55,6 +55,7 @@ jobs:
           xcrun simctl launch "$PORCHDAY_SIMULATOR" com.porchday.app --ui-testing
           sleep 5
           xcrun simctl io "$PORCHDAY_SIMULATOR" screenshot apps/ios/build/Porchday-simulator.png
+          ditto -c -k --sequesterRsrc --keepParent apps/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Porchday.app apps/ios/build/Porchday-simulator-app.zip
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -62,4 +63,5 @@ jobs:
           path: |
             apps/ios/build/PorchdayTests.xcresult
             apps/ios/build/Porchday-simulator.png
+            apps/ios/build/Porchday-simulator-app.zip
           retention-days: 7

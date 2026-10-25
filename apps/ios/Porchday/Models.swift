@@ -51,7 +51,7 @@ enum PorchDate {
     static func parse(_ value: String) -> Date? { let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; if let date = f.date(from: value) { return date }; f.formatOptions = [.withInternetDateTime]; return f.date(from: value) }
     static func deadline(seconds: Int, parent: Date?) -> Date? { let own = seconds > 0 ? Date().addingTimeInterval(TimeInterval(seconds)) : nil; if let parent { return own.map { min($0, parent) } ?? parent }; return own }
 }
-enum PorchError: LocalizedError { case message(String)
-    var errorDescription: String? { switch self { case .message(let value): value } }
+enum PorchError: LocalizedError { case message(String); case api(code:String,message:String,details:JSON)
+    var errorDescription: String? { switch self { case .message(let value): value;case .api(_,let message,_):message } }
 }
 let reactionCatalog: [(id: String, emoji: String, label: String)] = [("like","👍","Like"),("love","❤️","Love"),("laugh","😄","Laugh"),("celebrate","🎉","Celebrate"),("care","🤗","Care"),("sunshine","☀️","Sunshine")]

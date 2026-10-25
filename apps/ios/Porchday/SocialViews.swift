@@ -142,7 +142,8 @@ struct ComposerView: View {
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var photos: [PreparedPhoto] = []
     @State private var camera = false
-    private var inheritedExpiry: Date? { parent?.expiry ?? post?.expiry }
+    @State private var observedExpiry:Date?
+    private var inheritedExpiry: Date? { observedExpiry ?? parent?.expiry ?? post?.expiry }
     var body: some View { Form {
         if let expiry = inheritedExpiry { Section { Label("This comment will be deleted with its parent on \(expiry.formatted(date: .abbreviated, time: .shortened)). You can make its timeout shorter.", systemImage: "timer").font(.callout) } }
         Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("\(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) }
@@ -163,7 +164,13 @@ struct ComposerView: View {
         }
         let payload: JSON = .object(["text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines)), "reactionSecret": .string(try CryptoVault.randomSecret()), "media": .array(media)])
         let envelope = try await vault.seal(payload, member: member, kind: post == nil ? "post" : "comment", audience: share, id: id, group: group, parent: parent?.id, post: post?.id, expiry: expiry)
-        if let post { _ = try await model.api.social("/posts/\(post.id)/comments", method: "POST", body: .object(["envelope": envelope, "parent_expires_at": inheritedExpiry.map { .string(PorchDate.string($0)) } ?? .null])) }
+        if let post {
+            do { _ = try await model.api.social("/posts/\(post.id)/comments", method:"POST",body:.object(["envelope":envelope,"parent_expires_at":inheritedExpiry.map{.string(PorchDate.string($0))} ?? .null])) }
+            catch PorchError.api(let code,_,let details) where code=="PARENT_DEADLINE_CHANGED" {
+                observedExpiry=details["expires_at"].string.flatMap(PorchDate.parse)
+                throw PorchError.message("The parent's timer changed. Review the updated inherited timeout above, then submit again.")
+            }
+        }
         else { _ = try await model.api.social("/posts", method: "POST", body: .object(["envelope": envelope, "media_ids": .array(media.map { $0["id"] })])) }
         submitted(); dismiss()
     } }

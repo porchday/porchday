@@ -33,7 +33,7 @@ actor API {
         guard (200..<300).contains(http.statusCode) else {
             let error = (try? JSONDecoder().decode(JSON.self, from: data)) ?? .null
             let message = error["error"]["message"].string ?? error["message"].string ?? error["error"]["code"].string ?? "This action is unavailable. Please try again."
-            throw PorchError.message(message.replacingOccurrences(of: "_", with: " "))
+            throw PorchError.api(code:error["error"]["code"].string ?? error["code"].string ?? "REQUEST_FAILED",message:message.replacingOccurrences(of:"_",with:" "),details:error["error"]["details"])
         }
         return data
     }

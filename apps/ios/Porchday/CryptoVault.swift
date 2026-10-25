@@ -26,9 +26,9 @@ import Porchcrypto
     func load(member: Member) async throws {
         let result = try await api.social("/devices"); devices = try result["items"].array.map(Device.init)
         readOnly = member.raw["status"].string == "suspended"
-        if let current = device, devices.contains(where: { $0.id == current.id && $0.fingerprint == current.fingerprint && !$0.revoked }) { return }
+        if let current = device, devices.contains(where: { $0.id == current.id && $0.fingerprint == current.fingerprint && (!$0.revoked || readOnly) }) { return }
         for session in sessions.values { session.close() }; sessions = [:]; device = nil
-        guard let data = try SecureStore.read("device:\(member.id)"), let saved = try? JSONDecoder().decode(JSON.self, from: data), let activeID = saved["active"].string, let active = devices.first(where: { $0.id == activeID && !$0.revoked }) else { return }
+        guard let data = try SecureStore.read("device:\(member.id)"), let saved = try? JSONDecoder().decode(JSON.self, from: data), let activeID = saved["active"].string, let active = devices.first(where: { $0.id == activeID && (!$0.revoked || readOnly) }) else { return }
         for value in saved["keys"].array {
             guard let fp = value["fingerprint"].string else { continue }; var error: NSError?
             let session = PorchcryptoSessionFromKeychain(value["armor"].string, fp, &error)

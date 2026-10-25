@@ -21,7 +21,7 @@ struct RootView: View {
             if model.loading { ProgressView("Opening your porch…") }
             else if model.needsTwoFactor { TwoFactorLoginView() }
             else if let member = model.member {
-                if vault.unlocked { if member.raw["status"].string == "suspended" { NavigationStack { SettingsView() } } else { MainTabs(member: member) } } else { UnlockView(member: member) }
+                if vault.unlocked || (member.raw["status"].string == "suspended" && vault.devices.isEmpty) { if member.raw["status"].string == "suspended" { NavigationStack { SettingsView() } } else { MainTabs(member: member) } } else { UnlockView(member: member) }
             } else { LoginView() }
         }
         .alert("Something needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
