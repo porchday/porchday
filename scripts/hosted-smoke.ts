@@ -1338,6 +1338,7 @@ async function feedLatency(s: State) {
       statuses: Record<string, number> = {},
       errorCodes: Record<string, number> = {};
     let next = 0;
+    const startedAt = new Date().toISOString();
     await Promise.all(
       Array.from({ length: 5 }, async () => {
         while (next++ < 100) {
@@ -1351,6 +1352,7 @@ async function feedLatency(s: State) {
         }
       }),
     );
+    const finishedAt = new Date().toISOString();
     durations.sort((a, b) => a - b);
     const percentile = (fraction: number) =>
       Math.round(durations[Math.ceil(durations.length * fraction) - 1]);
@@ -1359,6 +1361,8 @@ async function feedLatency(s: State) {
         phase,
         requests: durations.length,
         concurrency: 5,
+        started_at: startedAt,
+        finished_at: finishedAt,
         statuses,
         errorCodes,
         p50_ms: percentile(0.5),
