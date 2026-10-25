@@ -26,6 +26,7 @@ import Combine
     func finishSignIn() async throws { let member = try Member(try await api.social("/me")); self.member = member; needsTwoFactor = false; try await vault.load(member: member) }
     func verifySecondFactor(code:String,backup:Bool) async throws { _ = try await api.auth(backup ? "two-factor/verify-backup-code":"two-factor/verify-totp",body:.object(["code":.string(code),"trustDevice":.bool(false)])); try await finishSignIn() }
     func signOut() async {
+        await NativeNotifications.shared.signOut(model: self)
         _ = try? await api.auth("sign-out", body: .object([:])); await api.clearSession(); vault.clear(); SecureStore.clear(); clearTemporaryArchives(); member = nil; needsTwoFactor = false
     }
     private func clearTemporaryArchives() {

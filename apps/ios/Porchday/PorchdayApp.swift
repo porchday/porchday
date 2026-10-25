@@ -1,6 +1,7 @@
 import SwiftUI
 
 @main struct PorchdayApp: App {
+    @UIApplicationDelegateAdaptor(PorchdayAppDelegate.self) private var appDelegate
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
@@ -8,6 +9,7 @@ import SwiftUI
             RootView().environmentObject(model).environmentObject(model.vault).tint(Color(red: 0.27, green: 0.39, blue: 0.29))
                 .task { await model.restore() }
                 .onOpenURL { model.handleURL($0) }
+                .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }
                 .onChange(of: scenePhase) { _, phase in if phase == .active, model.member != nil { Task { await model.restore() } } }
                 .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(Label("Porchday", systemImage: "sun.max").font(.largeTitle)) } }
         }
@@ -28,6 +30,7 @@ struct RootView: View {
     }
 }
 struct MainTabs: View {
+    @ObservedObject private var notifications = NativeNotifications.shared
     let member: Member
     @EnvironmentObject var model: AppModel
     var body: some View {
@@ -38,6 +41,7 @@ struct MainTabs: View {
             NavigationStack { ProfileView(memberID: member.id, handle: member.handle) }.tabItem { Label("My wall", systemImage: "person.crop.rectangle") }
             NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "gearshape") }
         }
+        .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
     }
 }
