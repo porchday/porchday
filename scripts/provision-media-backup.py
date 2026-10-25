@@ -3,7 +3,7 @@
 import argparse,json,os,urllib.request,urllib.error
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('environment',choices=['staging','production']);p.add_argument('--verified-pitr-days',type=int,required=True);a=p.parse_args()
-if a.verified_pitr_days<7:raise SystemExit('Verify a real database PITR window of at least seven days before enabling backups.')
+if a.verified_pitr_days<7:raise SystemExit('Verify a database backup/PITR retention policy of at least seven days before enabling media snapshots.')
 resources=json.loads(Path('infra/resources.json').read_text());env=resources['environments'][a.environment]
 if not all(env.get('hyperdrive_'+role) for role in ['auth','social','jobs']):raise SystemExit('Provision and verify the environment database first.')
 account=os.environ['CLOUDFLARE_ACCOUNT_ID'];token=os.environ['CLOUDFLARE_API_TOKEN'];name='porchday-'+a.environment+'-media-backup'

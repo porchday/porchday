@@ -19,7 +19,7 @@ base['r2_buckets']=[{'binding':'MEDIA','bucket_name':env['bucket']},{'binding':'
 base['vars']['MEDIA_BACKUP_ENABLED']='false'
 if env.get('media_backup_enabled'):
  if env.get('verified_pitr_days',0)<7 or not env.get('media_backup_bucket') or env['media_backup_bucket'] in [env['bucket'],env['recovery_journal_bucket']]:
-  raise SystemExit('Backup requires a separate private bucket and verified database PITR window of seven days.')
+  raise SystemExit('Backup requires a separate private bucket and verified seven-day database backup/PITR retention policy.')
  base['r2_buckets'].append({'binding':'MEDIA_BACKUP','bucket_name':env['media_backup_bucket']})
  base['vars']['MEDIA_BACKUP_ENABLED']='true'
 base['vars']['VAPID_SUBJECT']='https://porchday.com/contact'
