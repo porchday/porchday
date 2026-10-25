@@ -7,5 +7,5 @@
   "exports": { ".": "./src/index.ts", "./browser": "./src/browser.ts" },
   "scripts": { "test": "node --test test/*.test.ts", "typecheck": "tsc --noEmit" },
   "dependencies": { "openpgp": "6.3.2" },
-  "devDependencies": { "typescript": "7.0.2", "@types/node": "^24.0.0" }
+  "devDependencies": { "typescript": "5.9.3", "@types/node": "^24.0.0" }
 }
