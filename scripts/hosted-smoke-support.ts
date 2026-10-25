@@ -38,7 +38,18 @@ const safeServerCodes = new Set([
   "INVALID_INVITATION",
   "NOT_FOUND",
   "EXPORT_INVALIDATED",
+  "PRIVACY_CHECKPOINT_REQUIRED",
 ]);
+/** Aggregate-only diagnostics: never return a provider message or unknown code. */
+export function latencyErrorCode(status:number,body:ArrayBuffer):string|undefined {
+  if(status===200)return;
+  if(body.byteLength>8192)return "UNCLASSIFIED";
+  try {
+    const code=JSON.parse(new TextDecoder().decode(body))?.error?.code;
+    if(typeof code==='string'&&safeServerCodes.has(code))return code;
+  } catch {/* HTML, malformed JSON and provider bodies share a fixed fallback. */}
+  return "UNCLASSIFIED";
+}
 export function check(value: unknown, code: string): asserts value {
   if (!value) throw new SmokeError(code);
 }

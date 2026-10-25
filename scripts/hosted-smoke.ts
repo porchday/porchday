@@ -21,6 +21,7 @@ import {
   SmokeError,
   stagingOrigin,
   verificationTarget,
+  latencyErrorCode,
 } from "./hosted-smoke-support.js";
 
 type Keys = Awaited<ReturnType<typeof generateDeviceKeys>>;
@@ -1334,16 +1335,19 @@ async function feedLatency(s: State) {
   const api = await login(s.accounts[0]);
   try {
     const durations: number[] = [],
-      statuses: Record<string, number> = {};
+      statuses: Record<string, number> = {},
+      errorCodes: Record<string, number> = {};
     let next = 0;
     await Promise.all(
       Array.from({ length: 5 }, async () => {
         while (next++ < 100) {
           const start = performance.now();
           const response = await api.request("/api/v1/feed");
-          await response.arrayBuffer();
+          const bytes=await response.arrayBuffer();
           durations.push(performance.now() - start);
           statuses[response.status] = (statuses[response.status] ?? 0) + 1;
+          const code=latencyErrorCode(response.status,bytes);
+          if(code)errorCodes[code]=(errorCodes[code]??0)+1;
         }
       }),
     );
@@ -1356,6 +1360,7 @@ async function feedLatency(s: State) {
         requests: durations.length,
         concurrency: 5,
         statuses,
+        errorCodes,
         p50_ms: percentile(0.5),
         p95_ms: percentile(0.95),
         max_ms: percentile(1),

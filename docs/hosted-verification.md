@@ -104,7 +104,7 @@ After the social checks pass, an optional bounded read sample is available:
 node --import tsx scripts/hosted-smoke.ts feed-latency --run
 ```
 
-It reuses synthetic A, issues 100 authenticated feed reads at concurrency five, logs only status counts and p50/p95/max duration, then signs out. This tiny fixture is an end-to-end latency observation, not a capacity result for 10,000 or 10 million members.
+It reuses synthetic A, issues 100 authenticated feed reads at concurrency five, logs only status counts, fixed error-code counts and p50/p95/max duration, then signs out. Error codes are allowlisted; malformed, unknown or oversized error bodies become `UNCLASSIFIED`, with no message/body/identifier output. The fixture label counts surviving synthetic identities, since an account may have been deleted. This tiny fixture is an end-to-end latency observation, not a capacity result for 10,000 or 10 million members. See [feed performance](feed-performance.md) for the failed two-survivor baseline and its limits; do not replace failed runs with an unlabelled retry.
 
 ### Native interoperability handoff
 

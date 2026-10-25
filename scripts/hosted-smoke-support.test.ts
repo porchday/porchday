@@ -12,6 +12,7 @@ import {
   target,
   verificationTarget,
   writePrivate,
+  latencyErrorCode,
 } from "./hosted-smoke-support.js";
 
 const directories: string[] = [];
@@ -33,6 +34,12 @@ const response = (headers: Record<string, string> = {}) =>
   });
 
 describe("hosted smoke guardrails", () => {
+  it("classifies failed latency responses using only bounded fixed codes, never content",()=>{
+    const bytes=(value:string)=>new TextEncoder().encode(value).buffer;
+    expect(latencyErrorCode(503,bytes(JSON.stringify({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'private content',details:'private token'}})))).toBe('PRIVACY_CHECKPOINT_REQUIRED');
+    for(const body of [JSON.stringify({error:{code:'private-token'}}),JSON.stringify({error:{code:'__proto__'}}),'<html>private provider error</html>',JSON.stringify({error:{code:'FORBIDDEN'},private:'x'.repeat(8192)})])expect(latencyErrorCode(503,bytes(body))).toBe('UNCLASSIFIED');
+    expect(latencyErrorCode(200,bytes('private decrypted-looking text should never be parsed'))).toBeUndefined();
+  });
   it("cannot send credentials to production, another origin or URL credentials", () => {
     expect(() => target("/api/v1/me", "https://porchday.com")).toThrow(
       "STAGING_ORIGIN_REQUIRED",
