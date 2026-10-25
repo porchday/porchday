@@ -1,0 +1,17 @@
+# Prepared timed-comment browser acceptance
+
+This focused runner is prepared for review and has **not yet run against staging**. It uses synthetic A, its existing isolated Chromium profile and existing trusted encryption devices. It does not access the user's browser, synthetic B's pending recovery case, deleted C, staff routes or SQL. Run only after the shared test profile is released and an operator has reviewed the attempt:
+
+```sh
+node --import tsx scripts/hosted-timed-comments.ts --run --attempt=<eight-new-hex-characters>
+```
+
+An exclusive private intent precedes login or any mutation. The browser uses the shipped UI and encryption code to create one new `only_me` post with a two-hour deadline, then an inherited comment, a shorter one-hour comment, and a reply to each. It checks the default inheritance selection, the correct post/comment warning and original-post explanation, displayed deadlines, the custom datetime input's maximum, browser rejection of a later value, keyboard activation and horizontal layout at 375 pixels.
+
+With a root comment draft still open, a separate ordinary A login shortens only this captured post to 90 minutes through the normal encrypted update and signed lifecycle API. The stale UI submission must receive a real `PARENT_DEADLINE_CHANGED` 409, preserve its text, display the new warning and wait for explicit resubmission. The completed check reads and verifies all five accepted comments' signatures, plaintext and effective deadlines. It makes no server response substitutions or browser state injection to simulate this race.
+
+A browser request gate permits only the exact initial login, signout and one currently planned encrypted post/comment submission. Before forwarding a submission, it checks the signed context, A-only recipients, new captured IDs, current parent, exact expiry/acknowledgement and the decrypted synthetic text. Unexpected media, profiles, keys, relationships, recipients or other writes are denied. Service workers are blocked so the gate is complete; this check makes no PWA/offline claim. One post and six comment attempts are the maximum. The separate API session performs only normal login, bounded reads, one signed shortening and signout.
+
+Cleanup uses the normal member API to delete only the captured parent after verifying its ownership and synthetic payload. Parent reads and all captured child deletion requests must then return 404. This establishes API-level cascade/access removal, not instantaneous physical erasure from retained backups. No photos are created. Original A content, its profile and its device set remain unchanged; both sessions are revoked and remembered browser keys/cookies cleared. Success is recorded only after cleanup completes. A failed or uncertain mutation is not blindly retried and cannot be labeled fully cleaned; inspect the private intent/receipts before continuing. Future fixture timers provide an additional bounded lifetime, not a substitute for normal cleanup.
+
+Only fixed phase/error labels, aggregate counts and boolean results go to the console. Credentials, recovery keys, cookies, plaintext, ciphertext, browser errors and screenshots are not logged. Private receipts contain captured synthetic IDs and deadlines but no encryption keys or content. Local tests cover invocation, mutation/ownership/deadline boundaries, bounded writes and handling of early UI failure; they do not establish hosted timer behavior.
