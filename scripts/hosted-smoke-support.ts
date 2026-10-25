@@ -159,6 +159,9 @@ export class SmokeClient {
       check(separator > 0, "COOKIE_INVALID");
       const name = pair.slice(0, separator),
         value = pair.slice(separator + 1);
+      // Access sets its own pre-login cookie on staff redirects. This API smoke
+      // neither authenticates staff nor replays Access cookies to the app.
+      if (name === "CF_AppSession") continue;
       check(
         /^(?:__Secure-)?better-auth\.[a-z_-]+$/.test(name),
         "UNEXPECTED_COOKIE",

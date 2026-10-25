@@ -125,6 +125,14 @@ describe("hosted smoke guardrails", () => {
     );
   });
   it("rejects unsafe cookies and cacheable protected responses", async () => {
+    const access = new SmokeClient(async () =>
+      response({
+        "Set-Cookie":
+          "CF_AppSession=synthetic-edge-cookie; Secure; HttpOnly; SameSite=None",
+      }),
+    );
+    await access.request("/api/staff/recovery/cases");
+    expect(access.cookieHeader()).toBe("");
     const noCookieProtection = new SmokeClient(async () =>
       response({ "Set-Cookie": "better-auth.session_token=synthetic-only" }),
     );
