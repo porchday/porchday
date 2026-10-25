@@ -70,6 +70,7 @@ const allowed = [
   "social-continue",
   "portability-continue",
   "feed-latency",
+  "driver-check",
   "interop-prepare",
   "interop-check",
   "cleanup",
@@ -1230,6 +1231,104 @@ async function checkInterop(s: State) {
   }
 }
 
+/** Bounded regression after a database-driver deployment. Only new A-owned fixtures change. */
+async function driverCheck(s: State) {
+  check(s.socialPassed, "FINISHED_SOCIAL_RUN_REQUIRED");
+  const [accountA, accountB] = s.accounts;
+  check(!accountA.deleted && !accountB.deleted && accountA.device?.enrolled && accountB.device?.enrolled,
+    "DRIVER_CHECK_EXISTING_IDENTITIES_REQUIRED");
+  const intentPath = directory + "driver-check.intent.json";
+  try {
+    await readPrivate(intentPath);
+    throw new SmokeError("DRIVER_CHECK_ALREADY_ATTEMPTED_INSPECT_INTENT");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  }
+  const sessions: SmokeClient[] = [];
+  let result: Record<string, unknown> | undefined;
+  try {
+    // No enroll() call: this phase cannot add devices, keys, profiles or relationships.
+    const apiA = await login(accountA); sessions.push(apiA);
+    const apiB = await login(accountB); sessions.push(apiB);
+    const a: Person = { account: accountA, api: apiA, key: await unlockPrivateKey(accountA.device.keys.encryptedPrivateKey, accountA.device.keys.recoverySecret) };
+    const b: Person = { account: accountB, api: apiB, key: await unlockPrivateKey(accountB.device.keys.encryptedPrivateKey, accountB.device.keys.recoverySecret) };
+    const postId = randomUUID(), mediaId = randomUUID(), commentId = randomUUID();
+    const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString();
+    const bytes = await readFile(new URL("../docs/archive/sample/photos/77777777-7777-4777-8777-777777777777.jpg", import.meta.url));
+    const photoSHA256 = createHash("sha256").update(bytes).digest("hex");
+    await writePrivate(intentPath, { v: 1, synthetic: true, origin: stagingOrigin, run: s.run,
+      memberId: accountA.id, outsiderId: accountB.id, startedAt: new Date().toISOString(),
+      postId, mediaId, commentId, expiresAt, photoSHA256 }, true);
+    const postPayload = { text: "Synthetic database driver regression", reactionSecret: createReactionSecret(),
+      media: [{ id: mediaId, mime: "image/jpeg", width: 16, height: 16, alt: "Synthetic driver sample" }] };
+    const photo = await seal(a, { mime: "image/jpeg", bytes: bytes.toString("base64"), width: 16, height: 16, alt: "Synthetic driver sample" },
+      { id: mediaId, kind: "media", audience: "only_me", parentId: postId, expiresAt });
+    const encoded = new TextEncoder().encode(JSON.stringify(photo));
+    const reserved = await a.api.json("/api/v1/media", "POST", { id: mediaId, envelope: photo, byte_size: encoded.length }, 201);
+    check((await a.api.request(reserved.upload_url, "PUT", encoded)).status === 200, "DRIVER_CHECK_UPLOAD_FAILED");
+    await publish(a, await seal(a, postPayload, { id: postId, audience: "only_me", expiresAt }), [mediaId]);
+    const commentPayload = { text: "Synthetic child of driver regression", reactionSecret: createReactionSecret() };
+    const comment = await seal(a, commentPayload, { id: commentId, kind: "comment", audience: "only_me", parentId: postId, expiresAt }, postId);
+    await a.api.json(`/api/v1/posts/${postId}/comments`, "POST", { envelope: comment, parent_expires_at: expiresAt }, 201);
+    for (const [kind, targetId, secret] of [["posts", postId, postPayload.reactionSecret], ["comments", commentId, commentPayload.reactionSecret]] as const) {
+      for (const emoji of ["like", "love"]) {
+        const tag = await reactionTag({ secret, targetId, memberId: accountA.id!, emoji });
+        const envelope = await seal(a, { emoji }, { id: tag, kind: "reaction", audience: "only_me", parentId: targetId, expiresAt }, postId);
+        await a.api.json(`/api/v1/${kind}/${targetId}/reactions/${tag}`, "PUT", { envelope });
+        await a.api.json(`/api/v1/${kind}/${targetId}/reactions/${tag}`, "PUT", { envelope });
+      }
+    }
+    const detail = await a.api.json(`/api/v1/posts/${postId}`);
+    check(detail.post.id === postId && detail.post.envelope.context.expiresAt === expiresAt &&
+      (await decrypt(a, a, detail.post.envelope)).text === postPayload.text, "DRIVER_CHECK_POST_DECRYPTION_FAILED");
+    check(detail.comments.length === 1 && detail.comments[0].id === commentId &&
+      detail.comments[0].envelope.context.expiresAt === expiresAt &&
+      (await decrypt(a, a, detail.comments[0].envelope)).text === commentPayload.text, "DRIVER_CHECK_COMMENT_DECRYPTION_FAILED");
+    for (const rows of [detail.reactions, detail.comment_reactions]) {
+      check(rows.length === 2 && rows.every((r: any) => r.member_id === accountA.id), "DRIVER_CHECK_REACTION_IDEMPOTENCE_FAILED");
+      const emojis: string[] = [];
+      for (const row of rows) emojis.push((await decrypt(a, a, row.envelope)).emoji);
+      check(new Set(emojis).size === 2 && emojis.includes("like") && emojis.includes("love"), "DRIVER_CHECK_REACTION_DECRYPTION_FAILED");
+    }
+    const recovered = await decrypt(a, a, await a.api.json<EncryptedEnvelope>(`/api/v1/media/${mediaId}/bytes`));
+    check(createHash("sha256").update(Buffer.from(recovered.bytes, "base64")).digest("hex") === photoSHA256,
+      "DRIVER_CHECK_PHOTO_HASH_MISMATCH");
+    for (const path of [`/api/v1/posts/${postId}`, `/api/v1/media/${mediaId}/bytes`]) {
+      const denied = await b.api.request(path); check(denied.status === 404, "DRIVER_CHECK_OUTSIDER_ACCESS"); await denied.body?.cancel();
+    }
+    let outsiderDecryptionDenied = false;
+    try { await decrypt(b, a, detail.post.envelope); } catch { outsiderDecryptionDenied = true; }
+    check(outsiderDecryptionDenied, "DRIVER_CHECK_OUTSIDER_DECRYPTED");
+    progress("driver-encrypted-post-photo-comment-multiple-reactions-and-outsider-denials-passed");
+    // Exactly one normal deletion. On an uncertain result, keep the private intent; do not replay.
+    await a.api.json(`/api/v1/posts/${postId}`, "DELETE");
+    for (const path of [`/api/v1/posts/${postId}`, `/api/v1/media/${mediaId}/bytes`]) {
+      const absent = await a.api.request(path); check(absent.status === 404, "DRIVER_CHECK_PARENT_DELETION_VISIBLE"); await absent.body?.cancel();
+    }
+    const missingChild = await a.api.request(`/api/v1/comments/${commentId}`, "DELETE");
+    check(missingChild.status === 404, "DRIVER_CHECK_COMMENT_CASCADE_FAILED"); await missingChild.body?.cancel();
+    check(!(await a.api.json("/api/v1/feed")).items.some((row: any) => row.id === postId), "DRIVER_CHECK_DELETED_POST_IN_FEED");
+    check((await a.api.json("/api/v1/me")).id === accountA.id && (await b.api.json("/api/v1/me")).id === accountB.id,
+      "DRIVER_CHECK_IDENTITIES_CHANGED");
+    result = { v: 1, synthetic: true, origin: stagingOrigin, run: s.run,
+      completedAt: new Date().toISOString(), postId, mediaId, commentId, passed: true, parentDeleted: true,
+      physicalObjectDeletionVerified: false };
+    progress("driver-parent-deletion-comment-cascade-media-denial-and-identities-passed");
+  } finally {
+    let failed = false;
+    for (const api of sessions) {
+      try {
+        const cookie = api.cookieHeader();
+        await api.json("/api/auth/sign-out", "POST", {});
+        const denied = await api.request("/api/v1/me", "GET", undefined, cookie);
+        check(denied.status === 401, "DRIVER_CHECK_SESSION_NOT_REVOKED"); await denied.body?.cancel();
+      } catch { failed = true; }
+    }
+    check(!failed, "DRIVER_CHECK_SIGNOUT_FAILED");
+    if (result) await writePrivate(directory + "driver-check.result.json", { ...result, sessionRevocationVerified: true }, true);
+  }
+}
+
 async function feedLatency(s: State) {
   check(s.socialPassed, "FINISHED_SOCIAL_RUN_REQUIRED");
   const api = await login(s.accounts[0]);
@@ -1277,6 +1376,7 @@ async function main() {
   check(allowed.includes(phase), "KNOWN_PHASE_REQUIRED");
   if (!["init", "public"].includes(phase))
     check(process.argv.includes("--run"), "EXPLICIT_RUN_REQUIRED");
+  if (phase === "driver-check") check(process.argv.length === 4 && process.argv[3] === "--run", "DRIVER_CHECK_ARGUMENTS_INVALID");
   if (phase === "init") await initialize();
   else if (phase === "public") await publicChecks();
   else if (phase === "verify") await verify();
@@ -1287,6 +1387,7 @@ async function main() {
     else if (phase === "social-continue") await continueSocial(s);
     else if (phase === "portability-continue") await continuePortability(s);
     else if (phase === "feed-latency") await feedLatency(s);
+    else if (phase === "driver-check") await driverCheck(s);
     else if (phase === "interop-prepare") await prepareInterop(s);
     else if (phase === "interop-check") await checkInterop(s);
     else await cleanup(s);
