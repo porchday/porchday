@@ -1913,3 +1913,42 @@ body
     gap: 9px;
   }
 }
+
+/* Loading, recovery and empty states may render outside the member shell.
+   Never put their controls or important instructions directly on wallpaper. */
+.vault-page {
+  width: min(650px, calc(100% - 24px));
+  margin: 18px auto;
+  padding: 28px 22px;
+  background: #fffaf0;
+  color: #3c2a20;
+  border: 4px double #7e320c;
+}
+.vault-page > h1 {
+  font: bold 29px/1.25 Georgia, serif;
+}
+.vault-page > p {
+  color: #5b4435;
+}
+.vault-page .secret-box {
+  background: #f8ecd6;
+  color: #542911;
+  border-color: #9b7f60;
+}
+.loading,
+.empty,
+.caught-up {
+  background: #fffaf0;
+  color: #3c2a20;
+}
+.empty p {
+  color: #5b4435;
+}
+.narrow-page > .logo,
+.policy > .logo {
+  color: #7e320c;
+}
+.narrow-page > .logo .logo-dot,
+.policy > .logo .logo-dot {
+  color: #974013;
+}
