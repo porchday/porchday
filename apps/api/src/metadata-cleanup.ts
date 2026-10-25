@@ -1,0 +1,15 @@
+import {authPool} from './auth';
+import type {Env} from './types';
+/** Bounded retention sweeps. No contact addresses or case details enter telemetry. */
+export async function cleanupAuthenticationMetadata(env:Env){
+ const pool=authPool(env);
+ try{
+  await pool.query('DELETE FROM public.auth_rate_limits WHERE key IN(SELECT key FROM public.auth_rate_limits WHERE expires_at<now() LIMIT 1000)');
+  await pool.query('DELETE FROM public.used_email_links WHERE token_hash IN(SELECT token_hash FROM public.used_email_links WHERE expires_at<now() LIMIT 1000)');
+  await pool.query('DELETE FROM public.auth_verification WHERE id IN(SELECT id FROM public.auth_verification WHERE "expiresAt"<now() LIMIT 1000)');
+  await pool.query('DELETE FROM public.auth_session WHERE id IN(SELECT id FROM public.auth_session WHERE "expiresAt"<now() LIMIT 1000)');
+  await pool.query('DELETE FROM public.pilot_invitations WHERE token_hash IN(SELECT token_hash FROM public.pilot_invitations WHERE expires_at<now() LIMIT 1000)');
+  await pool.query('DELETE FROM public.recovery_cases WHERE id IN(SELECT id FROM public.recovery_cases WHERE retention_until<now() LIMIT 100)');
+  await pool.query('DELETE FROM public.security_contact_history WHERE id IN(SELECT id FROM public.security_contact_history WHERE retention_until<now() LIMIT 1000)');
+ }finally{await pool.end();}
+}

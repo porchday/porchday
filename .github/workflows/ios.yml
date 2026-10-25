@@ -1,0 +1,57 @@
+name: Verify native iOS
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/crypto/native/go.mod
+          cache-dependency-path: packages/crypto/native/go.sum
+      - run: npm ci
+      - name: Verify JavaScript/native cryptographic interoperability
+        working-directory: packages/crypto/native
+        run: go test -v ./...
+      - run: brew install xcodegen
+      - run: apps/ios/build-native.sh
+      - name: Select an installed iPhone simulator
+        run: |
+          python3 - <<'PY'
+          import json, os, subprocess
+          devices=json.loads(subprocess.check_output(["xcrun","simctl","list","devices","available","--json"]))["devices"]
+          choices=[d for runtime,rows in devices.items() if ".iOS-" in runtime for d in rows if d["name"].startswith("iPhone")]
+          if not choices: raise SystemExit("No installed iPhone simulator runtime")
+          with open(os.environ["GITHUB_ENV"],"a") as f: f.write("PORCHDAY_SIMULATOR="+choices[0]["udid"]+"\n")
+          PY
+      - name: Build and run native tests in simulator
+        run: |
+          xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday \
+            -destination "platform=iOS Simulator,id=$PORCHDAY_SIMULATOR" \
+            -derivedDataPath apps/ios/build/DerivedData \
+            -resultBundlePath apps/ios/build/PorchdayTests.xcresult \
+            CODE_SIGNING_ALLOWED=NO test
+      - name: Launch app and capture simulator evidence
+        run: |
+          xcrun simctl boot "$PORCHDAY_SIMULATOR" || true
+          xcrun simctl bootstatus "$PORCHDAY_SIMULATOR" -b
+          xcrun simctl install "$PORCHDAY_SIMULATOR" apps/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Porchday.app
+          xcrun simctl launch "$PORCHDAY_SIMULATOR" com.porchday.app --ui-testing
+          sleep 5
+          xcrun simctl io "$PORCHDAY_SIMULATOR" screenshot apps/ios/build/Porchday-simulator.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-verification
+          path: |
+            apps/ios/build/PorchdayTests.xcresult
+            apps/ios/build/Porchday-simulator.png
+          retention-days: 7

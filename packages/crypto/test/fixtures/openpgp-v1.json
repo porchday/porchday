@@ -1,0 +1,60 @@
+{
+  "warning": "PUBLIC TEST KEYS ONLY. NEVER USE FOR REAL ACCOUNTS.",
+  "alice": {
+    "publicKey": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nxioGat2i1BsAAAAg/zpaiL4rHPz19gy+Ygc0aqQX2ZPexHjCpPXRv2cAe87C\nuwYfGwoAAABMBYJq3aLUAwsJBwUVCggODAQWAAIBApsDAh4JIqEGTGuwepEm\nXyYszodZLKFUYeTcxYZWw74Uh8hEsfe+bvoNJwkDBwMJAQcBCQIHAgAAAADN\npyBcuRWzNB+N9Pe+1W+lAb5AaM/Ng07E8fgw/MST6d03sJGeP1t92hXEKtmi\n7Xcs6cIH4odFBCZupQ9fHKFUD/p8u7gbzImuCPFBXmgIvuzremL1K5nJb/xJ\nDu7zgxex2g7NKlBvcmNoZGF5IGZpeHR1cmUtYWxpY2UvZml4dHVyZS1hbGlj\nZS1waG9uZcKbBhMbCgAAACwFgmrdotQCGQEioQZMa7B6kSZfJizOh1ksoVRh\n5NzFhlbDvhSHyESx975u+gAAAADgYiAdF1bTnHUMhcAW4VxPOOduXd+7Zdoe\n87239mVzdw66+8701+8qQdmigQbfbccFh6wFObzdBLYH4Ug48EKD9UvnUvBD\nhYnRRQEhV0EQIV2HtaU7jMPT6nrwBibpoZmlnAzOKgZq3aLUGQAAACA97K2m\ntOqol5C1dMzwNvraixIz3Nwx0A4fWNbHMMoiEcKbBhgbCgAAACwFgmrdotQC\nmwwioQZMa7B6kSZfJizOh1ksoVRh5NzFhlbDvhSHyESx975u+gAAAACp/SCt\n8LuElSJeKVSiBnwQr6c/7A0lTly3FIlQ+/7BgwxlOKZW/6qiFD/IC4kCEVjq\nAjtLKMG0IYe1IWkMmEkCeCJ90XxrsAFNCnvlET9NCSz8V+UHFjqVnrjXZEYI\nmiNlrws=\n-----END PGP PUBLIC KEY BLOCK-----\n",
+    "encryptedPrivateKey": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxXYGat2i1BsAAAAg/zpaiL4rHPz19gy+Ygc0aqQX2ZPexHjCpPXRv2cAe879\nGgkDCwMI7oNAi+a+SgvgWC6yP0StiRg10bKSmocobeHpZGkimSnIok/Y64cf\nbR4GqUe7pTY/s9g3hzOesIzptCKQMgDkKi4h7UEXwrsGHxsKAAAATAWCat2i\n1AMLCQcFFQoIDgwEFgACAQKbAwIeCSKhBkxrsHqRJl8mLM6HWSyhVGHk3MWG\nVsO+FIfIRLH3vm76DScJAwcDCQEHAQkCBwIAAAAAzacgXLkVszQfjfT3vtVv\npQG+QGjPzYNOxPH4MPzEk+ndN7CRnj9bfdoVxCrZou13LOnCB+KHRQQmbqUP\nXxyhVA/6fLu4G8yJrgjxQV5oCL7s63pi9SuZyW/8SQ7u84MXsdoOzSpQb3Jj\naGRheSBmaXh0dXJlLWFsaWNlL2ZpeHR1cmUtYWxpY2UtcGhvbmXCmwYTGwoA\nAAAsBYJq3aLUAhkBIqEGTGuwepEmXyYszodZLKFUYeTcxYZWw74Uh8hEsfe+\nbvoAAAAA4GIgHRdW05x1DIXAFuFcTzjnbl3fu2XaHvO9t/Zlc3cOuvvO9Nfv\nKkHZooEG323HBYesBTm83QS2B+FIOPBCg/VL51LwQ4WJ0UUBIVdBECFdh7Wl\nO4zD0+p68AYm6aGZpZwMx3YGat2i1BkAAAAgPeytprTqqJeQtXTM8Db62osS\nM9zcMdAOH1jWxzDKIhH9GgkDCwMIlqyN0atGeUvgDjmXRb+lDsBHZUUN2BNt\nWXOt/E6ZGWOG8j+9GT64ohgPmwXURm3whd0S1n0/1WWRdsWVeSxUeGmOovIb\nwpsGGBsKAAAALAWCat2i1AKbDCKhBkxrsHqRJl8mLM6HWSyhVGHk3MWGVsO+\nFIfIRLH3vm76AAAAAKn9IK3wu4SVIl4pVKIGfBCvpz/sDSVOXLcUiVD7/sGD\nDGU4plb/qqIUP8gLiQIRWOoCO0sowbQhh7UhaQyYSQJ4In3RfGuwAU0Ke+UR\nP00JLPxX5QcWOpWeuNdkRgiaI2WvCw==\n-----END PGP PRIVATE KEY BLOCK-----\n",
+    "recoverySecret": "kecevQ5_KPrN8CooBqKwSdITQtVH8XXzSX9yF6wvivk",
+    "fingerprint": "4c6bb07a91265f262cce87592ca15461e4dcc58656c3be1487c844b1f7be6efa"
+  },
+  "bob": {
+    "publicKey": "-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nxioGat2i1BsAAAAgOqGhszdBL9yxISMIo8AqDR7DraTMDpYDUbWnLTeRsj3C\nuwYfGwoAAABMBYJq3aLUAwsJBwUVCggODAQWAAIBApsDAh4JIqEGOkt6kqh5\nLKdgHE+EVkg6u+94xLTHC5Gc57qYmB8xKAENJwkDBwMJAQcBCQIHAgAAAADU\nvCA3AQx6hOv/oQiaoL7onHahnkRpnu9/HlNT/yLEGdaQLDlcMBR4sDfmq9Ed\nKnOUwAUZaRO2syYEeKWb0epQsSGFH2XF0GGhh4V08qA+t9TbXBRmh0OL8bnB\nQm90AVq3CgnNJlBvcmNoZGF5IGZpeHR1cmUtYm9iL2ZpeHR1cmUtYm9iLXBo\nb25lwpsGExsKAAAALAWCat2i1AIZASKhBjpLepKoeSynYBxPhFZIOrvveMS0\nxwuRnOe6mJgfMSgBAAAAALxUINzk2kIsJ78/ywWlIjoAYBhpc51qC5XUkHm2\n9JfqWXobjwHU8ep1B2dUQGEnmTbiU84ZxXgtgIxTzLODJFQFvxBEOuVKG+84\nYrc/rpk7nQKRdcQwByBuFGu9qtfgb/VTDs4qBmrdotQZAAAAILjI4c8FfPtL\nrrxz1G0l8ts/BW79JZOViOt3iyiepWomwpsGGBsKAAAALAWCat2i1AKbDCKh\nBjpLepKoeSynYBxPhFZIOrvveMS0xwuRnOe6mJgfMSgBAAAAAL1+IFdn0O2m\nf0tBABLWDckL6FPkeqr1zYdb07ilDGt2R9FgGTLd1Wy28Ryye3GqzXfgznIf\nKEZkS0CeWI1EKfC/N/h/2mIxt0TCQVPY+YnWN1U7C6xgoOXly3XMHqnvJUQp\nAw==\n-----END PGP PUBLIC KEY BLOCK-----\n",
+    "encryptedPrivateKey": "-----BEGIN PGP PRIVATE KEY BLOCK-----\n\nxXYGat2i1BsAAAAgOqGhszdBL9yxISMIo8AqDR7DraTMDpYDUbWnLTeRsj39\nGgkDCwMI38NKKp5/CDXgLLqWKHsyYiLQygs+DayYNZOcj04lclv2CQ74pYjS\nIvImYslePsRTSpO0qdWUB1ljbLprSQareDiuiC90wrsGHxsKAAAATAWCat2i\n1AMLCQcFFQoIDgwEFgACAQKbAwIeCSKhBjpLepKoeSynYBxPhFZIOrvveMS0\nxwuRnOe6mJgfMSgBDScJAwcDCQEHAQkCBwIAAAAA1LwgNwEMeoTr/6EImqC+\n6Jx2oZ5EaZ7vfx5TU/8ixBnWkCw5XDAUeLA35qvRHSpzlMAFGWkTtrMmBHil\nm9HqULEhhR9lxdBhoYeFdPKgPrfU21wUZodDi/G5wUJvdAFatwoJzSZQb3Jj\naGRheSBmaXh0dXJlLWJvYi9maXh0dXJlLWJvYi1waG9uZcKbBhMbCgAAACwF\ngmrdotQCGQEioQY6S3qSqHksp2AcT4RWSDq773jEtMcLkZznupiYHzEoAQAA\nAAC8VCDc5NpCLCe/P8sFpSI6AGAYaXOdaguV1JB5tvSX6ll6G48B1PHqdQdn\nVEBhJ5k24lPOGcV4LYCMU8yzgyRUBb8QRDrlShvvOGK3P66ZO50CkXXEMAcg\nbhRrvarX4G/1Uw7HdgZq3aLUGQAAACC4yOHPBXz7S668c9RtJfLbPwVu/SWT\nlYjrd4sonqVqJv0aCQMLAwgDNjKrzGSjieCwG3J7JbuO7W0OgoJ4WPja/TUU\n5LsDS3upj2bGcIipjy7n2vBDsgt9ENIL5L6UXzJHftvTD6YPDYEewBTCmwYY\nGwoAAAAsBYJq3aLUApsMIqEGOkt6kqh5LKdgHE+EVkg6u+94xLTHC5Gc57qY\nmB8xKAEAAAAAvX4gV2fQ7aZ/S0EAEtYNyQvoU+R6qvXNh1vTuKUMa3ZH0WAZ\nMt3VbLbxHLJ7carNd+DOch8oRmRLQJ5YjUQp8L83+H/aYjG3RMJBU9j5idY3\nVTsLrGCg5eXLdcweqe8lRCkD\n-----END PGP PRIVATE KEY BLOCK-----\n",
+    "recoverySecret": "zdoGvI71fc3iQNiuGRfjqM7Dy9PlSNxy5Obmj9sf6BU",
+    "fingerprint": "3a4b7a92a8792ca7601c4f8456483abbef78c4b4c70b919ce7ba98981f312801"
+  },
+  "envelope": {
+    "v": 1,
+    "protocol": "porchday-openpgp-v1",
+    "context": {
+      "id": "fixture-post-1",
+      "kind": "post",
+      "authorId": "fixture-alice",
+      "authorDeviceId": "fixture-alice-phone",
+      "audience": "connections",
+      "parentId": null,
+      "groupId": null,
+      "epoch": 1,
+      "createdAt": "2026-10-25T06:33:56.794Z",
+      "expiresAt": null,
+      "revision": 1
+    },
+    "recipients": [
+      {
+        "memberId": "fixture-alice",
+        "deviceId": "fixture-alice-phone",
+        "fingerprint": "4c6bb07a91265f262cce87592ca15461e4dcc58656c3be1487c844b1f7be6efa"
+      },
+      {
+        "memberId": "fixture-bob",
+        "deviceId": "fixture-bob-phone",
+        "fingerprint": "3a4b7a92a8792ca7601c4f8456483abbef78c4b4c70b919ce7ba98981f312801"
+      }
+    ],
+    "ciphertext": "-----BEGIN PGP MESSAGE-----\n\nwW0GIQZpxhXtCfxT8sA6RFMaN87hUAFaAA0/anCC8V3KerQHyBnn+lxLFokZ\ntAVUgwtyg+94Kaxn456GsDbu+aB5MfiYEijr9TQNT+6qFJPi/Sw/Pv2Jvm12\nR+Q7B7xkF3aVxuYGYa3Z0ZhlLtqGwW0GIQbHzXQDoTbuvaawQTjXFG13rKnQ\nRMkDmMeZdYBmHu2A/BkgDgBm1s08Xj7E7SrBh/UBSOG1QuZaqm01wRG2Epmb\nfyhHQk4fyn7xX107vZ835242ZmoZCJv5EA2hG2LqEHcqlOeBEbJzpIZn0uoC\nCQMM4LbRqUfzK+eBNKpRxIGh34Qvrx7oJAELOsENWN09nUTxgMB7kh3WLWYs\nk2JY5vPFwRCA/6Mqan3BnB986DyLPf/7WgyxvhagAQMEk3e4DnpP0AXTeEAI\nmKSyfTThweNa9cgMlpJbxebZCbpTrZwRI57yN7pmx3f4xYc9buotV0MuGquf\nhHSdRP6BFFKU8eWZH2n7ALQnilr+SYwbtjadQFYKbfDA1nAfgOoq/w3eDdPg\n2/7EbWF2taRL03RjY5gsiJWR1zhowuXO43KfQ+UWkcP/hcYXYtTod0FwQlDL\nIkYDiQykb9um7Lgxuvoys9i/PpLlwM/sjNAp1cj3ks05ubozcgGuN/VbrsiW\nvHSqFOLn9L0z5WeqtlU9QjPR5m5L7xUQgdHzQh1CIn8fTok2PKEIeBfwLVBt\npj92EaOwcluilbq4tGWCjBUi/PIVJmb4Rzr0KZfOvIHV8JNJY4P9YG1bCGPx\nX/NreF5QZMjCCOjkxxW0FupYxC9YNoxEfZJXOsgxT0cQYEnU41N7ntaDJPgI\nFBO4EpEV5FKEIbZvGRZzOmAlQpbqAxf1D87Yld3npk74kqM8rd72PS4qtbrW\nvbGnFwPT6O1+bOevgXr1cuwm8pATTQ0m3FqHQyibSPEpDQQY55gx8EcXZCdY\nN5vsIQjNte+jpCPR2Svvsb3eGEE7ocMbJa8Fzayf/v2HgGxO5vw/VLbJDMv8\nMgJKalJzEmm03K1ApZx/2xC+rucu4B0LXZM5qCgapsOUloh80WFHB56/T6T5\nkzMJCvBAwvJ6NLsYol9lsLAGOCitmqyymvdKhHH4/EF1KkMcwypJTV06Ao2i\n+tWZF8p/fYFvRJQSz7QSE+vEMqi/qZujlv22epS8QbBYUbM0drOR7P+dD2hJ\n2CVWSA00SSvRtVh/IQqWKqj/Jz9fmNCC296WyU8vb2+1Z197PePUH4XGeVXw\nRNoCx9tXzr8G//0+9+H2LHrYIK5nPDhese+WXPZTX50u86aqFzJypSYLCi74\nyuf8rw7D/2bTZP98JcUNPyvqm6vvT2ihmPCEsVpBR+GeIPxzKqCcWZF7LqUK\nr9CfTRpyyXUHW8GO9YsXtxm7Y7HUUKD4GmCLZ9dKmQBldz2R6NSOZba4CLpv\nQRdu4lNyw0yhLMh7NiYyaY5CrkcDl8duqWlaol5mUB7R5vZ/Jxk44f35YdpE\n4yyAbkDJhQL/T28CvGXFZrxyFNkuJwqoX7Uy+9FpEXgQABisHhJB64dmUr6G\nGZnON5sJ5Ch3fuMvmPlCOk5q0jWeIM/MA3D8bR03/Itkj/RDwffLSSbeVIzr\nt7NgICVGLOBJrqOppCpafz8vAPHJ5KvTv013J90LCi87D7yUEXa4mhC5xvsb\nbq+Pqw==\n-----END PGP MESSAGE-----\n"
+  },
+  "payload": {
+    "text": "Hello from the porch 🌻",
+    "alt": "A blue chair",
+    "reactionSecret": "S6VKDoJnYkyNXbw9GMwhxBWYlTYd0Bnt40OGK3RvLzc",
+    "photo": "AAECA/7/"
+  },
+  "canonicalPayload": "{\"context\":{\"audience\":\"connections\",\"authorDeviceId\":\"fixture-alice-phone\",\"authorId\":\"fixture-alice\",\"createdAt\":\"2026-10-25T06:33:56.794Z\",\"epoch\":1,\"expiresAt\":null,\"groupId\":null,\"id\":\"fixture-post-1\",\"kind\":\"post\",\"parentId\":null,\"revision\":1},\"payload\":{\"alt\":\"A blue chair\",\"photo\":\"AAECA/7/\",\"reactionSecret\":\"S6VKDoJnYkyNXbw9GMwhxBWYlTYd0Bnt40OGK3RvLzc\",\"text\":\"Hello from the porch 🌻\"},\"protocol\":\"porchday-openpgp-v1\",\"recipients\":[{\"deviceId\":\"fixture-alice-phone\",\"fingerprint\":\"4c6bb07a91265f262cce87592ca15461e4dcc58656c3be1487c844b1f7be6efa\",\"memberId\":\"fixture-alice\"},{\"deviceId\":\"fixture-bob-phone\",\"fingerprint\":\"3a4b7a92a8792ca7601c4f8456483abbef78c4b4c70b919ce7ba98981f312801\",\"memberId\":\"fixture-bob\"}],\"v\":1}",
+  "signature": {
+    "statement": {
+      "purpose": "porchday-interop-test",
+      "memberId": "fixture-alice",
+      "nonce": "fixed-test-nonce"
+    },
+    "signature": "-----BEGIN PGP SIGNATURE-----\n\nwpgGARsKAAAAKQWCat2i1CKhBkxrsHqRJl8mLM6HWSyhVGHk3MWGVsO+FIfI\nRLH3vm76AAAAAMrzIHVJNKhDovQWBA+5oZKIg8y1Fyi8+PXbfj5kexFdwAPx\nsEb4JTqz1dmlMS5jZgP0l1e/hMKVU5Hj0pYL+uuvv129qoyH/PYmp7CMUjY9\no2JMDotkwWqW4YsvhKIzlxxnBw==\n-----END PGP SIGNATURE-----\n"
+  }
+}

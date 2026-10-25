@@ -1,0 +1,29 @@
+{
+  "name": "porchday",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test -w @porchday/crypto && vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev": "npm run dev -w @porchday/web",
+    "dev:api": "tsx scripts/dev-api.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261025.1",
+    "@types/node": "^24.0.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "5.0.5",
+    "wrangler": "4.152.0"
+  },
+  "overrides": {
+    "undici": "7.30.1"
+  }
+}

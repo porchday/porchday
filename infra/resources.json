@@ -1,0 +1,19 @@
+{
+  "account_id": "8e992aa185989f80520215b6489bfacb",
+  "environments": {
+    "staging": {
+      "bucket": "porchday-staging-media",
+      "queue": "porchday-staging-jobs",
+      "queue_id": "fe85d83cb9a04857bf153764fb93f205",
+      "dead_letter_queue": "porchday-staging-jobs-dead-letter",
+      "dead_letter_queue_id": "084fc137a2b64f2aab666826c444b06d"
+    },
+    "production": {
+      "bucket": "porchday-production-media",
+      "queue": "porchday-production-jobs",
+      "queue_id": "e085369da94d4fdf920c8d83bb1cd19e",
+      "dead_letter_queue": "porchday-production-jobs-dead-letter",
+      "dead_letter_queue_id": "8709352dceaa4cd3b11b311c7d32bfb4"
+    }
+  }
+}

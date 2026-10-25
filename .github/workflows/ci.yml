@@ -1,0 +1,39 @@
+name: Verify Porchday
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: porchday-ci-only
+          POSTGRES_DB: porchday
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday
+      DATABASE_MIGRATION_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday
+      PG_LOCAL: 'true'
+      MODERATION_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_moderation_test
+      SOCIAL_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_social_test
+      SOCIAL_HTTP_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_http_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: node scripts/migrate.ts
+      - run: npm run typecheck
+      - run: node scripts/prepare-test-databases.ts
+      - run: npm test
+      - run: npm run build
+      - run: python3 scripts/check-secrets.py

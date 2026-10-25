@@ -1,0 +1,75 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "porchday-local-verification",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-24",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    "APP_URL": "http://localhost:8788",
+    "ENVIRONMENT": "development",
+    "SIGNUP_ENABLED": "false",
+    "EMAIL_FROM": "Porchday <accounts@porchday.com>"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE_AUTH",
+      "id": "00000000000000000000000000000001",
+      "localConnectionString": "postgres://porchday_auth:porchday-local-auth@localhost:54329/porchday"
+    },
+    {
+      "binding": "HYPERDRIVE_SOCIAL",
+      "id": "00000000000000000000000000000002",
+      "localConnectionString": "postgres://porchday_social:porchday-local-social@localhost:54329/porchday"
+    },
+    {
+      "binding": "HYPERDRIVE_JOBS",
+      "id": "00000000000000000000000000000003",
+      "localConnectionString": "postgres://porchday_jobs:porchday-local-jobs@localhost:54329/porchday"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "porchday-local-media"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS",
+        "queue": "porchday-local-jobs"
+      }
+    ]
+  },
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": [
+        "accounts@porchday.com"
+      ]
+    }
+  ],
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": false
+    }
+  }
+}
