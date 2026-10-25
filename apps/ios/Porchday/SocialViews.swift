@@ -157,19 +157,57 @@ struct ComposerView: View {
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var photos: [PreparedPhoto] = []
     @State private var camera = false
-    @State private var observedExpiry:Date?
-    private var inheritedExpiry: Date? { observedExpiry ?? parent?.expiry ?? post?.expiry }
+    @State private var observedExpiry: Date?
+    @State private var observedPostExpiry: Date?
+    @State private var customExpiry = Date().addingTimeInterval(900)
+    @State private var parentUnavailable = false
+    private var deadlineContext: CommentDeadline {
+        CommentDeadline(postExpiry: observedPostExpiry ?? post?.expiry,
+                        parentExpiry: observedExpiry ?? parent?.expiry, isReply: parent?.isComment == true)
+    }
+    private var timerChoice: ComposerTimerChoice { timer == -1 ? .custom(customExpiry) : timer == 0 ? .inherit : .after(timer) }
     var body: some View { Form {
-        if let expiry = inheritedExpiry { Section { Label("This comment will be deleted with its parent on \(expiry.formatted(date: .abbreviated, time: .shortened)). You can make its timeout shorter.", systemImage: "timer").font(.callout) } }
         Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("\(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) }
         if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { Text("Friends & family").tag("connections"); Text("Family only").tag("family"); Text("Only me").tag("only_me") } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .images) { Label("Add photos", systemImage: "photo") }; if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = UIImage(data: photo.bytes) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Photo description (alt text)", text: $photo.alt) } } } }
-        Section { Picker("Delete after", selection: $timer) { Text(inheritedExpiry == nil ? "No timer" : "Same timeout as parent").tag(0); ForEach([3600,86400,604800,2592000], id: \.self) { seconds in if inheritedExpiry == nil || Date().addingTimeInterval(Double(seconds)) < inheritedExpiry! { Text(seconds == 3600 ? "1 hour" : seconds == 86400 ? "24 hours" : seconds == 604800 ? "7 days" : "30 days").tag(seconds) } } }; Button(busy ? "Encrypting and sharing…" : post == nil ? "Share moment" : "Comment") { Task { await submit() } }.disabled(busy || text.count > 5000 || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty)) }
+        Section {
+            TimelineView(.periodic(from: .now, by: 1)) { timeline in
+                VStack(alignment: .leading, spacing: 12) {
+                    if let warning = deadlineContext.warning(now: timeline.date) { InheritedDeadlineNotice(message: warning) }
+                    Picker("Expiration", selection: $timer) {
+                        Text(deadlineContext.inherited == nil ? "No timer" : "Same expiration as parent").tag(0)
+                        ForEach([3600,86400,604800,2592000], id: \.self) { seconds in
+                            if timer == seconds || deadlineContext.inherited == nil || timeline.date.addingTimeInterval(Double(seconds)) <= deadlineContext.inherited! {
+                                Text(seconds == 3600 ? "1 hour" : seconds == 86400 ? "24 hours" : seconds == 604800 ? "7 days" : "30 days").tag(seconds)
+                            }
+                        }
+                        Text(deadlineContext.inherited == nil ? "Choose a custom time" : "Choose a shorter timeout").tag(-1)
+                    }
+                    .accessibilityIdentifier("composer-expiration")
+                    if timer == -1 {
+                        let upper = max(timeline.date, deadlineContext.inherited ?? Date.distantFuture)
+                        DatePicker("Delete on", selection: $customExpiry, in: timeline.date...upper, displayedComponents: [.date, .hourAndMinute])
+                            .accessibilityHint("Choose a future time no later than the inherited deadline.")
+                        Text("Selected expiration: " + CommentDeadline.absolute(customExpiry)).font(.footnote)
+                    }
+                    if parentUnavailable { Text("The parent is no longer available. Your draft has not been published.").foregroundStyle(.red) }
+                    if let error = deadlineContext.validationMessage(for: timerChoice, now: timeline.date) {
+                        Text(error).foregroundStyle(.red).accessibilityIdentifier("composer-expiration-error")
+                    }
+                    Button(busy ? "Encrypting and sharing…" : post == nil ? "Share moment" : "Comment") { Task { await submit() } }
+                        .disabled(busy || parentUnavailable || deadlineContext.validationMessage(for: timerChoice, now: timeline.date) != nil || text.count > 5000 || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty))
+                }
+            }
+        }
     }.navigationTitle(post == nil ? "Share a little of your day" : "Leave a comment").navigationBarTitleDisplayMode(.inline).toolbar { Button("Cancel") { dismiss() } }
+        .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
         .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { selected.append(try PhotoPipeline.prepare(bytes)) } }; photos = selected } } }
         .sheet(isPresented: $camera) { CameraView { image in Task { await model.perform { guard let data = image.jpegData(compressionQuality: 0.9) else { return }; photos.append(try PhotoPipeline.prepare(data)) } }; camera = false } }
     }
     private func submit() async { busy = true; defer { busy = false }; await model.perform {
-        guard let member = model.member else { return }; let id = UUID().uuidString.lowercased(), expiry = PorchDate.deadline(seconds: timer, parent: inheritedExpiry), share = post?.context["audience"].string ?? (groupID == nil ? audience : "group"), group = groupID ?? post?.context["groupId"].string
+        guard let member = model.member else { return }
+        guard !parentUnavailable else { throw PorchError.message("The parent is no longer available. Your draft has not been published.") }
+        let reviewedParentExpiry = deadlineContext.inherited
+        let id = UUID().uuidString.lowercased(), expiry = try deadlineContext.deadline(for: timerChoice, now: Date()), share = post?.context["audience"].string ?? (groupID == nil ? audience : "group"), group = groupID ?? post?.context["groupId"].string
         var media: [JSON] = []
         for photo in photos {
             media.append(try await model.uploadSurfacePhoto(photo, audience: share, parent: id, group: group, expiry: expiry))
@@ -177,15 +215,37 @@ struct ComposerView: View {
         let payload: JSON = .object(["text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines)), "reactionSecret": .string(try CryptoVault.randomSecret()), "media": .array(media)])
         let envelope = try await vault.seal(payload, member: member, kind: post == nil ? "post" : "comment", audience: share, id: id, group: group, parent: parent?.id, post: post?.id, expiry: expiry)
         if let post {
-            do { _ = try await model.api.social("/posts/\(post.id)/comments", method:"POST",body:.object(["envelope":envelope,"parent_expires_at":inheritedExpiry.map{.string(PorchDate.string($0))} ?? .null])) }
+            do { _ = try await model.api.social("/posts/\(post.id)/comments", method:"POST",body:.object(["envelope":envelope,"parent_expires_at":reviewedParentExpiry.map{.string(PorchDate.string($0))} ?? .null])) }
             catch PorchError.api(let code,_,let details) where code=="PARENT_DEADLINE_CHANGED" {
-                observedExpiry=details["expires_at"].string.flatMap(PorchDate.parse)
+                guard let changed = details["expires_at"].string.flatMap(PorchDate.parse) else {
+                    throw PorchError.message("The parent changed. Close this composer and reopen it to review its deadline. Your draft has not been published.")
+                }
+                observedExpiry = changed
+                // Refresh routing metadata to explain whether the original post or a closer
+                // ancestor now limits this reply. Keep the draft and require another submit.
+                do {
+                    let fresh = try await model.api.social("/posts/" + post.id)
+                    observedPostExpiry = CommentDeadline.expiry(of: fresh["post"])
+                    if let parent, parent.isComment,
+                       !fresh["comments"].array.contains(where: { $0["id"].string == parent.id }) { parentUnavailable = true }
+                } catch PorchError.api(let status, _, _) where ["NOT_FOUND", "FORBIDDEN", "ACCOUNT_UNAVAILABLE"].contains(status) {
+                    parentUnavailable = true
+                } catch { /* The acknowledged server deadline still bounds the retained draft. */ }
                 throw PorchError.message("The parent's timer changed. Review the updated inherited timeout above, then submit again.")
             }
         }
         else { _ = try await model.api.social("/posts", method: "POST", body: .object(["envelope": envelope, "media_ids": .array(media.map { $0["id"] })])) }
         submitted(); dismiss()
     } }
+}
+struct InheritedDeadlineNotice: View {
+    let message: String
+    var body: some View {
+        Label(message, systemImage: "timer")
+            .font(.callout).fixedSize(horizontal: false, vertical: true)
+            .accessibilityElement(children: .ignore).accessibilityLabel(message)
+            .accessibilityIdentifier("inherited-expiration-warning")
+    }
 }
 struct EditContentView: View {
     let item: SocialItem; let postID: String; let submitted: () -> Void
