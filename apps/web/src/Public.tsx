@@ -29,6 +29,7 @@ export function PublicFooter() {
         <a href="/community">Community rules</a>
         <a href="/accessibility">Accessibility</a>
         <a href="/help">Help & contact</a>
+        <a href="/third-party-notices.txt">Open-source notices</a>
       </nav>
       <div className="footer-note">
         <Icon name="sun" size={22} />
