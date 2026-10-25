@@ -76,6 +76,8 @@ export class ApiError extends Error {
             "One of you has reached the 300-person limit, including family. A connection cannot be accepted until both people have room.",
           MEDIA_QUOTA:
             "Your encrypted photo storage is full. Export or remove older photos before adding more.",
+          MEDIA_BUSY:
+            "Photo uploads are busy. Wait a moment, then try again. Your draft and selected photos are still here.",
           MEDIA_ATTACHMENT_CHANGED:
             "This photo was changed elsewhere. Reload the current profile or group before removing it.",
           GROUP_LIMIT:

@@ -52,6 +52,6 @@ enum PorchDate {
     static func deadline(seconds: Int, parent: Date?) -> Date? { let own = seconds > 0 ? Date().addingTimeInterval(TimeInterval(seconds)) : nil; if let parent { return own.map { min($0, parent) } ?? parent }; return own }
 }
 enum PorchError: LocalizedError { case message(String); case api(code:String,message:String,details:JSON)
-    var errorDescription: String? { switch self { case .message(let value): value;case .api(_,let message,_):message } }
+    var errorDescription: String? { switch self { case .message(let value): value;case .api(let code,let message,_):code=="MEDIA_BUSY" ? "Photo uploads are busy. Wait a moment, then try again. Your draft and selected photos are still here." : message } }
 }
 let reactionCatalog: [(id: String, emoji: String, label: String)] = [("like","👍","Like"),("love","❤️","Love"),("laugh","😄","Laugh"),("celebrate","🎉","Celebrate"),("care","🤗","Care"),("sunshine","☀️","Sunshine")]

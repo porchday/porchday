@@ -76,10 +76,9 @@ struct ProfileEditor: View {
             var payload=plan.payload.replacing("displayName",with:.string(name)).replacing("bio",with:.string(bio)).replacing("interests",with:.string(interests)).replacing("status",with:.string(status)).replacing("theme",with:.string(theme)).replacing("font",with:.string(font)).replacing("sectionOrder",with:.string(order))
             var attachments:[(String,String)]=[]
             for (slot,photo) in assets {
-                let meta:JSON = .object(["id":.string(photo.id),"mime":.string("image/jpeg"),"alt":.string(photo.alt),"width":.number(Double(photo.width)),"height":.number(Double(photo.height))])
-                let envelope=try await vault.seal(meta.replacing("bytes",with:.string(photo.bytes.base64EncodedString())),member:member,kind:"media",audience:"connections",id:photo.id,parent:member.id)
-                let bytes=try JSONEncoder().encode(envelope),upload=try await model.api.social("/media",method:"POST",body:.object(["id":.string(photo.id),"envelope":envelope,"byte_size":.number(Double(bytes.count))]))
-                guard let url=upload["upload_url"].string else{throw PorchError.message("Photo upload is unavailable.")};_ = try await model.api.bytes(url,method:"PUT",body:bytes);payload=payload.replacing(slot,with:meta);attachments.append((photo.id,slot))
+                let meta=try await model.uploadSurfacePhoto(photo,audience:"connections",parent:member.id)
+                guard let photoID=meta["id"].string else{throw PorchError.message("Photo upload is unavailable.")}
+                payload=payload.replacing(slot,with:meta);attachments.append((photoID,slot))
             }
             for slot in ["avatar","cover","background"] where assets[slot]==nil && payload[slot] != .null {
                 let photo=try await model.reshareSurfacePhoto(payload[slot],audience:"connections",parent:member.id)

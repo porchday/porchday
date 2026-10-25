@@ -136,7 +136,6 @@ struct ReactionBar: View {
         await changed()
     } }
 }
-struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); let bytes: Data; let width: Int; let height: Int; var alt = "" }
 struct ComposerView: View {
     var groupID: String?
     var post: SocialItem?
@@ -167,10 +166,7 @@ struct ComposerView: View {
         guard let member = model.member else { return }; let id = UUID().uuidString.lowercased(), expiry = PorchDate.deadline(seconds: timer, parent: inheritedExpiry), share = post?.context["audience"].string ?? (groupID == nil ? audience : "group"), group = groupID ?? post?.context["groupId"].string
         var media: [JSON] = []
         for photo in photos {
-            let metadata: JSON = .object(["id": .string(photo.id), "alt": .string(photo.alt), "mime": .string("image/jpeg"), "name": .string("photo.jpg"), "width": .number(Double(photo.width)), "height": .number(Double(photo.height))])
-            let envelope = try await vault.seal(metadata.replacing("bytes", with: .string(photo.bytes.base64EncodedString())), member: member, kind: "media", audience: share, id: photo.id, group: group, parent: id, expiry: expiry)
-            let bytes = try JSONEncoder().encode(envelope); let upload = try await model.api.social("/media", method: "POST", body: .object(["id": .string(photo.id), "envelope": envelope, "byte_size": .number(Double(bytes.count))]))
-            guard let path = upload["upload_url"].string else { throw PorchError.message("Photo upload was not authorized.") }; _ = try await model.api.bytes(path, method: "PUT", body: bytes); media.append(metadata)
+            media.append(try await model.uploadSurfacePhoto(photo, audience: share, parent: id, group: group, expiry: expiry))
         }
         let payload: JSON = .object(["text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines)), "reactionSecret": .string(try CryptoVault.randomSecret()), "media": .array(media)])
         let envelope = try await vault.seal(payload, member: member, kind: post == nil ? "post" : "comment", audience: share, id: id, group: group, parent: parent?.id, post: post?.id, expiry: expiry)

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { deadline, unexpired, ApiError, localDate } from "../src/api";
+import { deadline, unexpired, ApiError, localDate, request } from "../src/api";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { ExpiryWarning } from "../src/Social";
@@ -66,6 +66,12 @@ describe("client expiration and sharing semantics", () => {
   });
 });
 describe("client interaction safety", () => {
+  it("explains a busy photo upload and lets the member retry without replaying the request automatically", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "MEDIA_BUSY", message: "media busy" } }), { status: 429, headers: { "Retry-After": "1" } }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(request("/media", { method: "POST", body: "{}" })).rejects.toMatchObject({ code: "MEDIA_BUSY", status: 429, message: "Photo uploads are busy. Wait a moment, then try again. Your draft and selected photos are still here." });
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
   it("keeps a busy submit disabled even when its validity flag says enabled", () => {
     const html = renderToStaticMarkup(
       createElement(Button, { busy: true, disabled: false }, "Submit"),
