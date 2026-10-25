@@ -13,6 +13,9 @@ test('staff assertions reject wrong issuer, audience, expired or forged tokens a
  await expect(verifyStaffAssertion(await token(),issuer,'wrong-audience',keys)).rejects.toThrow();
  await expect(verifyStaffAssertion(await token(),'https://wrong.cloudflareaccess.com',audience,keys)).rejects.toThrow();
  await expect(verifyStaffAssertion(await token({type:'service'}),issuer,audience,keys)).rejects.toThrow();
+ await expect(verifyStaffAssertion(await token({email:''}),issuer,audience,keys)).rejects.toThrow();
+ const emptySubject=await new SignJWT({email:'reviewer@example.test',type:'app'}).setProtectedHeader({alg:'RS256',kid:'synthetic'}).setSubject('').setIssuer(issuer).setAudience(audience).setIssuedAt().setExpirationTime('1h').sign(privateKey);
+ await expect(verifyStaffAssertion(emptySubject,issuer,audience,keys)).rejects.toThrow();
  const expired=await new SignJWT({email:'reviewer@example.test',type:'app'}).setProtectedHeader({alg:'RS256',kid:'synthetic'}).setSubject('reviewer-1').setIssuer(issuer).setAudience(audience).setIssuedAt(Math.floor(Date.now()/1000)-7200).setExpirationTime(Math.floor(Date.now()/1000)-3600).sign(privateKey);
  await expect(verifyStaffAssertion(expired,issuer,audience,keys)).rejects.toThrow();
  const forged=(await token()).split('.');forged[1]=btoa(JSON.stringify({sub:'admin',email:'reviewer@example.test',type:'app',iss:issuer,aud:audience,exp:9999999999}));

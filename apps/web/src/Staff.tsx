@@ -1,11 +1,49 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { decryptObject, type EncryptedEnvelope } from "@porchday/crypto";
-import { get, post, del, items, localDate, type Json } from "./api";
-import { Alert, Button, Empty, Field, Icon, Loading, useAction } from "./ui";
-import { useVault, Fingerprint } from "./vault";
-export function StaffConsole() {
-  const vault = useVault();
-  const [tab, setTab] = useState("recovery");
+import { ApiError, get, post, del, items, localDate, type Json } from "./api";
+import { Alert, Button, Empty, Field, Icon, Loading, Logo, useAction } from "./ui";
+import { useOptionalVault, Fingerprint } from "./vault";
+type StaffIdentity = { subject: string; email: string; roles: ("recovery" | "moderation")[] };
+
+export function StaffEntry() {
+  const [identity, setIdentity] = useState<StaffIdentity | null>(null);
+  const action = useAction();
+  async function refresh() {
+    setIdentity(null);
+    const value = await get<StaffIdentity>("/api/staff/identity");
+    if (!value || typeof value.subject !== "string" || typeof value.email !== "string" ||
+        !Array.isArray(value.roles) || value.roles.some(role => !["recovery", "moderation"].includes(role)))
+      throw new Error("Staff sign-in could not be verified. Reload this page to sign in again.");
+    setIdentity(value);
+  }
+  useEffect(() => { action.run(refresh); }, []);
+  return <main id="main-content" className="narrow-page">
+    <Logo />
+    <section className="panel form-stack">
+      <h1>Porchday staff</h1>
+      <Alert>{action.error}</Alert>
+      {!identity ? <>
+        {action.busy ? <Loading /> : <p>Sign in through Cloudflare Access with your staff email and personal MFA device.</p>}
+        <Button variant="outline" busy={action.busy} onClick={() => action.run(refresh)}>Check staff access</Button>
+      </> : <>
+        <p>Signed in as <strong>{identity.email}</strong>.</p>
+        {!identity.roles.length && <>
+          <p>Your sign-in is verified. An operator must authorize your staff role before you can review cases.</p>
+          <p>Give the operator this account reference: <code>{identity.subject}</code>. This reference grants no access; never share a sign-in code or session token.</p>
+        </>}
+        <Button variant="outline" busy={action.busy} onClick={() => action.run(refresh)}>Check staff access</Button>
+        <Button variant="outline" onClick={() => window.location.assign("/cdn-cgi/access/logout")}>Sign out of staff access</Button>
+      </>}
+    </section>
+    {!!identity?.roles.length && <StaffConsole roles={identity.roles} onAccessLost={() => setIdentity(null)} />}
+  </main>;
+}
+
+export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: StaffIdentity["roles"]; initialTab?: string; onAccessLost?: () => void } = {}) {
+  const vault = useOptionalVault();
+  const availableTabs = [["recovery", "Account recovery"], ["moderation", "Community reports"]]
+    .filter(([role]) => !roles || roles.includes(role as StaffIdentity["roles"][number]));
+  const [tab, setTab] = useState(initialTab || availableTabs[0]?.[0] || "recovery");
   const [rows, setRows] = useState<Json[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
@@ -15,17 +53,38 @@ export function StaffConsole() {
   const [decision, setDecision] = useState("hold");
   const [evidence, setEvidence] = useState<Json | null>(null);
   const [keys, setKeys] = useState<Json[]>([]);
+  const generation = useRef(0);
   const action = useAction();
   const base =
     tab === "recovery"
       ? "/api/staff/recovery/cases"
       : "/api/staff/moderation/reports";
+  async function staffRequest<T,>(operation: () => Promise<T>): Promise<T> {
+    const started = generation.current;
+    try {
+      const result = await operation();
+      if (started !== generation.current) throw new Error("The staff view changed. Refresh to continue.");
+      return result;
+    } catch (error) {
+      if (started === generation.current && error instanceof ApiError && [401, 403].includes(error.status)) {
+        generation.current++;
+        setRows(null); setCursor(null); setSelected(null); setEvidence(null); setKeys([]);
+        setReason(""); setReference("");
+        onAccessLost?.();
+      }
+      throw error;
+    }
+  }
+  const staffGet = (path: string) => staffRequest(() => get(path));
+  const staffPost = (path: string, data: unknown) => staffRequest(() => post(path, data));
+  const staffDelete = (path: string) => staffRequest(() => del(path));
   async function refresh(more = false) {
+    generation.current++;
     const query = new URLSearchParams({
       ...(filter ? { state: filter } : {}),
       ...(more && cursor ? { cursor } : {}),
     });
-    const data = await get(base + (query.size ? "?" + query : ""));
+    const data = await staffGet(base + (query.size ? "?" + query : ""));
     const next: Json[] = data.cases || items(data);
     setRows((old) =>
       more
@@ -39,17 +98,21 @@ export function StaffConsole() {
     );
     setCursor(data.next_cursor || null);
     if (tab === "moderation" && !more)
-      setKeys(items(await get("/api/staff/moderation/keys")));
+      setKeys(items(await staffGet("/api/staff/moderation/keys")));
   }
   useEffect(() => {
     setSelected(null);
     setEvidence(null);
     setRows(null);
     action.run(() => refresh());
+    return () => { generation.current++; };
   }, [tab, filter]);
   async function open(row: Json) {
+    generation.current++;
+    setSelected(null);
+    setEvidence(null);
     await action.run(async () => {
-      setSelected(await get(`${base}/${row.id}`));
+      setSelected(await staffGet(`${base}/${row.id}`));
       setEvidence(null);
       setReason("");
       setReference("");
@@ -61,28 +124,30 @@ export function StaffConsole() {
     if (!selected) return;
     await action.run(async () => {
       if (tab === "recovery")
-        await post(`${base}/${selected.id}/review`, {
+        await staffPost(`${base}/${selected.id}/review`, {
           decision,
           evidenceReference: reference,
           reason,
         });
       else
-        await post(`${base}/${selected.id}/actions`, {
+        await staffPost(`${base}/${selected.id}/actions`, {
           action: decision,
           reason_code: reason
             .toLowerCase()
             .replace(/[^a-z_]/g, "_")
             .slice(0, 60),
         });
-      setSelected(await get(`${base}/${selected.id}`));
+      setSelected(await staffGet(`${base}/${selected.id}`));
       await refresh();
     }, "The review was recorded. Recovery transfers require approval from two distinct authorized reviewers.");
   }
   async function openEvidence() {
     if (!selected?.evidence_envelope) return;
+    const started = generation.current;
     await action.run(async () => {
+      if (!vault) throw new Error("Open the trusted-device staff view and unlock your encryption keys to read disclosed evidence.");
       const envelope = selected.evidence_envelope as EncryptedEnvelope;
-      const author = await get(`${base}/${selected.id}/author-key`);
+      const author = await staffGet(`${base}/${selected.id}/author-key`);
       const key = vault.keys.find((k) =>
         envelope.recipients.some((r) => r.fingerprint === k.getFingerprint()),
       );
@@ -96,7 +161,7 @@ export function StaffConsole() {
         privateKey: key,
         authorPublicKey: author.public_key,
       });
-      setEvidence(content);
+      if (started === generation.current) setEvidence(content);
     });
   }
   return (
@@ -110,10 +175,7 @@ export function StaffConsole() {
         </p>
       </div>
       <nav className="settings-tabs" aria-label="Staff queues">
-        {[
-          ["recovery", "Account recovery"],
-          ["moderation", "Community reports"],
-        ].map(([id, label]) => (
+        {availableTabs.map(([id, label]) => (
           <button
             className={`text-button ${tab === id ? "active" : ""}`}
             key={id}
@@ -128,7 +190,12 @@ export function StaffConsole() {
       </nav>
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
-      {tab === "moderation" && (
+      {tab === "moderation" && !vault && <section className="panel">
+        <h2>Disclosed evidence</h2>
+        <p>Reading encrypted report evidence or registering a moderation device requires your separate Porchday account and trusted encryption keys.</p>
+        <a className="button outline" href="/staff/moderation">Open trusted-device staff view</a>
+      </section>}
+      {tab === "moderation" && vault && (
         <section className="panel">
           <h2>Report evidence keys</h2>
           <p>
@@ -149,7 +216,7 @@ export function StaffConsole() {
                   busy={action.busy}
                   onClick={() =>
                     action.run(async () => {
-                      await del(`/api/staff/moderation/keys/${k.id}`);
+                      await staffDelete(`/api/staff/moderation/keys/${k.id}`);
                       await refresh();
                     })
                   }
@@ -164,7 +231,7 @@ export function StaffConsole() {
             busy={action.busy}
             onClick={() =>
               action.run(async () => {
-                await post("/api/staff/moderation/keys", {
+                await staffPost("/api/staff/moderation/keys", {
                   id: vault.device.id,
                   member_id: vault.member.id,
                   public_key: vault.device.public_key,
@@ -315,6 +382,7 @@ export function StaffConsole() {
                   <Button
                     variant="outline"
                     busy={action.busy}
+                    disabled={!vault}
                     onClick={openEvidence}
                   >
                     Open explicitly disclosed evidence

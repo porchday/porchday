@@ -3,7 +3,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { authRoutes } from './auth-routes';
 import recoveryRoutes,{createStaffRecoveryRoutes} from './recovery';
-import {requireStaff} from './staff';
+import {requireStaff,requireStaffIdentity} from './staff';
 import { requireMember,requireAppealMember } from './session';
 import {createModerationRoutes,createAppealRoutes} from './moderation';
 import { createSocialRoutes } from './social';
@@ -62,6 +62,7 @@ app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
 app.use('/api/*',privacyReadGuard);
 app.route('/api/auth',authRoutes);
 app.route('/api/account-recovery',recoveryRoutes);
+app.get('/api/staff/identity',requireStaffIdentity,c=>c.json({subject:c.get('staffSubject'),email:c.get('staffEmail'),roles:c.get('staffRoles')}));
 app.use('/api/staff/recovery/*',requireStaff('recovery'));
 app.use('/api/staff/recovery/*',privacyMutationMiddleware);
 app.route('/api/staff/recovery',createStaffRecoveryRoutes());

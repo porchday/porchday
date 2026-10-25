@@ -38,5 +38,6 @@ export interface Variables {
   sessionId: string;
   requestId: string;
   staffSubject: string;
+  staffEmail: string;
   staffRoles: ('recovery' | 'moderation')[];
 }

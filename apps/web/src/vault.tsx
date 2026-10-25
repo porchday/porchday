@@ -81,6 +81,8 @@ type VaultValue = {
   clear: () => Promise<void>;
 };
 const Vault = createContext<VaultValue | null>(null);
+/** Staff recovery does not require a social account or decryption keys. */
+export const useOptionalVault = () => useContext(Vault);
 export const useVault = () => {
   const context = useContext(Vault);
   if (!context) throw new Error("Encryption keys are not unlocked");

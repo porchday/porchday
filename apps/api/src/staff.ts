@@ -12,11 +12,12 @@ export async function verifyStaffAssertion(assertion: string, issuer: string, au
     issuer, audience, algorithms: ['RS256'], requiredClaims: ['sub', 'email', 'iat', 'exp'],
     clockTolerance: 5, maxTokenAge: '8h',
   });
-  if (payload.type !== 'app' || typeof payload.sub !== 'string' || typeof payload.email !== 'string') throw new Error('Invalid staff identity');
+  if (payload.type !== 'app' || typeof payload.sub !== 'string' || !payload.sub.trim() || payload.sub.length>256 ||
+      typeof payload.email !== 'string' || payload.email.length>254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) throw new Error('Invalid staff identity');
   return {subject: payload.sub, email: payload.email.toLowerCase()};
 }
 
-export function requireStaff(role: StaffRole) {
+function staffMiddleware(role?: StaffRole) {
   return createMiddleware<{Bindings: Env; Variables: Variables}>(async (c, next) => {
     const issuer = c.env.STAFF_ACCESS_ISSUER;
     const audience = c.env.STAFF_ACCESS_AUDIENCE;
@@ -34,9 +35,14 @@ export function requireStaff(role: StaffRole) {
     const pool = authPool(c.env);
     try {
       const {rows} = await pool.query('SELECT roles FROM public.staff_users WHERE subject=$1 AND lower(email)=$2 AND active', [identity.subject, identity.email]);
-      if (!rows[0]?.roles?.includes(role)) return c.json({error: {code: 'STAFF_ROLE_REQUIRED'}}, 403);
-      c.set('staffSubject', identity.subject); c.set('staffRoles', rows[0].roles);
+      const roles: StaffRole[] = (rows[0]?.roles || []).filter((value: unknown): value is StaffRole => value==='recovery'||value==='moderation');
+      if (role && !roles.includes(role)) return c.json({error: {code: 'STAFF_ROLE_REQUIRED'}}, 403);
+      c.set('staffSubject', identity.subject); c.set('staffEmail', identity.email); c.set('staffRoles', roles);
     } finally { c.executionCtx.waitUntil(pool.end()); }
     await next();
   });
 }
+
+/** Only the caller's verified identity is exposed; this grants no staff role. */
+export const requireStaffIdentity = staffMiddleware();
+export function requireStaff(role: StaffRole) { return staffMiddleware(role); }

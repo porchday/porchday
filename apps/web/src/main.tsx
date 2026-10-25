@@ -26,7 +26,7 @@ import {
 import { Settings } from "./Settings";
 import { Recovery } from "./Recovery";
 import { IntegrationConsent } from "./Integrations";
-import { StaffConsole } from "./Staff";
+import { StaffConsole, StaffEntry } from "./Staff";
 import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
 import "./styles.css";
@@ -91,7 +91,7 @@ function App() {
   }
   useEffect(() => {
     if (
-      (path.startsWith("/app") || path === "/staff") &&
+      (path.startsWith("/app") || path === "/staff/moderation") &&
       !member &&
       !loading &&
       !restricted
@@ -152,15 +152,16 @@ function App() {
     window.dispatchEvent(new Event("online"));
   }
   let page: React.ReactNode;
-  if (!online && !member && (path.startsWith("/app") || path === "/staff"))
+  if (!online && ((!member && path.startsWith("/app")) || path === "/staff" || path === "/staff/" || path === "/staff/moderation"))
     page = <OfflineScreen onRetry={retryConnection} />;
   else if (path === "/") page = <Landing />;
   else if (path === "/stolen-account") page = <StolenAccount />;
   else if (path === "/recovery") page = <Recovery />;
   else if (path === "/appeals") page = <Appeals onLogout={signOut} />;
+  else if (path === "/staff" || path === "/staff/") page = <StaffEntry />;
   else if (["/login", "/join", "/forgot", "/reset", "/verify"].includes(path))
     page = <AuthPage key={route} mode={path.slice(1)} onSignedIn={session} />;
-  else if (path.startsWith("/app") || path === "/staff") {
+  else if (path.startsWith("/app") || path === "/staff/moderation") {
     page = loading ? (
       <main className="narrow-page">
         <Logo />
@@ -307,7 +308,7 @@ function AppShell({
         <Settings tab="data" onLogout={logout} />
       </>
     );
-  else if (path === "/staff") content = <StaffConsole />;
+  else if (path === "/staff/moderation") content = <StaffConsole initialTab="moderation" />;
   else if (path === "/app" || path === "/app/")
     content = (
       <>

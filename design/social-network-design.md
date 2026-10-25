@@ -82,7 +82,7 @@ Direct messages, video, livestreaming, marketplaces, brand pages, public discove
 
 ### Visual direction
 
-Use the homemade, sometimes clumsy and kitschy personal-page side of early MySpace, rather than a generic social-network portal. The supplied references call for a busy repeating wallpaper behind a narrow centered page, dense unequal columns, square paper panels, contrasting color blocks, chunky/double/dashed borders, small badges, and mixed serif/monospace/sans typography. Use an original burnt-orange, mustard, cream, and dark-brown interpretation; avoid Facebook-like blue identity, corporate navigation bars, oversized editorial heroes, rounded floating cards, and polished dashboard styling. The public homepage has an “about this website” sidebar and a homemade sign. Illustrative profile content must be clearly labeled; no invented live activity, visitor counters, ads, or nonfunctional music controls.
+Use the homemade, sometimes clumsy and kitschy personal-page side of early MySpace, rather than a generic social-network portal. The supplied references call for a busy repeating wallpaper behind a narrow centered page, dense unequal columns, square paper panels, contrasting color blocks, chunky/double/dashed borders, small badges, and mixed serif/monospace/sans typography. Use an original burnt-orange, mustard, cream, and dark-brown interpretation; avoid Facebook-like blue identity, corporate navigation bars, oversized editorial heroes, rounded floating cards, and polished dashboard styling. Keep the Porchday hero level, without rotation. Omit the “about this little website” sidebar, the “you are here” bar, and the “friends & family & being yourself” tagline. Use direct, simple language throughout the homepage and footer; the visual style can be personal without cute or diminutive copy. Illustrative profile content must be clearly labeled; no invented live activity, visitor counters, ads, or nonfunctional music controls.
 
 Personal walls retain member-selected colors, fonts, backgrounds, and photos so profiles feel individual. New accounts receive one randomized choice from curated local tiled wallpapers, saved in their encrypted profile; the choice persists across devices and can be changed or removed in settings. Never rerandomize on render or login or overwrite an existing profile’s choice. Tile IDs map to bundled static artwork, never arbitrary CSS, scripts, or external image URLs. Keep text and forms on quiet readable panels, retain visible keyboard focus, semantic headings, responsive stacking, and comfortable touch targets. No flashing, automatic sound, or motion is needed to achieve this style.
 
@@ -92,7 +92,7 @@ The homepage leads with the commitments **No ads. No influencers. No algorithm.*
 
 Proposed hero copy:
 
-- Headline: **a late 90s style social network**
+- Headline: **a simple social network**
 - Core promise: **No ads. No influencers. No algorithm.**
 - Mission: **A social network run by a nonprofit for the public good, funded by philanthropy.**
 - Supporting copy: **Keep up with friends and family, share everyday moments, and make your profile your own. Your feed shows their posts in chronological order.**
@@ -108,6 +108,8 @@ Follow the hero with a preview of a personal wall and a calm chronological feed.
 7. Demonstrate photos, comments, reactions, named groups, and optional timers for posts and comments.
 
 Use “Join Porchday” and “Learn about our mission” as primary actions, with a separate “Log in” link. The sign-in screen offers email/password login and registration, plus a “Forgot password?” link. During a closed pilot, explain invitation eligibility before sending someone through authentication. Include mission, governance, funding, privacy, community rules, accessibility, and contact links. Publish nonprofit status accurately; do not imply tax deductibility or established nonprofit status before these are confirmed.
+
+Use **By invitation only** for the homepage's admission label. Do not show the former “18+ / invitation-only pilot” location bar or “A little closer to your people.” footer tagline. The adults-only pilot and invitation requirements remain enforced and explained in registration and policy screens.
 
 ### Progressive Web App and native iOS app
 
