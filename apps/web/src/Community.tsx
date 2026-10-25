@@ -103,7 +103,9 @@ export function Connections() {
           <Button
             variant="primary"
             busy={action.busy}
-            disabled={list.length >= 300}
+            disabled={
+              list.length >= 300 || vault.member.status === "restricted"
+            }
           >
             Send request <Icon name="arrow" size={16} />
           </Button>
@@ -139,6 +141,7 @@ export function Connections() {
                   <Button
                     variant="primary compact"
                     busy={action.busy}
+                    disabled={vault.member.status === "restricted"}
                     onClick={() =>
                       action.run(async () => {
                         await post(`/connections/requests/${r.id}/accept`);
@@ -150,6 +153,7 @@ export function Connections() {
                   </Button>
                   <Button
                     variant="quiet compact"
+                    disabled={vault.member.status === "restricted"}
                     onClick={() =>
                       action.run(async () => {
                         await post(`/connections/requests/${r.id}/decline`);
@@ -249,6 +253,7 @@ export function Connections() {
                             : "Mute in Home"}
                         </button>
                         <button
+                          disabled={vault.member.status === "restricted"}
                           onClick={() =>
                             action.run(async () => {
                               await request(`/connections/${r.id}/kind`, {
@@ -268,6 +273,7 @@ export function Connections() {
                             : `Ask to label as ${r.kind === "friend" ? "family" : "friend"}`}
                         </button>
                         <button
+                          disabled={vault.member.status === "restricted"}
                           onClick={() => {
                             if (
                               confirm(
@@ -319,6 +325,7 @@ export function Connections() {
               </div>
               <Button
                 variant="quiet compact"
+                disabled={vault.member.status === "restricted"}
                 onClick={() =>
                   action.run(async () => {
                     await post(`/connections/requests/${r.id}/decline`);
@@ -410,7 +417,11 @@ export function Groups() {
           <h1>
             Your groups<span className="coral">.</span>
           </h1>
-          <Button variant="primary compact" onClick={() => setCreate(true)}>
+          <Button
+            variant="primary compact"
+            disabled={vault.member.status === "restricted"}
+            onClick={() => setCreate(true)}
+          >
             <Icon name="plus" size={18} />
             New group
           </Button>
@@ -438,6 +449,7 @@ export function Groups() {
               <Button
                 variant="primary compact"
                 busy={action.busy}
+                disabled={vault.member.status === "restricted"}
                 onClick={() =>
                   action.run(async () => {
                     await post(`/group-invitations/${inv.id}/accept`);
@@ -459,7 +471,11 @@ export function Groups() {
             icon="group"
             title="Good things happen in small groups."
             action={
-              <Button variant="outline" onClick={() => setCreate(true)}>
+              <Button
+                variant="outline"
+                disabled={vault.member.status === "restricted"}
+                onClick={() => setCreate(true)}
+              >
                 Start your first group
               </Button>
             }
@@ -609,30 +625,31 @@ export function GroupDetail({ id }: { id: string }) {
       {manage && data && (
         <section className="panel form-stack">
           <h2>People at the table</h2>
-          {["owner", "moderator"].includes(myRole) && (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                action.run(async () => {
-                  await post(`/groups/${id}/invitations`, {
-                    handle: handle.replace(/^@/, ""),
-                  });
-                  setHandle("");
-                }, "Invitation sent. Share the group details again after they join.");
-              }}
-              className="inline-form"
-            >
-              <Field
-                label="Invite by exact handle"
-                value={handle}
-                onChange={(e) => setHandle(e.target.value)}
-                required
-              />
-              <Button variant="primary compact" busy={action.busy}>
-                Invite
-              </Button>
-            </form>
-          )}
+          {["owner", "moderator"].includes(myRole) &&
+            vault.member.status !== "restricted" && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  action.run(async () => {
+                    await post(`/groups/${id}/invitations`, {
+                      handle: handle.replace(/^@/, ""),
+                    });
+                    setHandle("");
+                  }, "Invitation sent. Share the group details again after they join.");
+                }}
+                className="inline-form"
+              >
+                <Field
+                  label="Invite by exact handle"
+                  value={handle}
+                  onChange={(e) => setHandle(e.target.value)}
+                  required
+                />
+                <Button variant="primary compact" busy={action.busy}>
+                  Invite
+                </Button>
+              </form>
+            )}
           {data.members.map((m: Json) => {
             const handle =
               data.handles.find(
@@ -645,71 +662,73 @@ export function GroupDetail({ id }: { id: string }) {
                   <strong>@{handle}</strong>
                   <small>{m.role}</small>
                 </div>
-                {own && m.member_id !== vault.member.id && (
-                  <details className="row-options">
-                    <summary>
-                      <Icon name="more" />
-                    </summary>
-                    <div className="dropdown-menu">
-                      <button
-                        onClick={() =>
-                          action.run(async () => {
-                            await request(
-                              `/groups/${id}/members/${m.member_id}`,
-                              {
-                                method: "PUT",
-                                body: JSON.stringify({
-                                  role:
-                                    m.role === "moderator"
-                                      ? "member"
-                                      : "moderator",
-                                }),
-                              },
-                            );
-                            await refresh();
-                          })
-                        }
-                      >
-                        {m.role === "moderator"
-                          ? "Make member"
-                          : "Make moderator"}
-                      </button>
-                      <button
-                        onClick={() => {
-                          if (
-                            confirm(`Transfer group ownership to @${handle}?`)
-                          )
+                {own &&
+                  m.member_id !== vault.member.id &&
+                  vault.member.status !== "restricted" && (
+                    <details className="row-options">
+                      <summary>
+                        <Icon name="more" />
+                      </summary>
+                      <div className="dropdown-menu">
+                        <button
+                          onClick={() =>
                             action.run(async () => {
                               await request(
                                 `/groups/${id}/members/${m.member_id}`,
                                 {
                                   method: "PUT",
-                                  body: JSON.stringify({ role: "owner" }),
+                                  body: JSON.stringify({
+                                    role:
+                                      m.role === "moderator"
+                                        ? "member"
+                                        : "moderator",
+                                  }),
                                 },
                               );
                               await refresh();
-                            });
-                        }}
-                      >
-                        Transfer ownership
-                      </button>
-                      <button
-                        onClick={() =>
-                          action.run(async () => {
-                            await del(`/groups/${id}/members/${m.member_id}`);
-                            await refresh();
-                          })
-                        }
-                      >
-                        Remove member
-                      </button>
-                    </div>
-                  </details>
-                )}
+                            })
+                          }
+                        >
+                          {m.role === "moderator"
+                            ? "Make member"
+                            : "Make moderator"}
+                        </button>
+                        <button
+                          onClick={() => {
+                            if (
+                              confirm(`Transfer group ownership to @${handle}?`)
+                            )
+                              action.run(async () => {
+                                await request(
+                                  `/groups/${id}/members/${m.member_id}`,
+                                  {
+                                    method: "PUT",
+                                    body: JSON.stringify({ role: "owner" }),
+                                  },
+                                );
+                                await refresh();
+                              });
+                          }}
+                        >
+                          Transfer ownership
+                        </button>
+                        <button
+                          onClick={() =>
+                            action.run(async () => {
+                              await del(`/groups/${id}/members/${m.member_id}`);
+                              await refresh();
+                            })
+                          }
+                        >
+                          Remove member
+                        </button>
+                      </div>
+                    </details>
+                  )}
               </div>
             );
           })}
-          {own && (
+          {own && vault.member.status !== "restricted" && (
             <>
               <Field
                 label="Group name"
@@ -748,6 +767,7 @@ export function GroupDetail({ id }: { id: string }) {
           </p>
           <Button
             variant="danger"
+            disabled={!own && vault.member.status === "restricted"}
             onClick={() => {
               if (
                 confirm(

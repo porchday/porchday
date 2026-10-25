@@ -527,6 +527,12 @@ export function AuthPage({
                   </button>
                 </>
               )}
+              {query.has("passwordChanged") && (
+                <Alert success>
+                  Your password changed and all sessions were signed out. Log in
+                  with your new password.
+                </Alert>
+              )}
               {query.has("verified") && (
                 <Alert success>
                   Email verification complete. Please log in.
@@ -671,7 +677,9 @@ export function StolenAccount() {
       const r = await post("/api/account-recovery/reports", {
         accountReference: data.account_identifier,
         safeEmail: data.contact_email,
-        compromisedAt: data.compromised_at,
+        compromisedAt: data.compromised_at
+          ? new Date(String(data.compromised_at)).toISOString()
+          : undefined,
         trustedMethod: data.trusted_method,
         description: data.description,
       });
@@ -721,7 +729,9 @@ export function StolenAccount() {
               label="When did you notice?"
               name="compromised_at"
               type="datetime-local"
-              max={new Date().toISOString().slice(0, 16)}
+              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+                .toISOString()
+                .slice(0, 16)}
               required
             />
             <label className="field">
@@ -741,7 +751,7 @@ export function StolenAccount() {
               <span>What happened?</span>
               <textarea
                 name="description"
-                maxLength={3000}
+                maxLength={2000}
                 required
                 rows={5}
                 placeholder="Share enough detail to help a reviewer. Never include passwords, recovery secrets, or access tokens."

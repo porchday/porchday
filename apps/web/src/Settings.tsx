@@ -162,6 +162,13 @@ function ProfileSettings() {
       setAssets({ avatar: null, cover: null, background: null });
     }, "Your corner feels a little more you.");
   }
+  if (vault.member.status === "restricted")
+    return (
+      <Alert>
+        Profile changes are unavailable while this account is restricted. You
+        can still export your profile from My data.
+      </Alert>
+    );
   return (
     <form onSubmit={submit} className="form-stack">
       <section className="panel form-stack">
@@ -510,7 +517,9 @@ function SecuritySettings({ onLogout }: { onLogout: () => Promise<void> }) {
               });
               setCurrent("");
               setPassword("");
-            }, "Password changed. Other sessions have been signed out.");
+              await onLogout();
+              navigate("/login?passwordChanged=1");
+            }, "Password changed. All sessions have been signed out.");
           }}
         >
           <Field
@@ -537,7 +546,9 @@ function SecuritySettings({ onLogout }: { onLogout: () => Promise<void> }) {
         </form>
         <p className="small-copy">
           Your encryption recovery secret is separate and never changes with
-          your password.
+          your password. Changing your password signs out every session and
+          clears this browser's remembered keys. Keep your recovery secret
+          available to unlock after signing in again.
         </p>
       </section>
       <section className="panel">
@@ -561,24 +572,26 @@ function SecuritySettings({ onLogout }: { onLogout: () => Promise<void> }) {
             <Button variant="quiet compact" onClick={() => setSelected(d)}>
               Verify
             </Button>
-            {!d.revoked_at && d.id !== vault.device.id && (
-              <Button
-                variant="danger compact"
-                onClick={() => {
-                  if (
-                    confirm(
-                      "Revoke this device? It will not receive future content keys. Already saved copies cannot be recalled.",
+            {!d.revoked_at &&
+              d.id !== vault.device.id &&
+              vault.member.status !== "restricted" && (
+                <Button
+                  variant="danger compact"
+                  onClick={() => {
+                    if (
+                      confirm(
+                        "Revoke this device? It will not receive future content keys. Already saved copies cannot be recalled.",
+                      )
                     )
-                  )
-                    action.run(async () => {
-                      await del(`/devices/${d.id}`);
-                      await refresh();
-                    });
-                }}
-              >
-                Revoke
-              </Button>
-            )}
+                      action.run(async () => {
+                        await del(`/devices/${d.id}`);
+                        await refresh();
+                      });
+                  }}
+                >
+                  Revoke
+                </Button>
+              )}
           </div>
         ))}
         <p className="small-copy">
@@ -726,7 +739,7 @@ function DataSettings({ onLogout }: { onLogout: () => Promise<void> }) {
           ) : (
             <p className="small-copy">You have not connected any tools.</p>
           )}
-          <RegisterIntegration />
+          {vault.member.status !== "restricted" && <RegisterIntegration />}
         </section>
       )}
       <section className="panel danger-panel">

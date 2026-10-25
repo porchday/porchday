@@ -292,6 +292,7 @@ export function Composer({
       onPosted();
     }, "Your moment is shared.");
   }
+  if (vault.member.status === "restricted") return null;
   return (
     <form
       className="composer panel"
@@ -448,9 +449,11 @@ export function Feed({
       if (document.visibilityState === "visible") load();
     };
     document.addEventListener("visibilitychange", visible);
+    window.addEventListener("online", visible);
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", visible);
+      window.removeEventListener("online", visible);
     };
   }, [endpoint]);
   const refresh = () => setVersion((v) => v + 1);
@@ -658,7 +661,7 @@ export function PostCard({
           </button>
           {menu && (
             <div className="dropdown-menu">
-              {own && (
+              {own && vault.member.status !== "restricted" && (
                 <>
                   <button
                     onClick={() => {
@@ -682,7 +685,7 @@ export function PostCard({
                   )}
                 </>
               )}
-              {(own || canModerate) && (
+              {(own || canModerate) && vault.member.status !== "restricted" && (
                 <button onClick={remove}>
                   <Icon name="trash" size={16} />
                   {own ? "Delete post" : "Remove group post"}
@@ -985,7 +988,7 @@ export function Reactions({
               className={`reaction-chip ${selected ? "selected" : ""}`}
               aria-label={`${label}, ${count} ${count === 1 ? "person" : "people"}`}
               aria-pressed={selected}
-              disabled={action.busy}
+              disabled={action.busy || vault.member.status === "restricted"}
               onClick={() => toggle(id)}
             >
               <span aria-hidden="true">{emoji}</span>
@@ -996,7 +999,7 @@ export function Reactions({
         <button
           className="reaction-add"
           onClick={() => setPicker(!picker)}
-          disabled={!payload}
+          disabled={!payload || vault.member.status === "restricted"}
           aria-label="Add a reaction"
           aria-expanded={picker}
         >
@@ -1015,7 +1018,7 @@ export function Reactions({
               key={id}
               title={label}
               aria-label={label}
-              disabled={action.busy}
+              disabled={action.busy || vault.member.status === "restricted"}
               onClick={() => toggle(id)}
             >
               {emoji}
@@ -1242,34 +1245,40 @@ function Comment({
             reactions={reactions}
             reload={onChange}
           />
-          <button className="text-button" onClick={onReply}>
+          <button
+            className="text-button"
+            disabled={vault.member.status === "restricted"}
+            onClick={onReply}
+          >
             Reply
           </button>
           <button className="text-button" onClick={() => setReport(true)}>
             Report
           </button>
-          {row.author_id === vault.member.id && (
-            <button className="text-button" onClick={() => setEditing(true)}>
-              Edit
-            </button>
-          )}
+          {row.author_id === vault.member.id &&
+            vault.member.status !== "restricted" && (
+              <button className="text-button" onClick={() => setEditing(true)}>
+                Edit
+              </button>
+            )}
           {(row.author_id === vault.member.id ||
             postRow.author_id === vault.member.id ||
-            canModerate) && (
-            <button
-              className="text-button"
-              disabled={action.busy}
-              onClick={() => {
-                if (confirm("Delete this comment and its replies?"))
-                  action.run(async () => {
-                    await del(`/comments/${row.id}`);
-                    await onChange();
-                  });
-              }}
-            >
-              Delete
-            </button>
-          )}
+            canModerate) &&
+            vault.member.status !== "restricted" && (
+              <button
+                className="text-button"
+                disabled={action.busy}
+                onClick={() => {
+                  if (confirm("Delete this comment and its replies?"))
+                    action.run(async () => {
+                      await del(`/comments/${row.id}`);
+                      await onChange();
+                    });
+                }}
+              >
+                Delete
+              </button>
+            )}
         </div>
         <Alert>{action.error}</Alert>
       </div>
@@ -1346,6 +1355,7 @@ function CommentComposer({
       }
     });
   }
+  if (vault.member.status === "restricted") return null;
   return (
     <form
       className="comment-composer"

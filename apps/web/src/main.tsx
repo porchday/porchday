@@ -11,6 +11,7 @@ import {
   Logo,
   useRoute,
   navigate,
+  useAction,
 } from "./ui";
 import { AuthPage, Landing, Policy, StolenAccount } from "./Public";
 import { VaultProvider, useVault } from "./vault";
@@ -140,31 +141,24 @@ function App() {
     setMember(null);
     navigate("/login");
   }
+  async function retryConnection() {
+    const response = await fetch("/health", { cache: "no-store" });
+    if (!response.ok)
+      throw new Error(
+        "Porchday is still unavailable. Your drafts remain in this tab.",
+      );
+    setOnline(true);
+    window.dispatchEvent(new Event("online"));
+  }
   let page: React.ReactNode;
-  if (!online && (path.startsWith("/app") || path === "/staff"))
-    page = (
-      <main className="narrow-page">
-        <Logo />
-        <Empty
-          icon="sun"
-          title="You’re offline. Your circle can wait."
-          action={
-            <Button variant="primary" onClick={() => location.reload()}>
-              Try again
-            </Button>
-          }
-        >
-          Porchday needs a connection to load private posts and photos. We don’t
-          keep an offline copy of your social content.
-        </Empty>
-      </main>
-    );
+  if (!online && !member && (path.startsWith("/app") || path === "/staff"))
+    page = <OfflineScreen onRetry={retryConnection} />;
   else if (path === "/") page = <Landing />;
   else if (path === "/stolen-account") page = <StolenAccount />;
   else if (path === "/recovery") page = <Recovery />;
   else if (path === "/appeals") page = <Appeals onLogout={signOut} />;
   else if (["/login", "/join", "/forgot", "/reset", "/verify"].includes(path))
-    page = <AuthPage mode={path.slice(1)} onSignedIn={session} />;
+    page = <AuthPage key={route} mode={path.slice(1)} onSignedIn={session} />;
   else if (path.startsWith("/app") || path === "/staff") {
     page = loading ? (
       <main className="narrow-page">
@@ -175,7 +169,12 @@ function App() {
       <Appeals onLogout={signOut} />
     ) : !member ? (
       <>
-        <AuthPage mode="login" onSignedIn={session} returnTo={route} />
+        <AuthPage
+          key={route}
+          mode="login"
+          onSignedIn={session}
+          returnTo={route}
+        />
         {error && (
           <div className="fixed-alert">
             <Alert>{error}</Alert>
@@ -183,9 +182,14 @@ function App() {
         )}
       </>
     ) : (
-      <VaultProvider member={member}>
-        <AppShell path={path} onLogout={signOut} />
-      </VaultProvider>
+      <>
+        {!online && <OfflineScreen onRetry={retryConnection} />}
+        <div hidden={!online}>
+          <VaultProvider member={member}>
+            <AppShell path={path} onLogout={signOut} />
+          </VaultProvider>
+        </div>
+      </>
     );
   } else page = <Policy page={path.slice(1)} />;
   return (
@@ -232,6 +236,32 @@ function App() {
       )}
       {page}
     </>
+  );
+}
+function OfflineScreen({ onRetry }: { onRetry: () => Promise<void> }) {
+  const action = useAction();
+  return (
+    <main id="main-content" className="narrow-page">
+      <Logo />
+      <Empty
+        icon="sun"
+        title="You’re offline. Your circle can wait."
+        action={
+          <Button
+            variant="primary"
+            busy={action.busy}
+            onClick={() => action.run(onRetry)}
+          >
+            Try again
+          </Button>
+        }
+      >
+        Porchday needs a connection to load private posts and photos. We don’t
+        store an offline copy of your social content. Drafts and keys already
+        open stay in this tab while you reconnect.
+      </Empty>
+      <Alert>{action.error}</Alert>
+    </main>
   );
 }
 const links = [
@@ -392,6 +422,13 @@ function AppShell({
         </div>
       </aside>
       <main id="main-content" className="app-main">
+        {vault.member.status === "restricted" && (
+          <Alert>
+            This account can read existing content, but social changes are
+            restricted. Safety and data controls remain available.{" "}
+            <a href="/appeals">Request an independent review.</a>
+          </Alert>
+        )}
         {content}
       </main>
       <aside className="right-rail">

@@ -709,7 +709,7 @@ export function DataTransfer() {
           expires.
         </p>
       </section>
-      {vault.member.status !== "suspended" && (
+      {!["restricted", "suspended"].includes(vault.member.status || "") && (
         <section className="panel form-stack">
           <h2>Bring your memories with you</h2>
           <p>

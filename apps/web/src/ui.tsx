@@ -299,7 +299,7 @@ export function Modal({
     return () => el?.removeEventListener("cancel", close);
   }, []);
   return (
-    <dialog ref={ref} className="modal">
+    <dialog ref={ref} className="modal" aria-label={title}>
       <div className="modal-heading">
         <h2>{title}</h2>
         <button

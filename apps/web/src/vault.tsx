@@ -261,7 +261,7 @@ export function VaultProvider({
       );
       let device: Device;
       let key: UnlockedPrivateKey;
-      if (member.status === "suspended") {
+      if (["restricted", "suspended"].includes(member.status || "")) {
         const restored =
           unlocked.find((v) => devices!.some((d) => d.id === v.device.id)) ||
           unlocked[0];
@@ -324,10 +324,6 @@ export function VaultProvider({
           ...device,
           authorization: { type: "recovery", signed },
           backup: updated,
-        });
-        await request("/keys/backup", {
-          method: "PUT",
-          body: JSON.stringify({ envelope: updated }),
         });
         key = await unlockPrivateKey(
           newKeys.encryptedPrivateKey,
@@ -394,8 +390,8 @@ export function VaultProvider({
             <form className="form-stack" onSubmit={unlock}>
               <h2>Unlock this device</h2>
               <p>
-                {member.status === "suspended"
-                  ? "Use your saved recovery secret to open your own export. This does not enroll a new device or restore social access."
+                {["restricted", "suspended"].includes(member.status || "")
+                  ? "Use your saved recovery secret to read existing encrypted content and export your data. This does not enroll a new device or restore restricted social features."
                   : "Use your saved recovery secret to unlock your history and authorize this device. Password resets do not restore these keys."}
               </p>
               <Field
@@ -482,7 +478,7 @@ export function VaultProvider({
                 My secret is safe. Let’s go.
               </Button>
             </>
-          ) : member.status === "suspended" ? (
+          ) : ["restricted", "suspended"].includes(member.status || "") ? (
             <>
               <h2>Your data controls remain available.</h2>
               <p>
@@ -542,6 +538,13 @@ export function VaultProvider({
     },
     postId?: string,
   ) {
+    if (
+      ["restricted", "suspended"].includes(member.status || "") &&
+      partial.kind !== "report"
+    )
+      throw new Error(
+        "Social changes are unavailable while this account is restricted. Your data and appeals remain available.",
+      );
     const recipients = await audience(
       partial.audience,
       partial.groupId,

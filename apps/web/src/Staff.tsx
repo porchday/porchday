@@ -378,6 +378,7 @@ export function StaffConsole() {
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 required
+                minLength={10}
                 maxLength={500}
                 help="Use a secure evidence reference. Do not paste passwords, recovery secrets, or unnecessary private data."
               />
@@ -391,8 +392,8 @@ export function StaffConsole() {
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               required
-              minLength={3}
-              maxLength={tab === "recovery" ? 2000 : 60}
+              minLength={tab === "recovery" ? 10 : 3}
+              maxLength={tab === "recovery" ? 1000 : 60}
             />
             <Button variant="primary" busy={action.busy}>
               Record review decision

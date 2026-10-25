@@ -59,9 +59,11 @@ export function Recovery() {
                 <h2>Your login access is restored.</h2>
                 <p>
                   Previous sessions and compromised credentials were
-                  invalidated. Log in with your new password, then review
-                  devices and integrations. Your trusted device or recovery
-                  secret is still needed to open old encrypted content.
+                  invalidated. Log in using your verified safe contact email and
+                  new password, then review devices and integrations. Previous
+                  device keys were revoked; use your saved encryption recovery
+                  secret to authorize a fresh device and open old encrypted
+                  content.
                 </p>
                 <a href="/login" className="button primary">
                   Log in securely
