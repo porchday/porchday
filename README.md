@@ -1,6 +1,6 @@
 # Porchday
 
-A late 90s style social network for people who know each other. No ads, no influencer mechanics, and a chronological feed. The intended operator is a philanthropy-funded nonprofit; legal status and independent security review are launch prerequisites.
+A simple social network for people who know each other. No ads, no influencer mechanics, and a chronological feed. The intended operator is a philanthropy-funded nonprofit; legal status and independent security review are launch prerequisites.
 
 Porchday is under active development. The repository is private during development. Application source is licensed Apache-2.0; dependency license notices apply separately.
 
@@ -34,3 +34,5 @@ Credentials are outside the repository in `~/.config/inner-circle/secrets.env`. 
 Infrastructure resource names are recorded in `infra/resources.json`. Use separate staging and production databases, R2 buckets, queues, auth secrets and encryption test identities. Complete the requirements checklist and real deployed tests before declaring the MVP ready. Public source release, App Store/TestFlight distribution and independent review are separate milestones.
 
 The [operations guide](docs/operations.md) links the admission and deployment procedures. Use the [monitoring runbook](docs/independent-monitoring.md), [staff Access procedure](docs/staff-access.md), [incident response guide](docs/incident-response.md) and [restore-safety procedure](docs/restore-safety.md) for their respective operational checks. The [hosted web/PWA checklist](docs/hosted-verification.md) and [hosted native procedure](docs/hosted-native-verification.md) define remaining acceptance work; deployment alone does not establish that those checks passed.
+
+The shared corn logo source is `apps/web/public/icon.svg`. After editing it, run `node apps/web/scripts/generate-icons.mjs` with the project's Playwright Chromium installed. This regenerates the web/PWA PNGs, iOS app icon and native in-app mark from the same vector; inspect the generated assets before committing them.
