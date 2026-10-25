@@ -28,6 +28,7 @@ jobs:
       NATIVE_PUSH_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_native_push_test
       JOURNAL_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_journal_test
       AUTH_JOURNAL_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_auth_journal_test
+      STAFF_ROLE_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_staff_role_test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
