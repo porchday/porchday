@@ -93,7 +93,7 @@ suite('Push HTTP authorization, durable delivery and revocation', () => {
     const registered = await request(a, '/push/subscriptions', 'POST', browserSub.subscription);
     const n = await notification(a.id, b.id);
     const send = vi.fn(async (_url: unknown, init?: RequestInit) => {
-      expect(init?.redirect).toBe('error'); expect(init?.signal).toBeDefined();
+      expect(init?.redirect).toBe('manual'); expect(init?.signal).toBeDefined();
       const clear = ece.decrypt(Buffer.from(init?.body as Uint8Array), {version:'aes128gcm', privateKey:browserSub.key, authSecret:browserSub.subscription.keys.auth}).toString();
       expect(clear).toBe(GENERIC_PUSH_PAYLOAD);
       return new Response(null, {status: 429, headers: {'Retry-After':'120'}});
@@ -106,6 +106,23 @@ suite('Push HTTP authorization, durable delivery and revocation', () => {
     await notification(a.id,b.id);
     expect(await processWebPush(env, vi.fn(async () => new Response(null,{status:410})) as typeof fetch)).toEqual({sent:0,retried:0,skipped:1});
     expect(await sql`select id from app.push_subscriptions where id=${registered.data.id}`).toHaveLength(0);
+  });
+  it('fails redirects without following Location or removing the valid subscription', async () => {
+    const a = await seed(), b = await seed(), sub = browser().subscription;
+    const registered = await request(a, '/push/subscriptions', 'POST', sub);
+    for (const status of [301, 302, 303, 307, 308]) {
+      const n = await notification(a.id, b.id);
+      const cancelled = vi.fn();
+      const response = new Response(new ReadableStream({cancel: cancelled}), {status, headers: {Location: 'https://attacker.test/capture', 'Retry-After': '3600'}});
+      const send = vi.fn(async (url: unknown, init?: RequestInit) => {
+        expect(url).toBe(sub.endpoint); expect(init?.redirect).toBe('manual');
+        return response;
+      });
+      expect(await processWebPush(env, send as typeof fetch)).toEqual({sent: 0, retried: 0, skipped: 1});
+      expect(send).toHaveBeenCalledTimes(1); expect(cancelled).toHaveBeenCalledTimes(1);
+      expect((await sql`select outcome,completed_at is not null as finished from app.push_outbox where notification_id=${n}`)[0]).toEqual({outcome: 'failed', finished: true});
+      expect(await sql`select id from app.push_subscriptions where id=${registered.data.id}`).toHaveLength(1);
+    }
   });
   it('rechecks read state, blocks, mute, status, opt-out, expiration and deletion before delivery', async () => {
     const a = await seed(), b = await seed();

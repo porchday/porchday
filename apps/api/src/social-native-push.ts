@@ -127,7 +127,7 @@ export function nativePushRequest(
     url: `https://${host}/3/device/${input.token}`,
     init: {
       method: "POST",
-      redirect: "error",
+      redirect: "manual",
       signal: AbortSignal.timeout(8000),
       headers: {
         authorization: `bearer ${providerToken}`,
@@ -182,6 +182,11 @@ export async function nativePushOutcome(
 ) {
   let outcome: "sent" | "gone" | "retry" | "failed" = "failed";
   let delay = Math.min(3600, 15 * 2 ** Math.min(attempts, 8));
+  // Never follow Location or interpret a redirect body as an APNs token failure.
+  if (response.status >= 300 && response.status < 400) {
+    await response.body?.cancel();
+    return { outcome, delay };
+  }
   if (response.status === 200) {
     await response.body?.cancel();
     return { outcome: "sent" as const, delay };

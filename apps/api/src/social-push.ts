@@ -82,6 +82,15 @@ export function generatePushRequest(subscription: PushSubscription, env: PushEnv
   });
 }
 
+/** Manual redirects keep VAPID credentials and ciphertext on the validated endpoint. */
+export function webPushRequest(subscription: PushSubscription, env: PushEnv) {
+  const request = generatePushRequest(subscription, env);
+  return {url: request.endpoint, init: {
+    method: request.method, headers: request.headers, body: new Uint8Array(request.body!),
+    redirect: 'manual', signal: AbortSignal.timeout(8000),
+  } satisfies RequestInit};
+}
+
 /** At-least-once delivery; fixed topic collapses crash-retried generic previews. */
 export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'> & PushEnv, send: typeof fetch = fetch): Promise<{sent: number; retried: number; skipped: number}> {
   const counts = {sent: 0, retried: 0, skipped: 0};
@@ -96,12 +105,10 @@ export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'> & PushEnv
         let outcome = 'retry';
         let delay = Math.min(3600, 15 * 2 ** Math.min(Number(job.attempts), 8));
         try {
-          const request = generatePushRequest(row.subscription, env);
-          const response = await send(request.endpoint, {
-            method: request.method, headers: request.headers, body: new Uint8Array(request.body!),
-            redirect: 'error', signal: AbortSignal.timeout(8000),
-          });
-          if (response.ok) outcome = 'sent';
+          const request = webPushRequest(row.subscription, env);
+          const response = await send(request.url, request.init);
+          if (response.status >= 300 && response.status < 400) outcome = 'failed';
+          else if (response.ok) outcome = 'sent';
           else if ([404, 410].includes(response.status)) outcome = 'gone';
           else if (response.status === 429 || response.status >= 500 || [401, 403].includes(response.status)) {
             const retryAfter = response.headers.get('Retry-After');

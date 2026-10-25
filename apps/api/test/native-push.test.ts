@@ -55,7 +55,7 @@ describe("APNs provider contract", () => {
       expect(req.url).toBe(
         `https://api.${environment === "sandbox" ? "sandbox." : ""}push.apple.com/3/device/${sub.token}`,
       );
-      expect(req.init.redirect).toBe("error");
+      expect(req.init.redirect).toBe("manual");
       expect(req.init.headers["apns-expiration"]).toBe("0");
       expect(req.init.headers["apns-topic"]).toBe(config.APNS_BUNDLE_ID);
       expect(req.init.headers["apns-push-type"]).toBe("alert");
@@ -370,7 +370,7 @@ suite("Native push HTTP authorization, durable delivery and revocation", () => {
     );
     const n = await notification(a.id, b.id);
     const send = vi.fn(async (_url: unknown, init?: RequestInit) => {
-      expect(init?.redirect).toBe("error");
+      expect(init?.redirect).toBe("manual");
       expect(init?.signal).toBeDefined();
       expect(init?.body).toBe(GENERIC_NATIVE_PAYLOAD);
       const jwt = (init?.headers as Record<string, string>).authorization.slice(
@@ -414,6 +414,24 @@ suite("Native push HTTP authorization, durable delivery and revocation", () => {
     expect(
       await sql`select id from app.native_push_subscriptions where id=${registered.data.id}`,
     ).toHaveLength(0);
+  });
+  it("fails redirects without interpreting token-revocation bodies or forwarding authorization", async () => {
+    const a = await seed(), b = await seed(), sub = device();
+    const registered = await request(a, "/native-push/subscriptions", "POST", sub);
+    for (const status of [301, 302, 303, 307, 308]) {
+      const n = await notification(a.id, b.id);
+      const response = Response.json({reason: "Unregistered"}, {status, headers: {Location: "https://attacker.test/capture"}});
+      const cancelled = vi.spyOn(response.body!, "cancel");
+      const read = vi.spyOn(response.body!, "getReader");
+      const send = vi.fn(async (url: unknown, init?: RequestInit) => {
+        expect(url).toBe("https://api.sandbox.push.apple.com/3/device/" + sub.token);
+        expect(init?.redirect).toBe("manual"); return response;
+      });
+      expect(await processNativePush(env, send as typeof fetch)).toEqual({sent: 0, retried: 0, skipped: 1});
+      expect(send).toHaveBeenCalledTimes(1); expect(cancelled).toHaveBeenCalledTimes(1); expect(read).not.toHaveBeenCalled();
+      expect((await sql`select outcome,completed_at is not null as finished from app.native_push_outbox where notification_id=${n}`)[0]).toEqual({outcome: "failed", finished: true});
+      expect(await sql`select id from app.native_push_subscriptions where id=${registered.data.id}`).toHaveLength(1);
+    }
   });
   it("rechecks read state, blocks, mute, status, opt-out, expiration and deletion before delivery", async () => {
     const a = await seed(),
