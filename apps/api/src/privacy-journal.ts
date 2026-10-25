@@ -2,6 +2,7 @@ import postgres from 'postgres';
 import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env, Variables} from './types.js';
+import {event} from './telemetry.js';
 
 export interface JournalStore {
   get(key: string): Promise<{etag: string; text(): Promise<string>} | null>;
@@ -172,7 +173,9 @@ export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables
   try {
     resources=runtime(c.env);
     if(resources)await assertJournalReadable(resources.store,resources.db);
-  } catch {
+  } catch(error) {
+    const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured'};
+    event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable',environment:c.env.ENVIRONMENT});
     // No identifiers, SQL details, endpoint URLs or private content in errors.
     return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'This action is temporarily unavailable while data safeguards are checked. Please try again later.'}},503);
   } finally {await resources?.close();}

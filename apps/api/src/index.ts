@@ -14,6 +14,11 @@ import { event,normalizedRoute } from './telemetry';
 import type {Env,Variables} from './types';
 import {cleanupDeletedIdentities} from './identity-cleanup';
 import {cleanupAuthenticationMetadata} from './metadata-cleanup';
+import {processWebPush} from './social-push';
+import {processAccountEmails} from './email-outbox';
+import {processNativePush} from './social-native-push';
+import {privacyReadGuard,privacyMutationMiddleware,withPrivacyJournal} from './privacy-journal';
+import {requireOperations,readOperationalHealth,recordCleanupSuccess} from './operations-health';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
 app.use('*',secureHeaders({
@@ -36,16 +41,30 @@ app.use('/api/*',async(c,next)=>{
  await next();
 });
 app.get('/health',c=>c.json({status:'ok',service:'porchday',environment:c.env.ENVIRONMENT,release:c.env.CF_VERSION_METADATA?.id||'local'}));
+app.get('/.well-known/apple-app-site-association',c=>{
+ const team=c.env.APNS_TEAM_ID,bundle=c.env.APNS_BUNDLE_ID;
+ if(!team||!/^[A-Z0-9]{10}$/.test(team)||!bundle||!/^([A-Za-z0-9-]+\.)+[A-Za-z0-9-]+$/.test(bundle))return c.json({error:{code:'NOT_CONFIGURED'}},404);
+ c.header('Cache-Control','public, max-age=3600');
+ return c.json({applinks:{details:[{appIDs:[team+'.'+bundle],components:[{'/':'/app/post/*',comment:'Open a Porchday post in the signed native app.'}]}]}});
+});
+app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
+ const result=await readOperationalHealth(c.env);
+ return c.json(result,result.status==='ok'?200:503);
+});
+app.use('/api/*',privacyReadGuard);
 app.route('/api/auth',authRoutes);
 app.route('/api/account-recovery',recoveryRoutes);
 app.use('/api/staff/recovery/*',requireStaff('recovery'));
+app.use('/api/staff/recovery/*',privacyMutationMiddleware);
 app.route('/api/staff/recovery',createStaffRecoveryRoutes());
 app.use('/api/staff/moderation/*',requireStaff('moderation'));
+app.use('/api/staff/moderation/*',privacyMutationMiddleware);
 app.route('/api/staff/moderation',createModerationRoutes());
 app.use('/api/member-appeals/*',requireAppealMember);
 app.route('/api/member-appeals',createAppealRoutes());
 app.route('/api/integration',createIntegrationTokenRoutes());
 app.use('/api/v1/*',requireMember);
+app.use('/api/v1/*',privacyMutationMiddleware);
 app.delete('/api/v1/account',async c=>{
  if(Date.now()-c.get('authTime')>15*60_000)return c.json({error:{code:'RECENT_AUTH_REQUIRED'}},403);
  const body=await c.req.json();if(body.confirm!=='DELETE')return c.json({error:{code:'CONFIRMATION_REQUIRED'}},400);
@@ -69,9 +88,16 @@ export default {
  },
  async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){
   try {
-   const results=await cleanupExpired(env);
-   await cleanupDeletedIdentities(env);
-   await cleanupAuthenticationMetadata(env);
+   const results=await withPrivacyJournal(env,async()=>{
+    const expired=await cleanupExpired(env);
+    await cleanupDeletedIdentities(env);
+    await cleanupAuthenticationMetadata(env);
+    return expired;
+   });
+   await processWebPush(env);
+   await processNativePush(env);
+   await processAccountEmails(env);
+   await recordCleanupSuccess(env);
    event('job',{code:'cleanup_complete',count:results.deleted_objects,environment:env.ENVIRONMENT});
    batch.ackAll();
   }catch{event('error',{code:'cleanup_retry',environment:env.ENVIRONMENT});batch.retryAll({delaySeconds:60});}

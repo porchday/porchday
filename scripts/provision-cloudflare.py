@@ -16,15 +16,18 @@ queues={q['queue_name']:q['queue_id'] for q in api('/queues')}
 resources=json.loads(Path('infra/resources.json').read_text()) if Path('infra/resources.json').exists() else {'account_id':account,'environments':{}}
 for env in ['staging','production']:
  name='porchday-'+env+'-media';queue='porchday-'+env+'-jobs'
+ journal='porchday-'+env+'-recovery-journal'
  if name not in buckets: api('/r2/buckets','POST',{'name':name,'locationHint':'wnam'})
+ if journal not in buckets: api('/r2/buckets','POST',{'name':journal,'locationHint':'wnam'})
  # Public access is disabled at creation and explicitly checked/disabled.
  api('/r2/buckets/'+name+'/domains/managed','PUT',{'enabled':False})
+ api('/r2/buckets/'+journal+'/domains/managed','PUT',{'enabled':False})
  if queue not in queues:
   result=api('/queues','POST',{'queue_name':queue});queues[queue]=result['queue_id']
  dlq=queue+'-dead-letter'
  if dlq not in queues:
   result=api('/queues','POST',{'queue_name':dlq});queues[dlq]=result['queue_id']
- resources['environments'].setdefault(env,{}).update({'bucket':name,'queue':queue,'queue_id':queues[queue],'dead_letter_queue':dlq,'dead_letter_queue_id':queues[dlq]})
- print(env+': private media bucket and job queue ready')
+ resources['environments'].setdefault(env,{}).update({'bucket':name,'recovery_journal_bucket':journal,'queue':queue,'queue_id':queues[queue],'dead_letter_queue':dlq,'dead_letter_queue_id':queues[dlq]})
+ print(env+': private media/recovery buckets and job queues ready')
 Path('infra').mkdir(exist_ok=True)
 Path('infra/resources.json').write_text(json.dumps(resources,indent=2)+'\n')

@@ -22,6 +22,7 @@ test.skipIf(!base)('MFA issues no session before second factor; backup codes and
  const jar=new Map<string,string>();let calls=0;
  const call=async(path:string,body?:unknown)=>{
   const response=await app.fetch(new Request(env.APP_URL+'/api/auth/'+path,{method:body?'POST':'GET',headers:{'Content-Type':'application/json',Origin:env.APP_URL,Cookie:[...jar].map(([k,v])=>k+'='+v).join('; '),'CF-Connecting-IP':unique+'-'+(++calls)},body:body?JSON.stringify(body):undefined}),env,context);
+  await Promise.allSettled(pending.splice(0));
   for(const cookie of response.headers.getSetCookie()){const pair=cookie.split(';')[0],index=pair.indexOf('=');if(/Max-Age=0(?:;|$)/i.test(cookie))jar.delete(pair.slice(0,index));else jar.set(pair.slice(0,index),pair.slice(index+1));}
   return response;
  };

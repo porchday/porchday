@@ -4,8 +4,12 @@ import {PostgresDialect} from 'kysely';
 import { Pool } from 'pg';
 import type { Env } from './types';
 import { sendAccountEmail } from './email';
+import {enqueueAccountEmail} from './email-outbox';
 
 export function createAuth(env: Env, pool: Pool, signupId?: string, inTransaction=false) {
+  const accountEmail=(memberId:string,to:string,subject:string,text:string)=>inTransaction
+    ? enqueueAccountEmail(env,pool,memberId,to,subject,text)
+    : sendAccountEmail(env,to,subject,text);
   return betterAuth({
     appName: 'Porchday', baseURL: env.APP_URL, basePath: '/api/auth',
     secret: env.BETTER_AUTH_SECRET, database: inTransaction ? {dialect:new PostgresDialect({pool}),type:'postgres',transaction:false} : pool,
@@ -19,7 +23,7 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
     user: { modelName:'auth_user', deleteUser: { enabled: false }, changeEmail: {
       enabled:true, updateEmailWithoutVerification:false,
       sendChangeEmailConfirmation:async({user,url})=>{
-        await sendAccountEmail(env,user.email,'Confirm a Porchday email change',`Someone requested a change to your account email. Approve this request first, then verify the new address:\n\n${url}\n\nIf this was not you, report it at ${env.APP_URL}/recovery. Never forward this link.`);
+        await accountEmail(user.id,user.email,'Confirm a Porchday email change',`Someone requested a change to your account email. Approve this request first, then verify the new address:\n\n${url}\n\nIf this was not you, report it at ${env.APP_URL}/recovery. Never forward this link.`);
       },
     } },
     plugins:[haveIBeenPwned(),twoFactor({issuer:'Porchday',twoFactorTable:'auth_two_factor',skipVerificationOnEnable:false,accountLockout:{enabled:true,maxFailedAttempts:5,durationSeconds:900}})],
@@ -30,18 +34,18 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
       enabled:true, requireEmailVerification:true, minPasswordLength:12, maxPasswordLength:128,
       autoSignIn:false, revokeSessionsOnPasswordReset:true,
       sendResetPassword: async ({user,url}) => {
-        await sendAccountEmail(env,user.email,'Reset your Porchday password',`Someone requested a password reset for your Porchday account.\n\n${url}\n\nThis link expires shortly and can be used only once. Resetting your login password does not unlock encrypted history. If this was not you, ignore this message or visit ${env.APP_URL}/recovery.`);
+        await accountEmail(user.id,user.email,'Reset your Porchday password',`Someone requested a password reset for your Porchday account.\n\n${url}\n\nThis link expires shortly and can be used only once. Resetting your login password does not unlock encrypted history. If this was not you, ignore this message or visit ${env.APP_URL}/recovery.`);
       },
       onPasswordReset: async ({user}) => {
         await pool.query('UPDATE public.auth_user SET credentials_changed_at=now() WHERE id=$1',[user.id]);
         await pool.query('DELETE FROM public.auth_verification WHERE value=$1',[user.id]);
-        await sendAccountEmail(env,user.email,'Your Porchday password changed',`Your login password was reset. Existing sessions have been revoked. If you did not do this, report a stolen account at ${env.APP_URL}/recovery.`);
+        await accountEmail(user.id,user.email,'Your Porchday password changed',`Your login password was reset. Existing sessions have been revoked. If you did not do this, report a stolen account at ${env.APP_URL}/recovery.`);
       },
     },
     emailVerification: {
       sendOnSignUp:true, sendOnSignIn:true, autoSignInAfterVerification:false, expiresIn:3600,
       sendVerificationEmail: async ({user,url}) => {
-        await sendAccountEmail(env,user.email,'Verify your Porchday email',`Welcome to Porchday. Verify your email using this link:\n\n${url}\n\nIf you did not request an account, ignore this message.`);
+        await accountEmail(user.id,user.email,'Verify your Porchday email',`Welcome to Porchday. Verify your email using this link:\n\n${url}\n\nIf you did not request an account, ignore this message.`);
       },
     },
     rateLimit: { enabled:false }, // Durable, hashed-identifier rate limits are applied outside this handler.

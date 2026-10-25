@@ -1,5 +1,5 @@
 /** Allowlist only; never log requests, raw paths, SQL/errors, bodies or identifiers. */
-const codes=new Set(['accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry']);
+const codes=new Set(['accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry','outbox_retry','outbox_delivered','email_outbox_retry','journal_not_initialized','restore_quarantined','database_rollback_detected','journal_not_configured','journal_unavailable']);
 const methods=new Set(['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']);
 const environments=new Set(['development','staging','production']);
 export function event(name:'request'|'job'|'email'|'error',fields:{route?:string;method?:string;status?:number;durationMs?:number;code?:string;environment?:string;count?:number}={}){

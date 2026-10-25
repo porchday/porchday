@@ -14,7 +14,11 @@ test.skipIf(!base)('full app gates invitations, one-use verification, origins, s
  await pool.query('GRANT porchday_auth TO porchday_auth_boundary_test');
  const env={APP_URL:'http://localhost:5173',ENVIRONMENT:'development',SIGNUP_ENABLED:'true',BETTER_AUTH_SECRET:'local-test-secret-longer-than-thirty-two-characters',EMAIL_FROM:'accounts@porchday.com',HYPERDRIVE_AUTH:{connectionString:url.href},HYPERDRIVE_SOCIAL:{connectionString:base},EMAIL:{send:async(m:unknown)=>{emails.push(m as {text:string});return {messageId:'synthetic'};}},ASSETS:{fetch:async()=>new Response('local')}} as unknown as Env;
  const context={waitUntil(p:Promise<unknown>){pending.push(p);},passThroughOnException(){},props:{}} as ExecutionContext;
- const call=(path:string,method='GET',body?:unknown,cookie?:string,origin=env.APP_URL)=>app.fetch(new Request(env.APP_URL+path,{method,headers:{Origin:origin,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:body?JSON.stringify(body):undefined}),env,context);
+ const call=async(path:string,method='GET',body?:unknown,cookie?:string,origin=env.APP_URL)=>{
+  const response=await app.fetch(new Request(env.APP_URL+path,{method,headers:{Origin:origin,'Content-Type':'application/json',...(cookie?{Cookie:cookie}:{})},body:body?JSON.stringify(body):undefined}),env,context);
+  await Promise.allSettled(pending.splice(0));
+  return response;
+ };
  const unique=crypto.randomUUID().replaceAll('-',''),email=unique+'@example.test',handle='test_'+unique.slice(0,15),token=crypto.randomUUID()+crypto.randomUUID();let userId:string|undefined;
  try{
   const body={email,handle,name:handle,password:'very-long-synthetic-password',adult:true,acceptedRules:true,inviteCode:token};

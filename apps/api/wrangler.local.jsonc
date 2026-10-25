@@ -41,6 +41,10 @@
     {
       "binding": "MEDIA",
       "bucket_name": "porchday-local-media"
+    },
+    {
+      "binding": "RECOVERY_JOURNAL",
+      "bucket_name": "porchday-local-recovery-journal"
     }
   ],
   "queues": {

@@ -11,14 +11,16 @@ for role in ['auth','social','jobs']:
  if not re.fullmatch('[a-f0-9]{32}',value) or value.startswith('00000000'):
   raise SystemExit('Missing verified '+name+' Hyperdrive '+role+' ID; provision it with query caching disabled first.')
 base=json.loads(Path('apps/api/wrangler.local.jsonc').read_text())
-base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev=name=='staging')
-base['vars'].update(APP_URL='https://porchday.com' if name=='production' else env['app_url'],ENVIRONMENT=name)
+host='porchday.com' if name=='production' else 'staging.porchday.com'
+base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev=False)
+base['vars'].update(APP_URL='https://'+host,ENVIRONMENT=name)
 base['hyperdrive']=[{'binding':'HYPERDRIVE_'+r.upper(),'id':env['hyperdrive_'+r]} for r in ['auth','social','jobs']]
-base['r2_buckets']=[{'binding':'MEDIA','bucket_name':env['bucket']}]
+base['r2_buckets']=[{'binding':'MEDIA','bucket_name':env['bucket']},{'binding':'RECOVERY_JOURNAL','bucket_name':env['recovery_journal_bucket']}]
+base['vars']['VAPID_SUBJECT']='https://porchday.com/contact'
 base['queues']={'producers':[{'binding':'JOBS','queue':env['queue']}],'consumers':[{'queue':env['queue'],'max_batch_size':1,'max_batch_timeout':5,'max_retries':8,'dead_letter_queue':env['dead_letter_queue']}]}
 base['triggers']={'crons':['* * * * *']}
 base['limits']={'cpu_ms':30000}
-if name=='production':base['routes']=[{'pattern':'porchday.com','custom_domain':True}]
+base['routes']=[{'pattern':host,'custom_domain':True}]
 for key in ['STAFF_ACCESS_ISSUER','STAFF_ACCESS_AUDIENCE']:
  if env.get(key.lower()):base['vars'][key]=env[key.lower()]
 path=Path('apps/api/wrangler.'+name+'.jsonc');path.write_text(json.dumps(base,indent=2)+'\n')
