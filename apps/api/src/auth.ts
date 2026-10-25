@@ -15,7 +15,7 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
     secret: env.BETTER_AUTH_SECRET, database: inTransaction ? {dialect:new PostgresDialect({pool}),type:'postgres',transaction:false} : pool,
     trustedOrigins: [env.APP_URL],
     advanced: {
-      database: { generateId: ({model}) => model === 'user' && signupId ? signupId : crypto.randomUUID() },
+      database: { joins:true, generateId: ({model}) => model === 'user' && signupId ? signupId : crypto.randomUUID() },
       useSecureCookies: env.APP_URL.startsWith('https:'),
       defaultCookieAttributes: { sameSite: 'lax', httpOnly: true },
       disableOriginCheck: false,

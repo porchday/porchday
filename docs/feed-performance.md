@@ -153,3 +153,22 @@ Public requests followed sequentially, ten per endpoint, all HTTP 200; p95 is th
 | Production `/` (unchanged control context) | 38 | 339 | 888 |
 
 The homepage and health medians rose from 37 / 18 ms before placement to 91 / 60 ms afterward; the homepage tail happened to fall. Cold/warm variance and ten observations prevent a firm regression estimate. The representative asset samples have no equivalent pre-placement baseline, so no asset speedup is claimed. This California-only evidence supports further staging diagnosis while leaving production and the generator unchanged. Any decision to retain placement must account for public delivery farther from Oregon, and the remaining feed latency needs investigation without weakening fresh security checks.
+
+### Prepared session/user join experiment
+
+The next change enables only Better Auth's `advanced.database.joins:true`. The installed Better Auth and PostgreSQL adapter version is **1.7.12**, whose native join implementation supports Porchday's custom `auth_session` and `auth_user` table names. The session lookup becomes one SQL join instead of a session query followed by a user query. This option is documented by the [Better Auth PostgreSQL adapter](https://better-auth.com/docs/adapters/postgresql). It does not enable query-result or cookie caching.
+
+A controlled local probe used all **42 migrations** and a newly created login inheriting only `porchday_auth`, with synthetic signed session cookies. Exactly one auth instance was constructed per comparison. Both the direct `pg.Pool` configuration and the explicit `PostgresDialect` transaction configuration returned identical session/user values. For a current, non-refreshing session, the observed queries were:
+
+| Configuration | Schema validation | Session/user reads | Current member status | Total |
+| --- | ---: | ---: | ---: | ---: |
+| Joins disabled | 2 | 2 | 1 | 5 |
+| Joins enabled | 2 | 1 | 1 | 4 |
+
+The two schema-validation reads check the search path and table columns. They remain enabled, as does the separate current member-status query. The initial exploratory probe constructed two auth instances and consequently counted duplicate schema validation; that discarded count is not production evidence. No local query-count result establishes a hosted latency improvement.
+
+The committed regression exercises the actual factory and restricted role, verifies the joined query and cross-user session selection, and checks that a reused auth instance still observes changed email verification, expired sessions and immediate session deletion. The real member/appeal middleware still denies held accounts, restricts suspended accounts to the existing permitted data/appeal routes, rejects unverified members, and preserves the original session creation time for recent-auth checks. The actual account route rejects an old session with `RECENT_AUTH_REQUIRED`. Schema validation, signed cookies, disabled cookie cache, per-request account checks, privacy journal checks, RLS, disabled Hyperdrive query caching, session refresh policy and database tier are unchanged.
+
+On October 25, all **17 tests across six files** passed in a separate temporary PostgreSQL container: the new join regression plus existing authentication, MFA/account security, account boundaries, recovery and account-journal integration suites. The API TypeScript check also passed. The temporary container and exploratory databases/logins were removed; no hosted account or provider configuration was changed by this verification.
+
+The staging plan is to deploy the reviewed change after the ongoing browser checks and fixture hold finish, preserving the existing Oregon placement and using the current fixture with its account/device/content state recorded. Then run one bounded 100-read, concurrency-five sample with exact release/deployment verification, response-body consumption, fixed error-code counts and logout, without overlapping content or account mutations. Compare against a clearly labelled baseline and preserve failures; do not infer an achieved 500 ms objective or a specific speedup from removing one SQL round trip. No joined-session deployment or hosted performance result is claimed in this checkpoint.
