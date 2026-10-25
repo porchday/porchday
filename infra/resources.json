@@ -81,5 +81,7 @@
     }
   },
   "staff_access_identity_provider_id": "76862f58-8faf-4670-9040-15cec794b211",
-  "planetscale_hyperdrive_ca_certificate_id": "9a645275-c469-4770-bb47-98ae0dd3739b"
+  "planetscale_hyperdrive_ca_certificate_id": "9a645275-c469-4770-bb47-98ae0dd3739b",
+  "staff_access_launcher_application_id": "d79cb320-96cf-4cf1-802d-5ab3c8d52eb6",
+  "staff_access_launcher_policy_id": "1ec83483-9fb8-4319-8aef-6b4b9cf43953"
 }
