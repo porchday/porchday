@@ -1,12 +1,20 @@
-import React, { useEffect, useState } from "react";
-import { get, post, request, localDate, type Json } from "./api";
+import React, { useEffect, useRef, useState } from "react";
+import { message, post, request, localDate, type Json } from "./api";
 import { Alert, Button, Field, Icon, useAction } from "./ui";
 import { PublicHeader, PublicFooter, StolenAccount } from "./Public";
+import { completeRecovery } from "./recovery-completion";
+function readRecoveryLink() {
+  const params = new URLSearchParams(location.hash.slice(1));
+  const token = params.get("token"), restore = params.get("restore");
+  const valid = (value: string | null) =>
+    value !== null && /^[a-f0-9]{64}$/.test(value);
+  return {
+    token: !restore && params.getAll("token").length === 1 && valid(token) ? token : null,
+    restore: !token && params.getAll("restore").length === 1 && valid(restore) ? restore : null,
+  };
+}
 export function Recovery() {
-  const [link] = useState(() => {
-    const params = new URLSearchParams(location.hash.slice(1));
-    return { token: params.get("token"), restore: params.get("restore") };
-  });
+  const [link, setLink] = useState(readRecoveryLink);
   const [session, setSession] = useState("");
   const [status, setStatus] = useState<Json | null>(null);
   const [description, setDescription] = useState("");
@@ -14,27 +22,89 @@ export function Recovery() {
   const [appeal, setAppeal] = useState(false);
   const [password, setPassword] = useState("");
   const [complete, setComplete] = useState(false);
-  const action = useAction();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [priorUnconfirmed, setPriorUnconfirmed] = useState(false);
+  const generation = useRef(0);
+  const pending = useRef(false);
+  const mounted = useRef(true);
+  // Link replacement must not abort-and-assume-rollback or let an older response
+  // update the new link's UI. Keep the single pending operation locked to settle.
+  async function run(
+    work: (current: () => boolean) => Promise<void>,
+    success?: string,
+  ) {
+    if (pending.current) return;
+    const startedFor = generation.current;
+    const current = () => mounted.current && generation.current === startedFor;
+    pending.current = true;
+    setBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      await work(current);
+      if (current() && success) setNotice(success);
+    } catch (e) {
+      if (current()) setError(message(e));
+    } finally {
+      pending.current = false;
+      if (mounted.current) setBusy(false);
+    }
+  }
+  const action = { busy, error, notice, run };
   useEffect(() => {
+    mounted.current = true;
     if (location.hash)
       history.replaceState({}, "", location.pathname + location.search);
+    const replaceLink = () => {
+      if (!location.hash || location.pathname !== "/recovery") return;
+      const next = readRecoveryLink();
+      history.replaceState({}, "", location.pathname + location.search);
+      generation.current++;
+      setLink(next);
+      setSession("");
+      setStatus(null);
+      setDescription("");
+      setReference("");
+      setAppeal(false);
+      setPassword("");
+      setComplete(false);
+      setNotice("");
+      setError(next.token || next.restore ? "" :
+        "This recovery link could not be read. Open the newest recovery email or resume your case below.");
+      if (pending.current) setPriorUnconfirmed(true);
+    };
+    window.addEventListener("hashchange", replaceLink);
+    window.addEventListener("popstate", replaceLink);
+    return () => {
+      mounted.current = false;
+      generation.current++;
+      window.removeEventListener("hashchange", replaceLink);
+      window.removeEventListener("popstate", replaceLink);
+    };
   }, []);
-  async function refresh(bearer = session) {
+  async function refresh(current: () => boolean, bearer = session) {
     const result = await request("/api/account-recovery/case", {
       headers: { Authorization: `Bearer ${bearer}` },
     });
-    setStatus(result);
+    if (current()) setStatus(result);
   }
   async function confirmContact() {
-    await action.run(async () => {
+    await action.run(async (current) => {
       const r = await post("/api/account-recovery/verify-contact", {
         token: link.token,
       });
+      if (!current()) return;
       setSession(r.recoverySession);
-      await refresh(r.recoverySession);
+      await refresh(current, r.recoverySession);
     });
   }
-  if (!link.token && !link.restore && !session) return <ResumeRecovery />;
+  const pendingNotice = priorUnconfirmed
+    ? `${busy ? "A previous request is still pending. Wait for it to finish before submitting this link. " : ""}The previous request’s outcome is not confirmed on this screen. If it may have restored access, try signing in with that password before another attempt.`
+    : "";
+  if (!link.token && !link.restore && !session)
+    return <ResumeRecovery blocked={busy} linkNotice={pendingNotice || error} />;
   return (
     <>
       <PublicHeader />
@@ -51,6 +121,7 @@ export function Recovery() {
         </p>
         <section className="panel form-stack">
           <Alert>{action.error}</Alert>
+          <Alert>{pendingNotice}</Alert>
           <Alert success>{action.notice}</Alert>
           {link.restore ? (
             complete ? (
@@ -74,12 +145,11 @@ export function Recovery() {
                 className="form-stack"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  action.run(async () => {
-                    await post("/api/account-recovery/complete", {
-                      token: link.restore,
-                      newPassword: password,
-                    });
+                  action.run(async (current) => {
+                    await completeRecovery(link.restore!, password);
+                    if (!current()) return;
                     setPassword("");
+                    setPriorUnconfirmed(false);
                     setComplete(true);
                   });
                 }}
@@ -103,6 +173,12 @@ export function Recovery() {
                 <Button variant="primary" busy={action.busy}>
                   Restore my login access
                 </Button>
+                {action.error && !action.busy && (
+                  <p className="small-copy">
+                    <a href="/recovery" target="_self">Resume your recovery case</a>{" "}
+                    to contact the reviewers. Leaving this page clears your password draft.
+                  </p>
+                )}
               </form>
             )
           ) : !session ? (
@@ -141,7 +217,7 @@ export function Recovery() {
               <Button
                 variant="outline compact"
                 busy={action.busy}
-                onClick={() => action.run(() => refresh())}
+                onClick={() => action.run((current) => refresh(current))}
               >
                 Check for an update
               </Button>
@@ -149,7 +225,7 @@ export function Recovery() {
                 className="form-stack"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  action.run(async () => {
+                  action.run(async (current) => {
                     await request("/api/account-recovery/evidence", {
                       method: "POST",
                       headers: { Authorization: `Bearer ${session}` },
@@ -159,9 +235,10 @@ export function Recovery() {
                         appeal,
                       }),
                     });
+                    if (!current()) return;
                     setDescription("");
                     setReference("");
-                    await refresh();
+                    await refresh(current);
                   }, "Your information was added to the case for authorized reviewers.");
                 }}
               >
@@ -214,7 +291,10 @@ export function Recovery() {
   );
 }
 
-function ResumeRecovery() {
+function ResumeRecovery({ blocked = false, linkNotice = "" }: {
+  blocked?: boolean;
+  linkNotice?: string;
+}) {
   const [caseId, setCaseId] = useState("");
   const [email, setEmail] = useState("");
   const action = useAction();
@@ -237,6 +317,7 @@ function ResumeRecovery() {
           className="panel form-stack"
           onSubmit={(e) => {
             e.preventDefault();
+            if (blocked) return;
             action.run(async () => {
               await post("/api/account-recovery/resume", {
                 caseId: caseId.trim(),
@@ -262,8 +343,9 @@ function ResumeRecovery() {
             autoComplete="email"
           />
           <Alert>{action.error}</Alert>
+          <Alert>{linkNotice}</Alert>
           <Alert success>{action.notice}</Alert>
-          <Button variant="primary" busy={action.busy}>
+          <Button variant="primary" busy={action.busy || blocked}>
             Email a fresh case link
           </Button>
         </form>
