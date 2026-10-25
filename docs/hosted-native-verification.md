@@ -1,0 +1,43 @@
+# Hosted native interoperability verification
+
+The manual `Verify hosted native interoperability` workflow exercises one synthetic staging scenario using the shipped Swift `AppModel`, `API`, `CryptoVault`, native GopenPGP bridge, image decoder and Keychain code. It is separate from the ordinary offline/simulator workflow. Preparing this test is not evidence that staging has been exercised; record the actual run and the independent web-side result after execution.
+
+## Scope
+
+The web smoke runner creates verified synthetic accounts, mutually connects A and C, enrolls their browser keys, and publishes A's encrypted synthetic post and 16 × 16 JPEG. The iOS test then:
+
+1. Signs in as C with the real email/password endpoint and checks the expected member identity.
+2. Opens C's encrypted recovery backup with the independent recovery secret, recovers historical keys and authorizes a fresh native device through the existing recovery challenge/signature flow.
+3. Fetches A's hosted post/photo, verifies their signatures and recipient/context bindings through `CryptoVault`, decrypts them, checks exact synthetic text and JPEG SHA-256, and decodes the JPEG with the shipped bounded image decoder.
+4. Encrypts/signs new native post/photo envelopes for the current connections audience using the newly enrolled native key, preserving the fixture's two-hour deadline and the exact JPEG bytes. It reserves/uploads the photo and publishes through the real HTTP API, then reads/decrypts the stored native content again.
+5. Signs out through the real endpoint, clears local test keys/session and confirms the session no longer identifies a member.
+
+After the simulator succeeds, `scripts/hosted-smoke.ts interop-check --run` signs in as A and uses OpenPGP.js to verify/decrypt the native post/photo from staging. It requires the new native author device and exact text/photo/deadline. Both results are needed to claim web↔native hosted interoperability. The fixture is deliberately small; this test is not a maximum-size, push, universal-link, performance, physical-iPhone or independent security audit.
+
+The test uses normal server authentication, invitations/email verification, device authorization, audience selection and content routes. It contains no privileged session injection, verification-token extraction, test-only server route, or auth bypass. The initial fixture account has no second factor enabled; a two-factor redirect fails this scenario rather than bypassing it. MFA is covered separately.
+
+## Fixed origin and isolated storage
+
+Release builds always use `https://porchday.com`. Only a DEBUG build with the explicit runtime flag `PORCHDAY_HOSTED_STAGING_TEST=1` uses the fixed `https://staging.porchday.com` origin. The flag cannot supply an arbitrary URL. Both requests and redirects enforce the selected HTTPS origin, including port and absence of embedded credentials. Hosted debug tests use a separate Keychain service, `com.porchday.app.keys.hosted-staging-test`, to avoid reading or clearing production app credentials. The API's cache and cookie protections remain unchanged.
+
+The normal simulator suite skips the opt-in hosted test. A skip does not count as hosted success. The dedicated runner checks the actual XCTest result tree for exactly one successful `testHostedInteroperability` method, no failed/skipped tests, and a test count of one.
+
+## Private fixture handoff and manual execution
+
+Do not run until the operator confirms staging is ready, the three delivered verification emails have been handled through the normal owner flow, and the synthetic social smoke has passed. The existing web runner's `interop-prepare --run` phase then writes `artifacts/private/hosted-smoke/native-interop.json` with mode `0600`. It contains a v1 synthetic marker, the staging origin, a run identifier, two-hour expiry, C's synthetic login/recovery secret, expected web post/photo IDs and contents/checksum, and preallocated native post/photo IDs. It contains no real member data. Do not print it, attach it to chat, or commit it.
+
+The operator supplies its exact UTF-8 JSON encoded as standard base64 to the dedicated, temporary GitHub Actions repository secret `PORCHDAY_IOS_HOSTED_FIXTURE_B64`. Base64 is transport encoding, not encryption. Use the GitHub CLI/API's protected stdin/structured input; never put the value in a shell argument, workflow input, command echo, or file tracked by Git. This grants the private GitHub runner access to these synthetic credentials only. Do not give this workflow deployment tokens, database credentials or any other account's recovery secret.
+
+Dispatch `.github/workflows/ios-hosted.yml` on `main` with `confirm_staging_only=true`. The workflow has read-only repository permissions, a 35-minute limit, no automatic push trigger and no artifact upload step. The runner validates the fixture before any simulator/network work and again after the build. Expired or malformed fixtures fail closed. Run one approved fixture at a time; regenerating or retrying after partial native writes requires a fresh coordinated fixture or explicit cleanup, because native enrollment and publication are real operations.
+
+Delete the temporary GitHub secret immediately after the run finishes, fails or is cancelled; the workflow intentionally does not receive repository-admin credentials that could delete its own secret. The operator owns this cleanup even if the runner is interrupted. Then run the independent web checker before cleaning up the synthetic accounts through the established smoke cleanup. Do not claim completion from native success alone or delete the native content before the web checker has read it.
+
+## Output handling
+
+`scripts/run-hosted-ios.ts` is restricted to an ephemeral macOS GitHub Actions runner and requires `--run`. It creates a new owned simulator, captures raw build/test output under a mode-0700 directory outside the repository in `RUNNER_TEMP`, and writes a mode-0600 generated `.xctestrun` with the synthetic runtime environment for the selected unit-test target only. The fixture is not compiled into the app or copied into the repository. The wrapper removes the secret from child build environments and passes it only through that private test-runtime manifest.
+
+The XCTest replaces every fixture/network/crypto error with a fixed phase label. The outer runner emits only fixed success/failure codes and cleanup status. Raw logs, `.xcresult`, generated test manifests, screenshots and app bundles are never uploaded by this workflow. On normal completion or handled failure it deletes the owned simulator and private directory. Runner cancellation/termination may prevent the `finally` block; the GitHub runner VM is ephemeral, and the operator must still remove the repository secret. The result is not sufficient if cleanup fails.
+
+Local helper tests cover fixture expiry/origin/shape, safe error handling, targeted runtime-manifest injection and rejection of skipped/native-missing result trees. Swift syntax can be checked locally without claiming a simulator run. The hosted build uses full Xcode on the macOS runner; no App Store account is required.
+
+Apple documents the supported [build-for-testing/test-without-building flow](https://developer.apple.com/library/archive/technotes/tn2339/_index.html) and [running one test and interpreting result bundles](https://developer.apple.com/documentation/xcode/running-tests-and-interpreting-results). The harness uses the installed tool's machine-readable result data; it never treats a build-only success or a skipped test as a completed hosted verification.

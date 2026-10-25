@@ -20,6 +20,8 @@ Choose an installed simulator from xcrun simctl list devices available. The buil
 
 The Verify native iOS GitHub Actions workflow builds the bridge and app on a macOS runner, executes native crypto/portability unit tests and onboarding UI tests, launches the app in the simulator, and keeps the test result bundle and screenshot for seven days. It does not use production credentials. DEBUG-only --ui-testing skips automatic session restoration so onboarding UI tests do not depend on production availability; no test argument supplies an authenticated session or bypasses server authorization.
 
+The separate manual [hosted interoperability workflow](../../docs/hosted-native-verification.md) uses short-lived synthetic staging credentials to exercise real login, recovery/device enrollment and web↔native encrypted posts/photos. It requires explicit operator preparation and reports a skip as incomplete. Its DEBUG-only staging flag cannot change release builds, and its private logs/results are not uploaded as artifacts.
+
 A simulator build requires no Apple Developer account or App Store listing. Running on a physical iPhone requires a signing identity and provisioning selected in Xcode; free personal-team development has Apple-imposed limits. App Store distribution, APNs entitlement and verified Universal Links need the corresponding Apple capabilities and operator configuration. These are separate from simulator verification. The app already accepts validated https://porchday.com/app/post/{UUID} links when a signed build is configured for associated domains; the source does not claim that the domain association is deployed.
 
 ## Privacy and data handling

@@ -3,7 +3,7 @@ import Security
 
 // Device-only protection keeps sessions/private keys out of backups and user defaults.
 enum SecureStore {
-    static let service = "com.porchday.app.keys"
+    static let service = ServerConfiguration.keychainService
     static func read(_ account: String) throws -> Data? {
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var result: CFTypeRef?; let status = SecItemCopyMatching(q as CFDictionary, &result)

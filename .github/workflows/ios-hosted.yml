@@ -1,0 +1,40 @@
+name: Verify hosted native interoperability
+on:
+  workflow_dispatch:
+    inputs:
+      confirm_staging_only:
+        description: Run the approved synthetic staging fixture through real account and encryption paths
+        required: true
+        default: false
+        type: boolean
+concurrency:
+  group: hosted-native-interoperability
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  hosted-native:
+    if: github.ref == 'refs/heads/main' && inputs.confirm_staging_only
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/crypto/native/go.mod
+          cache-dependency-path: packages/crypto/native/go.sum
+      - run: npm ci
+      - run: brew install xcodegen
+      - run: apps/ios/build-native.sh
+      - name: Exercise one synthetic hosted test without publishing private output
+        env:
+          PORCHDAY_IOS_HOSTED_FIXTURE_B64: ${{ secrets.PORCHDAY_IOS_HOSTED_FIXTURE_B64 }}
+        run: npx tsx scripts/run-hosted-ios.ts --run
+      # No screenshots, raw logs, xcresult, app bundle or secret-bearing test
+      # manifest are uploaded. The operator deletes the ephemeral repo secret.

@@ -2,14 +2,14 @@ import Foundation
 
 actor API {
     static let shared = API()
-    let baseURL = URL(string: "https://porchday.com")!
+    let baseURL = ServerConfiguration.origin
     private let session: URLSession
     private var cookies: [String: String] = [:]
     init() {
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData
         config.httpCookieStorage = nil; config.httpShouldSetCookies = false
-        session = URLSession(configuration: config, delegate: SameOriginRedirects(), delegateQueue: nil)
+        session = URLSession(configuration: config, delegate: SameOriginRedirects(origin: ServerConfiguration.origin), delegateQueue: nil)
         if let data = try? SecureStore.read("session"), let loaded = try? JSONDecoder().decode([String: String].self, from: data) { cookies = loaded }
     }
     func request(_ path: String, method: String = "GET", body: JSON? = nil) async throws -> JSON {
@@ -17,7 +17,7 @@ actor API {
         if data.isEmpty { return .object([:]) }; return try JSONDecoder().decode(JSON.self, from: data)
     }
     func bytes(_ path: String, method: String = "GET", body: Data? = nil, contentType: String = "application/octet-stream") async throws -> Data {
-        guard path.hasPrefix("/api/"), let url = URL(string: path, relativeTo: baseURL)?.absoluteURL, url.host == baseURL.host, url.scheme == "https" else { throw PorchError.message("Untrusted server address.") }
+        guard path.hasPrefix("/api/"), let url = URL(string: path, relativeTo: baseURL)?.absoluteURL, ServerConfiguration.permits(url, origin: baseURL) else { throw PorchError.message("Untrusted server address.") }
         var req = URLRequest(url: url); req.httpMethod = method; req.httpBody = body
         req.setValue(baseURL.absoluteString, forHTTPHeaderField: "Origin")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
@@ -43,7 +43,9 @@ actor API {
 }
 
 private final class SameOriginRedirects:NSObject,URLSessionTaskDelegate,@unchecked Sendable {
+    private let origin: URL
+    init(origin: URL) { self.origin = origin; super.init() }
     func urlSession(_ session:URLSession,task:URLSessionTask,willPerformHTTPRedirection response:HTTPURLResponse,newRequest request:URLRequest,completionHandler:@escaping(URLRequest?)->Void) {
-        completionHandler(request.url?.scheme=="https" && request.url?.host=="porchday.com" ? request:nil)
+        completionHandler(request.url.map { ServerConfiguration.permits($0, origin: origin) } == true ? request:nil)
     }
 }
