@@ -1,15 +1,28 @@
 import {expect,test} from 'vitest';
 import {Pool} from 'pg';
 import {app} from '../src/index';
-import {mediaBackupIssues,operationalIssues,recordCleanupSuccess,readOperationalHealth} from '../src/operations-health';
+import {mediaBackupIssues,operationalIssues,operationalSnapshotSchema,recordCleanupSuccess,readOperationalHealth} from '../src/operations-health';
 import type {Env} from '../src/types';
 
-const healthy={cleanup_age_seconds:0,deletion_pending:0,deletion_age_seconds:0,identity_pending:0,identity_age_seconds:0,email_pending:0,email_failed:0,email_age_seconds:0,web_push_pending:0,native_push_pending:0};
+const healthy={version:2 as const,cleanup_age_seconds:0,deletion_pending:0,deletion_age_seconds:0,deletion_first_pass_pending:0,deletion_first_pass_age_seconds:0,deletion_final_pass_pending:0,deletion_final_pass_overdue_seconds:0,identity_pending:0,identity_age_seconds:0,email_pending:0,email_failed:0,email_age_seconds:0,web_push_pending:0,native_push_pending:0};
 test('alerts distinguish absent cleanup, old deletion queues, and undelivered account email',()=>{
  expect(operationalIssues(healthy)).toEqual([]);
  expect(operationalIssues({...healthy,cleanup_age_seconds:null})).toEqual(['cleanup_stale']);
- expect(operationalIssues({...healthy,deletion_age_seconds:601,identity_age_seconds:301,email_age_seconds:301})).toEqual(['media_deletion_backlog','identity_deletion_backlog','account_email_backlog']);
+ expect(operationalIssues({...healthy,deletion_first_pass_pending:1,deletion_first_pass_age_seconds:601,identity_age_seconds:301,email_age_seconds:301})).toEqual(['media_deletion_backlog','identity_deletion_backlog','account_email_backlog']);
  expect(operationalIssues({...healthy,email_failed:1})).toEqual(['account_email_backlog']);
+});
+test('first removal and delayed final verification have separate immutable deadlines',()=>{
+ expect(operationalIssues({...healthy,deletion_pending:1,deletion_first_pass_pending:1,deletion_first_pass_age_seconds:600})).toEqual([]);
+ for(const age of [601,712,899,900])expect(operationalIssues({...healthy,deletion_pending:1,deletion_age_seconds:age,deletion_final_pass_pending:1,deletion_final_pass_overdue_seconds:Math.max(0,age-600)})).toEqual([]);
+ expect(operationalIssues({...healthy,deletion_pending:1,deletion_age_seconds:901,deletion_final_pass_pending:1,deletion_final_pass_overdue_seconds:301})).toEqual(['media_deletion_backlog']);
+ expect(operationalIssues({...healthy,cleanup_age_seconds:181,deletion_final_pass_pending:1,deletion_final_pass_overdue_seconds:1})).toEqual(['cleanup_stale']);
+});
+test('unknown or old health schemas fail closed instead of guessing first-pass success',()=>{
+ const {version,...old}=healthy;
+ expect(operationalSnapshotSchema.safeParse(old).success).toBe(false);
+ expect(operationalSnapshotSchema.safeParse({...healthy,version:3}).success).toBe(false);
+ expect(operationalSnapshotSchema.safeParse({...healthy,extra:'unexpected'}).success).toBe(false);
+ expect(operationalSnapshotSchema.safeParse({...healthy,deletion_first_pass_age_seconds:null}).success).toBe(false);
 });
 test('backup readiness distinguishes unconfigured, missing, stale, stuck and retrying snapshots',()=>{
  const backup={last_complete_age_seconds:60,unfinished_runs:0,oldest_unfinished_age_seconds:0,failed_runs:0};

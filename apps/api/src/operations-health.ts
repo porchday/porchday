@@ -5,14 +5,19 @@ import type {Env,Variables} from './types';
 
 const count=z.number().int().nonnegative();
 export const operationalSnapshotSchema=z.object({
+ version:z.literal(2),
  cleanup_age_seconds:count.nullable(),deletion_pending:count,deletion_age_seconds:count,
+ deletion_first_pass_pending:count,deletion_first_pass_age_seconds:count,
+ deletion_final_pass_pending:count,deletion_final_pass_overdue_seconds:count,
  identity_pending:count,identity_age_seconds:count,email_pending:count,email_failed:count,email_age_seconds:count,
  web_push_pending:count,native_push_pending:count,
 }).strict();
 export function operationalIssues(snapshot:z.infer<typeof operationalSnapshotSchema>){
  const issues:string[]=[];
  if(snapshot.cleanup_age_seconds===null||snapshot.cleanup_age_seconds>180)issues.push('cleanup_stale');
- if(snapshot.deletion_age_seconds>600)issues.push('media_deletion_backlog');
+ // Retry leases never move these obligations. Final eligibility starts at ten
+ // minutes; allow it to run within the design's fifteen-minute total target.
+ if(snapshot.deletion_first_pass_age_seconds>600||snapshot.deletion_final_pass_overdue_seconds>300)issues.push('media_deletion_backlog');
  if(snapshot.identity_age_seconds>300)issues.push('identity_deletion_backlog');
  if(snapshot.email_age_seconds>300||snapshot.email_failed>0)issues.push('account_email_backlog');
  return issues;
@@ -36,7 +41,7 @@ async function operationsDb<T>(env:Pick<Env,'HYPERDRIVE_JOBS'>,work:(sql:ReturnT
 export const recordCleanupSuccess=(env:Pick<Env,'HYPERDRIVE_JOBS'>)=>operationsDb(env,async sql=>{await sql`select app.record_cleanup_success()`;});
 type HealthEnvironment=Pick<Env,'HYPERDRIVE_JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'MEDIA_BACKUP_ENABLED'|'MEDIA_BACKUP'|'RECOVERY_JOURNAL'>>;
 export const readOperationalHealth=(env:HealthEnvironment)=>operationsDb(env,async sql=>{
- const [row]=await sql`select app.operational_snapshot() as value,app.media_backup_health() as backup`;
+ const [row]=await sql`select app.operational_snapshot_v2() as value,app.media_backup_health() as backup`;
  const snapshot=operationalSnapshotSchema.parse(row.value),issues=operationalIssues(snapshot);
  const backup=mediaBackupSnapshotSchema.parse(row.backup);
  if(env.ENVIRONMENT==='staging'||env.ENVIRONMENT==='production'){

@@ -51,6 +51,7 @@ export async function cleanupExpired(env: Pick<Env, 'HYPERDRIVE_JOBS' | 'MEDIA'>
                 // stopped. A writer crash after an outbox-first delete cannot
                 // leave a late-created private object indefinitely.
                 await sql `update app.deletion_outbox set
+                  first_deleted_at=coalesce(first_deleted_at,now()),
                   completed_at=case when created_at<=now()-interval '10 minutes' then now() else null end,
                   next_retry=greatest(created_at+interval '10 minutes',now()) where id=${object.id}`;
                 deleted++;
