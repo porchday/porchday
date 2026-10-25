@@ -2,12 +2,16 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
+    var dataOnly = false
+    private var socialSettingsAvailable: Bool { !dataOnly && vault.unlocked && model.member?.access.readsSocial == true }
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @State private var sessions: [JSON] = []
     @State private var grants: [JSON] = []
     @State private var blocks: [JSON] = []
     @State private var mutes: [JSON] = []
+    @State private var ownedGroups: [JSON] = []
+    @State private var deletingGroup: String?
     @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirm = ""
@@ -25,19 +29,24 @@ struct SettingsView: View {
     @State private var preview: ArchiveSelection?
     var body: some View {
         Form {
+            if let notice = model.member?.access.notice { Section { Text(notice) } }
             Section("Your private space") { Text("@" + (model.member?.handle ?? "")); if let device = vault.device { Text("Device fingerprint").font(.caption); Text(device.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }; Text("Compare fingerprints through a channel you trust. The service can see account and delivery metadata, but does not hold your content keys.").font(.footnote) }
             Section("Your data belongs to you") {
                 Text("Export your own posts, comments, reactions, photos and profile. References to connections and groups are included; other people's private contributions are excluded.")
                 Toggle("Export readable, unencrypted ZIP files", isOn: $plaintext)
                 if plaintext { Text("Anyone with these files can read them. Saved copies cannot be recalled after deletion or expiry.").foregroundStyle(.orange) }
-                Button(busy ? "Preparing archive…" : "Export my data") { Task { await export() } }.disabled(busy)
+                Button(busy ? "Preparing archive…" : "Export my data") { Task { await export() } }.disabled(busy || !vault.unlocked)
+                if !vault.unlocked { Text("Unlock your saved keys to export readable content. You can resolve owned groups, delete your account or appeal without unlocking.").font(.footnote) }
                 if !progress.isEmpty { Text(progress).font(.footnote) }
                 if !archiveKey.isEmpty { Text("Save this archive secret separately. It is not your account recovery secret."); Text(archiveKey).font(.system(.body, design: .monospaced)).textSelection(.enabled).privacySensitive() }
                 if !files.isEmpty { Button("Save or share archive parts") { sharing = true } }
+                if socialSettingsAvailable && model.canWriteSocial {
                 SecureField("Archive secret for import", text: $importKey).autocorrectionDisabled()
                 Button("Choose all archive parts") { choosing = true }.disabled(busy)
                 if let preview { Text("\(preview.entryCount) authored entries · \(preview.photoCount) photos · \(preview.urls.count) parts"); Text("Expired records are skipped. Comments and reactions become private journal entries. Connections and groups are references; importing sends no invitations.").font(.footnote); Button("Import privately") { Task { busy = true; defer { busy = false }; await model.perform { let count = try await model.importOwned(preview); progress = "Imported \(count) entries privately."; self.preview = nil; importKey = "" } } }.disabled(busy) }
+                }
             }
+            if socialSettingsAvailable {
             Section("Password and sessions") {
                 SecureField("Current password", text: $currentPassword).textContentType(.password)
                 SecureField("New password", text: $newPassword).textContentType(.newPassword)
@@ -46,7 +55,7 @@ struct SettingsView: View {
                 Button("Sign out other sessions") { Task { await model.perform { _ = try await model.api.auth("revoke-other-sessions", body:.object([:])); await refresh() } } }
                 Link("Manage two-factor authentication and email", destination:URL(string:"https://porchday.com/app/settings/security")!)
             }
-            Section("Encryption devices") { ForEach(vault.devices) { device in VStack(alignment:.leading) { Text(device.id == vault.device?.id ? "This device" : "Trusted device"); Text(device.fingerprint).font(.system(.caption,design:.monospaced)).textSelection(.enabled); if device.revoked { Text("Revoked").foregroundStyle(.secondary) } else { Button("Revoke this device",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/devices/"+device.id,method:"DELETE"); if device.id == vault.device?.id { await model.signOut() } else { await refresh() } } } } } } }; Text("Revoking a device stops future sharing. It cannot erase content already saved on that device.").font(.footnote) }
+            Section("Encryption devices") { ForEach(vault.devices) { device in VStack(alignment:.leading) { Text(device.id == vault.device?.id ? "This device" : "Trusted device"); Text(device.fingerprint).font(.system(.caption,design:.monospaced)).textSelection(.enabled); if device.revoked { Text("Revoked").foregroundStyle(.secondary) } else { Button("Revoke this device",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/devices/"+device.id,method:"DELETE"); if device.id == vault.device?.id { await model.signOut() } else { await refresh() } } } }.disabled(!model.canWriteSocial) } } }; Text("Revoking a device stops future sharing. It cannot erase content already saved on that device.").font(.footnote) }
             Section("Privacy and notifications") {
                 Toggle("In-app updates",isOn:$inApp).onChange(of:inApp) { _,value in Task { await model.perform { _ = try await model.api.social("/me",method:"PATCH",body:.object(["notification_preferences":.object(["in_app":.bool(value),"push":.bool(pushPreference)])])) } } }
                 NativeNotificationsSettings()
@@ -57,14 +66,49 @@ struct SettingsView: View {
                 NavigationLink("Report a stolen account") { StolenAccountView() }
             }
             Section("Connected integrations") { Text("Approved tools can read only your own ciphertext. They never receive keys or permission to post as you."); ForEach(Array(grants.enumerated()),id:\.offset) { _,grant in HStack { Text(grant["name"].string ?? "Approved integration"); Spacer(); Button("Revoke",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/integrations/"+(grant["id"].string ?? ""),method:"DELETE"); await refresh() } } } } }; Link("Register or authorize a tool",destination:URL(string:"https://porchday.com/app/settings/data")!) }
+            }
             Section("About Porchday") { NavigationLink("Open source notices") { ThirdPartyNoticesView() }; Text("No ads. No influencers. No algorithm. An open source project under Apache 2.0, building toward philanthropy-funded service for the public good."); Link("Privacy and encryption limits",destination:URL(string:"https://porchday.com/privacy")!); Link("Community rules",destination:URL(string:"https://porchday.com/community")!) }
-            Section { Button("Sign out and clear this device's keys",role:.destructive) { Task { await model.signOut() } }; Button("Delete my account",role:.destructive) { deleting = true } }
+            Section("Groups you own") {
+                Text("Before deleting your account, delete the groups you own. Group content is permanently removed; saved copies cannot be recalled.").font(.footnote)
+                if ownedGroups.isEmpty { Text("No owned groups to resolve.") }
+                ForEach(Array(ownedGroups.enumerated()), id: \.offset) { _, group in
+                    if let id = group["id"].string {
+                        VStack(alignment: .leading) { Text("A group you own"); Text(id).font(.caption).textSelection(.enabled)
+                            Button("Delete owned group", role: .destructive) { deletingGroup = id }.disabled(busy)
+                        }
+                    }
+                }
+            }
+            if !socialSettingsAvailable { Section { Link("Appeal a moderation decision", destination: URL(string: "https://porchday.com/appeals")!); NavigationLink("Report a stolen account") { StolenAccountView() } } }
+            Section { Button("Sign out and clear this device's keys",role:.destructive) { Task { await model.signOut() } }; Button("Delete my account",role:.destructive) { deleting = true }.disabled(busy || !ownedGroups.isEmpty) }
         }.navigationTitle("Your settings").task { await refresh() }
+            .confirmationDialog("Delete this owned group and all its content?", isPresented: Binding(get: { deletingGroup != nil }, set: { if !$0 { deletingGroup = nil } }), titleVisibility: .visible) {
+                Button("Delete group permanently", role: .destructive) { if let id = deletingGroup { Task { await deleteGroup(id) } } }
+                Button("Cancel", role: .cancel) { deletingGroup = nil }
+            } message: { Text("This cannot be undone. Other members will lose access. Copies they already saved cannot be recalled.") }
             .fileImporter(isPresented:$choosing,allowedContentTypes:[.data],allowsMultipleSelection:true) { result in Task { await model.perform { let urls = try result.get(); preview = try ArchiveSelection.load(urls:urls,secret:importKey) } } }
             .sheet(isPresented:$sharing) { ShareArchiveFiles(urls:files) }
             .sheet(isPresented:$deleting) { NavigationStack { Form { Text("This permanently removes your profile and contributions and revokes sessions. Transfer or delete groups you own first. Saved exports cannot be recalled. A recent sign-in is required."); TextField("Type DELETE",text:$confirm).textInputAutocapitalization(.characters); Button("Permanently delete my account",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/account",method:"DELETE",body:.object(["confirm":.string("DELETE")])); await model.signOut(); deleting = false } } }.disabled(confirm != "DELETE") }.navigationTitle("Delete your account?").toolbar { Button("Cancel") { deleting = false } } } }
     }
-    private func refresh() async { await model.perform { let s = try await model.api.auth("list-sessions",method:"GET"); sessions = s.array; grants = try await model.api.social("/integrations")["grants"].array; if model.member?.raw["status"].string != "suspended" { blocks = try await model.api.social("/blocks")["items"].array; mutes = try await model.api.social("/mutes")["items"].array }; if let member = model.member { try await vault.load(member:member); inApp = member.raw["notification_preferences"]["in_app"].boolean;pushPreference=member.raw["notification_preferences"]["push"].boolean } } }
+    private func refresh() async { await model.perform {
+        guard let member = model.member else { return }
+        let snapshot = try await NativeSettingsSnapshot.load(member: member, dataOnly: dataOnly || !vault.unlocked,
+            auth: { try await model.api.auth($0, method: "GET") }, social: { try await model.api.social($0) })
+        sessions = snapshot.sessions; grants = snapshot.grants; blocks = snapshot.blocks; mutes = snapshot.mutes; ownedGroups = snapshot.ownedGroups
+        try await vault.load(member: member)
+        inApp = member.raw["notification_preferences"]["in_app"].boolean; pushPreference = member.raw["notification_preferences"]["push"].boolean
+    } }
+    private func deleteGroup(_ id: String) async {
+        busy = true; defer { busy = false; deletingGroup = nil }
+        await model.perform {
+            guard let member = model.member else { return }
+            try await NativeSettingsSnapshot.deleteOwnedGroup(id, reviewedGroups: ownedGroups, member: member) { path in
+                _ = try await model.api.social(path, method: "DELETE")
+            }
+            ownedGroups.removeAll { $0["id"].string == id }
+            await refresh()
+        }
+    }
     private func remove(_ path:String,_ item:JSON) async { await model.perform { _ = try await model.api.social(path+(item["target"].string ?? ""),method:"DELETE"); await refresh() } }
     private func export() async { busy = true; defer { busy = false }; await model.perform { progress = "Preparing encrypted records…"; let result = try await model.exportOwned(plaintext:plaintext) { progress = $0 }; files = result.urls; archiveKey = result.secret ?? ""; progress = "\(files.count) archive parts are ready. Save every part and keep the secret separately." } }
 }

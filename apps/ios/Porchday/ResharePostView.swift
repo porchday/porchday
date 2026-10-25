@@ -22,7 +22,7 @@ struct ResharePostView: View {
                     Text("Only me").tag("only_me")
                 }
             } else { Text("The fresh copy will be shared with current members of this group.") }
-            Button(busy ? "Encrypting a fresh copy…" : "Share this post again") { Task { await share() } }.disabled(busy || item.payload == nil || !item.active)
+            Button(busy ? "Encrypting a fresh copy…" : "Share this post again") { Task { await share() } }.disabled(!model.canWriteSocial || busy || item.payload == nil || !item.active)
         }
         .navigationTitle("Share with your people")
         .toolbar { Button("Cancel") { dismiss() } }
@@ -32,6 +32,7 @@ struct ResharePostView: View {
         busy = true; defer { busy = false }
         await model.perform {
             guard let member = model.member, var payload = item.payload, item.authorID == member.id else { throw PorchError.message("Only the author can share this post again.") }
+            try member.access.requireSocialWrite()
             let newID = UUID().uuidString.lowercased(), group = item.context["groupId"].string, share = group == nil ? audience : "group"
             var media: [JSON] = []
             for photo in payload["media"].array { media.append(try await model.reshareSurfacePhoto(photo, audience: share, parent: newID, group: group, parentExpiry: item.expiry)) }

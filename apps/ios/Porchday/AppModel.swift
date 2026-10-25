@@ -12,6 +12,7 @@ import Combine
     private var profileInitialization: (id: UUID, memberID: String, task: Task<Bool, Never>)?
     let vault = CryptoVault()
     let api = API.shared
+    var canWriteSocial: Bool { member?.access.writesSocial == true }
     func restore() async {
         #if DEBUG
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { loading = false; return }

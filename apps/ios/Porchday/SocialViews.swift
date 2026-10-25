@@ -20,8 +20,9 @@ struct FeedView: View {
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
+                if let notice = model.member?.access.notice { Section { Text(notice) } }
                 if let profileHeader { Section { profileHeader } }
-                if showComposer { Section { Button { compose = true } label: { Label("Share a little of your day", systemImage: "square.and.pencil").padding(.vertical, 8) } } }
+                if showComposer && model.canWriteSocial { Section { Button { compose = true } label: { Label("Share a little of your day", systemImage: "square.and.pencil").padding(.vertical, 8) } } }
                 Section {
                     if loaded && rows.filter(\.active).isEmpty { ContentUnavailableView("A quiet start", systemImage: "sun.max", description: Text("Connect with your people. Their moments will appear here, with no suggested posts or ads.")) }
                     ForEach(rows.filter(\.active)) { item in NavigationLink { PostDetailView(id: item.id) } label: { MomentCard(item: item) } }
@@ -79,14 +80,14 @@ struct PostDetailView: View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
                 if let post, post.active, !deleted {
-                    Section { MomentCard(item: post); ReactionBar(item: post, reactions: reactions, postID: id, changed: refresh); Button("Write a comment") { reply = post } }
-                    if post.authorID == model.member?.id || mayModerate { Section { if post.authorID == model.member?.id { Button("Edit or shorten timer") { edit = post }; Button("Share with current audience again") { resharing = post } }; Button("Delete post and comments", role: .destructive) { removing = post } } }
+                    Section { MomentCard(item: post); ReactionBar(item: post, reactions: reactions, postID: id, changed: refresh); Button("Write a comment") { reply = post }.disabled(!model.canWriteSocial) }
+                    if model.canWriteSocial && (post.authorID == model.member?.id || mayModerate) { Section { if post.authorID == model.member?.id { Button("Edit or shorten timer") { edit = post }; Button("Share with current audience again") { resharing = post } }; Button("Delete post and comments", role: .destructive) { removing = post } } }
                     Section("Comments") {
                         ForEach(threadedComments) { item in VStack(alignment: .leading, spacing: 8) {
                             if let parent = item.raw["parent_id"].string { Label("Reply in thread", systemImage: "arrow.turn.down.right").font(.caption).accessibilityHint("Reply to comment \(parent)") }
                             MomentCard(item: item)
                             ReactionBar(item: item, reactions: commentReactions.filter { $0["comment_id"].string == item.id }, postID: id, changed: refresh)
-                            HStack { Button("Reply") { reply = item }; Button("Report") { report = item };if item.authorID == model.member?.id { Button("Edit") { edit = item } }; if item.authorID == model.member?.id || post.authorID == model.member?.id || mayModerate { Button("Delete", role: .destructive) { removing = item } } } }.padding(.leading, item.raw["parent_id"].string == nil ? 0 : 12) }
+                            HStack { Button("Reply") { reply = item }.disabled(!model.canWriteSocial); Button("Report") { report = item };if model.canWriteSocial && item.authorID == model.member?.id { Button("Edit") { edit = item } }; if model.canWriteSocial && (item.authorID == model.member?.id || post.authorID == model.member?.id || mayModerate) { Button("Delete", role: .destructive) { removing = item } } } }.padding(.leading, item.raw["parent_id"].string == nil ? 0 : 12) }
                     }
                     Section { Button("Report a concern") { report = post } }
                 } else { ContentUnavailableView("This moment isn’t here", systemImage: "clock", description: Text("It may have expired, been removed, or no longer be shared with you.")) }
@@ -126,7 +127,7 @@ struct ReactionBar: View {
             ForEach(reactionCatalog, id: \.id) { entry in
                 let values = decoded.filter { $0.emoji == entry.id }, count = Set(values.map(\.member)).count, selected = values.contains { $0.member == model.member?.id }
                 Button { Task { await toggle(entry.id) } } label: { Text(entry.emoji + (count > 0 ? " \(count)" : "")).padding(8).background(selected ? Color.green.opacity(0.15) : Color.secondary.opacity(0.07), in: Capsule()) }
-                    .buttonStyle(.plain).accessibilityLabel("\(entry.label), \(count) people").accessibilityAddTraits(selected ? .isSelected : []).disabled(item.payload == nil)
+                    .buttonStyle(.plain).accessibilityLabel("\(entry.label), \(count) people").accessibilityAddTraits(selected ? .isSelected : []).disabled(item.payload == nil || !model.canWriteSocial)
             }
         } }.task(id: try? JSON.array(reactions).serialized()) { await decode() }
     }
@@ -135,7 +136,7 @@ struct ReactionBar: View {
         for raw in reactions { do { let payload = try await vault.open(raw), member = raw["member_id"].string ?? raw["envelope"]["context"]["authorId"].string ?? "", emoji = payload["emoji"].string ?? "", tag = raw["reaction_tag"].string ?? ""; guard raw["envelope"]["context"]["authorId"].string == member, raw["envelope"]["context"]["parentId"].string == item.id, raw["envelope"]["context"]["id"].string == tag, reactionCatalog.contains(where: { $0.id == emoji }), try CryptoVault.tag(secret: secret, target: item.id, member: member, emoji: emoji) == tag, seen.insert(member + ":" + emoji).inserted else { continue }; valid.append((member, emoji, tag)) } catch { continue } }; decoded = valid
     }
     private func toggle(_ emoji: String) async { await model.perform {
-        guard let member = model.member, let secret = item.payload?["reactionSecret"].string else { return }; let tag = try CryptoVault.tag(secret: secret, target: item.id, member: member.id, emoji: emoji)
+        guard let member = model.member, let secret = item.payload?["reactionSecret"].string else { return }; try member.access.requireSocialWrite(); let tag = try CryptoVault.tag(secret: secret, target: item.id, member: member.id, emoji: emoji)
         let path = "/\(item.isComment ? "comments" : "posts")/\(item.id)/reactions/\(tag)"
         if decoded.contains(where: { $0.member == member.id && $0.emoji == emoji }) { _ = try await model.api.social(path, method: "DELETE") }
         else { let envelope = try await vault.seal(.object(["emoji": .string(emoji)]), member: member, kind: "reaction", audience: item.context["audience"].string ?? "connections", id: tag, group: item.context["groupId"].string, parent: item.id, post: postID, expiry: item.expiry); _ = try await model.api.social(path, method: "PUT", body: .object(["envelope": envelope])) }
@@ -194,17 +195,18 @@ struct ComposerView: View {
                         Text(error).foregroundStyle(.red).accessibilityIdentifier("composer-expiration-error")
                     }
                     Button(busy ? "Encrypting and sharing…" : post == nil ? "Share moment" : "Comment") { Task { await submit() } }
-                        .disabled(busy || parentUnavailable || deadlineContext.validationMessage(for: timerChoice, now: timeline.date) != nil || text.count > 5000 || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty))
+                        .disabled(!model.canWriteSocial || busy || parentUnavailable || deadlineContext.validationMessage(for: timerChoice, now: timeline.date) != nil || text.count > 5000 || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty))
                 }
             }
         }
-    }.navigationTitle(post == nil ? "Share a little of your day" : "Leave a comment").navigationBarTitleDisplayMode(.inline).toolbar { Button("Cancel") { dismiss() } }
+    }.disabled(!model.canWriteSocial).navigationTitle(post == nil ? "Share a little of your day" : "Leave a comment").navigationBarTitleDisplayMode(.inline).toolbar { Button("Cancel") { dismiss() } }
         .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
         .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { selected.append(try PhotoPipeline.prepare(bytes)) } }; photos = selected } } }
         .sheet(isPresented: $camera) { CameraView { image in Task { await model.perform { guard let data = image.jpegData(compressionQuality: 0.9) else { return }; photos.append(try PhotoPipeline.prepare(data)) } }; camera = false } }
     }
     private func submit() async { busy = true; defer { busy = false }; await model.perform {
         guard let member = model.member else { return }
+        try member.access.requireSocialWrite()
         guard !parentUnavailable else { throw PorchError.message("The parent is no longer available. Your draft has not been published.") }
         let reviewedParentExpiry = deadlineContext.inherited
         let id = UUID().uuidString.lowercased(), expiry = try deadlineContext.deadline(for: timerChoice, now: Date()), share = post?.context["audience"].string ?? (groupID == nil ? audience : "group"), group = groupID ?? post?.context["groupId"].string
@@ -254,5 +256,5 @@ struct EditContentView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var timer = 0
-    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000) }.navigationTitle("Edit moment").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
+    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle("Edit moment").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
 }

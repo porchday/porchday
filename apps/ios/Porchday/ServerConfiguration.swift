@@ -13,6 +13,10 @@ enum ServerConfiguration {
     static let origin = URL(string: hostedStagingTestEnabled ? "https://staging.porchday.com" : "https://porchday.com")!
     static let keychainService = hostedStagingTestEnabled ? "com.porchday.app.keys.hosted-staging-test" : "com.porchday.app.keys"
 
+    static func passwordResetRedirect(origin: URL = ServerConfiguration.origin) -> URL {
+        origin.appendingPathComponent("reset")
+    }
+
     static func permits(_ url: URL, origin: URL = ServerConfiguration.origin) -> Bool {
         url.scheme == "https" && url.host == origin.host && url.port == origin.port &&
             url.user == nil && url.password == nil && url.fragment == nil

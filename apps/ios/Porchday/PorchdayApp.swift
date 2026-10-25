@@ -23,7 +23,7 @@ struct RootView: View {
             if model.loading { ProgressView("Opening your porch…") }
             else if model.needsTwoFactor { TwoFactorLoginView() }
             else if let member = model.member {
-                if vault.unlocked || (member.raw["status"].string == "suspended" && vault.devices.isEmpty) { if member.raw["status"].string == "suspended" { NavigationStack { SettingsView() } } else { MainTabs(member: member) } } else { UnlockView(member: member) }
+                if vault.unlocked || (member.access.restoresKeysLocally && vault.devices.isEmpty) { if !member.access.readsSocial || !vault.unlocked { NavigationStack { SettingsView() } } else { MainTabs(member: member) } } else { UnlockView(member: member) }
             } else { LoginView() }
         }
         .alert("Something needs attention", isPresented: Binding(get: { model.error != nil }, set: { if !$0 { model.error = nil } })) { Button("OK") { model.error = nil } } message: { Text(model.error ?? "") }
@@ -69,7 +69,7 @@ struct LoginView: View {
                     Button(busy ? "Please wait…" : joining ? "Create account" : "Log in") { Task { busy = true; defer { busy = false }; await model.perform { if joining { _ = try await model.api.auth("sign-up/email", body: .object(["email": .string(email), "password": .string(password), "handle": .string(handle), "inviteCode": .string(invitation), "adult": .bool(adult), "acceptedRules": .bool(rules)])); info = "Check your email to verify your account, then log in here."; joining = false } else { try await model.signIn(email: email, password: password); password = "" } } } }.disabled(busy || email.isEmpty || password.isEmpty || (joining && (!adult || !rules)))
                     if !info.isEmpty { Text(info).foregroundStyle(.secondary) }
                 }
-                Section { Button(joining ? "I already have an account" : "I have an invitation") { joining.toggle() }.accessibilityIdentifier("toggle-signup"); Button("Forgot password?") { Task { await model.perform { _ = try await model.api.auth("request-password-reset", body: .object(["email": .string(email), "redirectTo": .string("https://porchday.com/reset-password")])); info = "If this account exists, a password reset email is on its way. Encryption recovery is separate." } } }.disabled(email.isEmpty); Button("My account was stolen") { recovery = true }.accessibilityIdentifier("report-stolen-account") }
+                Section { Button(joining ? "I already have an account" : "I have an invitation") { joining.toggle() }.accessibilityIdentifier("toggle-signup"); Button("Forgot password?") { Task { await model.perform { _ = try await model.api.auth("request-password-reset", body: .object(["email": .string(email), "redirectTo": .string(ServerConfiguration.passwordResetRedirect().absoluteString)])); info = "If this account exists, a password reset email is on its way. Encryption recovery is separate." } } }.disabled(email.isEmpty); Button("My account was stolen") { recovery = true }.accessibilityIdentifier("report-stolen-account") }
                 Section { Link("Privacy and encryption limits", destination: URL(string: "https://porchday.com/privacy")!); Text("Invitation-only adult pilot. Human members only; technical proof-of-humanity is future work.").font(.footnote) }
             }.navigationTitle("A little more connection").navigationBarTitleDisplayMode(.inline)
                 .sheet(isPresented: $recovery) { NavigationStack { StolenAccountView() } }
@@ -82,6 +82,7 @@ struct UnlockView: View {
     @EnvironmentObject var vault: CryptoVault
     @State private var secret = ""
     @State private var saved = false
+    @State private var accountControls = false
     @State private var busy = false
     var body: some View {
         NavigationStack { Form {
@@ -89,9 +90,11 @@ struct UnlockView: View {
             if vault.devices.isEmpty {
                 if vault.recoveryNote.isEmpty { Section { Button("Create my private keys") { Task { await model.perform { try vault.prepareInitial(member: member) } } } } }
                 else { Section("Save this recovery secret somewhere safe") { Text(vault.recoveryNote).font(.system(.body, design: .monospaced)).textSelection(.enabled).privacySensitive(); Text("Save it in a password manager or a private printed note. Do not send it to support."); Toggle("I saved my secret and understand it cannot be replaced", isOn: $saved); Button("My secret is safe. Continue") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.finishInitial(member: member) } } }.disabled(!saved || busy) } }
-            } else { Section("Restore and authorize this device") { SecureField("Recovery secret", text: $secret).textContentType(.none).autocorrectionDisabled(); Button("Unlock my porch") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.unlock(member: member, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines)); secret = "" } } }.disabled(secret.isEmpty || busy) } }
-            Section { Text("This app stores your device keys in device-only iOS Keychain. Signing out clears local keys. Keep the recovery secret to restore after reinstalling or losing this device.").font(.footnote); Button("Sign out", role: .destructive) { Task { await model.signOut() } } }
-        }.navigationTitle("Your private space") }
+            } else { Section(member.access.restoresKeysLocally ? "Restore your saved keys on this iPhone" : "Restore and authorize this device") { if member.access.restoresKeysLocally { Text("This restores existing keys locally for reading and export. It does not enroll a device or restore social permissions.") }; SecureField("Recovery secret", text: $secret).textContentType(.none).autocorrectionDisabled(); Button("Unlock my porch") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.unlock(member: member, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines)); secret = "" } } }.disabled(secret.isEmpty || busy) } }
+            Section { Button("Account, deletion and appeals without unlocking") { accountControls = true }; Text("This app stores your device keys in device-only iOS Keychain. Signing out clears local keys. Keep the recovery secret to restore after reinstalling or losing this device.").font(.footnote); Button("Sign out", role: .destructive) { Task { await model.signOut() } } }
+        }.navigationTitle("Your private space")
+            .sheet(isPresented: $accountControls) { NavigationStack { SettingsView(dataOnly: true).toolbar { Button("Done") { accountControls = false } } } }
+        }
     }
 }
 struct StolenAccountView: View {

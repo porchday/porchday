@@ -70,7 +70,7 @@ struct ProfileEditor: View {
                 Text("These details are encrypted for your current connections. Share your profile again after accepting new connections.").font(.footnote)
                 Button(busy ? "Encrypting your profile…":"Save and share profile") { Task { await save() } }.disabled(busy || name.count>80 || bio.count>1000 || status.count>100 || interests.count>300)
             }
-        }.disabled(busy).navigationTitle("Your personal space").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
+        }.disabled(busy || !model.canWriteSocial).navigationTitle("Your personal space").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
             .task { name=profile["displayName"].string ?? "";bio=profile["bio"].string ?? "";interests=profile["interests"].string ?? "";status=profile["status"].string ?? "";theme=profile["theme"].string ?? "sage";font=profile["font"].string ?? "serif";order=profile["sectionOrder"].string ?? "about-first";wallpaper=ProfileWallpaper.displayed(profile["wallpaper"]) }
             .onChange(of:selection) { _,item in let targetSlot=slot;Task { await model.perform { if let data=try await item?.loadTransferable(type:Data.self) { assets[targetSlot]=try PhotoPipeline.prepare(data);removedAssets.remove(targetSlot) } } } }
     }
@@ -78,6 +78,7 @@ struct ProfileEditor: View {
         busy=true;defer{busy=false}
         await model.perform {
             guard let member=model.member else{return}
+            try member.access.requireSocialWrite()
             let plan = SurfacePhotoRemoval(payload: currentProfile, slots: ["avatar", "cover", "background"], removed: removedAssets, replaced: Set(assets.keys))
             var payload=plan.payload.replacing("displayName",with:.string(name)).replacing("bio",with:.string(bio)).replacing("interests",with:.string(interests)).replacing("status",with:.string(status)).replacing("theme",with:.string(theme)).replacing("font",with:.string(font)).replacing("sectionOrder",with:.string(order))
             payload = ProfileWallpaper.applying(wallpaper, to: payload, changed: wallpaperChanged)

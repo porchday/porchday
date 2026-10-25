@@ -47,7 +47,7 @@ struct GroupEditor: View {
                     .disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 80 || description.count > 1000)
             }
         }
-        .disabled(busy)
+        .disabled(busy || !model.canWriteSocial)
         .navigationTitle("Group details")
         .toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
         .task { name = payload["name"].string ?? ""; description = payload["description"].string ?? "" }
@@ -57,6 +57,7 @@ struct GroupEditor: View {
         busy = true; defer { busy = false }
         await model.perform {
             guard let member = model.member else { return }
+            try member.access.requireSocialWrite()
             let plan = SurfacePhotoRemoval(payload: currentPayload, slots: ["image"], removed: removePhoto ? ["image"] : [], replaced: photo == nil ? [] : ["image"])
             var updated = plan.payload.replacing("name", with: .string(name.trimmingCharacters(in: .whitespacesAndNewlines)))
                 .replacing("description", with: .string(description))
