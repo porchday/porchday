@@ -1,12 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
   <rect width="192" height="192" fill="#974013"/>
   <g fill="#fff">
-    <path d="M96 34C81 34 73 51 73 72v44c0 19 10 33 23 39 13-6 23-20 23-39V72c0-21-8-38-23-38Z"/>
-    <path d="M96 155C70 147 53 122 53 87c23 12 39 34 48 58l-5 10Z"/>
-    <path d="M96 155c26-8 43-33 43-68-23 12-39 34-48 58l5 10Z"/>
+    <!-- Rounded kernels follow a gently leaning cob; their outer edges form its silhouette. -->
+    <ellipse cx="87" cy="43" rx="8" ry="9"/>
+    <ellipse cx="82" cy="60" rx="9.2" ry="8.3"/>
+    <ellipse cx="99" cy="59" rx="8.7" ry="9.3"/>
+    <ellipse cx="84" cy="77" rx="9.2" ry="8.3"/>
+    <ellipse cx="102" cy="77" rx="9.2" ry="8.3"/>
+    <ellipse cx="118" cy="75" rx="7.7" ry="8.8"/>
+    <ellipse cx="88" cy="94" rx="9.2" ry="8.3"/>
+    <ellipse cx="106" cy="94" rx="9.2" ry="8.3"/>
+    <ellipse cx="123" cy="92" rx="8.2" ry="8.3"/>
+    <ellipse cx="94" cy="111" rx="9.2" ry="8.3"/>
+    <ellipse cx="111" cy="111" rx="8.7" ry="8.3"/>
+    <ellipse cx="127" cy="109" rx="7.7" ry="8.3"/>
+    <ellipse cx="103" cy="128" rx="9.2" ry="8.3"/>
+    <ellipse cx="120" cy="126" rx="8.7" ry="8.3"/>
+    <ellipse cx="111" cy="143" rx="9.2" ry="7.8"/>
+    <!-- One broad husk sweeps up the left side, covering the lower kernels. -->
+    <path d="M106 160C74 150 52 119 54 65c29 20 48 55 52 95Z"/>
+    <path d="m99 152-1 11h10l4-12Z"/>
   </g>
-  <g fill="none" stroke="#974013" stroke-width="3.5" stroke-linecap="round">
-    <path d="M90 44v59m12-59v59M79 56h34M77 69h38M77 82h38M77 95h38"/>
-    <path d="M65 105c14 13 24 29 31 45m31-45c-14 13-24 29-31 45"/>
-  </g>
+  <path d="M65 87c8 28 21 49 36 64" fill="none" stroke="#974013" stroke-width="3.5" stroke-linecap="round"/>
 </svg>
