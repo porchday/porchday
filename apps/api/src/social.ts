@@ -15,6 +15,8 @@ type C = Context<{
 const uuid = z.string().uuid();
 const date = z.string().datetime({ offset: true });
 const envelopeBody = z.object({ envelope: envelopeSchema });
+const surfaceRemovals = (slots: [string, ...string[]], maximum: number) => z.array(z.object({id: uuid, slot: z.enum(slots)}).strict()).max(maximum)
+    .refine(items => new Set(items.map(item => item.id)).size === items.length && new Set(items.map(item => item.slot)).size === items.length, 'Each photo and slot may be removed once').default([]);
 class SocialError extends Error {
     constructor(readonly code: string, readonly status: 400 | 403 | 404 | 409 | 413 | 429 = 400, readonly details?: unknown) { super(code); }
 }
@@ -109,7 +111,7 @@ export function createSocialRoutes() {
         const code = (err as {
             code?: string;
         }).code;
-        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','REVISION_CHANGED'];
+        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED'];
         if (known.includes(err.message))
             return c.json({ error: { code: err.message, message: err.message.toLowerCase().replaceAll('_', ' ') } }, 409);
         if (code === '23505')
@@ -132,8 +134,17 @@ export function createSocialRoutes() {
         fail('NOT_FOUND', 404); const [profile] = await db `select * from app.profiles where member_id=${lookup.id}`; return profile ?? { member_id: lookup.id, handle: lookup.handle, envelope: null }; })));
     app.get('/profiles/member/:id', async (c) => c.json(await tx(c, async (db) => { const [profile] = await db `select * from app.profiles where member_id=${id(c.req.param('id'))}`; if (!profile)
         fail('NOT_FOUND', 404); return profile; })));
-    app.put('/profiles/me', async (c) => { const b = await body(c, envelopeBody); return c.json(await tx(c, async (db) => { await checkEnvelope(db, c.get('memberId'), b.envelope, 'profile', { allowPast: true }); if (b.envelope.context.id !== c.get('memberId'))
-        fail('ENVELOPE_CONTEXT'); await db `update app.profiles set envelope=${db.json(b.envelope)},updated_at=now() where member_id=${c.get('memberId')}`; return { ok: true }; })); });
+    app.put('/profiles/me', async (c) => {
+        const b = await body(c, envelopeBody.extend({remove_media: surfaceRemovals(['avatar', 'cover', 'background'], 3)}));
+        return c.json(await tx(c, async (db) => {
+            await checkEnvelope(db, c.get('memberId'), b.envelope, 'profile', {allowPast: true});
+            if (b.envelope.context.id !== c.get('memberId')) fail('ENVELOPE_CONTEXT');
+            if (b.remove_media.length) await db`select app.remove_surface_media('profile',${c.get('memberId')},${db.json(b.remove_media)})`;
+            const rows = await db`update app.profiles set envelope=${db.json(b.envelope)},updated_at=now() where member_id=${c.get('memberId')} returning member_id`;
+            if (!rows.length) fail('FORBIDDEN', 403);
+            return {ok: true};
+        }));
+    });
     app.get('/audiences', async (c) => { return c.json(await tx(c, db => snapshot(db, z.enum(['only_me', 'connections', 'family', 'group', 'moderators']).parse(c.req.query('audience') ?? 'connections'), c.req.query('group_id') ? id(c.req.query('group_id')) : null, c.req.query('post_id') ? id(c.req.query('post_id')) : null))); });
     app.get('/devices', async (c) => c.json({ items: await tx(c, db => db `select id,member_id,public_key,fingerprint,created_at,revoked_at from app.device_keys order by created_at`) }));
     app.get('/devices/:id', async (c) => c.json(await tx(c, async (db) => { const [d] = await db `select * from app.author_key(${id(c.req.param('id'))})`; if (!d)
@@ -381,8 +392,18 @@ export function createSocialRoutes() {
     app.get('/groups/:id', async (c) => c.json(await tx(c, async (db) => { const groupId = id(c.req.param('id')); const [group] = await db `select * from app.groups where id=${groupId}`; if (!group)
         fail('NOT_FOUND', 404); const members = await db `select * from app.group_memberships where group_id=${groupId}`; const handles = await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(members.map(m => m.member_id))}))::uuid[])`; return { group, members, handles }; })));
     app.get('/groups/:id/posts', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select * from app.posts where group_id=${id(c.req.param('id'))} ${after ? db `and(created_at,id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by created_at desc,id desc limit 31`))); });
-    app.put('/groups/:id', async (c) => { const b = await body(c, envelopeBody); return c.json(await tx(c, async (db) => { if (b.envelope.context.id !== id(c.req.param('id')))
-        fail('ENVELOPE_CONTEXT'); await checkEnvelope(db, c.get('memberId'), b.envelope, 'group',{allowPast:true}); await db `update app.groups set envelope=${db.json(b.envelope)} where id=${id(c.req.param('id'))}`; return { ok: true }; })); });
+    app.put('/groups/:id', async (c) => {
+        const b = await body(c, envelopeBody.extend({remove_media: surfaceRemovals(['image'], 1)}));
+        return c.json(await tx(c, async (db) => {
+            const groupId = id(c.req.param('id'));
+            if (b.envelope.context.id !== groupId) fail('ENVELOPE_CONTEXT');
+            await checkEnvelope(db, c.get('memberId'), b.envelope, 'group', {allowPast: true});
+            if (b.remove_media.length) await db`select app.remove_surface_media('group',${groupId},${db.json(b.remove_media)})`;
+            const rows = await db`update app.groups set envelope=${db.json(b.envelope)} where id=${groupId} returning id`;
+            if (!rows.length) fail('FORBIDDEN', 403);
+            return {ok: true};
+        }));
+    });
     app.post('/groups/:id/invitations', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), envelope: envelopeSchema.optional() })); return c.json(await tx(c, async (db) => { const [recipient] = await db `select * from app.lookup_handle(${b.handle})`; if (!recipient)
         fail('NOT_FOUND', 404); const inviteId = crypto.randomUUID(); await db `insert into app.group_invitations(id,group_id,inviter,recipient,envelope) values(${inviteId},${id(c.req.param('id'))},${c.get('memberId')},${recipient.id},${b.envelope ? db.json(b.envelope) : null}) on conflict(group_id,recipient) do update set id=excluded.id,expires_at=now()+interval '7 days',accepted_at=null`; return { id: inviteId }; }), 201); });
     app.post('/group-invitations/:id/accept', async (c) => c.json(await tx(c, async (db) => { const [r] = await db `select app.accept_group_invitation(${id(c.req.param('id'))}) as id`; return r; })));

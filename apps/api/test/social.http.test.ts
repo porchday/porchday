@@ -30,7 +30,7 @@ async function seal(a: Person, payload: unknown, override: Partial<ContentContex
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(await readFile(new URL('../migrations/034_feed_candidates.sql', import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: { put: async (k: string, b: ArrayBuffer) => { objects.set(k, b); }, get: async (k: string) => objects.has(k) ? { body: objects.get(k) } : null, delete: async (k: string) => { objects.delete(k); } } } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: { put: async (k: string, b: ArrayBuffer) => { objects.set(k, b); }, get: async (k: string) => objects.has(k) ? { body: objects.get(k) } : null, delete: async (k: string) => { objects.delete(k); } } } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
     it('paginates tied feed dates without widening historic, family, private, group, expired, muted or blocked audiences', async () => {
@@ -228,6 +228,58 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         await request(b.id,'/blocks/'+a.id,'PUT');expect((await photo()).status).toBe(404);
         await sql`delete from app.media_assets where id=${mediaId}`;expect(await sql`select id from app.deletion_outbox where object_key=${'media/'+a.id+'/'+mediaId}`).toHaveLength(1);
     },30000);
+    it('atomically removes a reviewed profile photo, rejects replacements, and clears already empty slots', async () => {
+        const a = await person(), mediaId = randomUUID();
+        const photo = await seal(a, {mime: 'image/jpeg', bytes: 'c2FtcGxl'}, {id: mediaId, kind: 'media', parentId: a.id});
+        const bytes = new TextEncoder().encode(JSON.stringify(photo));
+        expect((await request(a.id, '/media', 'POST', {id: mediaId, envelope: photo, byte_size: bytes.length})).status).toBe(201);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {method: 'PUT', headers: {'x-test-member': a.id, 'content-type': 'application/octet-stream'}, body: bytes}, env)).status).toBe(200);
+        const profile = await seal(a, {avatar: {id: mediaId}}, {id: a.id, kind: 'profile'});
+        expect((await request(a.id, '/profiles/me', 'PUT', {envelope: profile})).status).toBe(200);
+        expect((await request(a.id, '/media/' + mediaId + '/attachment', 'PUT', {kind: 'profile', target_id: a.id, slot: 'avatar'})).status).toBe(200);
+        const stale = await seal(a, {avatar: null}, {...profile.context});
+        expect((await request(a.id, '/profiles/me', 'PUT', {envelope: stale, remove_media: [{id: mediaId, slot: 'avatar'}]})).data.error.code).toBe('REVISION_CHANGED');
+        expect(await sql`select id from app.media_assets where id=${mediaId}`).toHaveLength(1);
+        expect(await sql`select id from app.deletion_outbox where object_key=${'media/' + a.id + '/' + mediaId}`).toHaveLength(0);
+        const edited = await seal(a, {avatar: null}, {...profile.context, revision: 2});
+        expect((await request(a.id, '/profiles/me', 'PUT', {envelope: edited, remove_media: [{id: randomUUID(), slot: 'avatar'}]})).data.error.code).toBe('MEDIA_ATTACHMENT_CHANGED');
+        expect((await sql`select envelope from app.profiles where member_id=${a.id}`)[0].envelope).toEqual(profile);
+        expect((await request(a.id, '/profiles/me', 'PUT', {envelope: edited, remove_media: [{id: mediaId, slot: 'avatar'}]})).status).toBe(200);
+        expect(await sql`select id from app.media_assets where id=${mediaId}`).toHaveLength(0);
+        expect(await sql`select id from app.deletion_outbox where object_key=${'media/' + a.id + '/' + mediaId}`).toHaveLength(1);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {headers: {'x-test-member': a.id}}, env)).status).toBe(404);
+        const empty = await seal(a, {avatar: null, bio: 'Cleared an expired reference'}, {...profile.context, revision: 3});
+        expect((await request(a.id, '/profiles/me', 'PUT', {envelope: empty, remove_media: [{id: mediaId, slot: 'avatar'}]})).status).toBe(200);
+        expect((await request(a.id, '/profiles/me', 'PUT', {envelope: empty, remove_media: [{id: mediaId, slot: 'image'}]})).status).toBe(400);
+    }, 30_000);
+    it('lets a group manager remove another editor image with a signed revision while denying ordinary members', async () => {
+        const owner = await person(), editor = await person(), reader = await person();
+        const initial = await seal(owner, {name: 'Photo group'}, {kind: 'group', audience: 'only_me'}), groupId = initial.context.id;
+        expect((await request(owner.id, '/groups', 'POST', {envelope: initial})).status).toBe(201);
+        for (const participant of [editor, reader]) {
+            const [{handle}] = await sql`select handle from app.profiles where member_id=${participant.id}`;
+            const invite = await request(owner.id, '/groups/' + groupId + '/invitations', 'POST', {handle});
+            expect(invite.status).toBe(201);
+            expect((await request(participant.id, '/group-invitations/' + invite.data.id + '/accept', 'POST')).status).toBe(200);
+        }
+        expect((await request(owner.id, '/groups/' + groupId + '/members/' + editor.id, 'PUT', {role: 'moderator'})).status).toBe(200);
+        const mediaId = randomUUID(), context = {id: groupId, kind: 'group' as const, audience: 'group' as const, groupId, revision: 2};
+        const group = await seal(editor, {name: 'Photo group', image: {id: mediaId}}, context);
+        expect((await request(editor.id, '/groups/' + groupId, 'PUT', {envelope: group})).status).toBe(200);
+        const photo = await seal(editor, {mime: 'image/jpeg', bytes: 'c2FtcGxl'}, {kind: 'media', id: mediaId, audience: 'group', groupId, parentId: groupId});
+        const bytes = new TextEncoder().encode(JSON.stringify(photo));
+        expect((await request(editor.id, '/media', 'POST', {id: mediaId, envelope: photo, byte_size: bytes.length})).status).toBe(201);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {method: 'PUT', headers: {'x-test-member': editor.id, 'content-type': 'application/octet-stream'}, body: bytes}, env)).status).toBe(200);
+        expect((await request(editor.id, '/media/' + mediaId + '/attachment', 'PUT', {kind: 'group', target_id: groupId, slot: 'image'})).status).toBe(200);
+        const denied = await seal(reader, {name: 'Photo group'}, {...context, revision: 3});
+        expect((await request(reader.id, '/groups/' + groupId, 'PUT', {envelope: denied, remove_media: [{id: mediaId, slot: 'image'}]})).status).toBe(403);
+        expect(await sql`select id from app.media_assets where id=${mediaId}`).toHaveLength(1);
+        const removed = await seal(owner, {name: 'Photo group'}, {...context, revision: 3});
+        expect((await request(owner.id, '/groups/' + groupId, 'PUT', {envelope: removed, remove_media: [{id: mediaId, slot: 'image'}]})).status).toBe(200);
+        expect(await sql`select id from app.media_assets where id=${mediaId}`).toHaveLength(0);
+        expect(await sql`select id from app.deletion_outbox where object_key=${'media/' + editor.id + '/' + mediaId}`).toHaveLength(1);
+        expect((await sql`select envelope from app.groups where id=${groupId}`)[0].envelope).toEqual(removed);
+    }, 30_000);
     it('pages only authored export data and validates revisions, deadlines and cancelled jobs', async () => {
         const a=await person(),other=await person();const entries=[];
         for(let i=0;i<28;i++) {const envelope=await seal(a,{text:'Export '+i},{audience:'only_me'});entries.push(envelope);expect((await request(a.id,'/posts','POST',{envelope})).status).toBe(201);}
