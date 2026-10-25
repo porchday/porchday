@@ -4,6 +4,10 @@ A late 90s style social network for people who know each other. No ads, no influ
 
 Porchday is under active development. The repository is private during development. Application source is licensed Apache-2.0; dependency license notices apply separately.
 
+## Project policies and history
+
+See the [contribution guide](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [changelog](CHANGELOG.md), [security-reporting policy](SECURITY.md), and [name/branding statement](TRADEMARKS.md). Public reporting contacts and branding-rights ownership remain explicit launch gates; these files do not announce public source availability or a staffed response service.
+
 ## Architecture
 
 - React + TypeScript PWA, Cloudflare Worker API/static assets.
