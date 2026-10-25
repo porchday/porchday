@@ -230,3 +230,41 @@ except m.AccessError as e:
 else:raise AssertionError('Expected uncertain outcome')
 assert len(p.writes)==1
 `));
+
+test('provider uid aliases are preserved in readback but omitted from the staging policy update',()=>run(String.raw`
+m.provision(p,'owner@example.test')
+for policy in p.policies:policy['uid']=policy['id']
+p.writes=[]
+before=copy.deepcopy(p.policies)
+reviewers={'staging':'reviewer@example.test'}
+out=m.update_roster(p,'owner@example.test',reviewers,'staging')
+assert len(p.writes)==1 and 'uid' not in p.writes[0][2]
+assert all(policy['uid']==policy['id'] for policy in p.policies)
+assert p.policies[1]==before[1]
+p.writes=[]
+assert m.provision(p,'owner@example.test',check=True,reviewers=reviewers)==out
+assert m.update_roster(p,'owner@example.test',reviewers,'staging')==out
+assert p.writes==[]
+`));
+
+test('a mismatched or malformed uid in either environment rejects the update before writes',()=>run(String.raw`
+m.provision(p,'owner@example.test');p.writes=[]
+for policy in p.policies:
+ for invalid in ['different-policy',None,0,'']:
+  policy['uid']=invalid
+  rejects(lambda:m.update_roster(p,'owner@example.test',{'staging':'r@example.test'},'staging'),'identity alias')
+  assert p.writes==[]
+ policy['uid']=policy['id']
+`));
+
+test('post-write uid drift cannot pass verification',()=>run(String.raw`
+m.provision(p,'owner@example.test')
+for policy in p.policies:policy['uid']=policy['id']
+p.writes=[]
+def changed_alias(path,method='GET',body=None):
+ result=p(path,method,body)
+ if method=='PUT':p.policies[0]['uid']='different-policy'
+ return result
+rejects(lambda:m.update_roster(changed_alias,'owner@example.test',{'staging':'r@example.test'},'staging'),'outcome requires manual review')
+assert len(p.writes)==1
+`));

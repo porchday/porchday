@@ -20,7 +20,7 @@ MFA = {'allowed_authenticators': AUTHENTICATORS, 'session_duration': '1h', 'mfa_
 POLICY_WRITABLE = {'name', 'decision', 'include', 'require', 'exclude', 'session_duration',
     'mfa_config', 'approval_groups', 'approval_required', 'connection_rules',
     'isolation_required', 'purpose_justification_prompt', 'purpose_justification_required'}
-POLICY_READONLY = {'id', 'account_id', 'app_count', 'created_at', 'updated_at', 'reusable'}
+POLICY_READONLY = {'id', 'uid', 'account_id', 'app_count', 'created_at', 'updated_at', 'reusable'}
 
 
 class AccessError(RuntimeError):
@@ -100,7 +100,15 @@ def policy_body(environment, email, idp_id, reviewer=''):
         'exclude': [], 'session_duration': '1h', 'mfa_config': copy.deepcopy(MFA)}
 
 
+def verify_policy_id_alias(policy):
+    # Cloudflare GET currently includes uid as a read-only alias of id. Keep it
+    # in snapshots, but never send it to PUT or accept a conflicting identity.
+    if 'uid' in policy and (not isinstance(policy['uid'], str) or not policy['uid'] or policy['uid'] != policy.get('id')):
+        raise AccessError('Staff policy identity alias differs from its ID; manual review required.')
+
+
 def verify_policy(actual, desired):
+    verify_policy_id_alias(actual)
     for key in ['name', 'decision', 'include', 'require', 'exclude', 'session_duration']:
         if actual.get(key, [] if key in ['require', 'exclude'] else None) != desired[key]:
             raise AccessError('Staff policy differs from the exact owner/reviewer/OTP allow policy; manual review required.')
@@ -242,6 +250,7 @@ def provision(api, owner_email, team='porchday-staff', check=False, reviewers=No
 
 
 def policy_update_body(policy):
+    verify_policy_id_alias(policy)
     if set(policy) - POLICY_WRITABLE - POLICY_READONLY:
         raise AccessError('Unrecognized policy settings; manual review required before roster update.')
     if policy.get('app_count', 1) != 1:
