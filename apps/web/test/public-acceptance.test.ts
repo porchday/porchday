@@ -40,7 +40,7 @@ describe("public pilot acceptance contract", () => {
     const html = renderToStaticMarkup(createElement(Landing));
     expect(html).toContain("a late 90s style");
     expect(html).toContain("No ads. No influencers. No algorithm.");
-    expect(html).toContain("Designed for nonprofit stewardship");
+    expect(html).toContain("We’re building Porchday for nonprofit stewardship");
     expect(html).toContain("philanthropy");
     const about = renderToStaticMarkup(
       createElement(Policy, { page: "about" }),
