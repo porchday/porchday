@@ -9,7 +9,12 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 class Provider:
  def __init__(self):
   self.org={'auth_domain':'old-team.cloudflareaccess.com','name':'old','preserve':'untouched'}
-  self.apps=[];self.policies=[];self.idps=[];self.users=[];self.writes=[]
+  self.apps=[];self.policies=[];self.idps=[];self.users=[];self.writes=[];self.embed_policies=False
+ def present(self,item,prefix):
+  value=copy.deepcopy(item)
+  if self.embed_policies and prefix=='/access/apps':
+   value['policies']=[{**copy.deepcopy(next(p for p in self.policies if p['id']==link['id'])),**link} for link in value['policies']]
+  return value
  def __call__(self,path,method='GET',body=None):
   collections={'/access/apps':self.apps,'/access/policies':self.policies,'/access/identity_providers':self.idps,'/access/users':self.users}
   if method!='GET':self.writes.append((path,method,copy.deepcopy(body)))
@@ -22,11 +27,13 @@ class Provider:
      item={**copy.deepcopy(body),'id':prefix.split('/')[-1]+'-'+str(len(items)+1)}
      if prefix=='/access/apps':item['aud']=str(len(items)+1)*64
      items.append(item);return copy.deepcopy(item)
-    return copy.deepcopy(items)
+    return [self.present(item,prefix) for item in items]
    if path.startswith(prefix+'/'):
     item=next(i for i in items if i['id']==path[len(prefix)+1:])
-    if method=='PUT':item.update(copy.deepcopy(body))
-    return copy.deepcopy(item)
+    if method=='PUT':
+     item.update(copy.deepcopy(body))
+     if self.embed_policies and prefix=='/access/policies':item['updated_at']='2026-10-25T20:00:00Z'
+    return self.present(item,prefix)
   raise AssertionError('Unexpected API path')
 p=Provider()
 def rejects(fn,part):
@@ -266,5 +273,33 @@ def changed_alias(path,method='GET',body=None):
  if method=='PUT':p.policies[0]['uid']='different-policy'
  return result
 rejects(lambda:m.update_roster(changed_alias,'owner@example.test',{'staging':'r@example.test'},'staging'),'outcome requires manual review')
+assert len(p.writes)==1
+`));
+
+test('one policy update verifies full policy embeds in app list/detail without mutating applications',()=>run(String.raw`
+m.provision(p,'owner@example.test')
+for policy in p.policies:policy.update(uid=policy['id'],updated_at='2026-10-25T19:00:00Z',created_at='2026-01-01T00:00:00Z')
+p.embed_policies=True;p.writes=[]
+apps_before=copy.deepcopy(p.apps);production_before=copy.deepcopy(p.policies[1])
+reviewers={'staging':'reviewer@example.test'}
+out=m.update_roster(p,'owner@example.test',reviewers,'staging')
+assert len(p.writes)==1 and p.writes[0][:2]==('/access/policies/'+p.policies[0]['id'],'PUT')
+assert p.apps==apps_before and p.policies[1]==production_before
+for app in [p('/access/apps')[0],p('/access/apps/'+p.apps[0]['id'])]:
+ assert app['policies'][0]['include']==p.policies[0]['include']
+ assert app['policies'][0]['updated_at']==p.policies[0]['updated_at']
+p.writes=[]
+assert m.provision(p,'owner@example.test',check=True,reviewers=reviewers)==out
+assert m.update_roster(p,'owner@example.test',reviewers,'staging')==out
+assert p.writes==[]
+`));
+
+test('policy embeds do not mask a changed application policy precedence',()=>run(String.raw`
+m.provision(p,'owner@example.test');p.embed_policies=True;p.writes=[]
+def changed_precedence(path,method='GET',body=None):
+ result=p(path,method,body)
+ if method=='PUT':p.apps[0]['policies'][0]['precedence']=2
+ return result
+rejects(lambda:m.update_roster(changed_precedence,'owner@example.test',{'staging':'r@example.test'},'staging'),'outcome requires manual review')
 assert len(p.writes)==1
 `));

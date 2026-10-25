@@ -272,6 +272,18 @@ def ready_snapshot(api, email, team, reviewers):
     return snapshot, output
 
 
+def policy_snapshot_views(snapshot, policy_id, app_id):
+    """Known representations of this exact policy, including application embeds."""
+    views = [snapshot['/access/policies/' + policy_id]]
+    views.extend(policy for policy in snapshot['/access/policies'] if policy.get('id') == policy_id)
+    apps = [snapshot['/access/apps/' + app_id]]
+    apps.extend(app for app in snapshot['/access/apps'] if app.get('id') == app_id)
+    for app in apps:
+        views.extend(policy for policy in app.get('policies', [])
+            if isinstance(policy, dict) and policy.get('id') == policy_id)
+    return views
+
+
 def update_roster(api, owner_email, reviewers, environment, team='porchday-staff'):
     email, roster = reviewer_roster(owner_email, reviewers)
     if environment != 'staging' or not roster['staging'] or roster['production']:
@@ -307,16 +319,17 @@ def update_roster(api, owner_email, reviewers, environment, team='porchday-staff
     except (AccessError, KeyError, ValueError, TypeError):
         raise AccessError('Roster write outcome requires manual review; verification did not complete. Do not retry automatically.') from None
     expected = copy.deepcopy(before)
-    expected[policy_path]['include'] = desired_include
-    # The list can contain abbreviated policies; preserve every represented field.
-    for policy in expected['/access/policies']:
-        if policy.get('id') == policy_id and 'include' in policy:
+    app_id = output['environments']['staging']['staff_access_application_id']
+    # Cloudflare app list/detail responses embed policy objects. They represent
+    # the same single policy update, not separate application mutations. Change
+    # only its include list and ignore only its server-updated timestamp; keep
+    # every other field, policy, application and production value exact.
+    for policy in policy_snapshot_views(expected, policy_id, app_id):
+        if 'include' in policy:
             policy['include'] = desired_include
     for snapshot in [expected, after]:
-        snapshot[policy_path].pop('updated_at', None)
-        for policy in snapshot['/access/policies']:
-            if policy.get('id') == policy_id:
-                policy.pop('updated_at', None)
+        for policy in policy_snapshot_views(snapshot, policy_id, app_id):
+            policy.pop('updated_at', None)
     if after != expected or after_output != output:
         raise AccessError('Roster write outcome requires manual review; configuration changed during verification. Do not retry automatically.')
     return after_output
