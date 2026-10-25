@@ -154,7 +154,7 @@ function runtime(env:RuntimeEnv) {
     if(env.ENVIRONMENT==='development')return null;
     return stop('JOURNAL_NOT_CONFIGURED');
   }
-  const sql=postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:false,fetch_types:false,connect_timeout:10});
+  const sql=postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false,connect_timeout:10});
   const db:JournalDatabase={
     async status(){const[r]=await sql`select app.safety_status() as value`;return r.value;},
     async page(after){const[r]=await sql`select app.safety_page(${after}::bigint,200) as value`;return r.value;},

@@ -258,7 +258,7 @@ export async function processNativePush(
   if (!nativePushConfigured(env)) return counts;
   const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, {
     max: 1,
-    prepare: false,
+    prepare: true,
     fetch_types: false,
     connect_timeout: 10,
   });

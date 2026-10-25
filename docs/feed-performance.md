@@ -52,3 +52,33 @@ The HTTP suite additionally verifies tied timestamps across two pages, own priva
 Run `npx tsx scripts/benchmark-feed.ts --run` with the local `porchday-postgres` container on port 54329. The optional `LOCAL_BENCHMARK_ADMIN_URL` must point to the loopback `/postgres` maintenance database on that port. The script creates a unique disposable database and login, applies migrations there, reproduces the pre-034 index state there, seeds synthetic fixtures, measures all variants, writes the result artifact, and drops its database and login in `finally`. It does not read secrets, select an existing application/test database, alter runtime-role credentials, or contact a provider.
 
 Before expanding the pilot, measure authenticated requests through the deployed Worker and Hyperdrive on the chosen PlanetScale tier, including journal checks, realistic encrypted envelopes, client decryption/rendering, cold starts, constrained networks, and a longer mixed read/write workload. Include older/inactive-friend feeds, multiple posts per member, several devices per member, empty feeds, second/later pages, expiring content, and concurrent privacy changes. Review response byte/page limits if mobile measurements show the current 30-post page is too large. No hosted throughput, 10-million-user capacity, or pricing conclusion follows from this local result.
+
+## Hyperdrive driver compatibility correction
+
+On October 25, 2026, all eleven Postgres.js clients constructed from runtime Hyperdrive bindings were changed from `prepare:false` to explicit `prepare:true`. Cloudflare's current driver guidance warns that disabling prepared statements adds parameter-discovery protocol exchanges that Hyperdrive's transaction pooling does not reliably support. The installed Postgres.js 3.4.9 is newer than Cloudflare's documented minimum. [Cloudflare Postgres.js guidance](https://developers.cloudflare.com/hyperdrive/examples/connect-to-postgres/postgres-drivers-and-libraries/postgres-js/)
+
+This enables prepared SQL statements, not query-result caching. Hyperdrive query caching remains disabled. `fetch_types:false`, pool bounds, connection lifetimes, transaction-local member identity, fresh privacy/session checks and RLS remain unchanged. Direct operator, migration and fixture clients are unchanged because they do not use runtime Hyperdrive bindings. Placement, database size and Better Auth joins are separate experiments and are not part of this correction.
+
+Local verification passed all 119 API checks across 24 test files and the API TypeScript check. The real PostgreSQL 17.11 suites used disposable databases, including restricted-role social/encrypted-content access, integration grants, account/session/MFA security, recovery and privacy journals, expiration/deletion, backups/restore, operational health and both push outboxes. Six account-journal cases were run separately because their existing safety guard requires the dedicated test database name. No tests asserting only the literal driver setting were added. These checks do not establish hosted Hyperdrive compatibility or a latency improvement; both need the subsequent staging checks.
+
+The existing hosted timing sample is directional: auth/session and transaction setup dominated the tiny synthetic feed, with adaptive sampling limiting precise attribution. No speedup is assumed from this correction until hosted measurement. Account C has since been deleted; subsequent baselines must identify the two surviving synthetic accounts and cannot be presented as the identical earlier fixture.
+
+### Hosted evidence before the correction
+
+The opt-in staging sample on `a4f17af` used 100 authenticated feed reads at concurrency five while all three synthetic identities still existed. All returned HTTP 200; client p50 was 672 ms, p95 1,106 ms and maximum 1,358 ms. The temporary phase flag was then removed. These are observations on a tiny fixture, not a capacity estimate.
+
+| Fixed phase | Weighted mean ms | Weighted p95 ms |
+| --- | ---: | ---: |
+| auth_session | 227 | 277 |
+| auth_status | 44 | 57 |
+| journal_check | 90 | 114 |
+| journal_close | 0 | 0 |
+| social_connect_begin | 127 | 398 |
+| social_actor | 86 | 98 |
+| social_query | 57 | 82 |
+| social_commit | 43 | 50 |
+| social_close | 0 | 0 |
+
+Analytics Engine adaptively sampled these points. `auth_session` had eight observed points representing 36 weighted observations; other phases had 11–19 observed points representing 46–146 weighted observations. There are no per-request correlations. Different phase samples cannot be added to reconstruct request latency, and their p95 values must not be summed. Zero cleanup duration is at the runtime timer's resolution, not proof of zero work. The evidence motivates investigating database round trips and placement while preserving fresh checks; it does not isolate database CPU, network, pool acquisition and library overhead within each phase.
+
+A separate public-page baseline before any placement change used ten sequential requests per endpoint, all HTTP 200. Staging `/` measured p50 67 / p95 490 ms, staging `/health` 58 / 79 ms, and production `/` 83 / 610 ms. Staging was the ordinary flag-disabled `a4f17af` deployment; production remained `c72e15f`. These small samples include cold/warm variance. They provide public-shell context for a possible later placement experiment because `run_worker_first:true` and the `ASSETS` binding currently route assets through the Worker. They are not evidence of a placement improvement or regression.

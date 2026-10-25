@@ -7,7 +7,10 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export async function withMember<T>(env: Pick<Env, 'HYPERDRIVE_SOCIAL'>, memberId: string, work: (db: Db) => Promise<T>, timing?:FeedTiming): Promise<T> {
     if (!uuid.test(memberId))
         throw new Error('Invalid authenticated member identifier');
-    const sql = postgres(env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: false, fetch_types: false, idle_timeout: 5, connect_timeout: 10 });
+    // Hyperdrive supports prepared statements. Disabling them adds parameter
+    // discovery messages that its transaction pool does not reliably support.
+    // This caches query plans, never permission decisions or returned rows.
+    const sql = postgres(env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false, idle_timeout: 5, connect_timeout: 10 });
     const started=timing?performance.now():0;
     let commitStarted:number|undefined;
     try {
@@ -31,7 +34,7 @@ export async function cleanupExpired(env: Pick<Env, 'HYPERDRIVE_JOBS' | 'MEDIA'>
     abandoned_media: number;
     deleted_objects: number;
 }> {
-    const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, { max: 1, prepare: false, fetch_types: false });
+    const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, { max: 1, prepare: true, fetch_types: false });
     try {
         const [row] = await sql `select app.expire_batch(200) as counts`;
         // Each claim has a bounded lease. A crash after R2 deletion is safe to retry.

@@ -95,7 +95,7 @@ export function webPushRequest(subscription: PushSubscription, env: PushEnv) {
 export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'> & PushEnv, send: typeof fetch = fetch): Promise<{sent: number; retried: number; skipped: number}> {
   const counts = {sent: 0, retried: 0, skipped: 0};
   if (!configured(env)) return counts;
-  const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, {max: 1, prepare: false, fetch_types: false, connect_timeout: 10});
+  const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, {max: 1, prepare: true, fetch_types: false, connect_timeout: 10});
   try {
     const jobs = await sql`select * from app.claim_push(20)`;
     for (let offset = 0; offset < jobs.length; offset += 4) {
