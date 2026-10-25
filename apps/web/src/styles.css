@@ -1066,7 +1066,7 @@ hr {
 .auth-aside {
   padding-top: 32px;
 }
-.auth-aside h1 {
+.auth-aside h2 {
   font-size: 70px;
   letter-spacing: -3px;
   margin: 20px 0 24px;
@@ -1102,7 +1102,7 @@ hr {
   padding: 33px 35px;
   box-shadow: var(--shadow);
 }
-.auth-card h2 {
+.auth-card h1 {
   font-size: 34px;
   margin: 18px 0 12px;
 }
@@ -1145,7 +1145,7 @@ hr {
   width: 100%;
   font-size: 13px;
 }
-.field > span {
+.field > label, .field > span {
   color: #52694e;
 }
 .check-field {
@@ -3055,7 +3055,7 @@ hr {
     gap: 45px;
     padding-top: 25px;
   }
-  .auth-aside h1 {
+  .auth-aside h2 {
     font-size: 58px;
   }
   .auth-card {
@@ -3414,11 +3414,11 @@ hr {
     padding-top: 0;
     text-align: center;
   }
-  .auth-aside h1 {
+  .auth-aside h2 {
     font-size: 43px;
     margin: 15px 0;
   }
-  .auth-aside h1 br {
+  .auth-aside h2 br {
     display: none;
   }
   .auth-aside > .eyebrow {
@@ -3433,7 +3433,7 @@ hr {
   .auth-card {
     padding: 25px;
   }
-  .auth-card h2 {
+  .auth-card h1 {
     font-size: 30px;
   }
   .auth-card > p {

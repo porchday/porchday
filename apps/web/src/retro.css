@@ -249,7 +249,7 @@ summary:focus-visible {
 .field-label {
   font-size: 13px;
 }
-.field > span,
+.field > label, .field > span,
 .field-label,
 .case-details dt,
 .case-details dd,
@@ -274,13 +274,13 @@ summary:focus-visible {
 .auth-aside {
   padding-top: 10px;
 }
-.auth-aside h1,
+.auth-aside h2,
 .narrow-page h1 {
   font-size: 28px;
   letter-spacing: 0;
   margin: 12px 0;
 }
-.auth-aside h1 br {
+.auth-aside h2 br {
   display: none;
 }
 .auth-aside p,
@@ -295,7 +295,7 @@ summary:focus-visible {
   padding: 22px;
   border: 1px solid #b08259;
 }
-.auth-card h2 {
+.auth-card h1 {
   font-size: 22px;
 }
 .auth-bottom,
@@ -1213,7 +1213,7 @@ body
     padding-top: 20px;
     gap: 20px;
   }
-  .auth-aside h1,
+  .auth-aside h2,
   .narrow-page h1 {
     font-size: 27px;
   }
@@ -1229,7 +1229,7 @@ body
   .auth-card {
     padding: 18px;
   }
-  .auth-card h2 {
+  .auth-card h1 {
     font-size: 22px;
   }
   .app-layout {

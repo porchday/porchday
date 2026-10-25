@@ -3,12 +3,27 @@ import { deadline, unexpired, ApiError, localDate, request } from "../src/api";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { ExpiryWarning } from "../src/Social";
-import { Button } from "../src/ui";
+import { Button, Field } from "../src/ui";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+});
+describe("shared field semantics", () => {
+  it("keeps an explicit label target and combines help with caller descriptions", () => {
+    const html = renderToStaticMarkup(createElement(Field, {
+      id: "recovery-reference", label: "Case reference", help: "Keep this reference private.",
+      "aria-describedby": "case-format", required: true,
+    }));
+    expect(html).toContain('<label for="recovery-reference">Case reference</label>');
+    expect(html).toContain('id="recovery-reference" aria-describedby="case-format recovery-reference-help"');
+    expect(html).toContain('<small id="recovery-reference-help">Keep this reference private.</small>');
+    const withoutHelp = renderToStaticMarkup(createElement(Field, {
+      label: "Name", "aria-describedby": "existing-guidance",
+    }));
+    expect(withoutHelp).toContain('aria-describedby="existing-guidance"');
+  });
 });
 describe("client expiration and sharing semantics", () => {
   it("inherits an absolute deadline instead of restarting a duration", () => {

@@ -571,6 +571,7 @@ export function PostCard({
   const [error, setError] = useState("");
   const [showComments, setShowComments] = useState(expanded);
   const [showReport, setShowReport] = useState(false);
+  const optionsButton = useRef<HTMLButtonElement>(null);
   const [reshare, setReshare] = useState(false);
   const [menu, setMenu] = useState(false);
   const [edit, setEdit] = useState(false);
@@ -689,6 +690,7 @@ export function PostCard({
         </a>
         <div className="post-menu">
           <button
+            ref={optionsButton}
             className="icon-button"
             onClick={() => setMenu(!menu)}
             aria-label="Post options"
@@ -839,6 +841,7 @@ export function PostCard({
         <ReportDialog
           row={row}
           content={content}
+          returnFocusRef={optionsButton}
           onClose={() => setShowReport(false)}
         />
       )}{" "}
@@ -1469,10 +1472,12 @@ export function ReportDialog({
   row,
   content,
   onClose,
+  returnFocusRef,
 }: {
   row: SocialObject;
   content: Content | null;
   onClose: () => void;
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 }) {
   const vault = useVault();
   const [reason, setReason] = useState("harassment");
@@ -1506,14 +1511,14 @@ export function ReportDialog({
     });
   }
   return (
-    <Modal title="Tell us what’s wrong" onClose={onClose}>
+    <Modal title="Tell us what’s wrong" onClose={onClose} returnFocusRef={returnFocusRef}>
       {done ? (
         <>
           <Alert success>
             Your report was received. A moderator can review the information you
             chose to share.
           </Alert>
-          <Button variant="primary" onClick={onClose}>
+          <Button variant="primary" autoFocus onClick={onClose}>
             Done
           </Button>
         </>

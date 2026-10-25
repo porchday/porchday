@@ -214,18 +214,23 @@ export function Alert({
 export function Field({
   label,
   help,
+  id: providedId,
+  "aria-describedby": describedBy,
   ...props
 }: React.InputHTMLAttributes<HTMLInputElement> & {
   label: string;
   help?: string;
 }) {
-  const id = React.useId();
+  const generatedId = React.useId();
+  const id = providedId || generatedId;
+  const description = [describedBy, help ? `${id}-help` : undefined]
+    .filter(Boolean).join(" ") || undefined;
   return (
-    <label className="field" htmlFor={id}>
-      <span>{label}</span>
-      <input id={id} {...props} />
-      {help && <small>{help}</small>}
-    </label>
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <input {...props} id={id} aria-describedby={description} />
+      {help && <small id={`${id}-help`}>{help}</small>}
+    </div>
   );
 }
 export function Empty({
@@ -277,19 +282,32 @@ export function Modal({
   title,
   children,
   onClose,
+  returnFocusRef,
 }: {
   title: string;
   children: React.ReactNode;
   onClose: () => void;
+  returnFocusRef?: React.RefObject<HTMLElement | null>;
 }) {
   const ref = React.useRef<HTMLDialogElement>(null);
+  const closeRef = React.useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    ref.current?.showModal();
+    const previous = document.activeElement;
     const el = ref.current;
-    const close = () => onClose();
+    el?.showModal();
+    const close = (event: Event) => {
+      event.preventDefault();
+      closeRef.current();
+    };
     el?.addEventListener("cancel", close);
-    return () => el?.removeEventListener("cancel", close);
-  }, []);
+    return () => {
+      el?.removeEventListener("cancel", close);
+      el?.close();
+      const target = returnFocusRef?.current || previous;
+      if (target instanceof HTMLElement && target.isConnected) target.focus();
+    };
+  }, [returnFocusRef]);
   return (
     <dialog ref={ref} className="modal" aria-label={title}>
       <div className="modal-heading">
@@ -358,6 +376,46 @@ export function useRoute() {
       document.removeEventListener("click", clicks);
     };
   }, []);
+  const previousPath = React.useRef(path);
+  useEffect(() => {
+    if (previousPath.current === path) return;
+    previousPath.current = path;
+    // SPA navigation must announce the new page, including lazily loaded views.
+    // Stop waiting as soon as the person starts interacting with the new view.
+    let observer: MutationObserver | undefined;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let frame = 0;
+    let focusedHeading: HTMLElement | undefined;
+    const stop = () => {
+      observer?.disconnect();
+      clearTimeout(timeout);
+      cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", stop);
+      document.removeEventListener("pointerdown", stop);
+    };
+    const focusHeading = () => {
+      // A remembered-device unlock can replace an intermediate heading. Follow
+      // that replacement only while no keyboard/pointer interaction has begun.
+      if (focusedHeading?.isConnected) return;
+      const visible = (node: HTMLElement) => node.getClientRects().length &&
+        !node.closest("[hidden]") && getComputedStyle(node).visibility === "visible";
+      const heading = Array.from(document.querySelectorAll<HTMLElement>("#main-content h1")).find(visible) ||
+        Array.from(document.querySelectorAll<HTMLElement>("#main-content h2")).find(visible);
+      if (!heading) return;
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+      focusedHeading = heading;
+    };
+    timeout = setTimeout(stop, 12000);
+    document.addEventListener("keydown", stop);
+    document.addEventListener("pointerdown", stop);
+    frame = requestAnimationFrame(() => {
+      observer = new MutationObserver(focusHeading);
+      observer.observe(document.body, {childList: true, subtree: true});
+      focusHeading();
+    });
+    return stop;
+  }, [path]);
   return path;
 }
 export function navigate(path: string) {

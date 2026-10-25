@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { auth, post, localDate } from "./api";
 import { Logo, Icon, Button, Field, Alert, useAction, navigate } from "./ui";
 export function PublicHeader() {
@@ -44,7 +44,7 @@ export function Landing() {
   return (
     <>
       <PublicHeader />
-      <main id="main-content" className="classic-home wrap">
+      <main id="main-content" tabIndex={-1} className="classic-home wrap">
         <div className="classic-columns">
           <aside className="classic-side">
             <section className="classic-box login-scrap">
@@ -249,6 +249,8 @@ export function AuthPage({
   const [adult, setAdult] = useState(false);
   const [rules, setRules] = useState(false);
   const [done, setDone] = useState(false);
+  const successHeading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { if (done) successHeading.current?.focus(); }, [done]);
   const [secondFactor, setSecondFactor] = useState(false);
   const [factorCode, setFactorCode] = useState("");
   const [backupCode, setBackupCode] = useState(false);
@@ -327,12 +329,12 @@ export function AuthPage({
   return (
     <>
       <PublicHeader />
-      <main id="main-content" className="auth-layout wrap">
+      <main id="main-content" tabIndex={-1} className="auth-layout wrap">
         <aside className="auth-aside">
           <span className="eyebrow">WELCOME TO YOUR LITTLE CORNER</span>
-          <h1>
+          <h2>
             Good to see you<span className="coral">.</span>
-          </h1>
+          </h2>
           <p>
             A place for everyday moments,
             <br />
@@ -348,7 +350,7 @@ export function AuthPage({
             <Icon name={join ? "people" : "lock"} size={20} />{" "}
             {join ? "A small beginning" : "YOUR PRIVATE SPACE"}
           </div>
-          <h2>
+          <h1>
             {join
               ? "Pull up a chair."
               : forgot
@@ -358,7 +360,7 @@ export function AuthPage({
                   : verify
                     ? "Check your inbox."
                     : "Welcome back."}
-          </h2>
+          </h1>
           <p>
             {join
               ? "Porchday is an invitation-only pilot for adults. Have an invitation? You’re in the right place."
@@ -373,7 +375,7 @@ export function AuthPage({
           {done ? (
             <div className="form-success">
               <Icon name="mail" size={35} />
-              <h3>{reset ? "Password updated." : "Check your email."}</h3>
+              <h3 ref={successHeading} tabIndex={-1}>{reset ? "Password updated." : "Check your email."}</h3>
               <p>
                 {reset
                   ? "Your other sessions have been revoked. Log in with your new password."
@@ -392,6 +394,7 @@ export function AuthPage({
                     label={
                       backupCode ? "One-time backup code" : "Authenticator code"
                     }
+                    autoFocus
                     autoComplete="one-time-code"
                     inputMode={backupCode ? "text" : "numeric"}
                     value={factorCode}
@@ -572,7 +575,7 @@ export function StolenAccount() {
   return (
     <>
       <PublicHeader />
-      <main id="main-content" className="narrow-page">
+      <main id="main-content" tabIndex={-1} className="narrow-page">
         <span className="eyebrow">ACCOUNT SAFETY</span>
         <h1>Let’s help you find your way back.</h1>
         <p>
@@ -820,7 +823,7 @@ export function Policy({ page }: { page: string }) {
   return (
     <>
       <PublicHeader />
-      <main id="main-content" className="narrow-page policy">
+      <main id="main-content" tabIndex={-1} className="narrow-page policy">
         <span className="eyebrow">THE PORCHDAY WAY</span>
         <h1>{p.title}</h1>
         <p className="policy-intro">{p.intro}</p>

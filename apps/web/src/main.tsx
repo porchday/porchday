@@ -243,7 +243,7 @@ function App() {
 function OfflineScreen({ onRetry }: { onRetry: () => Promise<void> }) {
   const action = useAction();
   return (
-    <main id="main-content" className="narrow-page">
+    <main id="main-content" tabIndex={-1} className="narrow-page">
       <Logo />
       <Empty
         icon="sun"
@@ -425,7 +425,7 @@ function AppShell({
           <span>Porchday · private pilot</span>
         </div>
       </aside>
-      <main id="main-content" className="app-main">
+      <main id="main-content" tabIndex={-1} className="app-main">
         {vault.member.status === "restricted" && (
           <Alert>
             This account can read existing content, but social changes are
@@ -501,6 +501,7 @@ function AppShell({
                 : ""
             }
             href={href}
+            aria-current={(href === "/app" ? path === "/app" : path.startsWith(href)) ? "page" : undefined}
           >
             <Icon name={icon} size={21} />
             <span>{name === "Connections" ? "Circle" : name}</span>

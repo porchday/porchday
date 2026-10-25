@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   get,
   post,
@@ -31,6 +31,12 @@ import { wallpaperId } from "./wallpaper";
 export function Connections() {
   const vault = useVault();
   const [data, setData] = useState<Json | null>(null);
+  const peopleHeading = useRef<HTMLHeadingElement>(null);
+  const pendingFocus = useRef(new Set<() => void>());
+  useEffect(() => () => {
+    for (const cancel of pendingFocus.current) cancel();
+    pendingFocus.current.clear();
+  }, []);
   const [handle, setHandle] = useState("");
   const [kind, setKind] = useState("friend");
   const [filter, setFilter] = useState("all");
@@ -48,6 +54,28 @@ export function Connections() {
   useEffect(() => {
     action.run(refresh);
   }, []);
+  function respond(id: string, decision: "accept" | "decline", notice: string) {
+    return action.run(async () => {
+      let interacted = false;
+      const removeListeners = () => {
+        pendingFocus.current.delete(cancelFocus);
+        document.removeEventListener("keydown", cancelFocus);
+        document.removeEventListener("pointerdown", cancelFocus);
+      };
+      const cancelFocus = () => { interacted = true; removeListeners(); };
+      pendingFocus.current.add(cancelFocus);
+      document.addEventListener("keydown", cancelFocus);
+      document.addEventListener("pointerdown", cancelFocus);
+      try {
+        await post(`/connections/requests/${id}/${decision}`);
+        await refresh();
+        await new Promise<void>((resolve) => requestAnimationFrame(() => {
+          if (!interacted) peopleHeading.current?.focus();
+          resolve();
+        }));
+      } finally { removeListeners(); }
+    }, notice);
+  }
   const list = data?.items || [];
   const requests = data?.requests || [];
   const handles = new Map<string, string>(
@@ -142,25 +170,21 @@ export function Connections() {
                 <div className="button-row">
                   <Button
                     variant="primary compact"
+                    aria-label={`Accept connection request from @${label(r.sender)}`}
                     busy={action.busy}
                     disabled={vault.member.status === "restricted"}
                     onClick={() =>
-                      action.run(async () => {
-                        await post(`/connections/requests/${r.id}/accept`);
-                        await refresh();
-                      })
+                      respond(r.id, "accept", `Connected with @${label(r.sender)}.`)
                     }
                   >
                     Accept
                   </Button>
                   <Button
                     variant="quiet compact"
+                    aria-label={`Decline connection request from @${label(r.sender)}`}
                     disabled={vault.member.status === "restricted"}
                     onClick={() =>
-                      action.run(async () => {
-                        await post(`/connections/requests/${r.id}/decline`);
-                        await refresh();
-                      })
+                      respond(r.id, "decline", `Declined the request from @${label(r.sender)}.`)
                     }
                   >
                     Decline
@@ -173,7 +197,7 @@ export function Connections() {
       )}
       <section className="panel">
         <div className="section-title">
-          <h2>Your people</h2>
+          <h2 ref={peopleHeading} tabIndex={-1}>Your people</h2>
           <span className="count-badge">{list.length} / 300</span>
         </div>
         <div className="tabs" role="group" aria-label="Connection filter">
@@ -327,12 +351,10 @@ export function Connections() {
               </div>
               <Button
                 variant="quiet compact"
+                aria-label={`Cancel connection request to @${label(r.recipient)}`}
                 disabled={vault.member.status === "restricted"}
                 onClick={() =>
-                  action.run(async () => {
-                    await post(`/connections/requests/${r.id}/decline`);
-                    await refresh();
-                  })
+                  respond(r.id, "decline", `Canceled the request to @${label(r.recipient)}.`)
                 }
               >
                 Cancel

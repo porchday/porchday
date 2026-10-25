@@ -62,6 +62,7 @@ export function Settings({
         ].map(([id, name]) => (
           <a
             className={tab === id ? "active" : ""}
+            aria-current={tab === id ? "page" : undefined}
             href={`/app/settings/${id}`}
             key={id}
           >
@@ -727,6 +728,10 @@ function DataSettings({ onLogout }: { onLogout: () => Promise<void> }) {
   const [grants, setGrants] = useState<Json[]>([]);
   const [ownedGroups, setOwnedGroups] = useState<Json[]>([]);
   const action = useAction();
+  useEffect(() => {
+    if (deleting && action.error)
+      document.getElementById("delete-account-confirmation")?.focus();
+  }, [deleting, action.error]);
   const suspended = vault.member.status === "suspended";
   useEffect(() => {
     if (!suspended)
@@ -844,6 +849,7 @@ function DataSettings({ onLogout }: { onLogout: () => Promise<void> }) {
               while ownership is reviewed.
             </p>
             <Field
+              id="delete-account-confirmation"
               label="Type DELETE to confirm"
               value={deleteConfirm}
               onChange={(e) => setDeleteConfirm(e.target.value)}
