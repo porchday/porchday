@@ -32,3 +32,5 @@ Credentials are outside the repository in `~/.config/inner-circle/secrets.env`. 
 ## Deployment and verification
 
 Infrastructure resource names are recorded in `infra/resources.json`. Use separate staging and production databases, R2 buckets, queues, auth secrets and encryption test identities. Complete the requirements checklist and real deployed tests before declaring the MVP ready. Public source release, App Store/TestFlight distribution and independent review are separate milestones.
+
+The [operations guide](docs/operations.md) links the admission and deployment procedures. Use the [monitoring runbook](docs/independent-monitoring.md), [staff Access procedure](docs/staff-access.md), [incident response guide](docs/incident-response.md) and [restore-safety procedure](docs/restore-safety.md) for their respective operational checks. The [hosted web/PWA checklist](docs/hosted-verification.md) and [hosted native procedure](docs/hosted-native-verification.md) define remaining acceptance work; deployment alone does not establish that those checks passed.
