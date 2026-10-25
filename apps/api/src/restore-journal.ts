@@ -8,7 +8,7 @@ export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedi
   if(local.value.generation!==verified.control.generation || BigInt(local.value.sequence)>BigInt(verified.control.sequence))throw new JournalError('RESTORE_SOURCE_MISMATCH');
   const from=BigInt(local.value.sequence);
   await sql`update app.safety_journal_state set restore_quarantined=true`;
-  const hold=new Set<string>();let replayed=0;
+  const hold=new Set<string>();let replayed=0,heldAccounts=0;
   for(const batch of verified.batches) {
     const missing=batch.filter(event=>BigInt(event.sequence)>from);
     if(!missing.length)continue;
@@ -19,7 +19,9 @@ export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedi
   // A later active-status event must not revive an old password/email/MFA key.
   await sql.begin(async tx=>{
     await tx`select set_config('app.restore_replay','on',true)`;
-    for(const member of hold)await tx`select app.set_security_hold(${member}::uuid)`;
+    // A later journaled account deletion is final; do not recreate it or make
+    // an earlier credential hold prevent recovery of the remaining accounts.
+    for(const member of hold){const rows=await tx`select app.set_security_hold(id) from app.members where id=${member}::uuid`;heldAccounts+=rows.length;}
     await tx`delete from public.auth_session`;
     await tx`delete from public.auth_verification`;
     await tx`delete from public.used_email_links`;
@@ -64,7 +66,7 @@ export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedi
   });
   const unchanged=await readJournalControl(store);
   if(JSON.stringify(unchanged.value)!==JSON.stringify(verified.control))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
-  return {replayed,deletedObjects,heldAccounts:hold.size,sequence:verified.control.sequence};
+  return {replayed,deletedObjects,heldAccounts,sequence:verified.control.sequence};
 }
 
 export type MediaVerification = (item:{key:string;sha256:string;byteSize:number})=>Promise<void>;

@@ -10,15 +10,16 @@ import {verifyMediaBackup} from '../apps/api/src/media-backup.js';
 import {R2JournalStore} from './r2-journal-store.js';
 import {readJournalControl} from '../apps/api/src/privacy-journal.js';
 
-const path='artifacts/private/restore-ops/fixtures.json',phase=process.argv[2];
+const phase=process.argv[2],attempt=process.argv.find(arg=>arg.startsWith('--attempt='))?.slice(10);
+const path=attempt?'artifacts/private/restore-ops/fixtures/'+attempt+'.json':'artifacts/private/restore-ops/fixtures.json';
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 type Account={id:string;email:string;password:string;handle:string;deleted?:boolean;device:{id:string;enrolled:boolean;keys:{publicKey:string;encryptedPrivateKey:string;recoverySecret:string}}};
 type Post={id:string;mediaId?:string;text:string;envelope?:EncryptedEnvelope};
-export type RestoreFixtures={v:1;synthetic:true;origin:string;run:string;memberId:string;strangerId:string;createdAt:string;expiresAt:string;prepared:boolean;afterStarted?:boolean;afterComplete?:boolean;survivor:Post;deleted:Post;timed:Post;commentId:string;timedPayload?:Record<string,unknown>;photoSHA256:string;sessionId?:string;cookie?:string;snapshotId?:string;pairedAt?:string;shortenedAt?:string;shortenedEnvelope?:EncryptedEnvelope;deletedAcknowledged?:boolean;expiryAcknowledged?:boolean};
+export type RestoreFixtures={v:1;synthetic:true;origin:string;run:string;attempt?:string;memberId:string;strangerId:string;createdAt:string;expiresAt:string;prepared:boolean;afterStarted?:boolean;afterComplete?:boolean;survivor:Post;deleted:Post;timed:Post;commentId:string;timedPayload?:Record<string,unknown>;photoSHA256:string;sessionId?:string;cookie?:string;snapshotId?:string;pairedAt?:string;shortenedAt?:string;shortenedEnvelope?:EncryptedEnvelope;deletedAcknowledged?:boolean;expiryAcknowledged?:boolean};
 const progress=(step:string)=>console.log(JSON.stringify({phase,step}));
 try {
  check(['prepare','after-snapshot'].includes(phase)&&process.argv.includes('--run'),'RESTORE_FIXTURE_EXPLICIT_RUN_REQUIRED');
- check(process.argv.slice(3).every(arg=>arg==='--run'||phase==='after-snapshot'&&(arg.startsWith('--snapshot=')||arg==='--resume')),'RESTORE_FIXTURE_ARGUMENTS_INVALID');
+ check((attempt===undefined||/^[a-f0-9]{8}$/.test(attempt))&&process.argv.filter(arg=>arg.startsWith('--attempt=')).length<=1&&process.argv.slice(3).every(arg=>arg==='--run'||arg.startsWith('--attempt=')||phase==='after-snapshot'&&(arg.startsWith('--snapshot=')||arg==='--resume')),'RESTORE_FIXTURE_ARGUMENTS_INVALID');
  const state=await readPrivate<{v:number;synthetic:boolean;origin:string;run:string;socialPassed:boolean;accounts:Account[]}>('artifacts/private/hosted-smoke/state.json');
  check(state.v===1&&state.synthetic&&state.origin===stagingOrigin&&state.socialPassed&&/^[a-f0-9]{10}$/.test(state.run)&&state.accounts.length===3,'FINISHED_SYNTHETIC_SOCIAL_FIXTURE_REQUIRED');
  const a=state.accounts[0],stranger=state.accounts[2];
@@ -41,7 +42,7 @@ try {
  }
  if(phase==='prepare'){
   const bytes=await readFile(new URL('../docs/archive/sample/photos/77777777-7777-4777-8777-777777777777.jpg',import.meta.url));
-  const fixture:RestoreFixtures={v:1,synthetic:true,origin:stagingOrigin,run:state.run,memberId:a.id,strangerId:stranger.id,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+2*3600000).toISOString(),prepared:false,
+  const fixture:RestoreFixtures={v:1,synthetic:true,origin:stagingOrigin,run:state.run,...(attempt?{attempt}:{}),memberId:a.id,strangerId:stranger.id,createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+2*3600000).toISOString(),prepared:false,
    survivor:{id:randomUUID(),mediaId:randomUUID(),text:'Synthetic hosted restore survivor'},deleted:{id:randomUUID(),mediaId:randomUUID(),text:'Synthetic hosted restore deletion'},timed:{id:randomUUID(),text:'Synthetic hosted restore shortened deadline'},commentId:randomUUID(),photoSHA256:createHash('sha256').update(bytes).digest('hex'),sessionId:session.session.id,cookie:api.cookieHeader()};
   await writeRestorePrivate(path,fixture,true); // No fixture mutation before recoverable IDs exist.
   for(const post of [fixture.survivor,fixture.deleted,fixture.timed]){
@@ -65,7 +66,7 @@ try {
   fixture.prepared=true;await writeRestorePrivate(path,fixture);progress('prepared-three-posts-two-photos-child-comment-and-live-session');
  }else{
   const fixture=await readRestorePrivate<RestoreFixtures>(path);
-  check(fixture.v===1&&fixture.synthetic&&fixture.origin===stagingOrigin&&fixture.run===state.run&&fixture.memberId===a.id&&fixture.prepared&&!fixture.afterComplete&&(!fixture.afterStarted||process.argv.includes('--resume')&&fixture.deletedAcknowledged&&!fixture.shortenedEnvelope)&&!!snapshot&&uuid.test(snapshot),'RESTORE_FIXTURE_PHASE_INVALID');
+  check(fixture.v===1&&fixture.synthetic&&fixture.origin===stagingOrigin&&fixture.run===state.run&&fixture.attempt===attempt&&fixture.memberId===a.id&&fixture.prepared&&!fixture.afterComplete&&(!fixture.afterStarted||process.argv.includes('--resume')&&fixture.deletedAcknowledged&&!fixture.shortenedEnvelope)&&!!snapshot&&uuid.test(snapshot),'RESTORE_FIXTURE_PHASE_INVALID');
   check(Date.parse(fixture.expiresAt)>Date.now()+10*60000,'RESTORE_FIXTURE_TOO_CLOSE_TO_EXPIRY');
   const ticket=await readRestorePrivate<{id:string;environment:string;pairedAt:string;generation:string;captureVerified:boolean}>('artifacts/private/restore-ops/manual-media-backups/staging-'+snapshot+'.json');
   check(ticket.id===snapshot&&ticket.environment==='staging'&&ticket.captureVerified&&Date.parse(ticket.pairedAt)>Date.parse(fixture.createdAt),'RESTORE_FIXTURE_SNAPSHOT_INVALID');

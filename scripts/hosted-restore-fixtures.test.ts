@@ -7,4 +7,10 @@ describe('Hosted restore fixture execution boundary',()=>{
    expect(result.status).toBe(1);expect(result.stdout).toBe('');expect(JSON.parse(result.stderr)).toEqual({phase,error:'RESTORE_FIXTURE_EXPLICIT_RUN_REQUIRED'});
   }
  });
+ it('rejects malformed or repeated attempt identifiers before opening any fixture or credentials',()=>{
+  for(const args of [['--attempt=../../old'],['--attempt=53e914fb','--attempt=53e914fb'],['--attempt=']]){
+   const result=spawnSync(process.execPath,['--import','tsx','scripts/hosted-restore-fixtures.ts','prepare','--run',...args],{encoding:'utf8',timeout:10000,env:{PATH:process.env.PATH}});
+   expect(result.status).toBe(1);expect(result.stdout).toBe('');expect(JSON.parse(result.stderr)).toEqual({phase:'prepare',error:'RESTORE_FIXTURE_ARGUMENTS_INVALID'});
+  }
+ });
 });
