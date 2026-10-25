@@ -551,7 +551,7 @@ authRoutes.all("/*", async (c) => {
         },
         503,
       );
-    event("error", { code: "auth_failed", environment: c.env.ENVIRONMENT });
+    event("error", { code: "auth_failed" }, c.env);
     return c.json(
       {
         error: {
@@ -568,10 +568,7 @@ authRoutes.all("/*", async (c) => {
     if (committedAndConfirmed && authMailRoutes.has(path))
       c.executionCtx.waitUntil(
         processAccountEmails(c.env).catch(() =>
-          event("error", {
-            code: "email_outbox_retry",
-            environment: c.env.ENVIRONMENT,
-          }),
+          event("error", {code: "email_outbox_retry"}, c.env),
         ),
       );
     c.executionCtx.waitUntil(physicalPool.end());

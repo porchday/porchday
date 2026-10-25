@@ -175,7 +175,7 @@ export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables
     if(resources)await assertJournalReadable(resources.store,resources.db);
   } catch(error) {
     const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured'};
-    event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable',environment:c.env.ENVIRONMENT});
+    event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable'},c.env);
     // No identifiers, SQL details, endpoint URLs or private content in errors.
     return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'This action is temporarily unavailable while data safeguards are checked. Please try again later.'}},503);
   } finally {await resources?.close();}

@@ -67,7 +67,8 @@ export async function processAccountEmails(env:Env){
     retried++;
    }
   }
-  if(sent||retried)event('email',{code:retried?'outbox_retry':'outbox_delivered',count:sent,environment:env.ENVIRONMENT});
+  if(sent)event('email',{code:'outbox_delivered',count:sent},env);
+  if(retried)event('email',{code:'outbox_retry',count:retried},env);
   return {sent,retried};
  }finally{await pool.end();}
 }

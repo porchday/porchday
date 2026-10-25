@@ -5,9 +5,9 @@ export async function sendAccountEmail(env: Env, to: string, subject: string, te
   if (!env.EMAIL) throw new Error('EMAIL_UNAVAILABLE');
   try {
     await env.EMAIL.send({ from: env.EMAIL_FROM, to, subject, text });
-    event('email', { code:'accepted',environment:env.ENVIRONMENT });
+    event('email', { code:'accepted' },env);
   } catch {
-    event('email', { code:'send_failed', environment:env.ENVIRONMENT });
+    event('email', { code:'send_failed' },env);
     throw new Error('EMAIL_UNAVAILABLE');
   }
 }

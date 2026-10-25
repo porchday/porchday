@@ -18,10 +18,7 @@ function dispatchRecoveryEmails(
 ) {
   c.executionCtx.waitUntil(
     processAccountEmails(c.env).catch(() =>
-      event("error", {
-        code: "recovery_email_retry",
-        environment: c.env.ENVIRONMENT,
-      }),
+      event("error", {code: "recovery_email_retry"}, c.env),
     ),
   );
 }
