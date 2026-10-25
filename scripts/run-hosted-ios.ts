@@ -4,7 +4,7 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { HostedIOSError, readHostedFixture, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode, nativeFailureDiagnostic } from "./hosted-ios-support.ts";
+import { HostedIOSError, readHostedFixture, hostedTestIdentifier, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode, nativeFailureDiagnostic } from "./hosted-ios-support.ts";
 
 const execute = promisify(execFile);
 let directory = "", simulator = "", phase = "PREFLIGHT", failure = "", cleanupFailed = false;
@@ -26,7 +26,7 @@ async function recorded(program: string, args: string[], timeout: number, input?
       const timer = setTimeout(() => { child.kill("SIGTERM"); setTimeout(() => child.kill("SIGKILL"), 2_000).unref(); }, timeout);
       child.on("error", () => { clearTimeout(timer); reject(new HostedIOSError("COMMAND_START_FAILED")); });
       child.on("close", code => { clearTimeout(timer); accept(code ?? 1); });
-      child.stdin.on("error", () => {}); child.stdin.end(input);
+      child.stdin!.on("error", () => {}); child.stdin!.end(input);
     });
   } finally { await log.close(); }
 }
@@ -40,7 +40,7 @@ function requireValue(value: unknown, code: string): asserts value { if (!value)
 try {
   requireValue(process.argv.slice(2).join(" ") === "--run", "RUN_FLAG_REQUIRED");
   requireValue(process.env.GITHUB_ACTIONS === "true" && process.platform === "darwin", "EPHEMERAL_MACOS_RUNNER_REQUIRED");
-  readHostedFixture(encoded);
+  const identifier = hostedTestIdentifier(readHostedFixture(encoded));
   const runner = await realpath(process.env.RUNNER_TEMP ?? "");
   const workspace = await realpath(resolve("."));
   requireValue(runner !== workspace && !runner.startsWith(workspace + sep), "PRIVATE_RUNNER_DIRECTORY_REQUIRED");
@@ -68,14 +68,14 @@ try {
   requireValue(manifests.length === 1, "XCTESTRUN_NOT_FOUND");
   const manifest = join(products, manifests[0]);
   const raw = JSON.parse(await capture("python3", ["-c", "import json,plistlib,sys; print(json.dumps(plistlib.load(open(sys.argv[1],'rb'))))", manifest]));
-  const configured = configureHostedTestRun(raw, encoded);
+  const configured = configureHostedTestRun(raw, encoded, identifier);
   requireValue(await recorded("python3", ["-c", "import json,os,plistlib,sys; p=sys.argv[1]; os.chmod(p,0o600); plistlib.dump(json.load(sys.stdin),open(p,'wb'))", manifest], 30_000, JSON.stringify(configured)) === 0, "XCTESTRUN_WRITE_FAILED");
   // A queued or slow build must not turn a short-lived fixture into an open-ended test.
   readHostedFixture(encoded);
 
   phase = "TEST";
   const resultPath = join(directory, "Hosted.xcresult");
-  const code = await recorded("xcodebuild", ["test-without-building", "-xctestrun", manifest, "-destination", destination, "-only-testing:PorchdayTests/HostedInteropTests/testHostedInteroperability", "-parallel-testing-enabled", "NO", "-maximum-concurrent-test-simulator-destinations", "1", "-test-timeouts-enabled", "YES", "-default-test-execution-time-allowance", "480", "-maximum-test-execution-time-allowance", "600", "-resultBundlePath", resultPath], 12 * 60_000);
+  const code = await recorded("xcodebuild", ["test-without-building", "-xctestrun", manifest, "-destination", destination, "-only-testing:PorchdayTests/" + identifier, "-parallel-testing-enabled", "NO", "-maximum-concurrent-test-simulator-destinations", "1", "-test-timeouts-enabled", "YES", "-default-test-execution-time-allowance", "480", "-maximum-test-execution-time-allowance", "600", "-resultBundlePath", resultPath], 12 * 60_000);
   if (code !== 0) {
     const tail = await logTail(); diagnostic = nativeFailureDiagnostic(tail);
     throw new HostedIOSError(nativeFailureCode(tail) ?? "NATIVE_TEST_FAILED");
@@ -87,7 +87,7 @@ try {
   requireValue(ids.length > 0 && ids.length <= 4, "NATIVE_RESULT_REFERENCES");
   const trees = [];
   for (const id of ids) trees.push(JSON.parse(await capture("xcrun", ["xcresulttool", "get", "object", "--legacy", "--format", "json", "--path", resultPath, "--id", id])));
-  verifyNativeTestResult(root, trees);
+  verifyNativeTestResult(root, trees, identifier);
 } catch (error) {
   // No provider/body/command/error message is printed unless it was our fixed code.
   failure = error instanceof HostedIOSError ? error.message : "HOSTED_IOS_OPERATION_FAILED";

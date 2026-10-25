@@ -23,11 +23,11 @@ private struct HostedFixture: Decodable {
         guard remaining > 300, remaining <= 2 * 60 * 60 + 60 else { throw HostedFailure.invalidFixture }
     }
 }
-private enum HostedFailure: Error { case invalidFixture, unexpectedState }
+enum HostedFailure: Error { case invalidFixture, unexpectedState }
 
 // A closed diagnostic vocabulary helps distinguish runtime failures without
 // serializing an NSError, provider response, request URL or private fixture.
-private func hostedDiagnostic(_ error: Error) -> String {
+func hostedDiagnostic(_ error: Error) -> String {
     if let error = error as? PorchError {
         switch error {
         case .message(let message):

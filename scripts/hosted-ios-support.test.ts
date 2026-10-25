@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { readHostedFixture, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode, nativeFailureDiagnostic } from "./hosted-ios-support.ts";
+import { readHostedFixture, hostedTestIdentifier, socialTestIdentifier, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode, nativeFailureDiagnostic } from "./hosted-ios-support.ts";
 
 const now = Date.parse("2026-01-01T10:00:00.000Z");
 const fixture = {
@@ -34,6 +34,24 @@ describe("opt-in hosted iOS test controls", () => {
       try { readHostedFixture(encoded, now); throw new Error("Expected failure"); }
       catch (error) { expect(String(error)).not.toContain(sensitive); }
     }
+  });
+  it("keeps the A-only social scenario separate from expired media fixtures and validates every parent deadline", () => {
+    const social = {v:2,scenario:"comments-reactions",synthetic:true,origin:fixture.origin,run:fixture.run,attempt:"aabb0011",
+      expiresAt:fixture.expiresAt,email:fixture.email,password:fixture.password,memberId:fixture.memberId,recoverySecret:fixture.recoverySecret,
+      webPostId:fixture.webPostId,webCommentId:fixture.webMediaId,webReplyId:fixture.nativePostId,nativeCommentId:fixture.nativeMediaId,
+      nativeReplyId:"66666666-6666-4666-8666-666666666666",webCommentExpiresAt:"2026-01-01T11:50:00.000Z",webReplyExpiresAt:"2026-01-01T11:40:00.000Z"};
+    expect(hostedTestIdentifier(readHostedFixture(encode(social),now))).toBe(socialTestIdentifier);
+    for(const change of [{scenario:"anything"},{v:1},{attempt:"anything"},{nativeReplyId:fixture.webPostId},
+      {webCommentExpiresAt:fixture.expiresAt},{webReplyExpiresAt:"2026-01-01T12:10:00.000Z"}])
+      expect(()=>readHostedFixture(encode({...social,...change}),now)).toThrow(/^FIXTURE_/);
+    expect(()=>readHostedFixture(encode(social),now+80*60_000)).toThrow("FIXTURE_EXPIRED");
+    const manifest=configureHostedTestRun({PorchdayTests:{}},encode(social),socialTestIdentifier);
+    expect(manifest.PorchdayTests.OnlyTestIdentifiers).toEqual([socialTestIdentifier]);
+    const root={metrics:{testsCount:{_value:"1"},testsFailedCount:{_value:"0"},testsSkippedCount:{_value:"0"}}};
+    const result={identifier:{_value:"PorchdayTests/"+socialTestIdentifier+"()"},testStatus:{_value:"Success"}};
+    expect(()=>verifyNativeTestResult(root,[result],socialTestIdentifier)).not.toThrow();
+    expect(()=>verifyNativeTestResult(root,[result])).toThrow("NATIVE_TEST_NOT_PASSED");
+    expect(()=>verifyNativeTestResult(root,[{...result,testStatus:{_value:"Skipped"}}],socialTestIdentifier)).toThrow("NATIVE_TEST_NOT_PASSED");
   });
   it("injects credentials only into the selected unit target's private runtime manifest", () => {
     const original = { TestConfigurations: [{ TestTargets: [
