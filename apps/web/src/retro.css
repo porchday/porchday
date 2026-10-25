@@ -3,22 +3,23 @@
   font-family: Arial, Helvetica, sans-serif;
   font-size: 14px;
   line-height: 1.45;
-  color: #222;
-  background: #e7e7e7;
-  --cream: #e7e7e7;
-  --paper: #fff;
-  --pine: #17396b;
-  --muted: #515151;
-  --line: #a4b5ca;
-  --coral: #ae4316;
-  --sage: #e8eff7;
+  color: #3c2a20;
+  background: #eee2cd;
+  --cream: #eee2cd;
+  --paper: #fffaf0;
+  --pine: #633014;
+  --muted: #66503e;
+  --line: #b89a78;
+  --coral: #974013;
+  --sage: #f2dfc3;
   --shadow: none;
+  accent-color: #974013;
 }
 html {
   scroll-behavior: auto;
 }
 body {
-  color: #222;
+  color: #3c2a20;
 }
 h1,
 h2,
@@ -38,15 +39,15 @@ h3 {
   font-size: 16px;
 }
 p {
-  color: #333;
+  color: #49372b;
 }
 a {
-  color: #003399;
+  color: #8c3b12;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 a:hover {
-  color: #8b2800;
+  color: #5d260d;
 }
 strong {
   font-weight: 700;
@@ -57,15 +58,15 @@ small {
 input,
 textarea,
 select {
-  background: #fff;
-  color: #222;
+  background: #fffaf0;
+  color: #3c2a20;
   border: 1px solid #777;
   border-radius: 0;
   padding: 8px;
 }
 input::placeholder,
 textarea::placeholder {
-  color: #686868;
+  color: #725e4d;
 }
 button:focus-visible,
 a:focus-visible,
@@ -73,8 +74,9 @@ input:focus-visible,
 textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible {
-  outline: 3px solid #e69b00;
+  outline: 3px solid #542911;
   outline-offset: 3px;
+  box-shadow: 0 0 0 3px #fffaf0;
 }
 .wrap {
   max-width: 1040px;
@@ -87,7 +89,7 @@ summary:focus-visible {
   font-weight: 700;
   font-size: 30px;
   letter-spacing: -1.4px;
-  color: #fff;
+  color: #fffaf0;
   gap: 7px;
 }
 .logo svg,
@@ -96,26 +98,26 @@ summary:focus-visible {
   height: 27px;
 }
 .logo-dot {
-  color: #ffcf66;
+  color: #ffd89c;
 }
 .public-header {
-  background: #003399;
+  background: #8c3b12;
   height: auto;
   min-height: 75px;
   padding-top: 16px;
   padding-bottom: 16px;
-  border-bottom: 4px solid #7ba5d3;
+  border-bottom: 4px solid #cc8a50;
 }
 .public-header nav {
   gap: 20px;
 }
 .public-header nav a {
-  color: #fff;
+  color: #fffaf0;
   font-size: 13px;
   text-decoration: underline;
 }
 .public-header .login-link {
-  border: 1px solid #a9c2e5;
+  border: 1px solid #e6b786;
   border-radius: 0;
   padding: 7px 12px;
 }
@@ -123,14 +125,14 @@ summary:focus-visible {
   display: none;
 }
 .public-footer {
-  background: #fff;
-  border: 1px solid #b4b4b4;
+  background: #fffaf0;
+  border: 1px solid #bba98e;
   padding-top: 18px;
   padding-bottom: 18px;
   gap: 20px;
 }
 .public-footer .logo {
-  color: #003399;
+  color: #8c3b12;
   font-size: 24px;
 }
 .public-footer :is(p, small, nav > a) {
@@ -146,20 +148,20 @@ summary:focus-visible {
 .tiny-label {
   font-size: 11px;
   letter-spacing: 0.3px;
-  color: #444;
+  color: #5b4435;
 }
 .button,
 .button.primary,
 .button.outline,
 .button.compact,
 .file-button {
-  border: 1px solid #7c7c7c;
+  border: 1px solid #9b7f60;
   border-radius: 0;
-  background: #eee;
-  color: #222;
+  background: #f4e2c9;
+  color: #3c2a20;
   box-shadow:
-    inset 1px 1px #fff,
-    inset -1px -1px #b5b5b5;
+    inset 1px 1px #fffaf0,
+    inset -1px -1px #c1a27d;
   min-height: 34px;
   padding: 6px 12px;
   font-size: 13px;
@@ -169,23 +171,28 @@ summary:focus-visible {
   transition: none;
 }
 .button.primary {
-  background: #e1eafa;
-  border-color: #526b91;
-  color: #132e61;
+  background: #974013;
+  border-color: #74300e;
+  color: #fffaf0;
+  box-shadow: inset 1px 1px #c07643, inset -1px -1px #74300e;
 }
 .button:hover,
 .button.primary:hover,
 .button.outline:hover {
-  background: #d8e5f7;
-  color: #17396b;
+  background: #ebc598;
+  color: #633014;
   transform: none;
 }
+.button.primary:hover {
+  background: #74300e;
+  color: #fffaf0;
+}
 .button:active {
-  box-shadow: inset 1px 1px #7b7b7b;
+  box-shadow: inset 1px 1px #9d7856;
 }
 .text-button,
 .text-link {
-  color: #003399;
+  color: #8c3b12;
   font-size: 13px;
   text-decoration: underline;
 }
@@ -217,7 +224,7 @@ summary:focus-visible {
   box-shadow: none;
 }
 .panel {
-  border: 1px solid #9cb2d0;
+  border: 1px solid #b9916a;
   padding: 16px;
   margin-bottom: 14px;
 }
@@ -241,6 +248,17 @@ summary:focus-visible {
 .check-field,
 .field-label {
   font-size: 13px;
+}
+.field > span,
+.field-label,
+.case-details dt,
+.case-details dd,
+.download-list {
+  color: #5b4435;
+}
+.check-field a,
+.auth-bottom > span > a {
+  color: #8c3b12;
 }
 .field > small,
 .small-copy {
@@ -275,7 +293,7 @@ summary:focus-visible {
 }
 .auth-card {
   padding: 22px;
-  border: 1px solid #7293bc;
+  border: 1px solid #b08259;
 }
 .auth-card h2 {
   font-size: 22px;
@@ -306,11 +324,11 @@ summary:focus-visible {
 .classic-home {
   padding-top: 12px;
   padding-bottom: 14px;
-  background: #fff;
+  background: #fffaf0;
 }
 .classic-status {
-  border: 1px solid #b7b7b7;
-  background: #f0f0f0;
+  border: 1px solid #c7b295;
+  background: #f3e7d4;
   padding: 6px 9px;
   margin-bottom: 12px;
   font-size: 12px;
@@ -324,18 +342,18 @@ summary:focus-visible {
   gap: 14px;
 }
 .classic-box {
-  border: 1px solid #7d9dc6;
-  background: #fff;
+  border: 1px solid #bc956e;
+  background: #fffaf0;
   margin: 0 0 14px;
   min-width: 0;
 }
 .classic-box > h2 {
-  background: #cbdcf0;
-  color: #17396b;
+  background: #efd3ae;
+  color: #633014;
   font-size: 14px;
   padding: 5px 9px;
   margin: 0;
-  border-bottom: 1px solid #7d9dc6;
+  border-bottom: 1px solid #bc956e;
 }
 .classic-box-body {
   padding: 12px;
@@ -374,21 +392,21 @@ summary:focus-visible {
 }
 .classic-badges span {
   border: 1px solid #555;
-  background: #ececec;
-  box-shadow: inset 1px 1px #fff;
+  background: #f2e4ca;
+  box-shadow: inset 1px 1px #fffaf0;
   padding: 4px;
 }
 .classic-welcome > h1 {
   font-size: 25px;
   margin: 0;
   padding: 12px;
-  background: #e4edf8;
-  border-bottom: 1px solid #7d9dc6;
-  color: #17396b;
+  background: #f6e7ce;
+  border-bottom: 1px solid #bc956e;
+  color: #633014;
 }
 .classic-welcome .classic-promise {
   font-size: 17px;
-  color: #9a3200;
+  color: #8c3b12;
   font-weight: 700;
 }
 .classic-welcome-links {
@@ -402,27 +420,27 @@ summary:focus-visible {
 .classic-features > div {
   display: grid;
   grid-template-columns: 155px minmax(0, 1fr);
-  border-bottom: 1px solid #c4d2e4;
+  border-bottom: 1px solid #d4bb98;
 }
 .classic-features > div:last-child {
   border-bottom: 0;
 }
 .classic-features dt {
-  background: #edf3fb;
+  background: #faf0dc;
   padding: 10px;
   font-weight: 700;
-  color: #17396b;
+  color: #633014;
 }
 .classic-features dd {
   margin: 0;
   padding: 10px;
-  border-left: 1px solid #c4d2e4;
+  border-left: 1px solid #d4bb98;
 }
 .classic-profile-example {
   border-color: #6e8170;
 }
 .classic-profile-example > h2 {
-  color: #fff;
+  color: #fffaf0;
   background: #4f6d4e;
   border-color: #6e8170;
   display: flex;
@@ -431,7 +449,7 @@ summary:focus-visible {
   gap: 4px;
 }
 .classic-profile-example > h2 small {
-  color: #fff;
+  color: #fffaf0;
   font-weight: 400;
   font-size: 11px;
 }
@@ -445,7 +463,7 @@ summary:focus-visible {
   background-size: 14px 14px;
 }
 .classic-profile-about {
-  background: #fff;
+  background: #fffaf0;
   border: 1px solid #9caf8b;
   padding: 10px;
 }
@@ -512,7 +530,7 @@ summary:focus-visible {
 .classic-example-wall article {
   border: 1px solid #a3b28f;
   border-top: 0;
-  background: #fff;
+  background: #fffaf0;
   padding: 10px;
   font-size: 13px;
 }
@@ -574,15 +592,15 @@ summary:focus-visible {
   grid-template-columns: 175px minmax(0, 670px) 195px;
   gap: 14px;
   padding: 0 14px;
-  background: #fff;
-  border-left: 1px solid #bbb;
-  border-right: 1px solid #bbb;
+  background: #fffaf0;
+  border-left: 1px solid #bba98e;
+  border-right: 1px solid #bba98e;
 }
 .sidebar {
   padding-top: 16px;
 }
 .sidebar > .logo {
-  background: #003399;
+  background: #8c3b12;
   font-size: 25px;
   padding: 10px 7px;
   margin-bottom: 12px;
@@ -594,12 +612,12 @@ summary:focus-visible {
 }
 .sidebar nav {
   gap: 0;
-  border: 1px solid #9cb2d0;
+  border: 1px solid #b9916a;
 }
 .nav-item {
   padding: 9px 10px;
   border-radius: 0;
-  border-bottom: 1px solid #c9d6e8;
+  border-bottom: 1px solid #dbc5a5;
   font-size: 13px;
   text-decoration: underline;
 }
@@ -607,15 +625,15 @@ summary:focus-visible {
   border-bottom: 0;
 }
 .nav-item.active {
-  background: #dce8f7;
+  background: #f1d5af;
   font-weight: 700;
 }
 .nav-item:hover {
-  background: #edf3fb;
+  background: #faf0dc;
 }
 .nav-item svg,
 .nav-item.active svg {
-  color: #345b8b;
+  color: #915027;
   width: 17px;
   height: 17px;
 }
@@ -646,8 +664,8 @@ summary:focus-visible {
   padding-top: 17px;
 }
 .page-heading {
-  border: 1px solid #7295bf;
-  background: #e0ebf8;
+  border: 1px solid #b08259;
+  background: #f5dfbf;
   padding: 10px 12px;
   margin-bottom: 14px;
 }
@@ -667,8 +685,8 @@ summary:focus-visible {
   padding-top: 17px;
 }
 .rail-date {
-  background: #e9eff7;
-  border: 1px solid #a0b4ce;
+  background: #f8ecd6;
+  border: 1px solid #bfa17e;
   padding: 12px 8px;
 }
 .rail-date > strong {
@@ -676,7 +694,7 @@ summary:focus-visible {
     bold 19px Arial,
     sans-serif;
   letter-spacing: 0;
-  color: #17396b;
+  color: #633014;
 }
 .rail-date > span,
 .rail-date > p {
@@ -694,8 +712,8 @@ summary:focus-visible {
 .rail-card {
   margin-top: 12px;
   padding: 12px;
-  background: #fff;
-  border: 1px solid #a0b4ce;
+  background: #fffaf0;
+  border: 1px solid #bfa17e;
 }
 .rail-card .eyebrow {
   font-size: 11px;
@@ -709,7 +727,7 @@ summary:focus-visible {
   font:
     bold 28px Arial,
     sans-serif;
-  color: #17396b;
+  color: #633014;
 }
 .circle-count > small {
   font-size: 12px;
@@ -720,11 +738,11 @@ summary:focus-visible {
   border-radius: 0;
 }
 .circle-meter > span {
-  background: #577fb7;
+  background: #ad5725;
 }
 .privacy-note h3 {
   font-size: 16px;
-  color: #222;
+  color: #3c2a20;
 }
 .rail-footer,
 .rail-footer span {
@@ -737,11 +755,11 @@ summary:focus-visible {
 }
 .composer {
   padding: 12px;
-  border-top: 5px solid #7ba5d3;
+  border-top: 5px solid #cc8a50;
 }
 .composer-start textarea {
   border: 1px solid #999;
-  background: #fff;
+  background: #fffaf0;
   padding: 8px;
   font-size: 14px;
   line-height: 1.5;
@@ -764,7 +782,7 @@ summary:focus-visible {
 }
 .inline-select select {
   border: 1px solid #999;
-  background: #fff;
+  background: #fffaf0;
   padding: 6px;
 }
 .composer-privacy {
@@ -774,8 +792,8 @@ summary:focus-visible {
 }
 .feed-heading {
   padding: 6px 9px;
-  background: #cbdcf0;
-  border: 1px solid #7d9dc6;
+  background: #efd3ae;
+  border: 1px solid #bc956e;
   margin-bottom: 10px;
 }
 .feed-heading > span,
@@ -808,24 +826,24 @@ summary:focus-visible {
   padding: 9px 0;
 }
 .reaction-chip {
-  border: 1px solid #8b9db7;
-  background: #f2f5fa;
-  color: #222;
+  border: 1px solid #bc956e;
+  background: #fbf1df;
+  color: #3c2a20;
   font-size: 12px;
 }
 .reaction-chip.selected {
-  background: #d5e5ff;
-  color: #002868;
-  border-color: #335c98;
+  background: #f0c99a;
+  color: #632d0c;
+  border-color: #9e501f;
 }
 .comments {
-  background: #f0f3f8;
+  background: #f8ecd8;
   margin: 0 -13px;
   padding: 13px;
 }
 .comment-bubble {
-  border: 1px solid #c1ccdc;
-  background: #fff;
+  border: 1px solid #d5bd9a;
+  background: #fffaf0;
   padding: 9px;
 }
 .comment-bubble p {
@@ -863,7 +881,7 @@ summary:focus-visible {
 }
 .group-card {
   padding: 16px;
-  border: 1px solid #7895ba;
+  border: 1px solid #b79067;
 }
 .group-card h2 {
   font-size: 22px;
@@ -875,8 +893,8 @@ summary:focus-visible {
 }
 .group-banner {
   padding: 18px;
-  border: 1px solid #7895ba;
-  background: #edf3fb;
+  border: 1px solid #b79067;
+  background: #faf0dc;
 }
 .group-banner h1 {
   font-size: 28px;
@@ -889,7 +907,7 @@ summary:focus-visible {
   border-radius: 0;
 }
 .wall-header {
-  border: 1px solid #7c97b6;
+  border: 1px solid #b79067;
   margin-bottom: 14px;
 }
 .wall-cover {
@@ -936,8 +954,8 @@ summary:focus-visible {
 .tabs,
 .settings-tabs {
   gap: 0;
-  border: 1px solid #8ba5c7;
-  background: #edf3fb;
+  border: 1px solid #bd9870;
+  background: #faf0dc;
 }
 .tabs > button,
 .settings-tabs > a,
@@ -949,15 +967,16 @@ summary:focus-visible {
 .tabs > button.active,
 .settings-tabs > a.active,
 .settings-tabs > .text-button.active {
-  background: #cedff5;
-  color: #003399;
+  background: #efcc9e;
+  color: #8c3b12;
+  border-bottom-color: #a65b2c;
 }
 .notification-row {
   padding: 12px 0;
 }
 .notification-row strong {
   font-size: 14px;
-  color: #222;
+  color: #3c2a20;
 }
 .notification-row small {
   font-size: 12px;
@@ -978,8 +997,15 @@ summary:focus-visible {
 .empty-icon {
   width: 50px;
   height: 50px;
+  background: #f2dfc3;
+  color: #915027;
 }
-/* Override the former sage helper palette without reducing contrast. */
+.backup-codes code,
+.transfer-progress {
+  background: #f8ecd6;
+  color: #633014;
+}
+/* Keep shared helper text warm and legible; member-selected wall themes remain independent. */
 body
   :is(
     .eyebrow,
@@ -1031,7 +1057,7 @@ body
     .list-row small,
     .post-photos figcaption
   ) {
-  color: #444 !important;
+  color: #5b4435 !important;
 }
 body
   :is(
@@ -1044,9 +1070,10 @@ body
     .comment-toggle,
     .comment-tools > .text-button,
     .settings-tabs > a,
+    .tabs > button,
     .public-footer nav > a
   ) {
-  color: #003399 !important;
+  color: #8c3b12 !important;
 }
 @media (max-width: 1100px) and (min-width: 741px) {
   .app-layout {
@@ -1217,31 +1244,31 @@ body
     padding: 12px 10px 90px;
   }
   .app-mobile-header {
-    background: #003399;
-    border-bottom: 3px solid #7ba5d3;
+    background: #8c3b12;
+    border-bottom: 3px solid #cc8a50;
     padding: 10px 12px;
   }
   .app-mobile-header .logo {
     font-size: 26px;
-    color: #fff;
+    color: #fffaf0;
   }
   .app-mobile-header > a {
-    color: #fff;
+    color: #fffaf0;
   }
   .mobile-nav {
-    background: #e2ebf7;
-    border-top: 1px solid #6c8db7;
+    background: #f5dfbf;
+    border-top: 1px solid #b57e4a;
     padding: 4px 6px max(4px, env(safe-area-inset-bottom));
   }
   .mobile-nav > a {
-    color: #003399;
+    color: #8c3b12;
     min-height: 48px;
     border-radius: 0;
     font-size: 11px;
   }
   .mobile-nav > a.active {
-    background: #c1d5f0;
-    color: #002461;
+    background: #edc18b;
+    color: #612c0d;
   }
   .page-heading {
     padding: 9px 10px;
@@ -1353,9 +1380,9 @@ body
 }
 
 .update-banner {
-  background: #dce8f7;
-  color: #17396b;
-  border-bottom: 1px solid #7895ba;
+  background: #f1d5af;
+  color: #633014;
+  border-bottom: 1px solid #b79067;
   font-size: 13px;
 }
 @media (max-width: 740px) {

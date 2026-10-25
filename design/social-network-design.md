@@ -82,7 +82,7 @@ Direct messages, video, livestreaming, marketplaces, brand pages, public discove
 
 ### Visual direction
 
-Use a basic late-1990s/early-MySpace presentation throughout the public site and member app: compact columns, square bordered panels, table-like information sections, blue underlined links, simple browser-like buttons, and restrained Arial/Verdana typography. Avoid oversized editorial heroes, rounded floating cards, and soft modern decoration. Personal walls retain member-selected colors, fonts, backgrounds, and photos so profiles feel individual. Keep readable contrast, visible keyboard focus, semantic headings, responsive stacking, and comfortable touch targets; nostalgia must not reintroduce inaccessible layouts or arbitrary HTML.
+Use a basic late-1990s/early-MySpace presentation throughout the public site and member app: compact columns, square bordered panels, table-like information sections, underlined dark burnt-orange links, simple browser-like buttons, and restrained Arial/Verdana typography. The shared identity uses burnt orange, warm cream, and dark brown; avoid Facebook-like blue navigation, panel headers, buttons, and selected states. Avoid oversized editorial heroes, rounded floating cards, and soft modern decoration. Personal walls retain member-selected colors, fonts, backgrounds, and photos so profiles feel individual. Keep readable contrast, visible keyboard focus, semantic headings, responsive stacking, and comfortable touch targets; nostalgia must not reintroduce inaccessible layouts or arbitrary HTML.
 
 ### Public homepage
 
