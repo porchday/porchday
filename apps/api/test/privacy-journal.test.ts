@@ -25,6 +25,55 @@ class MemoryDb implements JournalDatabase {
 }
 async function activate(store:MemoryStore){const r=await readJournalControl(store);await store.put('control.json',JSON.stringify({...r.value,mode:'active',reason:null}),{onlyIf:{etagMatches:r.etag}});}
 describe('Independent privacy checkpoint protocol',()=>{
+  it('rechecks a checkpoint that commits between parallel SQL and object snapshots',async()=>{
+    const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);
+    const get=store.get.bind(store);let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});let first=true;
+    store.get=async key=>{if(key==='control.json'&&first){first=false;await gate;}return get(key);};
+    // SQL snapshots sequence 0, then another request commits and checkpoints 1
+    // before the first request's strongly consistent R2 read returns.
+    const reading=assertJournalReadable(store,db).then(value=>({value}),error=>({error}));
+    db.append();await checkpointJournal(store,db);release();
+    const result=await reading;
+    expect(result).not.toHaveProperty('error');
+    expect('value'in result&&result.value.value.sequence).toBe('1');
+  });
+  it('bounds the freshness recheck and still refuses a genuinely older database',async()=>{
+    const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);db.append();await checkpointJournal(store,db);
+    db.events=[];const status=db.status.bind(db),get=store.get.bind(store);let statuses=0,reads=0;
+    db.status=async()=>{statuses++;return status();};store.get=async key=>{reads++;return get(key);};
+    await expect(assertJournalReadable(store,db)).rejects.toThrow('DATABASE_ROLLBACK_DETECTED');
+    expect(statuses).toBe(2);expect(reads).toBe(2);
+    expect((await readJournalControl(store)).value.sequence).toBe('1'); // No checkpoint rewrites or catch-up fabrication.
+  });
+  it.each(['database quarantine','control quarantine','generation change'] as const)('does not accept %s discovered during the freshness recheck',async change=>{
+    const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);db.append();await checkpointJournal(store,db);
+    const status=db.status.bind(db),get=store.get.bind(store);let statuses=0,reads=0;
+    db.status=async()=>{const value=await status();statuses++;return {...value,sequence:statuses===1?'0':'1',quarantined:change==='database quarantine'&&statuses>1,generation:change==='generation change'&&statuses>1?randomUUID():value.generation};};
+    store.get=async key=>{reads++;const object=await get(key);if(change==='control quarantine'&&reads===2&&object)return {...object,text:async()=>JSON.stringify({...JSON.parse(await object.text()),mode:'quarantine'})};return object;};
+    await expect(assertJournalReadable(store,db)).rejects.toThrow(change==='generation change'?'DATABASE_ROLLBACK_DETECTED':'RESTORE_QUARANTINED');
+    expect(statuses).toBe(2);expect(reads).toBe(2);
+  });
+  it('classifies failed reads without retrying unknown I/O or exposing provider diagnostics',async()=>{
+    const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);
+    const get=store.get.bind(store);let reads=0,statuses=0;
+    store.get=async()=>{reads++;throw Error('private endpoint token=hidden');};
+    await expect(assertJournalReadable(store,db)).rejects.toThrow(/^JOURNAL_STORE_READ_FAILED$/);expect(reads).toBe(1);
+    store.get=async()=>({etag:'private-etag',text:async()=>{throw Error('private response body');}});
+    await expect(readJournalControl(store)).rejects.toThrow(/^JOURNAL_STORE_READ_FAILED$/);
+    store.get=get;db.status=async()=>{statuses++;throw Error('private SQL parameters');};
+    await expect(assertJournalReadable(store,db)).rejects.toThrow(/^JOURNAL_DATABASE_READ_FAILED$/);expect(statuses).toBe(1);
+  });
+  it('rejects missing or malformed control and malformed SQL status without fallback',async()=>{
+    const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);
+    const original=store.rows.get('control.json')!;
+    for(const text of ['private-invalid-json',JSON.stringify({...JSON.parse(original.text),sequence:'1e3'}),JSON.stringify({...JSON.parse(original.text),untrusted:'private-token'})]){
+      store.rows.set('control.json',{...original,text});
+      await expect(assertJournalReadable(store,db)).rejects.toThrow(/^JOURNAL_CONTROL_INVALID$/);
+    }
+    store.rows.delete('control.json');await expect(assertJournalReadable(store,db)).rejects.toThrow(/^JOURNAL_NOT_INITIALIZED$/);
+    store.rows.set('control.json',original);db.status=async()=>null as never;
+    await expect(assertJournalReadable(store,db)).rejects.toThrow(/^JOURNAL_DATABASE_STATUS_INVALID$/);
+  });
   it('publishes concurrent batches with CAS and acknowledges each intent only after durable coverage',async()=>{
     const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);
     const intents=await Promise.all(Array.from({length:12},()=>beginPrivacyIntent(store,db)));

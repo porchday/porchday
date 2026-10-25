@@ -9,7 +9,7 @@ import type {Env,Variables} from '../src/types';
 
 // Exercise the real middleware/handler sequence with deterministic external
 // adapters. Existing database integration suites separately exercise actual RLS.
-const fixture=vi.hoisted(()=>({trace:[] as string[],quarantined:false,verified:true,status:'active',queryFailure:false,
+const fixture=vi.hoisted(()=>({trace:[] as string[],quarantined:false,verified:true,status:'active',queryFailure:false,journalFailure:false,
  member:'11111111-1111-4111-8111-111111111111',generation:'22222222-2222-4222-8222-222222222222'}));
 vi.mock('postgres',()=>({default:(connection:string)=>{
  const sql=async(strings:TemplateStringsArray,..._values:unknown[])=>{
@@ -17,6 +17,7 @@ vi.mock('postgres',()=>({default:(connection:string)=>{
   if(!strings.join('').trim())return [];
   if(connection==='synthetic-jobs'){
    fixture.trace.push('journal_status');
+   if(fixture.journalFailure)throw Error('private SQL connection and parameters');
    return [{value:{generation:fixture.generation,sequence:'0',quarantined:fixture.quarantined}}];
   }
   if(strings.join('').includes('set_config')){fixture.trace.push('actor');return [];}
@@ -36,7 +37,7 @@ vi.mock('../src/auth',()=>({
  authPool:()=>({query:async()=>{fixture.trace.push('auth_status');return {rows:[{status:fixture.status}]};},end:async()=>{fixture.trace.push('auth_close');}}),
  createAuth:()=>({api:{getSession:async()=>{fixture.trace.push('auth_session');return {user:{id:fixture.member,emailVerified:fixture.verified},session:{id:'private-session',createdAt:new Date()}};}}}),
 }));
-beforeEach(()=>{fixture.trace=[];fixture.quarantined=false;fixture.verified=true;fixture.status='active';fixture.queryFailure=false;});
+beforeEach(()=>{fixture.trace=[];fixture.quarantined=false;fixture.verified=true;fixture.status='active';fixture.queryFailure=false;fixture.journalFailure=false;});
 afterEach(()=>vi.restoreAllMocks());
 
 function setup(overrides:Partial<Env>={}){
@@ -72,6 +73,22 @@ test('every request repeats fresh privacy and member checks, and denial never ru
  expect((await request()).status).toBe(403);
  expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','auth_status','auth_close']);
  expect(points.some(p=>String(p.blobs?.[5]).startsWith('social_'))).toBe(false);
+});
+
+test('journal boundary failures emit only fixed source codes and never reach auth or the feed',async()=>{
+ for(const kind of ['store','control','database']){
+  fixture.trace=[];fixture.journalFailure=kind==='database';
+  const overrides=kind==='database'?{}:{RECOVERY_JOURNAL:{get:async()=>{
+   if(kind==='store')throw Error('private R2 endpoint token=hidden');
+   return {etag:'private-etag',text:async()=>'{private-invalid-content'};
+  }} as unknown as R2Bucket};
+  const {request,points}=setup(overrides);const response=await request();
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'This action is temporarily unavailable while data safeguards are checked. Please try again later.'}});
+  expect(points.filter(p=>p.blobs?.[2]==='error').map(p=>p.blobs?.[5])).toEqual([kind==='store'?'journal_store_read_failed':kind==='control'?'journal_control_invalid':'journal_database_read_failed']);
+  expect(fixture.trace).not.toContain('auth_session');expect(fixture.trace).not.toContain('begin');expect(fixture.trace).toContain('journal_close');
+  expect(JSON.stringify(points)).not.toMatch(/private|hidden|parameters|endpoint/);
+ }
 });
 
 test('query rejection still rolls back and closes; timing never reports a successful commit',async()=>{

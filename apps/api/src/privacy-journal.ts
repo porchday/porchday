@@ -33,9 +33,18 @@ export async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text)))].map(b => b.toString(16).padStart(2,'0')).join('');
 }
 export async function readJournalControl(store: JournalStore) {
-  const object = await store.get(CONTROL);
+  let object:Awaited<ReturnType<JournalStore['get']>>,text:string;
+  try{object=await store.get(CONTROL);}catch{return stop('JOURNAL_STORE_READ_FAILED');}
   if (!object) return stop('JOURNAL_NOT_INITIALIZED');
-  return {value: controlSchema.parse(JSON.parse(await object.text())), etag: object.etag};
+  try{text=await object.text();}catch{return stop('JOURNAL_STORE_READ_FAILED');}
+  try{return {value: controlSchema.parse(JSON.parse(text)), etag: object.etag};}
+  catch{return stop('JOURNAL_CONTROL_INVALID');}
+}
+const statusSchema=z.object({generation:z.uuid(),sequence,quarantined:z.boolean()}).strict();
+async function readJournalStatus(db:JournalDatabase){
+  let value:Awaited<ReturnType<JournalDatabase['status']>>;
+  try{value=await db.status();}catch{return stop('JOURNAL_DATABASE_READ_FAILED');}
+  try{return statusSchema.parse(value);}catch{return stop('JOURNAL_DATABASE_STATUS_INVALID');}
 }
 async function immutable(store: JournalStore, key: string, value: unknown) {
   const text = JSON.stringify(value);
@@ -47,16 +56,25 @@ async function replace(store: JournalStore, control: JournalControl, etag: strin
   return store.put(CONTROL,JSON.stringify(control),{onlyIf:{etagMatches:etag}});
 }
 export async function assertJournalReadable(store: JournalStore, db: JournalDatabase) {
-  const [remote, local] = await Promise.all([readJournalControl(store), db.status()]);
-  if (remote.value.mode !== 'active' || local.quarantined) stop('RESTORE_QUARANTINED');
-  // Fresh in-flight privacy operations do not stop ordinary member reads.
-  // A crashed operation must fail closed even if the scheduled job is delayed.
-  if (remote.value.pending.some(p=>Date.now()-Date.parse(p.started_at)>120_000)) {
-    await quarantineJournal(store,'unresolved_privacy_operation');
-    stop('RESTORE_QUARANTINED');
+  let [remote, local] = await Promise.all([readJournalControl(store), readJournalStatus(db)]);
+  for(let attempt=0;attempt<2;attempt++){
+    if (remote.value.mode !== 'active' || local.quarantined) stop('RESTORE_QUARANTINED');
+    // Fresh in-flight privacy operations do not stop ordinary member reads.
+    // A crashed operation must fail closed even if the scheduled job is delayed.
+    if (remote.value.pending.some(p=>Date.now()-Date.parse(p.started_at)>120_000)) {
+      await quarantineJournal(store,'unresolved_privacy_operation');
+      stop('RESTORE_QUARANTINED');
+    }
+    if (remote.value.generation !== local.generation) stop('DATABASE_ROLLBACK_DETECTED');
+    if (BigInt(local.sequence) >= BigInt(remote.value.sequence)) return remote;
+    if(attempt===1)stop('DATABASE_ROLLBACK_DETECTED');
+    // A concurrent commit/checkpoint can advance R2 after the parallel SQL
+    // snapshot. Recheck once in order, so SQL observes at least the committed
+    // checkpoint just read. Never reuse cached state or retry a safety denial.
+    remote=await readJournalControl(store);
+    local=await readJournalStatus(db);
   }
-  if (remote.value.generation !== local.generation || BigInt(local.sequence) < BigInt(remote.value.sequence)) stop('DATABASE_ROLLBACK_DETECTED');
-  return remote;
+  return stop('DATABASE_ROLLBACK_DETECTED');
 }
 /** An owner initializes once, with member traffic disabled until this completes. */
 export async function initializePrivacyJournal(store: JournalStore, db: JournalDatabase) {
@@ -176,7 +194,7 @@ export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables
     resources=runtime(c.env);
     if(resources)await measureFeedPhase(timing,'journal_check',()=>assertJournalReadable(resources!.store,resources!.db));
   } catch(error) {
-    const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured'};
+    const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured',JOURNAL_STORE_READ_FAILED:'journal_store_read_failed',JOURNAL_CONTROL_INVALID:'journal_control_invalid',JOURNAL_DATABASE_READ_FAILED:'journal_database_read_failed',JOURNAL_DATABASE_STATUS_INVALID:'journal_database_status_invalid'};
     event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable'},c.env);
     // No identifiers, SQL details, endpoint URLs or private content in errors.
     return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'This action is temporarily unavailable while data safeguards are checked. Please try again later.'}},503);

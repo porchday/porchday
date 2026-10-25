@@ -51,6 +51,14 @@ python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts staging feed-ph
 
 `CLOUDFLARE_ANALYTICS_READ_TOKEN` takes precedence over the existing setup token. Summary/counters/freshness use a 15-minute window; usage uses 30 days. The helper enforces fixed environment/query choices, a 30-second timeout, no redirects and a 1 MiB response limit. It makes no database or configuration changes.
 
+### Privacy-check failures
+
+The read guard keeps a fixed, private-free failure taxonomy: `journal_store_read_failed` means the R2 get/body read failed; `journal_control_invalid` means the returned control failed JSON/schema validation; `journal_database_read_failed` means the SQL status read failed; and `journal_database_status_invalid` means that result did not match its expected schema. Missing configuration/control, quarantine and rollback retain their existing separate codes. `journal_unavailable` remains the fallback for an unclassified failure. The response stays the same generic HTTP 503, and no provider error text, SQL, object body, identifier or token is emitted. These source boundaries identify the failed stage, not its underlying provider cause. Unknown I/O failures are not automatically retried.
+
+The normal guard reads R2 and SQL in parallel. A concurrent committed checkpoint can make the object read newer than that request's SQL snapshot. Only a same-generation sequence deficit triggers one fresh ordered control-then-SQL recheck; a remaining deficit fails closed. Quarantine, generation mismatch and invalid/missing data are never bypassed or retried. This fixes a reproduced false rollback diagnosis without caching permission state. R2 documents strongly consistent object reads, so a normal concurrent write is not evidence that partial control JSON should be accepted. [R2 consistency](https://developers.cloudflare.com/r2/reference/consistency/)
+
+The staging 100-read sample around 18:00 UTC on October 25 recorded one generic `journal_unavailable`; its source was not recoverable from that old aggregate. The reproduced snapshot-order race would instead have emitted `database_rollback_detected`, so it is not claimed as the cause of that observed 503. New fixed codes require deployment and a subsequent observation before any provider-specific retry policy is justified.
+
 ### Temporary staging feed diagnostics
 
 `FEED_PHASE_TIMING=true` enables nine fixed phase observations for exact `GET /api/v1/feed` requests **only in staging**. The flag is absent from generated and committed deployment configurations. Production rejects these events centrally even if the flag is accidentally supplied. There is no new log, trace, durable queue, response header, correlation ID, member label or client instrumentation. The points use the existing Analytics Engine binding and its existing retention; this is optional diagnostic telemetry, not an additional request log.
