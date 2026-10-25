@@ -5,14 +5,12 @@ export function PublicHeader() {
   return (
     <header className="public-header wrap">
       <div className="homemade-sign">
-        <span className="sign-note">~ welcome to our little corner ~</span>
         <Logo />
-        <span className="sign-caption">friends & family & being yourself</span>
       </div>
       <nav aria-label="Main navigation">
-        <a href="/">home</a>
-        <a href="/about">The idea</a>
-        <a href="/principles">Our promises</a>
+        <a href="/">Home</a>
+        <a href="/about">About</a>
+        <a href="/principles">Principles</a>
         <a href="/login" className="login-link">
           Log in <Icon name="arrow" size={16} />
         </a>
@@ -25,8 +23,7 @@ export function PublicFooter() {
     <footer className="public-footer wrap">
       <div>
         <Logo small />
-        <p>A little closer to your people.</p>
-        <small>© {new Date().getFullYear()} Porchday. A private pilot.</small>
+        <small>© {new Date().getFullYear()} Porchday. By invitation only.</small>
       </div>
       <nav aria-label="Information">
         <a href="/about">Our mission</a>
@@ -38,11 +35,7 @@ export function PublicFooter() {
       </nav>
       <div className="footer-note">
         <Icon name="sun" size={22} />
-        <p>
-          Made for a good day.
-          <br />
-          Built for the public good.
-        </p>
+        <p>Built for the public good.</p>
       </div>
     </footer>
   );
@@ -52,77 +45,54 @@ export function Landing() {
     <>
       <PublicHeader />
       <main id="main-content" className="classic-home wrap">
-        <div className="classic-status">
-          <strong>you are here: the porch</strong>{" "}
-          <span>Adults 18+ · Invitation-only pilot</span>
-        </div>
         <div className="classic-columns">
           <aside className="classic-side">
-            <section className="classic-box site-about">
-              <h2>about this little website</h2>
-              <div className="classic-box-body">
-                <div className="site-portrait" aria-hidden="true">
-                  <Icon name="sun" size={70} />
-                  <span>porch sweet porch</span>
-                </div>
-                <dl>
-                  <div><dt>Likes:</dt><dd>ordinary days, small circles, big feelings</dd></div>
-                  <div><dt>Dislikes:</dt><dd>ads, follower counts, bots</dd></div>
-                  <div><dt>Here for:</dt><dd>the people you actually know</dd></div>
-                </dl>
-                <p className="site-mood">current mood: cautiously optimistic ☀</p>
-              </div>
-            </section>
             <section className="classic-box login-scrap">
-              <h2>come on in!</h2>
+              <h2>Account</h2>
               <div className="classic-box-body">
                 <p>Already have an account?</p>
                 <a className="button primary" href="/login">
                   Member log in
                 </a>
-                <p>Have an invitation?</p>
-                <a href="/join">Join Porchday »</a>
+                <p className="invitation-line">Have an invitation? <a href="/join">create account</a></p>
               </div>
             </section>
             <section className="classic-box">
-              <h2>~ links around here ~</h2>
+              <h2>Information</h2>
               <nav className="classic-directory" aria-label="Site directory">
                 <a href="/about">What is Porchday?</a>
-                <a href="/principles">Our promises</a>
+                <a href="/principles">Principles</a>
                 <a href="/privacy">Your data & privacy</a>
                 <a href="/community">Community rules</a>
                 <a href="/help">Help & contact</a>
               </nav>
             </section>
             <section className="classic-box classic-note">
-              <h2>Remember personal websites?</h2>
+              <h2>Personalize your page</h2>
               <div className="classic-box-body">
                 <p>
-                  Your wall can be a little more <em>you</em>. Pick colors,
-                  change your background, share photos, and write about an
-                  ordinary day.
+                  Choose your colors and background. Share photos and posts
+                  with your connections.
                 </p>
-                <p>No follower counts. No competition to be interesting.</p>
+                <p>No follower counts.</p>
               </div>
             </section>
             <div className="classic-badges" aria-label="Our commitments">
-              <span>AD-FREE<br />and staying that way</span>
-              <span>HUMANS<br />welcome here</span>
-              <span>YOUR DATA<br />your business</span>
+              <span>NO ADS</span>
+              <span>NO AI AGENTS</span>
+              <span>DATA CONTROL</span>
             </div>
           </aside>
           <div className="classic-content">
             <section className="classic-welcome classic-box">
-              <div className="welcome-sticker" aria-hidden="true">HEY! YOU FOUND US. ✷</div>
-              <h1>a late 90s style social network</h1>
+              <h1>a simple social network</h1>
               <div className="classic-box-body">
                 <p className="classic-promise">
                   No ads. No influencers. No algorithm.
                 </p>
                 <p>
-                  Just your friends, your family, and what they’ve been up to. A
-                  wall of your own. A feed in time order. A little corner of the
-                  internet that feels personal again.
+                  Share updates with friends and family. Post to your own wall
+                  and see your connections’ posts in chronological order.
                 </p>
                 <p>
                   <strong>For the public good. Funded by philanthropy.</strong>{" "}
@@ -132,12 +102,12 @@ export function Landing() {
                 <div className="classic-welcome-links">
                   <a href="/join">Join with an invitation</a>
                   <span aria-hidden="true"> | </span>
-                  <a href="/about">Read the idea</a>
+                  <a href="/about">About the project</a>
                 </div>
               </div>
             </section>
             <section className="classic-box">
-              <h2>things we’d like the internet to remember</h2>
+              <h2>Features</h2>
               <dl className="classic-features">
                 <div>
                   <dt>Friends, not followers</dt>
@@ -149,22 +119,22 @@ export function Landing() {
                 <div>
                   <dt>Newest posts first</dt>
                   <dd>
-                    Your people’s eligible posts, in chronological order. No
+                    Your connections’ eligible posts, in chronological order. No
                     recommendations, sponsored posts, or engagement ranking.
                   </dd>
                 </div>
                 <div>
-                  <dt>Your own little corner</dt>
+                  <dt>Your profile and groups</dt>
                   <dd>
                     Personalize your wall, share photos, make named groups,
                     leave comments, and add more than one reaction.
                   </dd>
                 </div>
                 <div>
-                  <dt>Some moments can expire</dt>
+                  <dt>Posts and comments can expire</dt>
                   <dd>
                     Set a timer for a post or comment. Replies inherit its
-                    deadline, and can disappear sooner.
+                    deadline, and you can give them an earlier one.
                   </dd>
                 </div>
                 <div>
@@ -182,7 +152,7 @@ export function Landing() {
               aria-label="Illustrated personal wall preview, not a real member"
             >
               <h2>
-                your page. your particular kind of weird.{" "}
+                Profile example{" "}
                 <small>Illustrated example — no public posts</small>
               </h2>
               <div className="classic-profile-columns">
@@ -191,21 +161,21 @@ export function Landing() {
                   <div className="classic-example-avatar" aria-hidden="true">
                     J<span>✳</span>
                   </div>
-                  <p>“probably watering my plants”</p>
+                  <p>Reading and gardening.</p>
                   <table>
                     <caption>About this illustrated profile</caption>
                     <tbody>
                       <tr>
                         <th>Interests</th>
-                        <td>books, plants, slow Sundays</td>
+                        <td>books, plants, gardening</td>
                       </tr>
                       <tr>
                         <th>Mood</th>
-                        <td>feeling good ☀</td>
+                        <td>good</td>
                       </tr>
                       <tr>
                         <th>Theme</th>
-                        <td>my little garden</td>
+                        <td>garden</td>
                       </tr>
                     </tbody>
                   </table>
@@ -214,7 +184,7 @@ export function Landing() {
                   <h3>Jamie’s wall</h3>
                   <article>
                     <strong>Jamie</strong> <small>Today · Friends</small>
-                    <p>The best plans are sometimes no plans at all.</p>
+                    <p>Spent the afternoon gardening.</p>
                     <div
                       className="classic-example-photo"
                       role="img"
@@ -224,17 +194,17 @@ export function Landing() {
                       <span aria-hidden="true">🪴</span>
                     </div>
                     <p className="classic-example-reactions">
-                      ♡ &nbsp; ☀ &nbsp; a little appreciation goes a long way
+                      ♡ &nbsp; ☀ &nbsp; Multiple reactions per person
                     </p>
                   </article>
                   <div className="classic-example-comment">
-                    <strong>Sam:</strong> This looks like a good Sunday.
+                    <strong>Sam:</strong> The plant looks healthy.
                   </div>
                 </div>
               </div>
             </section>
             <section className="classic-box">
-              <h2>a note from the porch</h2>
+              <h2>About the project</h2>
               <div className="classic-box-body">
                 <p>
                   We believe the places where society connects should serve the
@@ -253,7 +223,6 @@ export function Landing() {
                   is private for now.
                 </p>
                 <a href="/about">More about the project »</a>
-                <p className="porch-postscript">P.S. Your page doesn’t have to look anything like ours.</p>
               </div>
             </section>
           </div>

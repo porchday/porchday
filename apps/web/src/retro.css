@@ -1420,13 +1420,13 @@ body
   background: #ffd16d;
   border: 5px double #572a0e;
   box-shadow: 5px 5px 0 #f18331;
-  transform: rotate(-1.5deg);
+  transform: none;
 }
-.sign-note,
-.sign-caption {
-  display: block;
-  font: 12px/1.4 'Courier New', monospace;
-  color: #4c260f;
+.invitation-line {
+  font-size: 13px;
+}
+.invitation-line a {
+  white-space: nowrap;
 }
 .homemade-sign .logo {
   font: bold 49px/1.15 Georgia, 'Times New Roman', serif;

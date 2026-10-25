@@ -38,10 +38,18 @@ describe("public pilot acceptance contract", () => {
   it("states the core promises without claiming established nonprofit or public source status", () => {
     locationFor();
     const html = renderToStaticMarkup(createElement(Landing));
-    expect(html).toContain("a late 90s style");
+    expect(html).toContain("a simple social network");
     expect(html).toContain("No ads. No influencers. No algorithm.");
     expect(html).toContain("We’re building Porchday for nonprofit stewardship");
     expect(html).toContain("philanthropy");
+    expect(html).toContain("By invitation only.");
+    expect(html).not.toContain("friends &amp; family &amp; being yourself");
+    expect(html).not.toContain("classic-status");
+    expect(html).not.toContain("A little closer to your people.");
+    expect(html).not.toContain("A private pilot.");
+    expect(html).not.toContain("about this little website");
+    expect(html).not.toContain("site-about");
+    expect(html).toContain('Have an invitation? <a href="/join">create account</a>');
     const about = renderToStaticMarkup(
       createElement(Policy, { page: "about" }),
     );
