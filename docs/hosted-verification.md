@@ -94,6 +94,24 @@ The runner verifies the identity of every account before social writes, then che
 
 The three-account run is deliberately bounded. It does not establish the 300-connection concurrency limit, full archive/photo round-trip, iOS interoperability, actual push delivery, cleanup-independent expiry, physical object deletion or load/cost objectives. Existing focused database/crypto tests cover some of those invariants; remaining hosted/browser work is listed below. A failure leaves the private fixture state for diagnosis and cleanup; rerunning the social phase is intentionally refused because partial relationships/content would invalidate its assumptions.
 
+### Native interoperability handoff
+
+After the social smoke passes, coordinate the native hosted-test operator before preparing a two-hour fixture:
+
+```sh
+node --import tsx scripts/hosted-smoke.ts interop-prepare --run
+```
+
+This publishes a fresh encrypted post and JPEG by synthetic account A to its remaining friend C. It writes mode-0600 `artifacts/private/hosted-smoke/native-interop.json`, containing C's synthetic login/recovery material, expected payload/hash, preallocated native IDs and expiry. Do not print it or upload it as an ordinary workflow artifact. The native test operator must use a separate protected, short-lived handoff and remove its credentials afterward. No live-member key or data belongs in this flow.
+
+The native test logs in as C, recovers the old encrypted device backup, enrolls a fresh authorized native device, decrypts A's signed post/photo, and publishes a native-signed post plus the same JPEG bytes re-encrypted for the current friend audience. After that test succeeds, run:
+
+```sh
+node --import tsx scripts/hosted-smoke.ts interop-check --run
+```
+
+The checker authenticates as A and uses the actual web crypto package to verify/decrypt C's new-device signature, exact post text, parent/expiry bindings and photo hash. It does not render a browser page or establish push/physical-device behavior. The fixture expires after two hours; prepare it only when the native runner is ready. Keep accounts until both interoperability and browser checks finish, then use normal cleanup below.
+
 After browser/native inspection, or after a failed social run, remove the fixtures through the actual journal-backed account deletion flow:
 
 ```sh
@@ -111,7 +129,7 @@ Coordinate browser ownership with the operator. Use documented CUA controls, not
 3. Export a protected multipart archive with photos, unlock it locally, inspect supported fields, preview import into a clean synthetic account and confirm re-encryption/private journal semantics. Test expired attachments and a deliberately malformed photo without exposing another member's contributions.
 4. Install the PWA. Confirm start URL `/app`, icons, standalone display and login. Inspect Cache Storage: only public shell/assets; no `/api`, encrypted private responses, decrypted photos or rendered member pages. IndexedDB may contain an explicitly remembered device protected by its local nonextractable key; it must never contain the recovery secret.
 5. Keep the first installed release open with an unsaved draft. Deploy a genuinely changed public shell build and check that the update notice appears, respects the draft, and activates/reloads only on consent. `vite.config.ts` already derives a deterministic cache revision from the emitted shell and assets; `public/sw.js` is the source template, not the final build. Verify old cache removal after activation.
-6. Go offline after a normal load and after signout. The public shell may load; protected requests fail and no prior member content appears. Sign out, switch accounts and revoke a remembered device; check stale decrypted views and local remembered keys are cleared according to the explicit setting.
+6. Go offline and cold-reload after a normal load and after signout. The public shell may load; protected requests fail and no prior member content appears from persistent caches. Sign out, switch accounts and revoke a remembered device; check stale decrypted views and local remembered keys are cleared according to the explicit setting. Already-decrypted content in an open tab is separate from persistent offline caching and cannot be remotely recalled.
 7. Opt into generic Web Push, verify actual delivery, follow its generic app link, disable it and sign out. Confirm no post text, member identifier or private photo reaches the push payload. Native APNs and universal links remain separately gated on real Apple signing.
 8. Exercise stolen-account report/contact verification, resume/appeal and two distinct authorized staff decisions with synthetic evidence. Check unauthorized/direct-origin staff paths and locked/suspended data controls; do not confuse API route denial with a working Access/MFA policy.
 

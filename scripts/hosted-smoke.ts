@@ -1,5 +1,5 @@
 /** Hosted staging only. No operator credentials, SQL fixtures, mail-token bypass, or browser automation. */
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { setTimeout as wait } from "node:timers/promises";
 import {
@@ -42,12 +42,33 @@ type State = {
   accounts: Account[];
   socialStarted?: boolean;
   socialPassed?: boolean;
+  interop?: {
+    webPostId: string;
+    webMediaId: string;
+    nativePostId: string;
+    nativeMediaId: string;
+    expectedPostText: string;
+    expectedMediaSHA256: string;
+    nativeText: string;
+    expiresAt: string;
+    prepared?: boolean;
+    passed?: boolean;
+  };
 };
 type Person = { account: Account; api: SmokeClient; key: UnlockedPrivateKey };
 const directory = "artifacts/private/hosted-smoke/";
 const statePath = directory + "state.json";
 const phase = process.argv[2];
-const allowed = ["init", "public", "signup", "verify", "social", "cleanup"];
+const allowed = [
+  "init",
+  "public",
+  "signup",
+  "verify",
+  "social",
+  "interop-prepare",
+  "interop-check",
+  "cleanup",
+];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function progress(step: string) {
   console.log(JSON.stringify({ phase, step }));
@@ -863,11 +884,192 @@ async function cleanup(s: State) {
   progress("synthetic-account-deletion-requested");
 }
 
-async function main() {
+async function prepareInterop(s: State) {
   check(
-    allowed.includes(phase),
-    "PHASE_REQUIRED_INIT_PUBLIC_SIGNUP_VERIFY_SOCIAL_CLEANUP",
+    s.socialPassed && !s.interop,
+    "FINISHED_SOCIAL_RUN_AND_NEW_INTEROP_REQUIRED",
   );
+  const a = s.accounts[0],
+    c = s.accounts[2];
+  check(a.device?.enrolled && c.device?.enrolled, "INTEROP_DEVICES_REQUIRED");
+  const api = await login(a);
+  try {
+    const author = await enroll(s, a, api);
+    const bytes = await readFile(
+      new URL(
+        "../docs/archive/sample/photos/77777777-7777-4777-8777-777777777777.jpg",
+        import.meta.url,
+      ),
+    );
+    const fixture: NonNullable<State["interop"]> = {
+      webPostId: randomUUID(),
+      webMediaId: randomUUID(),
+      nativePostId: randomUUID(),
+      nativeMediaId: randomUUID(),
+      expectedPostText: "Synthetic web-to-native interoperability " + s.run,
+      expectedMediaSHA256: createHash("sha256").update(bytes).digest("hex"),
+      nativeText: "Synthetic native-to-web interoperability " + s.run,
+      expiresAt: new Date(Date.now() + 2 * 60 * 60_000).toISOString(),
+    };
+    s.interop = fixture;
+    await persist(s);
+    const photo = await seal(
+      author,
+      {
+        mime: "image/jpeg",
+        bytes: bytes.toString("base64"),
+        alt: "Synthetic interoperability gradient",
+        width: 16,
+        height: 16,
+      },
+      {
+        id: fixture.webMediaId,
+        kind: "media",
+        parentId: fixture.webPostId,
+        expiresAt: fixture.expiresAt,
+      },
+    );
+    const post = await seal(
+      author,
+      {
+        text: fixture.expectedPostText,
+        reactionSecret: createReactionSecret(),
+        media: [
+          {
+            id: fixture.webMediaId,
+            mime: "image/jpeg",
+            width: 16,
+            height: 16,
+            alt: "Synthetic interoperability gradient",
+          },
+        ],
+      },
+      {
+        id: fixture.webPostId,
+        expiresAt: fixture.expiresAt,
+      },
+    );
+    check(
+      post.recipients.some(
+        (recipient) =>
+          recipient.memberId === c.id && recipient.deviceId === c.device!.id,
+      ),
+      "NATIVE_RECIPIENT_MISSING",
+    );
+    const encoded = new TextEncoder().encode(JSON.stringify(photo));
+    const reservation = await api.json(
+      "/api/v1/media",
+      "POST",
+      { id: fixture.webMediaId, envelope: photo, byte_size: encoded.length },
+      201,
+    );
+    check(
+      (await api.request(reservation.upload_url, "PUT", encoded)).status ===
+        200,
+      "INTEROP_MEDIA_UPLOAD_FAILED",
+    );
+    await publish(author, post, [fixture.webMediaId]);
+    // Native tests recover C's old key, enroll a fresh authorized native device,
+    // and publish with that new signing key. Handoff never enters Git or stdout.
+    await writePrivate(
+      directory + "native-interop.json",
+      {
+        v: 1,
+        synthetic: true,
+        origin: stagingOrigin,
+        run: s.run,
+        email: c.email,
+        password: c.password,
+        memberId: c.id,
+        recoverySecret: c.device.keys.recoverySecret,
+        ...fixture,
+      },
+      true,
+    );
+    fixture.prepared = true;
+    await persist(s);
+    progress("private-native-handoff-ready");
+  } finally {
+    await api.json("/api/auth/sign-out", "POST", {});
+  }
+}
+
+async function checkInterop(s: State) {
+  const fixture = s.interop;
+  check(
+    fixture?.prepared && Date.parse(fixture.expiresAt) > Date.now(),
+    "LIVE_PREPARED_INTEROP_REQUIRED",
+  );
+  const a = s.accounts[0],
+    c = s.accounts[2];
+  const api = await login(a);
+  try {
+    const recipient = await enroll(s, a, api);
+    const detail = await api.json("/api/v1/posts/" + fixture.nativePostId);
+    const post: EncryptedEnvelope = detail.post.envelope;
+    check(
+      post.context.id === fixture.nativePostId &&
+        post.context.authorId === c.id &&
+        post.context.expiresAt === fixture.expiresAt,
+      "NATIVE_POST_CONTEXT_MISMATCH",
+    );
+    check(
+      post.context.authorDeviceId !== c.device?.id,
+      "FRESH_NATIVE_DEVICE_REQUIRED",
+    );
+    const device = await api.json(
+      "/api/v1/devices/" + post.context.authorDeviceId,
+    );
+    check(
+      device.member_id === c.id && !device.revoked_at,
+      "NATIVE_AUTHOR_DEVICE_MISMATCH",
+    );
+    const payload = await decryptObject<Record<string, any>>({
+      envelope: post,
+      expectedContext: post.context,
+      privateKey: recipient.key,
+      authorPublicKey: device.public_key,
+    });
+    check(
+      payload.text === fixture.nativeText &&
+        payload.media?.some((media: any) => media.id === fixture.nativeMediaId),
+      "NATIVE_POST_DECRYPTION_FAILED",
+    );
+    const media = await api.json<EncryptedEnvelope>(
+      "/api/v1/media/" + fixture.nativeMediaId + "/bytes",
+    );
+    check(
+      media.context.id === fixture.nativeMediaId &&
+        media.context.parentId === fixture.nativePostId &&
+        media.context.authorId === c.id &&
+        media.context.authorDeviceId === post.context.authorDeviceId &&
+        media.context.expiresAt === fixture.expiresAt,
+      "NATIVE_MEDIA_CONTEXT_MISMATCH",
+    );
+    const photo = await decryptObject<Record<string, any>>({
+      envelope: media,
+      expectedContext: media.context,
+      privateKey: recipient.key,
+      authorPublicKey: device.public_key,
+    });
+    check(
+      photo.mime === "image/jpeg" &&
+        typeof photo.bytes === "string" &&
+        createHash("sha256")
+          .update(Buffer.from(photo.bytes, "base64"))
+          .digest("hex") === fixture.expectedMediaSHA256,
+      "NATIVE_MEDIA_DECRYPTION_FAILED",
+    );
+    fixture.passed = true;
+    await persist(s);
+    progress("native-post-and-photo-decrypted-by-web-crypto");
+  } finally {
+    await api.json("/api/auth/sign-out", "POST", {});
+  }
+}
+
+async function main() {
+  check(allowed.includes(phase), "KNOWN_PHASE_REQUIRED");
   if (!["init", "public"].includes(phase))
     check(process.argv.includes("--run"), "EXPLICIT_RUN_REQUIRED");
   if (phase === "init") await initialize();
@@ -877,6 +1079,8 @@ async function main() {
     const s = await state();
     if (phase === "signup") await signup(s);
     else if (phase === "social") await social(s);
+    else if (phase === "interop-prepare") await prepareInterop(s);
+    else if (phase === "interop-check") await checkInterop(s);
     else await cleanup(s);
   }
   console.log(
