@@ -1,56 +1,40 @@
 # Porchday implementation and verification record
 
-The source design is `design/social-network-design.md`. No requirement is complete merely because it appears in this plan.
+Updated 2026-10-25. The source requirements are in `design/social-network-design.md`. The goal remains active: the app is not yet deployed to a live database and is not ready to admit real members.
 
-## Build underway
+## Verified checkpoints
 
-- Root: infrastructure, auth, deployment, integration, operational documentation.
-- Social service: PostgreSQL constraints/RLS, social routes, expiry/media jobs, meaningful database tests.
-- Web: responsive marketing + real member experience + PWA.
-- Crypto: standard OpenPGP library interoperability, encrypted objects, key lifecycle, test vectors. No new cryptographic primitive or protocol; application authorization and context binding still require independent review.
-- Native iOS: SwiftUI client using the shared content/API formats, simulator verification pending Xcode availability.
+| Requirement | Evidence | Remaining verification |
+| --- | --- | --- |
+| Private repository and reproducible build | Commits pushed to `bobbyhwilder/porchday`; GitHub API confirms private visibility. Linux CI run 40176697412 passed on d3531d6, including all 33 clean migrations, typechecking, tests, web build and credential-pattern check. Local combined checkpoint passed 14 crypto tests plus 110 application/operations tests. | Re-run CI when subsequent audit fixes change the integrated revision. |
+| Native simulator build | Native run 40176697432 passed on d3531d6 with the real GopenPGP framework, SwiftUI build, crypto/archive/deadline unit tests and onboarding UI tests, and launched the iPhone simulator. Earlier screenshot inspected for layout. | Real backend flows, device signing/APNs/universal-link association. |
+| Maintained interoperable content encryption | OpenPGP.js 14 tests cover intended recipients, tampering, context binding, expiry, backup recovery, device linking, reaction tags, archives and a 301-device audience. JS↔GopenPGP fixtures pass in Go and iOS. | Independent encryption/security review and full web↔iOS flows against deployed APIs; desktop timing is not a mobile benchmark. |
+| Authentication and takeover protection | Real PostgreSQL tests cover invited signup, email verification, reset replay, MFA, email change, revocation, signed staff Access assertions and two-reviewer recovery. Recovery preserves prior restriction/suspension and pages through 115 equal-time cases. Six auth-journal tests verify preflight validation, lock release before R2, and post-commit checkpoint failure. Encrypted email outbox tests cover rollback, provider retry, deletion, unknown-account recovery and held-account notifications. | Live email delivery, Hyperdrive pooling, real staff Access/MFA policy and authorized reviewers. |
+| Cloudflare runtime compatibility | Local workerd smoke passed static/CSP delivery, private-route denial, real password sign-in, authenticated member lookup and logout rejecting the old cookie with the independent R2 journal enabled (296 ms observed smoke run). Worker dry-run bundle succeeds. | Actual remote application Worker with all final bindings and secrets. |
+| Social authorization and data rights | SQL and HTTP tests exercise actual restricted runtime roles, relationships, group access, inherited expiry, media, reactions, integrations and exports. Bounded export windows return large ciphertext records without materializing the whole archive. | Final integrated test run, deployed cross-account/device flows and pilot load testing. |
+| Web/PWA | Responsive marketing/member UI, manifest/icons, shell-only service worker, local encryption, profile customization, data transfer, recovery/moderation and push controls implemented. Web build and 43 frontend tests pass, including archive deadline preservation, image validation, stale private-page cleanup and staged profile/group photo removal. | Real browser interaction, install/update/offline tests, keyboard/screen-reader and layout checks. Native Chrome control reports `cgWindowNotFound`; in-app browser is unavailable. |
+| Expiry/deletion/restore | Immediate access checks, cleanup outboxes, independent hash-linked journal, CAS concurrency, dirty-tail quarantine, rollback detection, deletion/expiry replay and credential holds are tested. Real Cloudflare native-R2 operator probes passed authentication and conditional writes; temporary Worker/domain teardown was independently verified. REST object conditional writes failed the probe and are not used for journal control. A full local pg_dump/pg_restore and native-R2 drill replayed 14 events, removed a restored deleted photo, held an account with changed credentials, invalidated old capabilities and decrypted surviving content; injected deletion failure kept quarantine until retry/release. | Hosted DB+R2 restore drill, scheduled ciphertext backups, measured hosted recovery targets. |
+| Notifications | In-app, Web Push and gated native APNs backends implemented and mounted in the queue consumer. Six Web Push and nine APNs tests cover encryption/JWT, session/access checks, retries and expiry using injected sends. Local workerd crypto/VAPID smoke passed without real pushes. | Real browser push opt-in/delivery; Apple signing credentials and physical-device APNs delivery. |
+| Operational monitoring | Protected aggregate health endpoint checks journal/DB readiness, cleanup heartbeat and deletion/email backlogs. Separate Cloudflare monitor has no application database binding; seven tests cover thresholds, persisted retries, public status and real local workerd Durable Object storage. | Deploy monitor after target app, verify real outage/recovery emails and provider log redaction/retention. |
+| Secrets and licensing | Apache-2.0 root license; credentials outside Git. Separate staging/production auth/VAPID secrets generated without output, existing keys preserved. Credential scans pass. | Final artifact/dependency notices and source publication by owner at a later milestone. |
 
-## External state verified
+The next integrated worktree checkpoint passed 14 crypto tests plus 134 application/operations tests, with migrations through `035`, workspace typechecks, production web build and credential-pattern scan. Subsequent backup review found a mismatch between canonical envelope hashes and stored byte hashes; the backup fix, actual-upload regression and restore-media release gate are still in progress. This preliminary green run does not establish backup correctness. Native Remove/Undo controls and three new regression tests are committed in `cff25cc`; the combined native simulator run is pending.
 
-- Cloudflare account token active; Workers/R2 access available.
-- Cloudflare Email Sending enabled for porchday.com; SPF, DKIM and DMARC configured. Delivery testing outstanding.
-- PlanetScale billing active and organization linked. No database/Hyperdrive provisioned yet.
-- Private GitHub bobbyhwilder/porchday exists; API token grants administrator repository access. Git push not tested yet.
-- $1,000 total setup ceiling, not monthly. No new paid resources provisioned by this build yet.
+The feed benchmark and retained RLS checks are documented in `docs/feed-performance.md`: local SQL p95 at ten concurrent queries improved from 181 ms to 68 ms; the actual local handler measured 145 ms and a 3.09 MB response. These warm-cache synthetic observations do not include auth/journal guards, network, Hyperdrive or client decryption and do not establish hosted/mobile performance.
 
-## Environment blockers discovered
+## External resources and access
 
-- Full Xcode and iOS Simulator are absent; user asked to install Xcode plus iOS runtime.
-- Browser access is intermittent. PlanetScale database creation now redirects to a fresh sign-in; owner asked to log into the existing andykonwinski account. No new GitHub OAuth link authorized.
+- Cloudflare token works for Workers/R2/Hyperdrive/Email operations. Separate staging/production media and recovery-journal buckets have managed public access disabled. Each environment has a jobs queue and dead-letter queue.
+- Cloudflare Email Sending is enabled for `porchday.com` with SPF/DKIM/DMARC. Provider body previews are disabled. One setup message was accepted/queued; mailbox delivery is not verified.
+- PlanetScale billing is enabled and organization `andykonwinski` is linked. The installed CLI still returns `NO_AUTH`, including with the private secrets environment; the owner has been asked to run `pscale auth login`. No database or Hyperdrive binding is provisioned, and no database tier has been purchased by this build. A nonsuperuser migration compatibility rehearsal and current pricing/provisioning plan are in `docs/planetscale-readiness.md`.
+- Cloudflare Access organizations/apps/identity-provider requests return403 with the current token. The owner has been asked to add the account-scoped staff Access administration permissions. Staff routes remain unavailable without verified configuration.
+- An enabled Cloudflare account-wide usage-budget alert at $10 has one recipient matching the account owner. Delivery is untested. Cloudflare billing read requests return 403; GitHub account billing needs additional scope. Exact accrued charges remain unknown; see `docs/cost-ledger.md`.
+- Full Xcode is absent locally. Hosted macOS CI provides verified simulator build/test evidence without App Store credentials. Browser-based setup/QA is separately blocked by unavailable browser control.
 
-## Release boundaries
+## Admission gates and completion boundaries
 
-The deployment stays invitation-only. Independent encryption/security review, real nonprofit/legal disclosures, and staffed moderation/recovery remain pre-member/public-launch gates. The implementation must not misrepresent a private repository as publicly available source or claim that a review has occurred.
+Keep `SIGNUP_ENABLED=false` until controlled synthetic deployment tests are ready, then use only email-bound, expiring invitations. Do not admit real members before independent crypto/security review, staffed moderation and two-person recovery, accurate nonprofit/legal/contact disclosures, operational alerts and a verified restore drill.
 
-## Completion evidence still required
+The repository is private by owner instruction. Apache-2.0 licensing does not mean the source is publicly downloadable. PWA software still trusts operator-delivered code; end-to-end encryption does not protect against a malicious client update or recipients copying content. Staff receive necessary operational metadata and only report content explicitly disclosed by a member.
 
-Real deployed auth/email, isolated DB authorization tests, cross-client encrypted objects/media, user flows in browser and iOS simulator, expiry/deletion failure/retry tests, portability/recovery, CI/push, domain/TLS, monitoring and cost alerts, documented restore drill and limits. Track each against the design acceptance scenarios as implementation lands.
-
-## First implementation evidence
-
-- Authentication integration test: invited signup, email verification, password reset, one-use reset and session revocation pass against PostgreSQL17.
-- Full application boundary test: invalid invitations/adult rejection, one-use email verification, authenticated session, CSRF origin rejection, disabled OAuth, and takeover hold access denial pass.
-- Crypto:13 tests pass, including tampering, context substitution, key recovery, lifecycle signing, reaction tags, archive encryption, and301-device audience. Native GopenPGP ↔ JS interoperability also passes; iOS simulator still unverified.
-- Social agent reports9 database invariant tests and additional encrypted HTTP tests; final integrated test run pending.
-- Telemetry privacy/failure tests pass. Dependency audit currently reports0 vulnerabilities.
-- Separate staging/production private R2 buckets and queues created. Cloudflare email body previews disabled. One setup email was accepted/queued; delivery not yet confirmed.
-- Local synthetic API is running on127.0.0.1:8787; frontend still being completed.
-- Recovery report/contact verification implemented; staff review/hold/restore workflow, alerts, deployment and actual launch gates remain incomplete.
-
-## Integrated checkpoint — 2026-10-25
-
-- All25 migrations through024 apply to a fresh PostgreSQL17 database through the migration runner. API, web and crypto TypeScript checks pass.
-- Integrated run:14 crypto tests plus40 Vitest tests pass; the2 moderation database tests require their separate database variable and are run separately. CI now includes that database explicitly. Counts will change as push/native tests land.
-- Recovery tests prove safe-contact verification alone does not freeze an account, a corroborated hold removes sessions, one reviewer (including repeated votes) cannot restore access, two distinct reviewers can authorize a one-use restore link, and recovery invalidates old login credentials and recovery sessions.
-- Actual BetterAuth MFA/email-change tests cover no authenticated session before second-factor verification, one-use backup codes, old-address approval followed by new-address verification, and session revocation after switching email.
-- Authentication operations use an explicit PostgreSQL transaction, with identity-scoped transaction advisory locks shared by the staff recovery path. This pins the Hyperdrive connection and prevents in-flight login/reset operations from racing a reviewed takeover response. Staff routes validate Cloudflare Access signatures/issuer/audience/time claims and active application roles; staff Access deployment/MFA policy is still unconfigured.
-- Web app builds with responsive marketing/member screens, PWA shell, encrypted data flows, moderation/recovery consoles, MFA, portability and profile/group media. Visual/browser and installation verification remain pending because native Chrome control currently reports no accessible window.
-- Worker dry-run bundle succeeds (~688KiB gzip at this checkpoint). Local workerd serves the marketing app with CSP, returns401 for unauthenticated private APIs, applies no-store to API responses, and fails closed for unconfigured staff authentication.
-- Staging/production queues now include dead-letter queues. No live Worker or PlanetScale database is deployed yet.
-- Full Xcode remains absent locally. A private GitHub Actions macOS simulator workflow is being prepared/executed to verify the native app without App Store credentials. Source parsing is not a successful iOS build.
-- PlanetScale CLI installed; owner asked to run `pscale auth login` into the existing organization. Cloudflare's documented CLI billing-signature flow can then provision the database without depending on the inaccessible browser window.
+Completion still requires live `porchday.com` deployment and TLS, real authentication/email, isolated Hyperdrive roles with caching disabled, encrypted sharing across web/iOS accounts and devices, photos/comments/reactions/groups/expiry, portability/deletion/recovery, PWA installation and updates, monitoring/alerts, capacity/cost measurements and complete operational handoff. Passing local or CI tests alone does not satisfy those deployment requirements.

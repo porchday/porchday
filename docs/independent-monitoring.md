@@ -20,6 +20,8 @@ Install these values through the private secret workflow:
 
 Deploy only after the application hostname exists, its operations token is installed, the email sender is enabled, and an operator recipient is configured. Keep staging and production tokens distinct. Review the generated routes before deployment; do not overwrite an existing unrelated status site. Check the public status, then perform an authorized controlled staging incident to verify actual email delivery and recovery before treating alerting as operational. Unit tests use an injected email service and do not send mail.
 
+`python3 scripts/with-secrets.py python3 scripts/upload-monitor-secrets.py staging --check` validates private configuration without uploading. Omit `--check` after the target monitor is deployed to upload through stdin. Use `production` for the other environment. The recipient defaults to the configured Cloudflare account owner, matching the existing budget alert; set `PORCHDAY_OPERATIONS_EMAIL` in the private secrets file to choose another monitored address. Name a backup responder before real-member admission. No recipient or capability is printed.
+
 ## Operations and limitations
 
 A 30-day month produces approximately 43,200 checks per environment, one small durable state record, and low alert volume. Public status visits add reads. Track actual Workers, Durable Objects, and email usage against the setup/operating budget; no paid third-party monitor is required for this path.

@@ -1,0 +1,61 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "porchday-monitor-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-24",
+  "workers_dev": false,
+  "preview_urls": false,
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "STATE",
+        "class_name": "Monitor"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": [
+        "Monitor"
+      ]
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "staging",
+    "EMAIL_FROM": "Porchday <accounts@porchday.com>"
+  },
+  "observability": {
+    "enabled": true,
+    "logs": {
+      "enabled": true,
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": false
+    }
+  },
+  "account_id": "8e992aa185989f80520215b6489bfacb",
+  "routes": [
+    {
+      "pattern": "staging-status.porchday.com",
+      "custom_domain": true
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": [
+        "accounts@porchday.com"
+      ]
+    }
+  ],
+  "limits": {
+    "cpu_ms": 1000
+  }
+}
