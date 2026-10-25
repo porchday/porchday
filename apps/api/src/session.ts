@@ -1,12 +1,14 @@
 import { createMiddleware } from 'hono/factory';
 import { authPool,createAuth } from './auth';
 import type {Env,Variables} from './types';
+import {feedTiming,measureFeedPhase} from './feed-timing';
 export const requireMember=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
  const pool=authPool(c.env);
+ const timing=feedTiming(c.env,c.req.method,c.req.path);
  try {
-  const session=await createAuth(c.env,pool).api.getSession({headers:c.req.raw.headers});
+  const session=await measureFeedPhase(timing,'auth_session',()=>createAuth(c.env,pool).api.getSession({headers:c.req.raw.headers}));
   if(!session?.user.emailVerified)return c.json({error:{code:'UNAUTHORIZED',message:'Sign in with a verified account.'}},401);
-  const {rows}=await pool.query('SELECT app.auth_member_status($1::uuid) AS status',[session.user.id]);
+  const {rows}=await measureFeedPhase(timing,'auth_status',()=>pool.query('SELECT app.auth_member_status($1::uuid) AS status',[session.user.id]));
   const dataOnly = (c.req.method==='GET' && (/^\/api\/v1\/(me|devices|keys\/backup|owned-groups)$/.test(c.req.path)||/^\/api\/v1\/devices\/[a-f0-9-]{36}$/.test(c.req.path)))
    || /^\/api\/v1\/exports(?:\/|$)/.test(c.req.path)
    || (c.req.method==='DELETE' && (c.req.path==='/api/v1/account'||/^\/api\/v1\/groups\/[a-f0-9-]{36}$/.test(c.req.path)));

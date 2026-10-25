@@ -26,10 +26,10 @@ Positions have stable meanings. Change the schema marker/dataset version before 
 | index1 | Fixed `event:route` class used for sampling, never a person or random identifier |
 | blob1 | `porchday_metrics_v1` |
 | blob2 | development, staging or production |
-| blob3 | request, job, email or error |
+| blob3 | request, job, email, error, or staging-only feed_phase |
 | blob4 | `/api/v1/feed`, a fixed allowlisted auth action, `/api/auth/*`, `/api/*`, `/assets/*`, `/health`, or `none` |
 | blob5 | Allowlisted HTTP method or `none` |
-| blob6 | Allowlisted operational code or `none` |
+| blob6 | Allowlisted operational code, fixed staging feed phase, or `none` |
 | blob7 | HTTP status class such as `5xx`, or `none` |
 | double1 | HTTP status 100–599, otherwise 0 |
 | double2 | Rounded duration 0–3,600,000 ms, otherwise −1 |
@@ -46,9 +46,30 @@ python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts staging summary
 python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production counters
 python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production freshness
 python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production usage
+python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts staging feed-phases
 ```
 
 `CLOUDFLARE_ANALYTICS_READ_TOKEN` takes precedence over the existing setup token. Summary/counters/freshness use a 15-minute window; usage uses 30 days. The helper enforces fixed environment/query choices, a 30-second timeout, no redirects and a 1 MiB response limit. It makes no database or configuration changes.
+
+### Temporary staging feed diagnostics
+
+`FEED_PHASE_TIMING=true` enables nine fixed phase observations for exact `GET /api/v1/feed` requests **only in staging**. The flag is absent from generated and committed deployment configurations. Production rejects these events centrally even if the flag is accidentally supplied. There is no new log, trace, durable queue, response header, correlation ID, member label or client instrumentation. The points use the existing Analytics Engine binding and its existing retention; this is optional diagnostic telemetry, not an additional request log.
+
+| Phase | Measured work |
+| --- | --- |
+| journal_check | Existing concurrent R2 control read and jobs database safety check, including validation |
+| journal_close | Awaited jobs database connection cleanup |
+| auth_session | Fresh Better Auth session lookup, including its existing session handling |
+| auth_status | Separate current account-status query |
+| social_connect_begin | Social database connection acquisition and BEGIN through transaction callback entry |
+| social_actor | Transaction-local member identity assignment |
+| social_query | Existing feed query and page construction inside the transaction |
+| social_commit | Successful transaction completion after the query returns |
+| social_close | Awaited social database connection cleanup |
+
+The feed query, transaction-local identity, RLS, privacy checkpoint, current session/status validation and cleanup order are unchanged. No cache, database tier, placement or latency target changes accompany this instrumentation. Failed phases can produce a duration, but a failed transaction does not produce a successful-commit phase. A denied request stops at its existing guard. Thus phase counts can differ; use a known successful synthetic batch and the ordinary request status summary when diagnosing the normal feed path. Auth connection cleanup scheduled through the existing `waitUntil` is outside the critical path and is not measured here.
+
+After deployment review, temporarily enable the flag on staging for one coordinated read-only synthetic sample, then disable it. Each completed feed read adds at most nine points, so 100 successful reads add at most 900 points. Do not leave it enabled for general load testing without reviewing write volume. The `staging feed-phases` helper uses a 15-minute fixed query, sampling-weighted mean/p50/p95 and an observed-point count; it prints only the nine known labels and nonnegative finite numeric aggregates. It refuses a production phase query. Sampling and unrelated requests in the same window still limit attribution: there is intentionally no per-request joining, and adding phase p95 values does not yield a request p95. This instrumentation has local path/redaction/failure coverage; actual hosted phase ingestion and measurements require the explicitly coordinated deployment and probe.
 
 The feed/auth summary uses this query shape, with the environment-specific dataset substituted by the helper:
 

@@ -2,6 +2,7 @@ import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { fingerprint, verifyDeviceAuthorization, verifyStatement, validateEncryptedPrivateKey, canonicalJson, type EncryptedEnvelope } from '@porchday/crypto';
 import { withMember, type Db } from './db.js';
+import {feedTiming} from './feed-timing';
 import { envelopeSchema } from './social-contract.js';
 import { registerMediaRoutes } from './social-media.js';
 import { registerExportRoutes } from './social-exports.js';
@@ -40,7 +41,7 @@ function page(rows: any[], limit = 30) { const hasMore = rows.length > limit; co
 async function body<T>(c: C, schema: z.ZodType<T>, maxBytes = 2500000): Promise<T> { const declared = Number(c.req.header('content-length') ?? 0); if (declared > maxBytes)
     fail('PAYLOAD_TOO_LARGE', 413); const raw = await c.req.text(); if (new TextEncoder().encode(raw).byteLength > maxBytes)
     fail('PAYLOAD_TOO_LARGE', 413); return schema.parse(JSON.parse(raw)); }
-async function tx<T>(c: C, fn: (db: Db) => Promise<T>): Promise<T> { return withMember(c.env, c.get('memberId'), fn); }
+async function tx<T>(c: C, fn: (db: Db) => Promise<T>): Promise<T> { return withMember(c.env, c.get('memberId'), fn, feedTiming(c.env,c.req.method,c.req.path)); }
 async function writeAllowed(db: Db): Promise<void> { const [r] = await db `select app.may_write() as allowed`; if (!r?.allowed)
     fail('SOCIAL_RESTRICTED', 403); }
 async function snapshot(db: Db, audience: string, groupId: string | null = null, postId: string | null = null) { const [r] = await db `select app.lock_epoch() as epoch`; if (!r)

@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env, Variables} from './types.js';
 import {event} from './telemetry.js';
+import {feedTiming,measureFeedPhase} from './feed-timing';
 
 export interface JournalStore {
   get(key: string): Promise<{etag: string; text(): Promise<string>} | null>;
@@ -170,15 +171,16 @@ export function isPrivacyMutation(method:string,path:string):boolean {
 }
 export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
   let resources:ReturnType<typeof runtime>=null;
+  const timing=feedTiming(c.env,c.req.method,c.req.path);
   try {
     resources=runtime(c.env);
-    if(resources)await assertJournalReadable(resources.store,resources.db);
+    if(resources)await measureFeedPhase(timing,'journal_check',()=>assertJournalReadable(resources!.store,resources!.db));
   } catch(error) {
     const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured'};
     event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable'},c.env);
     // No identifiers, SQL details, endpoint URLs or private content in errors.
     return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'This action is temporarily unavailable while data safeguards are checked. Please try again later.'}},503);
-  } finally {await resources?.close();}
+  } finally {if(resources)await measureFeedPhase(timing,'journal_close',()=>resources!.close());}
   await next();
 });
 function knownRollback(error:unknown):boolean {

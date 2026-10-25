@@ -1,20 +1,28 @@
 import postgres, { type TransactionSql } from 'postgres';
 import type { Env } from './types.js';
+import {measureFeedPhase,recordFeedPhase,type FeedTiming} from './feed-timing';
 export type Db = TransactionSql;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** No session-wide identity: Hyperdrive can reassign a connection after COMMIT. */
-export async function withMember<T>(env: Pick<Env, 'HYPERDRIVE_SOCIAL'>, memberId: string, work: (db: Db) => Promise<T>): Promise<T> {
+export async function withMember<T>(env: Pick<Env, 'HYPERDRIVE_SOCIAL'>, memberId: string, work: (db: Db) => Promise<T>, timing?:FeedTiming): Promise<T> {
     if (!uuid.test(memberId))
         throw new Error('Invalid authenticated member identifier');
     const sql = postgres(env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: false, fetch_types: false, idle_timeout: 5, connect_timeout: 10 });
+    const started=timing?performance.now():0;
+    let commitStarted:number|undefined;
     try {
-        return await sql.begin(async (db) => {
-            await db `select set_config('app.member_id', ${memberId}, true)`;
-            return work(db);
+        const result=await sql.begin(async (db) => {
+            if(timing)recordFeedPhase(timing,'social_connect_begin',performance.now()-started);
+            await measureFeedPhase(timing,'social_actor',async()=>{await db `select set_config('app.member_id', ${memberId}, true)`;});
+            const value=await measureFeedPhase(timing,'social_query',()=>work(db));
+            if(timing)commitStarted=performance.now();
+            return value;
         }) as T;
+        if(commitStarted!==undefined)recordFeedPhase(timing,'social_commit',performance.now()-commitStarted);
+        return result;
     }
     finally {
-        await sql.end({ timeout: 1 });
+        await measureFeedPhase(timing,'social_close',()=>sql.end({ timeout: 1 }));
     }
 }
 export async function cleanupExpired(env: Pick<Env, 'HYPERDRIVE_JOBS' | 'MEDIA'>): Promise<{
