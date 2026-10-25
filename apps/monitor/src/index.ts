@@ -1,4 +1,5 @@
 import {initialState,observe,publicStatus,probe,alertText,type MonitorState,type Environment} from './protocol';
+import {renderStatusPage} from './status-page';
 
 export interface Env {STATE:DurableObjectNamespace;ENVIRONMENT:Environment;OPERATIONS_HEALTH_TOKEN:string;MONITOR_RECIPIENT:string;EMAIL_FROM:string;EMAIL:SendEmail}
 const headers={'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; frame-ancestors 'none'",'referrer-policy':'no-referrer'};
@@ -51,8 +52,13 @@ export default {
   async fetch(request:Request,env:Env):Promise<Response>{
     const path=new URL(request.url).pathname;
     if(request.method!=='GET'||!['/','/status'].includes(path))return json({error:'not_found'},404);
-    try{return await stub(env).fetch('https://monitor.internal/status');}
-    catch{return json({status:'unknown',last_checked_at:null},503);}
+    try{
+      const response=await stub(env).fetch('https://monitor.internal/status');
+      return path==='/status'?response:renderStatusPage(await response.json(),response.status);
+    }catch{
+      const unavailable={status:'unknown',last_checked_at:null};
+      return path==='/status'?json(unavailable,503):renderStatusPage(unavailable,503);
+    }
   },
   async scheduled(controller:ScheduledController,env:Env):Promise<void>{
     try{

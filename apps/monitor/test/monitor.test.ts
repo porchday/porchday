@@ -1,6 +1,7 @@
 import {describe,it,expect,vi,afterEach} from 'vitest';
 import worker,{Monitor,type Env} from '../src/index';
 import {initialState,observe,probe,publicStatus} from '../src/protocol';
+import {renderStatusPage} from '../src/status-page';
 afterEach(()=>{vi.restoreAllMocks();vi.useRealTimers();});
 const start=Date.UTC(2026,9,25,12);
 class Storage {
@@ -55,7 +56,8 @@ describe('Independent operational monitor',()=>{
     expect(JSON.stringify(logs.mock.calls)).not.toContain('private-provider-response');expect(JSON.stringify(logs.mock.calls)).not.toContain('operator@example.test');
     f.storage.fail=true;const before=f.mail.mock.calls.length;
     await expect(f.tick(8)).rejects.toThrow();expect(f.mail).toHaveBeenCalledTimes(before);
-    const status=await worker.fetch(new Request('https://status.porchday.com/'),f.env);expect(status.status).toBe(503);expect(await status.json()).toEqual({status:'unknown',last_checked_at:null});
+    const status=await worker.fetch(new Request('https://status.porchday.com/status'),f.env);expect(status.status).toBe(503);expect(await status.json()).toEqual({status:'unknown',last_checked_at:null});
+    const page=await worker.fetch(new Request('https://status.porchday.com/'),f.env);expect(page.status).toBe(503);expect(await page.text()).toContain('Status unavailable');
   });
   it('exposes no public probe or email trigger and reports stale monitoring as unknown',async()=>{
     vi.useFakeTimers();const f=fixture();vi.setSystemTime(start);
@@ -68,5 +70,21 @@ describe('Independent operational monitor',()=>{
     vi.useFakeTimers();const f=fixture();const fetcher=vi.spyOn(globalThis,'fetch').mockImplementation(async()=>new Response('',{status:503}));vi.spyOn(console,'log').mockImplementation(()=>{});f.mail.mockRejectedValue(Error('unavailable'));
     await f.tick(0);await f.tick(1);await f.tick(2);fetcher.mockImplementation(async()=>healthy());await f.tick(3);await f.tick(4);await f.tick(10);
     expect(f.mail).toHaveBeenCalledTimes(1);expect((await f.storage.get<any>('state')).pending).toBeNull();
+  });
+  it('serves accessible HTML with a checked time and reports stale state without exposing diagnostics',async()=>{
+    vi.useFakeTimers();vi.setSystemTime(start);const f=fixture();
+    await f.storage.put('state',{...observe(initialState(),true,start,1),private_details:'private-member-email'});
+    const response=await worker.fetch(new Request('https://status.porchday.com/'),f.env),html=await response.text();
+    expect(response.headers.get('content-type')).toBe('text/html; charset=utf-8');expect(response.headers.get('cache-control')).toBe('no-store');expect(response.headers.get('x-content-type-options')).toBe('nosniff');expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+    expect(html).toContain('All systems operational');expect(html).toContain('<html lang="en">');expect(html).toContain('aria-labelledby="status-heading"');expect(html).toContain('datetime="'+new Date(start).toISOString()+'"');expect(html).not.toContain('private-member-email');
+    const nonce=html.match(/<style nonce="([a-f0-9-]+)">/)?.[1];expect(nonce).toBeTruthy();expect(response.headers.get('content-security-policy')).toContain("style-src 'nonce-"+nonce+"'");expect(response.headers.get('content-security-policy')).toContain("script-src 'none'");expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");expect(html).not.toMatch(/<script|<img|<iframe|https?:\/\//);
+    vi.setSystemTime(start+180001);const stale=await worker.fetch(new Request('https://status.porchday.com/'),f.env);expect(await stale.text()).toContain('Status unavailable');
+    expect(await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json()).toEqual({status:'unknown',last_checked_at:new Date(start).toISOString()});
+  });
+  it('rejects HTML injection and private response fields before rendering, including malformed timestamps',async()=>{
+    const response=renderStatusPage({status:'operational"><script>alert(1)</script>',last_checked_at:'"><img src=x onerror=alert(1)>',issues:['private-database-error'],snapshot:{member:'private-member'}});
+    const html=await response.text();expect(html).toContain('Status unavailable');expect(html).toContain('No completed check yet');expect(html).not.toMatch(/<script|<img|alert\(1\)|private-/);
+    expect(await renderStatusPage({status:'degraded',last_checked_at:new Date(start).toISOString()}).text()).toContain('Service needs attention');
+    expect(await renderStatusPage({status:'checking',last_checked_at:null}).text()).toContain('Checking service status');
   });
 });

@@ -12,9 +12,10 @@ describe('Monitor with a real local Durable Object',()=>{
       const ns=await mf.getDurableObjectNamespace('STATE');const object=ns.get(ns.idFromName('monitor-v1'));
       // Missing token makes a failed observation without contacting the network.
       expect((await object.fetch('https://monitor.internal/tick',{method:'POST',headers:{'X-Scheduled-Minute':String(Math.floor(Date.now()/60000))}})).status).toBe(200);
-      const result=await(await mf.dispatchFetch('https://status.porchday.test/')).json() as {status:string;last_checked_at:string};
+      const result=await(await mf.dispatchFetch('https://status.porchday.test/status')).json() as {status:string;last_checked_at:string};
       expect(result.status).toBe('checking');expect(Date.parse(result.last_checked_at)).toBeGreaterThan(Date.now()-10000);
       expect(Object.keys(result).sort()).toEqual(['last_checked_at','status']);
+      const page=await mf.dispatchFetch('https://status.porchday.test/');expect(page.headers.get('content-type')).toBe('text/html; charset=utf-8');expect(await page.text()).toContain('Checking service status');
     }finally{await mf.dispose();}
   });
 });
