@@ -105,7 +105,7 @@ struct PortableArchive {
             partNumber += 1;manifest=base;files=[:];refs=[];size=0
         }
         func append(_ value:JSON,section:String,reference:JSON?=nil,photo:(String,Data)?=nil) async throws {
-            let added=try JSONEncoder().encode(value).count+(photo?.1.count ?? 0)
+            let added=try JSONEncoder().encode(value).count*3+(photo?.1.count ?? 0)+1024
             if size+added>PortableArchive.partBudget { try await flush(final:false) }
             guard added<=PortableArchive.partBudget else { throw PorchError.message("A single archive record exceeds the 20 MB part limit.") }
             if section=="profile" { manifest[section]=value } else { manifest[section] = .array((manifest[section]?.array ?? [])+[value]) }

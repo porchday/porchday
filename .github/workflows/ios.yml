@@ -1,6 +1,14 @@
 name: Verify native iOS
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - "apps/ios/**"
+      - "packages/crypto/**"
+      - ".github/workflows/ios.yml"
+concurrency:
+  group: native-ios-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:

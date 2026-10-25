@@ -101,7 +101,7 @@ struct ReactionBar: View {
     }
     private func decode() async {
         guard let secret = item.payload?["reactionSecret"].string else { return }; var valid: [(String, String, String)] = [], seen = Set<String>()
-        for raw in reactions { do { let payload = try await vault.open(raw), member = raw["member_id"].string ?? raw["envelope"]["context"]["authorId"].string ?? "", emoji = payload["emoji"].string ?? "", tag = raw["reaction_tag"].string ?? ""; guard reactionCatalog.contains(where: { $0.id == emoji }), try CryptoVault.tag(secret: secret, target: item.id, member: member, emoji: emoji) == tag, seen.insert(member + ":" + emoji).inserted else { continue }; valid.append((member, emoji, tag)) } catch { continue } }; decoded = valid
+        for raw in reactions { do { let payload = try await vault.open(raw), member = raw["member_id"].string ?? raw["envelope"]["context"]["authorId"].string ?? "", emoji = payload["emoji"].string ?? "", tag = raw["reaction_tag"].string ?? ""; guard raw["envelope"]["context"]["authorId"].string == member, raw["envelope"]["context"]["parentId"].string == item.id, raw["envelope"]["context"]["id"].string == tag, reactionCatalog.contains(where: { $0.id == emoji }), try CryptoVault.tag(secret: secret, target: item.id, member: member, emoji: emoji) == tag, seen.insert(member + ":" + emoji).inserted else { continue }; valid.append((member, emoji, tag)) } catch { continue } }; decoded = valid
     }
     private func toggle(_ emoji: String) async { await model.perform {
         guard let member = model.member, let secret = item.payload?["reactionSecret"].string else { return }; let tag = try CryptoVault.tag(secret: secret, target: item.id, member: member.id, emoji: emoji)
