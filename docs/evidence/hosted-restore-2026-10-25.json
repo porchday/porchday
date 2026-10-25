@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-25",
+  "environment": "staging",
+  "code_checkpoint": "3edc68c",
+  "result": "passed after reviewed restore-administrator correction and a gated release retry",
+  "first_attempt": {
+    "nonce": "53e914fb",
+    "outcome": "PITR data verified; owner credential reset failed; no replay or release attempted",
+    "snapshot_id": "46f5a436-faaa-4ab5-9ab3-c3252555a4ee",
+    "paired_at": "2026-10-25T16:59:46.296Z",
+    "restored_sequence": "39",
+    "cloned_journal_sequence": "48",
+    "cleanup_verified_at": "2026-10-25T17:26:41.526210Z",
+    "branch_absent": true,
+    "target_buckets_absent": 2
+  },
+  "successful_attempt": {
+    "scope": "hosted PlanetScale staging PITR and native R2 isolated restore",
+    "snapshot_id": "0c317179-7912-40f7-b048-60567b4a5bae",
+    "paired_at": "2026-10-25T17:34:22.769Z",
+    "target_branch": "porchday-restore-efb66421",
+    "started_at": "2026-10-25T17:43:34.754Z",
+    "phases": {
+      "verify_snapshot_and_seed_stale_object_ms": 2886,
+      "replay_ms": 4237,
+      "restore_media_ms": 7771,
+      "release_ms": 3269
+    },
+    "assertions": {
+      "restored_runtime_roles_separated": [
+        {
+          "kind": "auth",
+          "separated": true
+        },
+        {
+          "kind": "social",
+          "separated": true
+        },
+        {
+          "kind": "jobs",
+          "separated": true
+        }
+      ],
+      "missing_media_release_denied": true,
+      "deleted_physical_photo_removed": true,
+      "deleted_media_not_recopied": true,
+      "survivor_post_decrypts": true,
+      "survivor_photo_decrypts": true,
+      "unrelated_member_denied": true,
+      "known_restored_session_invalidated": true,
+      "target_released_without_public_binding": true,
+      "independent_rest_hashes_and_native_verifier_passed": true
+    },
+    "before": {
+      "migrations": 41,
+      "schema_owner_unchanged": true,
+      "sequence": "56",
+      "fixture_posts": 3,
+      "fixture_comments": 1,
+      "fixture_photos": 2,
+      "sessions": 12,
+      "integrations": 0,
+      "known_session_present": true,
+      "postgres17": true,
+      "last_replayed_transaction_at": "2026-10-25T17:34:20.624Z"
+    },
+    "snapshot": {
+      "objects": 5,
+      "bytes": 18929,
+      "omitted": 0,
+      "base_sequence": "56",
+      "completed_at": "2026-10-25T17:34:34.180Z"
+    },
+    "replay": {
+      "replayed": 9,
+      "deletedObjects": 1,
+      "heldAccounts": 0,
+      "sequence": "65"
+    },
+    "after": {
+      "sessions": 0,
+      "verification_tokens": 0,
+      "integrations": 0,
+      "forbidden_posts": 0,
+      "forbidden_comments": 0,
+      "forbidden_photos": 0,
+      "credential_epochs_refreshed": 3
+    },
+    "media_restore": {
+      "verified": true,
+      "copied": 4,
+      "discarded": 1,
+      "quarantine": true
+    },
+    "success": true,
+    "earlier_release_failure": "OPERATOR_MEDIA_VERIFICATION_FAILED",
+    "resumed_at": "2026-10-25T17:47:56.662Z",
+    "completed_at": "2026-10-25T17:48:09.607Z"
+  },
+  "cleanup": {
+    "completed_at": "2026-10-25T17:49:42.017501+00:00",
+    "target_branch": "porchday-restore-efb66421",
+    "branch_absent": true,
+    "private_buckets_absent": 2,
+    "journal_objects_in_attempt": 26,
+    "media_keys_checked": 5,
+    "remaining_target_objects": 0,
+    "operator_teardown_verified_by_bridge": true,
+    "live_source_bindings_changed": false
+  },
+  "limitations": [
+    "The first final release gate returned OPERATOR_MEDIA_VERIFICATION_FAILED; its exact cause was not established. All four required bytes matched SQL hashes and sizes through independent REST reads and a fresh native verifier before the production release gate was retried successfully.",
+    "A diagnostic endpoint recreation encountered OPERATOR_DNS_NOT_READY. Its teardown was verified; a new hostname succeeded.",
+    "This is a finite, coordinated synthetic staging journal cut through sequence65, not continuous mirroring of later source mutations or a production failover.",
+    "No integration grant existed in the restored snapshot; the observed zero after replay is not positive hosted evidence of revoking a previously live integration token.",
+    "Temporary branch costs are rate-based estimates; provider invoices were not settled for these resources."
+  ]
+}
