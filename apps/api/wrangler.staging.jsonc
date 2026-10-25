@@ -1,0 +1,119 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "porchday-staging",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-24",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "workers_dev": false,
+  "preview_urls": false,
+  "assets": {
+    "directory": "../web/dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "vars": {
+    "APP_URL": "https://staging.porchday.com",
+    "ENVIRONMENT": "staging",
+    "SIGNUP_ENABLED": "false",
+    "CONTENT_WRITES_PAUSED": "false",
+    "MEDIA_UPLOADS_PAUSED": "false",
+    "SOCIAL_INVITATIONS_PAUSED": "false",
+    "EMAIL_FROM": "Porchday <accounts@porchday.com>",
+    "MEDIA_BACKUP_ENABLED": "true",
+    "VAPID_SUBJECT": "https://porchday.com/contact",
+    "STAFF_ACCESS_ISSUER": "https://porchday-staff.cloudflareaccess.com",
+    "STAFF_ACCESS_AUDIENCE": "0b856c380fb554c3df663c3485183de5947e957279e87602dbc30ab81cb040a7"
+  },
+  "hyperdrive": [
+    {
+      "binding": "HYPERDRIVE_AUTH",
+      "id": "8c51412ac431412f9a9618b412c731be"
+    },
+    {
+      "binding": "HYPERDRIVE_SOCIAL",
+      "id": "b71b12f4cbdc410195f8fd2ffe4d3390"
+    },
+    {
+      "binding": "HYPERDRIVE_JOBS",
+      "id": "4f8a6695784047dc98d3daa262051299"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "porchday-staging-media"
+    },
+    {
+      "binding": "RECOVERY_JOURNAL",
+      "bucket_name": "porchday-staging-recovery-journal"
+    },
+    {
+      "binding": "MEDIA_BACKUP",
+      "bucket_name": "porchday-staging-media-backup"
+    }
+  ],
+  "queues": {
+    "producers": [
+      {
+        "binding": "JOBS",
+        "queue": "porchday-staging-jobs"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "porchday-staging-jobs",
+        "max_batch_size": 1,
+        "max_batch_timeout": 5,
+        "max_retries": 8,
+        "dead_letter_queue": "porchday-staging-jobs-dead-letter"
+      }
+    ]
+  },
+  "send_email": [
+    {
+      "name": "EMAIL",
+      "allowed_sender_addresses": [
+        "accounts@porchday.com"
+      ]
+    }
+  ],
+  "version_metadata": {
+    "binding": "CF_VERSION_METADATA"
+  },
+  "observability": {
+    "enabled": false,
+    "logs": {
+      "enabled": false,
+      "invocation_logs": false
+    },
+    "traces": {
+      "enabled": false
+    }
+  },
+  "account_id": "8e992aa185989f80520215b6489bfacb",
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "17 3 * * *"
+    ]
+  },
+  "limits": {
+    "cpu_ms": 30000
+  },
+  "logpush": false,
+  "analytics_engine_datasets": [
+    {
+      "binding": "METRICS",
+      "dataset": "porchday_staging_operations_v1"
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "staging.porchday.com",
+      "custom_domain": true
+    }
+  ]
+}

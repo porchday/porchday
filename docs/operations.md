@@ -68,7 +68,7 @@ See [incident response](incident-response.md) for persistent per-environment pos
 
 For suspected takeover, an unverified report never freezes or transfers an account. Verify the claimant's safe contact, then have authorized staff review corroborating evidence. A confirmed hold must revoke all login sessions and integration grants, block export/deletion/credential changes, preserve recovery and appeals, and keep ordinary content timers expiring. Recovery of account ownership cannot recover missing encryption keys. Two distinct authorized reviewers are required where trusted methods are lost.
 
-Staff workflow code is implemented and covered by local tests; real reviewer provisioning and Cloudflare Access policy configuration remain outstanding. Current token requests for Access organizations/apps/identity providers return403; the owner has been asked for the account-scoped Access administration permissions. Do not manually change ownership through the database as a substitute for the reviewed workflow.
+Staff workflow code is implemented and covered by local tests. Cloudflare Access applications and exact-owner policies now exist for both environments, with independent security-key/biometric MFA and one-hour sessions; provider reads verify their configuration. Actual reviewer MFA enrollment, signed-subject provisioning and live end-to-end login remain outstanding. See [staff Access](staff-access.md) for the provisioning and verification procedure. Do not manually change ownership through the database as a substitute for the reviewed workflow.
 
 ## Account security and staff access
 
