@@ -1,5 +1,6 @@
 /** Actual staging member API fixtures; no SQL/member bypass, no source key changes. */
 import {readFile} from 'node:fs/promises';
+import {setTimeout as wait} from 'node:timers/promises';
 import {createHash,randomUUID} from 'node:crypto';
 import {encryptObject,decryptObject,unlockPrivateKey,createReactionSecret,signStatement,type ContentContext,type EncryptedEnvelope} from '../packages/crypto/src/index.js';
 import {SmokeClient,SmokeError,check,readPrivate,stagingOrigin} from './hosted-smoke-support.js';
@@ -17,7 +18,7 @@ export type RestoreFixtures={v:1;synthetic:true;origin:string;run:string;memberI
 const progress=(step:string)=>console.log(JSON.stringify({phase,step}));
 try {
  check(['prepare','after-snapshot'].includes(phase)&&process.argv.includes('--run'),'RESTORE_FIXTURE_EXPLICIT_RUN_REQUIRED');
- check(process.argv.slice(3).every(arg=>arg==='--run'||phase==='after-snapshot'&&arg.startsWith('--snapshot=')),'RESTORE_FIXTURE_ARGUMENTS_INVALID');
+ check(process.argv.slice(3).every(arg=>arg==='--run'||phase==='after-snapshot'&&(arg.startsWith('--snapshot=')||arg==='--resume')),'RESTORE_FIXTURE_ARGUMENTS_INVALID');
  const state=await readPrivate<{v:number;synthetic:boolean;origin:string;run:string;socialPassed:boolean;accounts:Account[]}>('artifacts/private/hosted-smoke/state.json');
  check(state.v===1&&state.synthetic&&state.origin===stagingOrigin&&state.socialPassed&&/^[a-f0-9]{10}$/.test(state.run)&&state.accounts.length===3,'FINISHED_SYNTHETIC_SOCIAL_FIXTURE_REQUIRED');
  const a=state.accounts[0],stranger=state.accounts[2];
@@ -64,7 +65,7 @@ try {
   fixture.prepared=true;await writeRestorePrivate(path,fixture);progress('prepared-three-posts-two-photos-child-comment-and-live-session');
  }else{
   const fixture=await readRestorePrivate<RestoreFixtures>(path);
-  check(fixture.v===1&&fixture.synthetic&&fixture.origin===stagingOrigin&&fixture.run===state.run&&fixture.memberId===a.id&&fixture.prepared&&!fixture.afterStarted&&!!snapshot&&uuid.test(snapshot),'RESTORE_FIXTURE_PHASE_INVALID');
+  check(fixture.v===1&&fixture.synthetic&&fixture.origin===stagingOrigin&&fixture.run===state.run&&fixture.memberId===a.id&&fixture.prepared&&!fixture.afterComplete&&(!fixture.afterStarted||process.argv.includes('--resume')&&fixture.deletedAcknowledged&&!fixture.shortenedEnvelope)&&!!snapshot&&uuid.test(snapshot),'RESTORE_FIXTURE_PHASE_INVALID');
   check(Date.parse(fixture.expiresAt)>Date.now()+10*60000,'RESTORE_FIXTURE_TOO_CLOSE_TO_EXPIRY');
   const ticket=await readRestorePrivate<{id:string;environment:string;pairedAt:string;generation:string;captureVerified:boolean}>('artifacts/private/restore-ops/manual-media-backups/staging-'+snapshot+'.json');
   check(ticket.id===snapshot&&ticket.environment==='staging'&&ticket.captureVerified&&Date.parse(ticket.pairedAt)>Date.parse(fixture.createdAt),'RESTORE_FIXTURE_SNAPSHOT_INVALID');
@@ -74,13 +75,14 @@ try {
   const manifest=await verifyMediaBackup(backupReaderFromEnvironment('porchday-staging-media-backup') as never,snapshot,ticket.pairedAt,async(item,bytes)=>{if(expected.has(item.object_key)){check(!item.omitted&&bytes!==null,'RESTORE_FIXTURE_SNAPSHOT_PHOTO_MISSING');expected.delete(item.object_key);}},{generation:ticket.generation,maxJournalSequence:journal.value.sequence});
   check(!expected.size&&manifest.objects>=2,'RESTORE_FIXTURE_SNAPSHOT_PHOTO_MISSING');
   fixture.snapshotId=snapshot;fixture.pairedAt=ticket.pairedAt;fixture.afterStarted=true;await writeRestorePrivate(path,fixture);
-  await api.json('/api/v1/posts/'+fixture.deleted.id,'DELETE');fixture.deletedAcknowledged=true;await writeRestorePrivate(path,fixture);
+  if(!fixture.deletedAcknowledged){await api.json('/api/v1/posts/'+fixture.deleted.id,'DELETE');fixture.deletedAcknowledged=true;await writeRestorePrivate(path,fixture);}
   check((await api.request('/api/v1/posts/'+fixture.deleted.id)).status===404&&(await api.request('/api/v1/media/'+fixture.deleted.mediaId+'/bytes')).status===404,'RESTORE_FIXTURE_DELETION_VISIBLE');
-  const expiresAt=new Date(Date.now()-1000).toISOString(),old=fixture.timed.envelope!.context;
+  const expiresAt=new Date(Date.now()+20000).toISOString(),old=fixture.timed.envelope!.context;
   const envelope=await seal(fixture.timedPayload,{...old,expiresAt,revision:old.revision+1},fixture.timed.id);
   const lifecycle=await signStatement({purpose:'porchday-lifecycle',id:old.id,revision:envelope.context.revision,expiresAt},key);
   fixture.shortenedAt=expiresAt;fixture.shortenedEnvelope=envelope;await writeRestorePrivate(path,fixture);
   await api.json('/api/v1/posts/'+fixture.timed.id,'PUT',{envelope,lifecycle});fixture.expiryAcknowledged=true;await writeRestorePrivate(path,fixture);
+  await wait(Math.max(0,Date.parse(expiresAt)-Date.now())+500);
   check((await api.request('/api/v1/posts/'+fixture.timed.id)).status===404,'RESTORE_FIXTURE_EXPIRY_VISIBLE');
   check((await api.request('/api/v1/posts/'+fixture.survivor.id)).status===200,'RESTORE_FIXTURE_SURVIVOR_LOST');
   fixture.afterComplete=true;await writeRestorePrivate(path,fixture);progress('verified-snapshot-then-acknowledged-deletion-and-shortened-deadline');
