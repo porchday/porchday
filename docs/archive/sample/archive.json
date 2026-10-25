@@ -1,0 +1,99 @@
+{
+  "format": "porchday-archive",
+  "version": 1,
+  "generated_at": "2026-01-01T12:00:00.000Z",
+  "member_id": "11111111-1111-4111-8111-111111111111",
+  "handle": "synthetic_neighbor",
+  "profile": {
+    "displayName": "Synthetic sample",
+    "bio": "Fictional data for archive interoperability tests. No real member is represented.",
+    "theme": "sage",
+    "interests": "Gardens and shared meals",
+    "sectionOrder": [
+      "about",
+      "wall"
+    ],
+    "avatar": null,
+    "cover": null,
+    "background": null
+  },
+  "posts": [
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "created_at": "2026-01-01T10:00:00.000Z",
+      "expires_at": null,
+      "audience": "connections",
+      "parent_id": null,
+      "group_id": null,
+      "payload": {
+        "text": "This is a synthetic photo, not a real person or place.",
+        "media": [
+          {
+            "id": "77777777-7777-4777-8777-777777777777",
+            "alt": "Synthetic 16 by 16 color gradient.",
+            "mime": "image/jpeg",
+            "width": 16,
+            "height": 16
+          }
+        ]
+      }
+    }
+  ],
+  "comments": [
+    {
+      "id": "55555555-5555-4555-8555-555555555555",
+      "created_at": "2026-01-01T10:00:00.000Z",
+      "expires_at": "2026-01-02T00:00:00.000Z",
+      "audience": "connections",
+      "parent_id": "88888888-8888-4888-8888-888888888888",
+      "group_id": null,
+      "payload": {
+        "text": "A fictional comment on unavailable private context.",
+        "media": []
+      }
+    }
+  ],
+  "reactions": [
+    {
+      "id": "66666666-6666-4666-8666-666666666666",
+      "created_at": "2026-01-01T10:00:00.000Z",
+      "expires_at": null,
+      "audience": "connections",
+      "parent_id": "44444444-4444-4444-8444-444444444444",
+      "group_id": null,
+      "payload": {
+        "emoji": "like"
+      }
+    }
+  ],
+  "media": [
+    {
+      "id": "77777777-7777-4777-8777-777777777777",
+      "path": "photos/77777777-7777-4777-8777-777777777777.jpg",
+      "mime": "image/jpeg",
+      "alt": "Synthetic 16 by 16 color gradient.",
+      "name": "synthetic-gradient.jpg",
+      "width": 16,
+      "height": 16,
+      "sha256": "a25ad11e0eb4869008bb3152ef59a76bfcf36db7851bc888d42094f5bc2cbe0c",
+      "post_id": "44444444-4444-4444-8444-444444444444",
+      "profile_id": null,
+      "group_id": null,
+      "slot": null,
+      "created_at": "2026-01-01T10:00:00.000Z",
+      "expires_at": null
+    }
+  ],
+  "connections": [
+    {
+      "member_id": "22222222-2222-4222-8222-222222222222",
+      "kind": "family"
+    }
+  ],
+  "groups": [
+    {
+      "group_id": "33333333-3333-4333-8333-333333333333",
+      "role": "member"
+    }
+  ]
+}

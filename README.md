@@ -23,6 +23,8 @@ Use Node 24+ and Docker. Run `npm ci`, then the documented local database setup.
 
 The design in [design/social-network-design.md](design/social-network-design.md) defines the complete feature and security requirements. [docs/build-status.md](docs/build-status.md) tracks actual evidence and outstanding work. Do not infer readiness from this README.
 
+The [portable archive contract](docs/archive/README.md) includes its schema, synthetic samples, version policy and importer guide. The [integration API guide](docs/integration-api.md) documents the implemented consent flow, scopes and limits. These documents are checked into this private repository; they do not announce a public API or source release.
+
 ## Secrets
 
 Credentials are outside the repository in `~/.config/inner-circle/secrets.env`. `scripts/with-secrets.py` runs a trusted command with that environment without printing values. Never source the file as shell code, embed credentials in commands/URLs, log them, or commit them. Production credentials never reach clients. Encryption recovery keys are generated on member devices, not by deployment tooling.
