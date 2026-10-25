@@ -1,6 +1,6 @@
 # Native comments and reactions interoperability
 
-This is a bounded, opt-in staging acceptance check. Preparation is implemented; a hosted run has not yet been performed. It supplements the earlier successful [post/photo interoperability check](hosted-native-verification.md). It does not substitute for UI accessibility checks or an independent cryptography review.
+This bounded, opt-in staging acceptance check passed on October 25, 2026. It supplements the earlier successful [post/photo interoperability check](hosted-native-verification.md). It does not substitute for UI accessibility checks or an independent cryptography review.
 
 The fixture uses only surviving synthetic member A. B's recovery case and deleted member C are untouched. The JavaScript side uses the maintained OpenPGP.js package; the native XCTest uses the shipped `AppModel`, `API`, `CryptoVault`, `CommentDeadline`, Keychain and GopenPGP paths. No credentials, private keys, fixture values, raw test logs, screenshots or xcresult bundles are published.
 
@@ -21,3 +21,24 @@ Root must keep A exclusive during prepare, hosted execution, independent check a
 ## Local checks and limits
 
 Pure guard tests cover explicit invocation, A-only selection, unchanged prior keys/profile, exact captured-device cleanup, object/context binding, and fixed-code refusal without private-state access. The hosted runner tests retain the original version 1 post/photo contract while requiring exactly the selected version 2 test to pass, with zero skipped tests. Local Swift parsing can check syntax; actual native compilation and execution still require the macOS CI workflow. No hosted success is claimed until its one XCTest and the independent JavaScript verification both pass.
+
+## Verified hosted attempt
+
+Attempt `6e8cc994` used native/client commit `cbdec1ab2321cf84eab9cbf5cc0cb7559df703a1` and unchanged staging release `1ff58dd1-e8a9-4736-af4a-e2fa5779a373`. Ordinary native CI [40229365541](https://github.com/bobbyhwilder/porchday/actions/runs/40229365541) passed first. Public and protected staging health then returned HTTP 200 with the expected release and healthy readiness. An initial Python HTTP preflight yielded an unclassified transport failure; a Node fetch using normal TLS verified readiness. That read-only preflight created no fixture and did not cause a hosted-test retry.
+
+Exactly one fixture and one manual hosted run were used:
+
+| Evidence | Result (UTC, October 25, 2026) |
+| --- | --- |
+| Immutable A-only intent | Written at 20:12:18.530, before content writes |
+| Prepare phase | Complete at 20:12:31.703; session revoked; no uncertain publication |
+| Hosted native workflow [40229742521](https://github.com/bobbyhwilder/porchday/actions/runs/40229742521) | Exact reviewed SHA; one selected XCTest passed, zero skipped; private simulator/test-output cleanup passed |
+| Operator completion | 20:16:11.171; terminal workflow confirmed; exact temporary GitHub secret deleted and absence verified |
+| Independent OpenPGP.js check | Complete at 20:16:28.159; native comments, reaction tags, historical author key, signatures, plaintext and deadlines verified; session revoked |
+| Normal fixture cleanup | Complete at 20:17:03.090; parent 404, all four child DELETEs 404; original profile/devices/backup preserved; session revoked |
+
+The native test decrypted the JavaScript post, shorter comment/reply and both reactions. JavaScript independently decrypted two native comments: one inherited the exact post deadline, and the reply preserved its explicitly shorter 20-minute absolute deadline. Each post/comment target retained exactly `like`, `love` and `celebrate`. The native test also verified four reactions after duplicate additions and three after removing `laugh`, establishing the add/idempotence/remove sequence rather than inferring it only from final state.
+
+A had two active devices and two protected backup entries before the run. Both original records and the recovery key remained unchanged. The new native device was revoked by its captured ID, returning A to two active devices; its revoked public record and third encrypted backup entry remain for historical verification. The source profile was unchanged, no relationships were changed, and B's pending recovery case and deleted C were untouched. The fixture contained no media, so no R2 deletion wait was needed. The API evidence establishes missing parent/children and inaccessible reactions; it does not claim that PostgreSQL backup retention is bypassed.
+
+Private evidence is retained in owner-only files prefixed `artifacts/private/hosted-smoke/native-social-6e8cc994-`: `intent.json`, `dispatch-intent.json`, `dispatched.json`, `operator-result.json`, `verified.json`, and the timestamped `prepare-result`, `check-result` and `cleanup-result` receipts. All three final phase receipts contain `complete: true`, `logout: true` and `mutationUnconfirmed: false`; cleanup additionally contains `cleanup: true`. No failed mutation or bookkeeping attempt is hidden in this run. The hosted workflow exercised shipped native API/cryptography/deadline code, not every screen's tap path. Later application changes require their own appropriate validation and are not retrospectively covered by this pinned result.
