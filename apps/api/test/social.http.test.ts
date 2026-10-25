@@ -25,14 +25,64 @@ const objects = new Map<string, ArrayBuffer>();
 async function request(member: string, path: string, method = 'GET', value?: unknown) { const init: RequestInit = { method, headers: { 'x-test-member': member, ...(value ? { 'content-type': 'application/json' } : {}) }, ...(value ? { body: JSON.stringify(value) } : {}) }; const response = await app.request('https://porchday.test' + path, init, env); const data = await response.json(); if (response.status >= 500)
     throw Error(JSON.stringify({ path, status: response.status, data })); return { status: response.status, data }; }
 async function person() { const id = randomUUID(), deviceId = randomUUID(); await sql `insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`; await sql `insert into app.profiles(member_id,handle) values(${id},${'t_' + id.replaceAll('-', '').slice(0, 20)})`; const keys = await generateDeviceKeys(id, deviceId); const recovery = await generateDeviceKeys(id, 'recovery', keys.recoverySecret); const { status } = await request(id, '/devices', 'POST', { id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, authorization: { type: 'initial' }, recovery_public_key: recovery.publicKey, backup: { v: 1, devices: [{ id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, encrypted_private_key: keys.encryptedPrivateKey }], recovery: { public_key: recovery.publicKey, fingerprint: recovery.fingerprint, encrypted_private_key: recovery.encryptedPrivateKey } } }); expect(status).toBe(201); return { id, deviceId, key: await unlockPrivateKey(keys.encryptedPrivateKey, keys.recoverySecret), publicKey: keys.publicKey }; }
-async function connection(a: Person, b: Person) { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind: 'friend' }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST')).status).toBe(200); }
+async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST')).status).toBe(200); }
 async function seal(a: Person, payload: unknown, override: Partial<ContentContext> = {}, postId?: string) { const audience = override.audience ?? 'connections'; const snap = await request(a.id, `/audiences?audience=${audience}${override.groupId ? '&group_id=' + override.groupId : ''}${postId ? '&post_id=' + postId : ''}`); expect(snap.status).toBe(200); const context: ContentContext = { id: randomUUID(), kind: 'post', authorId: a.id, authorDeviceId: a.deviceId, audience, parentId: null, groupId: null, epoch: snap.data.epoch, createdAt: new Date().toISOString(), expiresAt: null, revision: 1, ...override, epoch: snap.data.epoch }; return encryptObject({ context, payload, signingKey: a.key, recipients: snap.data.devices.map((d: any) => ({ memberId: d.member_id, deviceId: d.id, publicKey: d.public_key })) }); }
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: { put: async (k: string, b: ArrayBuffer) => { objects.set(k, b); }, get: async (k: string) => objects.has(k) ? { body: objects.get(k) } : null, delete: async (k: string) => { objects.delete(k); } } } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(await readFile(new URL('../migrations/034_feed_candidates.sql', import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: { put: async (k: string, b: ArrayBuffer) => { objects.set(k, b); }, get: async (k: string) => objects.has(k) ? { body: objects.get(k) } : null, delete: async (k: string) => { objects.delete(k); } } } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('paginates tied feed dates without widening historic, family, private, group, expired, muted or blocked audiences', async () => {
+        const viewer = await person(), relative = await person(), friend = await person(), newcomer = await person();
+        const visible: {id: string; at: string}[] = [];
+        async function publish(author: Person, override: Partial<ContentContext> = {}, included = false) {
+            const envelope = await seal(author, {text: 'Encrypted feed fixture'}, override);
+            expect((await request(author.id, '/posts', 'POST', {envelope})).status).toBe(201);
+            const record = {id: envelope.context.id, at: envelope.context.createdAt};
+            if (included) visible.push(record);
+            return record;
+        }
+        const old = await publish(newcomer); // No historical grant when later connected.
+        await connection(viewer, relative, 'family');
+        await connection(viewer, friend);
+        await connection(viewer, newcomer);
+        const own = await publish(viewer, {audience: 'only_me'}, true);
+        const family = await publish(relative, {audience: 'family'}, true);
+        const friendPost = await publish(friend, {}, true);
+        const newPost = await publish(newcomer, {}, true);
+        await publish(friend, {audience: 'family'});
+        await publish(friend, {audience: 'only_me'});
+        const expired = await publish(friend, {createdAt: new Date(Date.now() - 10_000).toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString()});
+        await sql`update app.posts set expires_at=now()-interval '1 second' where id=${expired.id}`;
+        const groupEnvelope = await seal(viewer, {name: 'Separate group'}, {kind: 'group', audience: 'only_me'});
+        expect((await request(viewer.id, '/groups', 'POST', {envelope: groupEnvelope})).status).toBe(201);
+        await publish(viewer, {audience: 'group', groupId: groupEnvelope.context.id});
+        const tie = new Date(Date.now() - 1000).toISOString();
+        for (let n = 0; n < 32; n++) await publish(relative, {createdAt: tie}, true);
+        const first = await request(viewer.id, '/feed');
+        expect(first.data.items).toHaveLength(30);
+        expect(first.data.next_cursor).toBeTruthy();
+        const second = await request(viewer.id, '/feed?cursor=' + encodeURIComponent(first.data.next_cursor));
+        expect(second.data.next_cursor).toBeNull();
+        const ids = [...first.data.items, ...second.data.items].map((p: any) => p.id);
+        expect(ids).toEqual(visible.toSorted((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id)).map(p => p.id));
+        expect(new Set(ids).size).toBe(36);
+        expect(ids).not.toContain(old.id);
+        expect(first.data.items.every((p: any) => typeof p.author_handle === 'string')).toBe(true);
+        expect((await request(viewer.id, '/mutes/' + relative.id, 'PUT')).status).toBe(200);
+        expect(new Set((await request(viewer.id, '/feed')).data.items.map((p: any) => p.id))).toEqual(new Set([own.id, friendPost.id, newPost.id]));
+        expect((await request(viewer.id, '/blocks/' + friend.id, 'PUT')).status).toBe(200);
+        expect(new Set((await request(viewer.id, '/feed')).data.items.map((p: any) => p.id))).toEqual(new Set([own.id, newPost.id]));
+        expect((await request(viewer.id, '/posts/' + friendPost.id)).status).toBe(404);
+        await request(viewer.id, '/mutes/' + relative.id, 'DELETE');
+        const [edge] = await sql`select id from app.connections where ${viewer.id} in(member_a,member_b) and ${relative.id} in(member_a,member_b)`;
+        expect((await request(viewer.id, '/connections/' + edge.id + '/kind', 'PUT', {kind: 'friend'})).status).toBe(200);
+        expect((await request(relative.id, '/connections/' + edge.id + '/kind', 'PUT', {kind: 'friend'})).status).toBe(200);
+        const afterDemotion = await request(viewer.id, '/feed');
+        expect(afterDemotion.data.items.map((p: any) => p.id)).not.toContain(family.id);
+        expect(afterDemotion.data.items.some((p: any) => p.author_id === relative.id)).toBe(true);
+    }, 60_000);
     it('shares encrypted posts, photos, threaded comments and distinct reactions; requires signed edits and rejects stale audiences', async () => {
         const a = await person(), b = await person(), stranger = await person();
         await connection(a, b);

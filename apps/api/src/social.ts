@@ -225,7 +225,20 @@ export function createSocialRoutes() {
     app.get('/mutes', async (c) => c.json({ items: await tx(c, db => db `select target from app.mutes`) }));
     app.put('/mutes/:id', async (c) => c.json(await tx(c, async (db) => { await db `insert into app.mutes(actor,target) values(${c.get('memberId')},${id(c.req.param('id'))}) on conflict do nothing`; return { ok: true }; })));
     app.delete('/mutes/:id', async (c) => c.json(await tx(c, async (db) => { await db `delete from app.mutes where actor=${c.get('memberId')} and target=${id(c.req.param('id'))}`; return { ok: true }; })));
-    app.get('/feed', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where group_id is null and not exists(select from app.mutes where target=p.author_id) ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
+    app.get('/feed', async (c) => {
+        const after = cursor(c.req.query('cursor'));
+        return c.json(await tx(c, async (db) => page(await db`
+            select p.*,h.handle as author_handle from app.posts p
+            left join lateral app.member_handles(array[p.author_id]) h on true
+            where p.group_id is null and p.author_id=any(array(
+                select app.actor() union all
+                select member_b from app.connections where member_a=app.actor() union all
+                select member_a from app.connections where member_b=app.actor()
+            )) and not exists(select from app.mutes where target=p.author_id)
+            ${after ? db`and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db``}
+            order by p.created_at desc,p.id desc limit 31
+        `)));
+    });
     app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select * from app.posts where author_id=${id(c.req.param('id'))} and group_id is null ${after ? db `and(created_at,id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by created_at desc,id desc limit 31`))); });
     app.post('/posts', async (c) => {
         const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]) }));
