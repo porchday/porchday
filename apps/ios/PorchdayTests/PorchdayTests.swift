@@ -9,6 +9,14 @@ final class PorchdayTests: XCTestCase {
         XCTAssertEqual(PorchDate.deadline(seconds:3600,parent:parent),parent)
         XCTAssertLessThan(PorchDate.deadline(seconds:1,parent:parent)!,parent)
     }
+    func testImportedPhotoKeepsItsShorterDeadline() throws {
+        let now=Date(),short=now.addingTimeInterval(60),long=now.addingTimeInterval(3600)
+        let photo:JSON = .object(["expires_at":.string(PorchDate.string(short))])
+        XCTAssertEqual(try PortableArchive.photoDeadline(photo,parent:long),PorchDate.parse(PorchDate.string(short)))
+        XCTAssertEqual(try PortableArchive.photoDeadline(photo,parent:now),now)
+        XCTAssertEqual(try PortableArchive.photoDeadline(.object([:]),parent:long),long)
+        XCTAssertThrowsError(try PortableArchive.photoDeadline(.object(["expires_at":.string("invalid")]),parent:nil))
+    }
     func testOpenPGPJavaScriptFixtureAndTamperRejection() throws {
         let url=try XCTUnwrap(Bundle(for:Self.self).url(forResource:"openpgp-v1",withExtension:"json"))
         let fixture=try JSONDecoder().decode(JSON.self,from:Data(contentsOf:url)),bob=fixture["bob"],envelope=fixture["envelope"]

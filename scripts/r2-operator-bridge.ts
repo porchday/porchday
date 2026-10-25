@@ -71,7 +71,7 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
     },
   };
   try{
-    const metadata={main_module:'operator.mjs',compatibility_date:'2026-10-01',observability:{enabled:false},bindings:[{type:'secret_text',name:'OPERATOR_BEARER',text:bearer},{type:'plain_text',name:'JOURNAL_ACCESS',text:options.journalAccess??'read-write'},{type:'r2_bucket',name:'JOURNAL',bucket_name:options.journalBucket},...(options.mediaBucket?[{type:'r2_bucket',name:'MEDIA',bucket_name:options.mediaBucket}]:[])]};
+    const metadata={main_module:'operator.mjs',compatibility_date:'2026-10-01',observability:{enabled:false},bindings:[{type:'secret_text',name:'OPERATOR_BEARER',text:bearer},{type:'plain_text',name:'OPERATOR_EXPIRES_AT',text:String(Date.now()+60*60*1000)},{type:'plain_text',name:'JOURNAL_ACCESS',text:options.journalAccess??'read-write'},{type:'r2_bucket',name:'JOURNAL',bucket_name:options.journalBucket},...(options.mediaBucket?[{type:'r2_bucket',name:'MEDIA',bucket_name:options.mediaBucket}]:[])]};
     const form=new FormData();form.set('metadata',JSON.stringify(metadata));form.set('operator.mjs',new Blob([await readFile(new URL('./r2-operator-worker.mjs',import.meta.url),'utf8')],{type:'application/javascript+module'}),'operator.mjs');
     await api('/accounts/'+account+'/workers/scripts/'+script,'PUT',form);deployed=true;
     const domain=await api('/accounts/'+account+'/workers/domains','PUT',{hostname,service:script,enabled:true,previews_enabled:false,zone_id:zone});domainId=domain.id;if(typeof domainId!=='string')throw Error('OPERATOR_DOMAIN_RESPONSE_INVALID');options.onProgress?.('domain-attached-enabled-'+String(domain.enabled));

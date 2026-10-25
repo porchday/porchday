@@ -41,8 +41,12 @@ struct PortableArchive {
         guard let manifestBytes = files.removeValue(forKey: "archive.json") else { throw PorchError.message("Missing archive.json.") }
         let manifest = try JSONDecoder().decode(JSON.self, from: manifestBytes)
         guard manifest["format"].string == "porchday-archive", manifest["version"].integer == 1, let source = manifest["member_id"].string, UUID(uuidString: source) != nil else { throw PorchError.message("Unsupported archive schema.") }
-        for photo in manifest["media"].array { guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID).jpg", let bytes = files[path], photo["mime"].string == "image/jpeg", digest(bytes) == photo["sha256"].string else { throw PorchError.message("A photo is missing or failed its checksum.") } }
+        for photo in manifest["media"].array { guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID).jpg", let bytes = files[path], photo["mime"].string == "image/jpeg", digest(bytes) == photo["sha256"].string, photo["expires_at"] == .null || photo["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("A photo is missing or failed its checksum.") } }
         return PortableArchive(manifest: manifest, files: files)
+    }
+    static func photoDeadline(_ metadata:JSON,parent:Date?) throws -> Date? {
+        guard metadata["expires_at"] == .null || metadata["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("Invalid photo deadline.") }
+        return [parent,metadata["expires_at"].string.flatMap(PorchDate.parse)].compactMap{$0}.min()
     }
     static func escape(_ text: String) -> String { text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;").replacingOccurrences(of: "'", with: "&#39;") }
 }
@@ -62,6 +66,8 @@ struct PortableArchive {
     static func load(urls:[URL],secret:String) throws -> ArchiveSelection {
         guard !urls.isEmpty,urls.count<=1000 else { throw PorchError.message("Select all parts of one archive, up to 1000 files at a time.") }
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-import-"+UUID().uuidString,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
+        try FileManager.default.setAttributes([.protectionKey:FileProtectionType.complete],ofItemAtPath:directory.path)
+        var loaded=false;defer { if !loaded { try? FileManager.default.removeItem(at:directory) } }
         var staged:[(Int,URL)]=[],setID:String?,memberID:String?,total:Int?,completions=0,entryCount=0,profileCount=0,photoParts:[String:Int]=[:],recordIDs=Set<String>(),references=Set<String>()
         for url in urls {
             let scoped=url.startAccessingSecurityScopedResource();defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -82,6 +88,7 @@ struct PortableArchive {
             for photo in archive.manifest["media"].array { guard let id=photo["id"].string,photoParts[id]==nil else { throw PorchError.message("Duplicate photo across archive parts.") };photoParts[id]=index-1 }
         }
         guard profileCount<=1,completions==1,total==urls.count,Set(staged.map(\.0))==Set(1...urls.count),references.isSubset(of:Set(photoParts.keys)) else { throw PorchError.message("The archive is incomplete. Select every part, including its final completion part.") }
+        loaded=true
         return ArchiveSelection(urls:staged.sorted{$0.0<$1.0}.map(\.1),secret:secret,memberID:memberID ?? "",entryCount:entryCount,photoCount:photoParts.count,photos:photoParts,orphanPhotoIDs:Array(Set(photoParts.keys).subtracting(references)))
     }
 }
@@ -98,9 +105,9 @@ struct PortableArchive {
         func flush(final:Bool) async throws {
             if !final && size==0 { return }
             manifest["archive_set"] = .object(["id":.string(setID),"index":.number(Double(partNumber)),"total":final ? .number(Double(partNumber)):.null,"complete":.bool(final)])
+            let packed=try PortableArchive(manifest:.object(manifest),files:files).zip(),output=try secret.map { try CryptoVault.archive(packed,secret:$0) } ?? packed
             for offset in stride(from:0,to:refs.count,by:1000) { _ = try await api.social("/exports/"+jobID+"/validate",method:"POST",body:.object(["items":.array(Array(refs[offset..<min(offset+1000,refs.count)]))])) }
             if refs.isEmpty { _ = try await api.social("/exports/"+jobID+"/validate",method:"POST",body:.object(["items":.array([])])) }
-            let packed=try PortableArchive(manifest:.object(manifest),files:files).zip(),output=try secret.map { try CryptoVault.archive(packed,secret:$0) } ?? packed
             let target=directory.appendingPathComponent(String(format:"porchday-%03d.zip",partNumber)+(secret==nil ? "":".pgp"));try output.write(to:target,options:[.atomic,.completeFileProtection]);urls.append(target)
             partNumber += 1;manifest=base;files=[:];refs=[];size=0
         }
@@ -143,9 +150,11 @@ struct PortableArchive {
     }
     private func importPhoto(_ selection:ArchiveSelection,id:String,parent:String,expiry:Date?) async throws -> JSON {
         guard let member else { throw PorchError.message("Sign in first.") }
-        let (metadata,bytes)=try selection.photo(id),image=try PhotoPipeline.prepare(bytes)
+        let (metadata,bytes)=try selection.photo(id),deadline=try PortableArchive.photoDeadline(metadata,parent:expiry)
+        guard deadline.map({$0>Date()}) ?? true else { throw PorchError.message("An imported photo expired before it could be saved.") }
+        let image=try PhotoPipeline.prepare(bytes)
         let meta:JSON = .object(["id":.string(image.id),"alt":metadata["alt"],"mime":.string("image/jpeg"),"name":.string("photo.jpg"),"width":.number(Double(image.width)),"height":.number(Double(image.height))])
-        let envelope=try await vault.seal(meta.replacing("bytes",with:.string(image.bytes.base64EncodedString())),member:member,kind:"media",audience:"only_me",id:image.id,parent:parent,expiry:expiry)
+        let envelope=try await vault.seal(meta.replacing("bytes",with:.string(image.bytes.base64EncodedString())),member:member,kind:"media",audience:"only_me",id:image.id,parent:parent,expiry:deadline)
         let packed=try JSONEncoder().encode(envelope),upload=try await api.social("/media",method:"POST",body:.object(["id":.string(image.id),"envelope":envelope,"byte_size":.number(Double(packed.count))]))
         guard let url=upload["upload_url"].string else { throw PorchError.message("Upload is unavailable.") };_ = try await api.bytes(url,method:"PUT",body:packed);return meta
     }
@@ -158,7 +167,7 @@ struct PortableArchive {
             let expiry=row["expires_at"].string.flatMap(PorchDate.parse);if expiry.map({$0<=Date()})==true { return }
             guard let oldID=row["id"].string,let created=row["created_at"].string.flatMap(PorchDate.parse),created<=Date() else { throw PorchError.message("Invalid archive timestamp or identity.") }
             let newID=UUID().uuidString.lowercased();var payload=row["payload"],media:[JSON]=[]
-            for photo in payload["media"].array { guard let id=photo["id"].string else { throw PorchError.message("Invalid photo reference.") };media.append(try await importPhoto(selection,id:id,parent:newID,expiry:expiry)) }
+            for photo in payload["media"].array { guard let id=photo["id"].string else { throw PorchError.message("Invalid photo reference.") };let (metadata,_)=try selection.photo(id);if try PortableArchive.photoDeadline(metadata,parent:expiry).map({$0<=Date()})==true { continue };media.append(try await importPhoto(selection,id:id,parent:newID,expiry:expiry)) }
             if kind=="reaction" { payload=payload.replacing("text",with:.string("Imported reaction: "+(payload["emoji"].string ?? "unknown"))) }
             let provenance:JSON = .object(["kind":.string(kind),"member_id":.string(sourceID),"source_id":.string(oldID),"parent_id":row["parent_id"],"original_audience":row["audience"],"original_group_id":row["group_id"],"prior_provenance":payload["provenance"]])
             payload=payload.replacing("media",with:.array(media)).replacing("reactionSecret",with:.string(try CryptoVault.randomSecret())).replacing("provenance",with:provenance)

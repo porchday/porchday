@@ -2,7 +2,8 @@ const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Contr
 const journalKey=key=>typeof key==='string' && (key==='control.json' || /^(intents|receipts|probes)\/[a-f0-9-]{36}\.json$/.test(key) || /^batches\/[a-f0-9-]{36}\/[0-9]+-[0-9]+-[a-f0-9]{64}\.json$/.test(key));
 export default {async fetch(request,env) {
   // No body parsing, R2 access or diagnostic content before authorization.
-  if(!env.OPERATOR_BEARER || request.headers.get('Authorization')!=='Bearer '+env.OPERATOR_BEARER)return json({error:'UNAUTHORIZED'},401);
+  const expires=Number(env.OPERATOR_EXPIRES_AT);
+  if(!Number.isFinite(expires)||expires<=Date.now()||!env.OPERATOR_BEARER || request.headers.get('Authorization')!=='Bearer '+env.OPERATOR_BEARER)return json({error:'UNAUTHORIZED'},401);
   if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
   const path=new URL(request.url).pathname;
   if(path==='/health')return json({ready:true});

@@ -3,8 +3,18 @@ import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {randomUUID} from 'node:crypto';
 
 describe('Ephemeral operator Worker with real local R2 bindings',()=>{
+  it('denies missing or expired capability metadata before touching storage',async()=>{
+    for(const expires of[undefined,String(Date.now()-1000),'invalid']){
+      const mf=new Miniflare(convertV4MiniflareOptions({name:'operator',modules:true,scriptPath:new URL('./r2-operator-worker.mjs',import.meta.url).pathname,compatibilityDate:'2026-10-01',bindings:{OPERATOR_BEARER:'synthetic-operator-test',...(expires===undefined?{}:{OPERATOR_EXPIRES_AT:expires})},r2Buckets:['JOURNAL']}));
+      try{const response=await mf.dispatchFetch('https://ops.porchday.test/journal/put',{method:'POST',headers:{Authorization:'Bearer synthetic-operator-test','Content-Type':'application/json'},body:JSON.stringify({key:'control.json',value:'{}',ifNoneMatch:'*'})});expect(response.status).toBe(401);expect(await(await mf.getR2Bucket('JOURNAL')).get('control.json')).toBeNull();}finally{await mf.dispose();}
+    }
+  });
+  it('limits a verifier to reads and the disposable probe namespace',async()=>{
+    const mf=new Miniflare(convertV4MiniflareOptions({name:'operator',modules:true,scriptPath:new URL('./r2-operator-worker.mjs',import.meta.url).pathname,compatibilityDate:'2026-10-01',bindings:{OPERATOR_BEARER:'synthetic-operator-test',OPERATOR_EXPIRES_AT:String(Date.now()+60_000),JOURNAL_ACCESS:'read-only'},r2Buckets:['JOURNAL']}));
+    try{const call=(key:string)=>mf.dispatchFetch('https://ops.porchday.test/journal/put',{method:'POST',headers:{Authorization:'Bearer synthetic-operator-test','Content-Type':'application/json'},body:JSON.stringify({key,value:'{}',ifNoneMatch:'*'})});expect((await call('control.json')).status).toBe(403);expect((await call('probes/'+randomUUID()+'.json')).status).toBe(200);expect(await(await mf.getR2Bucket('JOURNAL')).get('control.json')).toBeNull();}finally{await mf.dispose();}
+  });
   it('rejects unauthenticated mutations and requires conditional writes',async()=>{
-    const mf=new Miniflare(convertV4MiniflareOptions({name:'operator',modules:true,scriptPath:new URL('./r2-operator-worker.mjs',import.meta.url).pathname,compatibilityDate:'2026-10-01',bindings:{OPERATOR_BEARER:'synthetic-operator-test'},r2Buckets:['JOURNAL','MEDIA']}));
+    const mf=new Miniflare(convertV4MiniflareOptions({name:'operator',modules:true,scriptPath:new URL('./r2-operator-worker.mjs',import.meta.url).pathname,compatibilityDate:'2026-10-01',bindings:{OPERATOR_BEARER:'synthetic-operator-test',OPERATOR_EXPIRES_AT:String(Date.now()+60_000)},r2Buckets:['JOURNAL','MEDIA']}));
     try {
       const call=(path:string,body:unknown,authorized=true)=>mf.dispatchFetch('https://ops.porchday.test'+path,{method:'POST',headers:{...(authorized?{Authorization:'Bearer synthetic-operator-test'}:{}),'Content-Type':'application/json'},body:JSON.stringify(body)});
       expect((await call('/journal/put',{key:'control.json',value:'{}',ifNoneMatch:'*'},false)).status).toBe(401);

@@ -21,8 +21,30 @@ struct EncryptedPhotoView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @State private var image: UIImage?
+    @State private var expiry: Date?
     @State private var error = ""
-    var body: some View { VStack(alignment: .leading) { if let image { Image(uiImage: image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius: 12)).accessibilityLabel(photo["alt"].string ?? "Shared photo"); if let alt = photo["alt"].string, !alt.isEmpty { Text(alt).font(.caption).foregroundStyle(.secondary) } } else { Label(error.isEmpty ? "Opening encrypted photo…" : error, systemImage: "photo").font(.caption).padding() } }.task(id: photo["id"].string) { do { guard let id = photo["id"].string else { return }; let bytes = try await model.api.bytes("/api/v1/media/\(id)/bytes"), envelope = try JSONDecoder().decode(JSON.self, from: bytes); let payload = try await vault.open(.object(["id": .string(id), "envelope": envelope])); guard payload["mime"].string == "image/jpeg", let encoded = payload["bytes"].string, let imageData = Data(base64Encoded: encoded) else { throw PorchError.message("Unsupported encrypted photo format.") }; image = try PhotoPipeline.safelyDecode(imageData) } catch { self.error = error.localizedDescription } } }
+    var body: some View {
+        TimelineView(.periodic(from:.now,by:1)) { clock in
+            let expired=expiry.map{$0<=clock.date} ?? false
+            VStack(alignment:.leading) {
+                if expired { Label("This photo has expired.",systemImage:"timer").font(.caption) }
+                else if let image {
+                    Image(uiImage:image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius:12)).accessibilityLabel(photo["alt"].string ?? "Shared photo")
+                    if let alt=photo["alt"].string,!alt.isEmpty { Text(alt).font(.caption).foregroundStyle(.secondary) }
+                } else { Label(error.isEmpty ? "Opening encrypted photo…":error,systemImage:"photo").font(.caption).padding() }
+            }.onChange(of:expired) { _,value in if value { image=nil } }
+        }.task(id:photo["id"].string) {
+            image=nil;expiry=nil;error=""
+            do {
+                guard let id=photo["id"].string else { return }
+                let bytes=try await model.api.bytes("/api/v1/media/\(id)/bytes"),envelope=try JSONDecoder().decode(JSON.self,from:bytes)
+                let payload=try await vault.open(.object(["id":.string(id),"envelope":envelope]))
+                guard payload["mime"].string=="image/jpeg",let encoded=payload["bytes"].string,let imageData=Data(base64Encoded:encoded) else { throw PorchError.message("Unsupported encrypted photo format.") }
+                expiry=envelope["context"]["expiresAt"].string.flatMap(PorchDate.parse)
+                image=try PhotoPipeline.safelyDecode(imageData)
+            } catch { self.error=error.localizedDescription }
+        }
+    }
 }
 struct CameraView: UIViewControllerRepresentable {
     let captured: (UIImage) -> Void
