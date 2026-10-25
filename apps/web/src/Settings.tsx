@@ -36,6 +36,7 @@ import { DataTransfer } from "./DataTransfer";
 import { TimeSettings } from "./TimeSettings";
 import { enableCurrentPush, disableAllPush } from "./push";
 import { PROFILE_SLOTS, planSurfacePhotos } from "./surface-media";
+import { WALLPAPERS, wallpaperId } from "./wallpaper";
 export function Settings({
   tab = "profile",
   onLogout,
@@ -275,6 +276,27 @@ function ProfileSettings() {
           Your wall should feel like you. Curated themes keep text readable and
           don’t run scripts or load outside trackers.
         </p>
+        <h3>Tiled wallpaper</h3>
+        <p className="small-copy">
+          Pick a pattern for the space around your wall. Text and photos stay on
+          readable panels. Your choice is saved with your encrypted profile.
+        </p>
+        <div className="wallpaper-grid" role="group" aria-label="Tiled wallpaper">
+          {[{ id: "none", label: "No wallpaper", description: "Keep this wall simple" }, ...WALLPAPERS].map((wallpaper) => (
+            <button
+              key={wallpaper.id}
+              type="button"
+              className={`wallpaper-choice ${wallpaperId(profile.wallpaper) === wallpaper.id ? "chosen" : ""}`}
+              aria-pressed={wallpaperId(profile.wallpaper) === wallpaper.id}
+              onClick={() => update("wallpaper", wallpaper.id)}
+            >
+              <span className={`wallpaper-preview wallpaper-${wallpaper.id}`} aria-hidden="true" />
+              <strong>{wallpaper.label}</strong>
+              <small>{wallpaper.description}</small>
+            </button>
+          ))}
+        </div>
+        <h3>Profile colors</h3>
         <div className="theme-grid">
           {THEMES.map((theme) => (
             <button

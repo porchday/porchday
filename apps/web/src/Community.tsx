@@ -27,6 +27,7 @@ import type { MediaPayload, Device } from "./api";
 import { AssetPicker, useAssetUpload, type PendingAsset } from "./Media";
 import { Fingerprint } from "./vault";
 import { planSurfacePhotos } from "./surface-media";
+import { wallpaperId } from "./wallpaper";
 export function Connections() {
   const vault = useVault();
   const [data, setData] = useState<Json | null>(null);
@@ -862,8 +863,9 @@ export function Wall({ id }: { id?: string }) {
     });
   }, [memberId]);
   const theme = standard ? "sage" : String(profile?.theme || "sage");
+  const wallpaper = standard ? "none" : wallpaperId(profile?.wallpaper);
   return (
-    <>
+    <div className={`personal-wall wallpaper-${wallpaper}`}>
       <section
         className={`wall-header theme-${THEMES.some((t) => t.id === theme) ? theme : "sage"} ${!standard && profile?.font === "sans" ? "profile-font-sans" : ""} ${!standard && profile?.sectionOrder === "interests-first" ? "interests-first" : ""}`}
       >
@@ -929,7 +931,7 @@ export function Wall({ id }: { id?: string }) {
       <Alert>{action.error}</Alert>
       {own && <Composer onPosted={() => setVersion((v) => v + 1)} />}
       <Feed key={version} wallId={memberId} />
-    </>
+    </div>
   );
 }
 export function Notifications() {

@@ -4,8 +4,13 @@ import { Logo, Icon, Button, Field, Alert, useAction, navigate } from "./ui";
 export function PublicHeader() {
   return (
     <header className="public-header wrap">
-      <Logo />
+      <div className="homemade-sign">
+        <span className="sign-note">~ welcome to our little corner ~</span>
+        <Logo />
+        <span className="sign-caption">friends & family & being yourself</span>
+      </div>
       <nav aria-label="Main navigation">
+        <a href="/">home</a>
         <a href="/about">The idea</a>
         <a href="/principles">Our promises</a>
         <a href="/login" className="login-link">
@@ -48,13 +53,28 @@ export function Landing() {
       <PublicHeader />
       <main id="main-content" className="classic-home wrap">
         <div className="classic-status">
-          A place for friends & family.{" "}
+          <strong>you are here: the porch</strong>{" "}
           <span>Adults 18+ · Invitation-only pilot</span>
         </div>
         <div className="classic-columns">
           <aside className="classic-side">
-            <section className="classic-box">
-              <h2>Welcome to Porchday</h2>
+            <section className="classic-box site-about">
+              <h2>about this little website</h2>
+              <div className="classic-box-body">
+                <div className="site-portrait" aria-hidden="true">
+                  <Icon name="sun" size={70} />
+                  <span>porch sweet porch</span>
+                </div>
+                <dl>
+                  <div><dt>Likes:</dt><dd>ordinary days, small circles, big feelings</dd></div>
+                  <div><dt>Dislikes:</dt><dd>ads, follower counts, bots</dd></div>
+                  <div><dt>Here for:</dt><dd>the people you actually know</dd></div>
+                </dl>
+                <p className="site-mood">current mood: cautiously optimistic ☀</p>
+              </div>
+            </section>
+            <section className="classic-box login-scrap">
+              <h2>come on in!</h2>
               <div className="classic-box-body">
                 <p>Already have an account?</p>
                 <a className="button primary" href="/login">
@@ -65,7 +85,7 @@ export function Landing() {
               </div>
             </section>
             <section className="classic-box">
-              <h2>Site directory</h2>
+              <h2>~ links around here ~</h2>
               <nav className="classic-directory" aria-label="Site directory">
                 <a href="/about">What is Porchday?</a>
                 <a href="/principles">Our promises</a>
@@ -86,13 +106,14 @@ export function Landing() {
               </div>
             </section>
             <div className="classic-badges" aria-label="Our commitments">
-              <span>AD-FREE</span>
-              <span>HUMANS ONLY</span>
-              <span>YOUR DATA</span>
+              <span>AD-FREE<br />and staying that way</span>
+              <span>HUMANS<br />welcome here</span>
+              <span>YOUR DATA<br />your business</span>
             </div>
           </aside>
           <div className="classic-content">
             <section className="classic-welcome classic-box">
+              <div className="welcome-sticker" aria-hidden="true">HEY! YOU FOUND US. ✷</div>
               <h1>a late 90s style social network</h1>
               <div className="classic-box-body">
                 <p className="classic-promise">
@@ -116,7 +137,7 @@ export function Landing() {
               </div>
             </section>
             <section className="classic-box">
-              <h2>A few things we believe in</h2>
+              <h2>things we’d like the internet to remember</h2>
               <dl className="classic-features">
                 <div>
                   <dt>Friends, not followers</dt>
@@ -161,7 +182,7 @@ export function Landing() {
               aria-label="Illustrated personal wall preview, not a real member"
             >
               <h2>
-                A wall of your own{" "}
+                your page. your particular kind of weird.{" "}
                 <small>Illustrated example — no public posts</small>
               </h2>
               <div className="classic-profile-columns">
@@ -203,7 +224,7 @@ export function Landing() {
                       <span aria-hidden="true">🪴</span>
                     </div>
                     <p className="classic-example-reactions">
-                      ♡ 3 &nbsp; ☀ 2 &nbsp; · &nbsp; 2 comments
+                      ♡ &nbsp; ☀ &nbsp; a little appreciation goes a long way
                     </p>
                   </article>
                   <div className="classic-example-comment">
@@ -213,7 +234,7 @@ export function Landing() {
               </div>
             </section>
             <section className="classic-box">
-              <h2>A different kind of social network</h2>
+              <h2>a note from the porch</h2>
               <div className="classic-box-body">
                 <p>
                   We believe the places where society connects should serve the
@@ -232,6 +253,7 @@ export function Landing() {
                   is private for now.
                 </p>
                 <a href="/about">More about the project »</a>
+                <p className="porch-postscript">P.S. Your page doesn’t have to look anything like ours.</p>
               </div>
             </section>
           </div>
