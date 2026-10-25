@@ -69,7 +69,7 @@ async function warning(parent: string, reply: boolean, fromPost = false) {
   check(shown === expected, 'TIMED_WARNING_DEADLINE');
 }
 async function selectCustom(locator: Locator, expiry: string) {
-  await locator.getByLabel('Expiration', { exact: true }).selectOption('custom');
+  await locator.getByRole('combobox', { name: 'Expiration', exact: true }).selectOption('custom');
   // This test's browser timezone is UTC; the shipped datetime-local conversion remains unchanged.
   await locator.getByLabel('Custom expiration date and time', { exact: true }).fill(expiry.slice(0, 16));
 }
@@ -97,7 +97,7 @@ async function submit(planned: ExpectedWrite, keyboard = false) {
 async function comment(text: string, parentId: string, parentExpiry: string, expiry = parentExpiry, keyboard = false) {
   const reply = parentId !== boundary!.postId;
   await form().getByLabel(reply ? 'Write a reply' : 'Write a comment', { exact: true }).fill(text);
-  if (expiry === parentExpiry) await form().getByLabel('Expiration', { exact: true }).selectOption('inherit');
+  if (expiry === parentExpiry) await form().getByRole('combobox', { name: 'Expiration', exact: true }).selectOption('inherit');
   else await selectCustom(form(), expiry);
   return submit({ kind: 'comment', parentId, expiresAt: expiry, acknowledged: parentExpiry, text, expectedStatus: 201 }, keyboard);
 }
@@ -202,7 +202,7 @@ try {
   await page.goto(stagingOrigin + '/app/post/' + boundary.postId); await page.getByText(postText, { exact: true }).waitFor();
   await form().getByLabel('Write a comment', { exact: true }).waitFor();
   progress('inherited-warning-and-input-bound'); await warning(parentExpiry, false);
-  check(await form().getByLabel('Expiration', { exact: true }).inputValue() === 'inherit', 'DEFAULT_INHERIT_REQUIRED');
+  check(await form().getByRole('combobox', { name: 'Expiration', exact: true }).inputValue() === 'inherit', 'DEFAULT_INHERIT_REQUIRED');
   await form().getByLabel('Write a comment', { exact: true }).fill(`Synthetic inherited comment ${attempt}`);
   await selectCustom(form(), new Date(Date.parse(parentExpiry) + 60000).toISOString());
   const custom = form().getByLabel('Custom expiration date and time', { exact: true });
@@ -212,16 +212,16 @@ try {
   await form().getByRole('button', { name: 'Comment', exact: true }).focus(); await page.keyboard.press('Enter');
   check(await custom.evaluate(node => document.activeElement === node) && boundary.captured.size === countBeforeInvalid && !blocked,
     'INVALID_CUSTOM_TIME_SUBMITTED');
-  await form().getByLabel('Expiration', { exact: true }).selectOption('inherit');
+  await form().getByRole('combobox', { name: 'Expiration', exact: true }).selectOption('inherit');
   const inheritedText = `Synthetic inherited comment ${attempt}`;
   const inherited = await comment(inheritedText, boundary.postId!, parentExpiry, parentExpiry, true);
   progress('shorter-comment'); const shorterText = `Synthetic shorter comment ${attempt}`;
   const shorter = await comment(shorterText, boundary.postId!, parentExpiry, shortExpiry);
   progress('reply-inherits-post'); await replyTo(inheritedText); await warning(parentExpiry, true, true);
-  check(await form().getByLabel('Expiration', { exact: true }).inputValue() === 'inherit', 'REPLY_DEFAULT_INHERIT_REQUIRED');
+  check(await form().getByRole('combobox', { name: 'Expiration', exact: true }).inputValue() === 'inherit', 'REPLY_DEFAULT_INHERIT_REQUIRED');
   await comment(`Synthetic inherited reply ${attempt}`, inherited.id, parentExpiry, parentExpiry, true);
   progress('reply-inherits-shorter-comment'); await replyTo(shorterText); await warning(shortExpiry, true, false);
-  await form().getByLabel('Expiration', { exact: true }).selectOption('custom');
+  await form().getByRole('combobox', { name: 'Expiration', exact: true }).selectOption('custom');
   check(await form().getByLabel('Custom expiration date and time', { exact: true }).getAttribute('max') === shortExpiry.slice(0, 16),
     'SHORT_REPLY_MAX_MISMATCH');
   await comment(`Synthetic shorter-parent reply ${attempt}`, shorter.id, shortExpiry);

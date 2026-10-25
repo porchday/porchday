@@ -1,6 +1,6 @@
-# Prepared timed-comment browser acceptance
+# Timed-comment browser acceptance
 
-This focused runner is prepared for review and has **not yet run against staging**. It uses synthetic A, its existing isolated Chromium profile and existing trusted encryption devices. It does not access the user's browser, synthetic B's pending recovery case, deleted C, staff routes or SQL. Run only after the shared test profile is released and an operator has reviewed the attempt:
+This focused runner uses synthetic A, its existing isolated Chromium profile and existing trusted encryption devices. It does not access the user's browser, synthetic B's pending recovery case, deleted C, staff routes or SQL. Run only after the shared test profile is released and an operator has reviewed the attempt:
 
 ```sh
 node --import tsx scripts/hosted-timed-comments.ts --run --attempt=<eight-new-hex-characters>
@@ -15,3 +15,7 @@ A browser request gate permits only the exact initial login, signout and one cur
 Cleanup uses the normal member API to delete only the captured parent after verifying its ownership and synthetic payload. Parent reads and all captured child deletion requests must then return 404. This establishes API-level cascade/access removal, not instantaneous physical erasure from retained backups. No photos are created. Original A content, its profile and its device set remain unchanged; both sessions are revoked and remembered browser keys/cookies cleared. Success is recorded only after cleanup completes. A failed or uncertain mutation is not blindly retried and cannot be labeled fully cleaned; inspect the private intent/receipts before continuing. Future fixture timers provide an additional bounded lifetime, not a substitute for normal cleanup.
 
 Only fixed phase/error labels, aggregate counts and boolean results go to the console. Credentials, recovery keys, cookies, plaintext, ciphertext, browser errors and screenshots are not logged. Private receipts contain captured synthetic IDs and deadlines but no encryption keys or content. Local tests cover invocation, mutation/ownership/deadline boundaries, bounded writes and handling of early UI failure; they do not establish hosted timer behavior.
+
+## Execution evidence
+
+Attempt `6830c1d9` reached ordinary login and existing-device unlock, then stopped with a form-locator timeout before any content submission. Its only mutation intent was login; cleanup completed without warnings. Local rendering of the real `TimerSelect` component reproduced the cause: an exact `Expiration` label query did not match the wrapping label, which also includes its option text. The real accessibility tree correctly names the control `Expiration`; the harness now uses `getByRole('combobox', { name: 'Expiration', exact: true })`. A blank local browser confirmed that role/name selector is unique in no-timer, inherited and custom states. This is a harness correction, with no application or CSP change. The failed attempt and immutable private operator note remain available; **it does not establish hosted timed-comment acceptance**.
