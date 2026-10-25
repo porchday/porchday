@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { readHostedFixture, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode } from "./hosted-ios-support.ts";
+import { readHostedFixture, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode, nativeFailureDiagnostic } from "./hosted-ios-support.ts";
 
 const now = Date.parse("2026-01-01T10:00:00.000Z");
 const fixture = {
@@ -66,6 +66,9 @@ describe("opt-in hosted iOS test controls", () => {
   it("extracts only a closed failure phase, never test log contents", () => {
     expect(nativeFailureCode("private details\nHOSTED_INTEROP_FAILED_RECOVERY\nmore private details")).toBe("HOSTED_INTEROP_FAILED_RECOVERY");
     expect(nativeFailureCode("HOSTED_INTEROP_FAILED_some_private_string")).toBeNull();
+    expect(nativeFailureDiagnostic("private details HOSTED_INTEROP_DIAGNOSTIC_KEYCHAIN_WRITE more private details")).toBe("KEYCHAIN_WRITE");
+    expect(nativeFailureDiagnostic("HOSTED_INTEROP_DIAGNOSTIC_private_payload")).toBeNull();
+    expect(nativeFailureDiagnostic("HOSTED_INTEROP_DIAGNOSTIC_OTHER_PRIVATE_PAYLOAD")).toBeNull();
   });
   it("refuses an ordinary local execution with fixed output and no fixture disclosure", () => {
     const secretMarker = "never-print-this-synthetic-secret";

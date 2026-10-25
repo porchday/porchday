@@ -76,3 +76,8 @@ export function nativeFailureCode(logTail: string): string | null {
   const match = logTail.match(/HOSTED_INTEROP_FAILED_(FIXTURE|LOGIN|RECOVERY|WEB_POST|WEB_MEDIA|NATIVE_MEDIA|NATIVE_POST|VERIFY_NATIVE_POST|LOGOUT)\b/);
   return match?.[0] ?? null;
 }
+
+export function nativeFailureDiagnostic(logTail: string): string | null {
+  const match = logTail.match(/HOSTED_INTEROP_DIAGNOSTIC_(KEYCHAIN_WRITE|KEYCHAIN_READ|MEMBER_SHAPE|DEVICE_SHAPE|ORIGIN|CLIENT_OTHER|UNAUTHORIZED|RATE_LIMIT|CREDENTIALS|EMAIL_UNVERIFIED|API_OTHER|DECODING|NETWORK_TIMEOUT|NETWORK_TLS|NETWORK_OTHER|STATE_MISMATCH|OTHER)\b/);
+  return match?.[1] ?? null;
+}

@@ -25,6 +25,43 @@ private struct HostedFixture: Decodable {
 }
 private enum HostedFailure: Error { case invalidFixture, unexpectedState }
 
+// A closed diagnostic vocabulary helps distinguish runtime failures without
+// serializing an NSError, provider response, request URL or private fixture.
+private func hostedDiagnostic(_ error: Error) -> String {
+    if let error = error as? PorchError {
+        switch error {
+        case .message(let message):
+            switch message {
+            case "Could not save this device's private keys securely.": return "KEYCHAIN_WRITE"
+            case "Unlock your device to access Porchday's secure storage.": return "KEYCHAIN_READ"
+            case "Your account details are unavailable.": return "MEMBER_SHAPE"
+            case "A device identity is incomplete.": return "DEVICE_SHAPE"
+            case "Untrusted server address.": return "ORIGIN"
+            default: return "CLIENT_OTHER"
+            }
+        case .api(let code, _, _):
+            switch code {
+            case "UNAUTHORIZED": return "UNAUTHORIZED"
+            case "INVALID_ORIGIN", "ORIGIN_DENIED": return "ORIGIN"
+            case "RATE_LIMIT", "RATE_LIMITED": return "RATE_LIMIT"
+            case "INVALID_EMAIL_OR_PASSWORD": return "CREDENTIALS"
+            case "EMAIL_NOT_VERIFIED": return "EMAIL_UNVERIFIED"
+            default: return "API_OTHER"
+            }
+        }
+    }
+    if error is DecodingError { return "DECODING" }
+    if let error = error as? URLError {
+        switch error.code {
+        case .timedOut: return "NETWORK_TIMEOUT"
+        case .secureConnectionFailed, .serverCertificateUntrusted, .serverCertificateHasBadDate, .serverCertificateHasUnknownRoot: return "NETWORK_TLS"
+        default: return "NETWORK_OTHER"
+        }
+    }
+    if error is HostedFailure { return "STATE_MISMATCH" }
+    return "OTHER"
+}
+
 final class HostedInteropTests: XCTestCase {
     @MainActor func testHostedInteroperability() async throws {
         guard ProcessInfo.processInfo.environment["PORCHDAY_HOSTED_STAGING_TEST"] == "1" else {
@@ -120,7 +157,7 @@ final class HostedInteropTests: XCTestCase {
         } catch {
             _ = try? await model.api.auth("sign-out", body: .object([:]))
             await model.api.clearSession(); model.vault.clear(); SecureStore.clear()
-            XCTFail("HOSTED_INTEROP_FAILED_" + phase)
+            XCTFail("HOSTED_INTEROP_FAILED_" + phase + " HOSTED_INTEROP_DIAGNOSTIC_" + hostedDiagnostic(error))
         }
     }
 }

@@ -4,10 +4,11 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { join, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
-import { HostedIOSError, readHostedFixture, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode } from "./hosted-ios-support.ts";
+import { HostedIOSError, readHostedFixture, configureHostedTestRun, verifyNativeTestResult, nativeFailureCode, nativeFailureDiagnostic } from "./hosted-ios-support.ts";
 
 const execute = promisify(execFile);
 let directory = "", simulator = "", phase = "PREFLIGHT", failure = "", cleanupFailed = false;
+let diagnostic: string | null = null;
 const cleanEnv = { ...process.env };
 const encoded = process.env.PORCHDAY_IOS_HOSTED_FIXTURE_B64 ?? "";
 delete process.env.PORCHDAY_IOS_HOSTED_FIXTURE_B64;
@@ -75,7 +76,10 @@ try {
   phase = "TEST";
   const resultPath = join(directory, "Hosted.xcresult");
   const code = await recorded("xcodebuild", ["test-without-building", "-xctestrun", manifest, "-destination", destination, "-only-testing:PorchdayTests/HostedInteropTests/testHostedInteroperability", "-parallel-testing-enabled", "NO", "-maximum-concurrent-test-simulator-destinations", "1", "-test-timeouts-enabled", "YES", "-default-test-execution-time-allowance", "480", "-maximum-test-execution-time-allowance", "600", "-resultBundlePath", resultPath, "CODE_SIGNING_ALLOWED=NO"], 12 * 60_000);
-  if (code !== 0) throw new HostedIOSError(nativeFailureCode(await logTail()) ?? "NATIVE_TEST_FAILED");
+  if (code !== 0) {
+    const tail = await logTail(); diagnostic = nativeFailureDiagnostic(tail);
+    throw new HostedIOSError(nativeFailureCode(tail) ?? "NATIVE_TEST_FAILED");
+  }
 
   phase = "RESULT";
   const root = JSON.parse(await capture("xcrun", ["xcresulttool", "get", "object", "--legacy", "--format", "json", "--path", resultPath]));
@@ -95,6 +99,6 @@ try {
   if (directory) try { await rm(directory, { recursive: true, force: true }); } catch { cleanupFailed = true; }
 }
 if (failure || cleanupFailed) {
-  console.error(JSON.stringify({ step: "hosted-native", result: "failed", phase, code: failure || "PRIVATE_CLEANUP_FAILED", cleanup: !cleanupFailed }));
+  console.error(JSON.stringify({ step: "hosted-native", result: "failed", phase, code: failure || "PRIVATE_CLEANUP_FAILED", ...(diagnostic ? {diagnostic} : {}), cleanup: !cleanupFailed }));
   process.exitCode = 1;
 } else console.log(JSON.stringify({ step: "hosted-native", result: "passed", tests: 1, cleanup: true }));
