@@ -169,7 +169,7 @@ hr {
   letter-spacing: -1.9px;
   white-space: nowrap;
 }
-.logo svg {
+.logo .logo-mark {
   width: 36px;
   height: 36px;
 }
@@ -179,7 +179,7 @@ hr {
 .logo-small {
   font-size: 29px;
 }
-.logo-small svg {
+.logo-small .logo-mark {
   width: 30px;
   height: 30px;
 }
@@ -1411,7 +1411,7 @@ hr {
   font-size: 32px;
   margin-bottom: 45px;
 }
-.sidebar > .logo svg {
+.sidebar > .logo .logo-mark {
   width: 32px;
   height: 32px;
 }
@@ -2905,7 +2905,7 @@ hr {
   .sidebar > .logo {
     font-size: 28px;
   }
-  .sidebar > .logo svg {
+  .sidebar > .logo .logo-mark {
     width: 29px;
     height: 29px;
   }
@@ -3080,7 +3080,7 @@ hr {
     font-size: 31px;
     gap: 8px;
   }
-  .logo svg {
+  .logo .logo-mark {
     width: 32px;
     height: 32px;
   }
@@ -3382,7 +3382,7 @@ hr {
   .public-footer .logo {
     font-size: 25px;
   }
-  .public-footer .logo svg {
+  .public-footer .logo .logo-mark {
     width: 26px;
     height: 26px;
   }
@@ -3483,7 +3483,7 @@ hr {
     margin-right: auto;
     font-size: 28px;
   }
-  .app-mobile-header .logo svg {
+  .app-mobile-header .logo .logo-mark {
     height: 27px;
     width: 27px;
   }

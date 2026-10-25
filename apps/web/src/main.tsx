@@ -129,7 +129,7 @@ function App() {
   useEffect(() => {
     document.title =
       path === "/"
-        ? "Porchday — a little closer"
+        ? "Porchday — a simple social network"
         : `${path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Your circle" : path.includes("wall") ? "Your wall" : path.includes("app") ? "Home" : "Welcome"} · Porchday`;
   }, [path]);
   async function signOut() {

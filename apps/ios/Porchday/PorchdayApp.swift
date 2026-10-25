@@ -11,7 +11,7 @@ import SwiftUI
                 .onOpenURL { model.handleURL($0) }
                 .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }
                 .onChange(of: scenePhase) { _, phase in if phase == .active, model.member != nil { Task { await model.restore() } } }
-                .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(Label("Porchday", systemImage: "sun.max").font(.largeTitle)) } }
+                .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(HStack(spacing: 12) { Image("PorchdayMark").resizable().frame(width: 48, height: 48).accessibilityHidden(true); Text("Porchday").font(.largeTitle) }) } }
         }
     }
 }
@@ -61,7 +61,7 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section { VStack(alignment: .leading, spacing: 12) { Image(systemName: "sun.max").font(.largeTitle); Text("Porchday").font(.largeTitle.bold()); Text("a late 90s style social network").font(.title3); Text("No ads. No influencers. No algorithm.").font(.headline); Text("A quieter place for your people. Your private content is end-to-end encrypted.") }.padding(.vertical) }
+                Section { VStack(alignment: .leading, spacing: 12) { Image("PorchdayMark").resizable().frame(width: 64, height: 64).accessibilityHidden(true); Text("Porchday").font(.largeTitle.bold()); Text("a simple social network").font(.title3); Text("No ads. No influencers. No algorithm.").font(.headline); Text("A quieter place for your people. Your private content is end-to-end encrypted.") }.padding(.vertical) }
                 Section(joining ? "Join by invitation" : "Welcome back") {
                     TextField("Email address", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("Password", text: $password).textContentType(joining ? .newPassword : .password)

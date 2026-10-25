@@ -159,15 +159,7 @@ export function Logo({ small = false }: { small?: boolean }) {
       href="/"
       aria-label="Porchday home"
     >
-      <svg viewBox="0 0 40 40" aria-hidden="true">
-        <path
-          d="M8 25a12 12 0 0 1 24 0M6 30h28M13 35h14M20 2v5M5 9l4 4M35 9l-4 4M1 23h4M35 23h4"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-        />
-      </svg>
+      <img className="logo-mark" src="/icon.svg" width="40" height="40" alt="" />
       <span>
         porchday<span className="logo-dot">.</span>
       </span>

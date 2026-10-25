@@ -92,8 +92,8 @@ summary:focus-visible {
   color: #fffaf0;
   gap: 7px;
 }
-.logo svg,
-.logo-small svg {
+.logo .logo-mark,
+.logo-small .logo-mark {
   width: 27px;
   height: 27px;
 }
@@ -606,7 +606,7 @@ summary:focus-visible {
   margin-bottom: 12px;
   gap: 5px;
 }
-.sidebar > .logo svg {
+.sidebar > .logo .logo-mark {
   width: 23px;
   height: 23px;
 }
@@ -1434,7 +1434,7 @@ body
   letter-spacing: -2px;
   text-shadow: 2px 2px #fff8df;
 }
-.homemade-sign .logo svg {
+.homemade-sign .logo .logo-mark {
   width: 38px;
   height: 38px;
 }
