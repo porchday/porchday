@@ -1,10 +1,29 @@
 # PlanetScale Postgres provisioning review
 
-Reviewed 2026-10-25 against migrations `000` through `037`, the existing migration/deployment scripts, current official documentation, installed `pscale` 0.348.0, and PlanetScale's public read-only pricing database. No paid PlanetScale resource was created during this review. `pscale size cluster list --engine postgresql --region us-west --format json` currently returns `NO_AUTH`; the linked Cloudflare billing account does not replace PlanetScale CLI authorization.
+Updated 2026-10-25 after authenticated provisioning and live application of migrations `000` through `038`. The installed `pscale` 0.348.0 now authenticates through OAuth. Both databases were created through the Cloudflare dashboard with Cloudflare billing; the CLI then provisioned managed credentials, applied the schema and verified runtime permissions. Secrets are stored outside Git in the owner's mode-0600 configuration file and private mode-0700 environment directories.
+
+## Live provisioning evidence
+
+| Environment | Provider resource | Created at (UTC) | Configuration | Base rate |
+|---|---|---|---|---:|
+| Staging | `andykonwinski/porchday-staging`, branch `main` | 2026-10-25 15:52:58.591 | PostgreSQL 17.11, `PS_5_AWS_ARM`, one node | $5/month |
+| Production | `andykonwinski/porchday-production`, branch `main` | 2026-10-25 15:55:23.504 | PostgreSQL 17.11, `PS_20_AWS_ARM`, primary plus two replicas | $50/month |
+
+Both are AWS Oregon (`us-west`), with 10 GiB minimum and 50 GiB maximum gp3 storage, 3,000 IOPS and 125 MiB/s baseline throughput. The authenticated catalog confirmed the selected prices before purchase. These are provisioned recurring resources, not capacity-test results. New member admission remains closed pending hosted acceptance checks.
+
+All 39 migrations applied to both real databases through direct port 5432 with certificate and hostname verification. Each uses a separate stable managed owner plus three provider-managed runtime logins. Live assertions using each runtime credential verified exactly one intended Porchday membership, no provider `postgres` membership, no superuser/BYPASSRLS/CREATEROLE/CREATEDB/REPLICATION, no owned relations/functions, and no `CREATE` on either `app` or `public`. Social cannot read auth tables, auth cannot read posts, and only jobs can execute the expiry worker. An actorless social read returns no rows, and a transaction-local actor clears after commit. Cross-member fixture tests and the actual Hyperdrive transaction path remain part of hosted acceptance; an empty database alone does not prove those cases.
+
+Effective database settings were verified as `pginsights.raw_queries=off`, `log_statement=none`, `log_min_duration_statement=-1`, and `log_parameter_max_length_on_error=0`. This avoids ordinary literal-query logging; it is not a claim that the database provider has no operational metadata or error logs.
+
+Both databases retain the default policies and now also have a daily backup with seven-day retention. The first schema backups completed successfully on October 25: staging `xm87si2d59n5` at 16:05:03.592 UTC (9,052,880 bytes), production `nb2sischn10x` at 16:06:09.521 UTC (9,049,094 bytes). Both expire November 1 at approximately 16:04 UTC. A hosted paired restore must still be exercised. The databases are new and do not yet contain seven days of recoverable history.
+
+Six Hyperdrive configurations were created and read back: one auth, social and jobs connection per environment, each with caching disabled, `sslmode=verify-full`, direct primary port 5432 and a five-connection origin limit. Hyperdrive requires an uploaded CA for verification mode; the verified PlanetScale TLS chain terminates at the system-trusted ISRG Root X1. Its public root certificate was uploaded after granting only the necessary account SSL-and-certificates permission. No private certificate key was involved. Retain that CA while configurations reference it, and review the verified chain before any CA rotation. Configuration IDs and nonsecret provider metadata are in `infra/resources.json`; passwords are not. [Hyperdrive verification options](https://developers.cloudflare.com/api/resources/hyperdrive/subresources/configs/methods/create/), [CA upload permission](https://developers.cloudflare.com/api/resources/mtls_certificates/methods/create/)
+
+Separate staging and production media-backup buckets now have public access disabled, no public custom domains and a seven-day `snapshots/` lifecycle. The configured database retention policy was verified before enabling their bindings. No completed paired media/database snapshot or restore is implied by creating the buckets.
 
 ## Compatibility result
 
-No unsupported SQL feature was identified. All 38 migrations applied successfully to a clean, disposable PostgreSQL 17.11 database under a role with `NOSUPERUSER CREATEDB CREATEROLE INHERIT LOGIN REPLICATION BYPASSRLS`, matching PlanetScale's documented default administrator attributes. The fixture used fresh, separately named runtime roles and left 42 RLS-enabled `app` tables. All three runtime roles were verified without superuser, BYPASSRLS, CREATEROLE, or CREATEDB. It did not install `pgcrypto`. The disposable database and test roles were removed afterward. This demonstrates ordinary non-superuser PostgreSQL compatibility, not a successful hosted PlanetScale migration.
+No unsupported SQL feature was identified. The earlier compatibility review applied migrations `000`–`037` successfully to a clean, disposable PostgreSQL 17.11 database under a role with `NOSUPERUSER CREATEDB CREATEROLE INHERIT LOGIN REPLICATION BYPASSRLS`, matching PlanetScale's documented default administrator attributes. It used fresh runtime roles, left 42 RLS-enabled `app` tables, and did not install `pgcrypto`. That disposable fixture was removed. The live 39-migration runs described above now also establish hosted schema compatibility.
 
 The migrations use standard schemas, foreign keys/cascades, indexes, JSONB, SQL/PLpgSQL functions, triggers, transaction advisory locks, transaction-local settings, role grants, and row policies. The runtime roles remain `NOSUPERUSER NOBYPASSRLS` and do not own application tables. Privileged functions retain their restricted grants and pinned search paths. No server filesystem access, untrusted language, `COPY PROGRAM`, `ALTER SYSTEM`, custom C extension, or superuser-only trigger disabling is required by the migrations.
 
@@ -12,7 +31,7 @@ PlanetScale supports SQL-created roles, and its administrator is deliberately no
 
 There is no `pgcrypto` dependency in the current migrations: UUID defaults use PostgreSQL's built-in `gen_random_uuid()`. PlanetScale nevertheless lists `pgcrypto` as supported if a later, reviewed migration needs it. Do not add it just to make provisioning look complete. [PostgreSQL UUID function](https://www.postgresql.org/docs/17/functions-uuid.html), [PlanetScale extensions](https://planetscale.com/docs/postgres/extensions)
 
-## Proposed economical pilot configuration
+## Pilot configuration and measured expansion options
 
 | Environment | Configuration | Verified base cluster price |
 |---|---|---:|
