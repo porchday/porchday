@@ -27,12 +27,19 @@ import UIKit
         let config = try? await model.api.social("/native-push/config")
         available = environment != nil && config?["enabled"].boolean == true
         guard available else { message = "Push notifications will be available in a signed iPhone build when delivery is configured. In-app updates remain available."; return }
-        let settings = await UNUserNotificationCenter.current().notificationSettings()
-        enabled = UserDefaults.standard.bool(forKey: choice(member.id)) && settings.authorizationStatus == .authorized
+        let authorized = await Self.permissionGranted()
+        enabled = UserDefaults.standard.bool(forKey: choice(member.id)) && authorized
         if enabled {
             registeringMember = member.id
             UIApplication.shared.registerForRemoteNotifications()
         } else { message = "Choose whether this iPhone receives generic updates. Notification previews never include private posts or names." }
+    }
+    private nonisolated static func permissionGranted() async -> Bool {
+        await withCheckedContinuation { continuation in
+            UNUserNotificationCenter.current().getNotificationSettings { settings in
+                continuation.resume(returning: settings.authorizationStatus == .authorized)
+            }
+        }
     }
     /// Only the member's explicit Enable action may request OS permission.
     func enable() async {
