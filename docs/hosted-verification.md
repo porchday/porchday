@@ -58,7 +58,7 @@ node --import tsx scripts/hosted-smoke.ts init
 node --import tsx scripts/hosted-smoke.ts signup --run
 ```
 
-`init` refuses to replace an existing run. The state file is ignored by Git and owner-readable only. It contains synthetic passwords and, after key setup, synthetic recovery material; never use it for a real member. Signup checks that an unverified account cannot obtain a member session or log in. It pauses before social work. A provider “queued” or “delivered” status is not proof of inbox receipt or working links.
+`init` refuses to replace an existing run. The state file is ignored by Git and owner-readable only. It contains synthetic passwords and, after key setup, synthetic recovery material; never use it for a real member. Signup checks that it grants no authenticated member session, then pauses before social work. The unverified password-login denial is covered locally; retrying it here would intentionally send another verification message. A provider “queued” or “delivered” status is not proof of inbox receipt or working links.
 
 Complete verification from the delivered mailbox, either through the ordinary browser link or by placing the three actual delivered links in mode-0600 `verification-links.json`:
 

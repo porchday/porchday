@@ -241,11 +241,8 @@ async function signup(s: State) {
       (await api.request("/api/v1/me")).status === 401,
       "UNVERIFIED_SESSION_GRANTED",
     );
-    const denied = await api.request("/api/auth/sign-in/email", "POST", {
-      email: a.email,
-      password: a.password,
-    });
-    check(denied.status === 403, "UNVERIFIED_LOGIN_ALLOWED");
+    // An unverified sign-in intentionally sends another verification message.
+    // Local auth tests cover that denial; avoid duplicating the owner's mail here.
   }
   progress("waiting-for-real-mailbox-verification");
 }
