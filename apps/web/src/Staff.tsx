@@ -3,6 +3,7 @@ import { decryptObject, type EncryptedEnvelope } from "@porchday/crypto";
 import { ApiError, get, post, del, items, localDate, type Json } from "./api";
 import { Alert, Button, Empty, Field, Icon, Loading, Logo, useAction } from "./ui";
 import { useOptionalVault, Fingerprint } from "./vault";
+import { recoveryReviewNotice, reviewValidation, reviewUnconfirmed } from "./staff-review";
 type StaffIdentity = { subject: string; email: string; roles: ("recovery" | "moderation")[] };
 
 export function StaffEntry() {
@@ -35,7 +36,10 @@ export function StaffEntry() {
         <Button variant="outline" onClick={() => window.location.assign("/cdn-cgi/access/logout")}>Sign out of staff access</Button>
       </>}
     </section>
-    {!!identity?.roles.length && <StaffConsole roles={identity.roles} onAccessLost={() => setIdentity(null)} />}
+    {!!identity?.roles.length && <StaffConsole roles={identity.roles} onAccessLost={() => {
+      setIdentity(null);
+      action.setError("Staff access could not be verified. Sign in through Cloudflare Access again, or ask an operator to check your authorized role.");
+    }} />}
   </main>;
 }
 
@@ -55,6 +59,9 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
   const [keys, setKeys] = useState<Json[]>([]);
   const generation = useRef(0);
   const action = useAction();
+  const reviewAction = useAction();
+  const reviewFeedback = useRef<HTMLDivElement>(null);
+  const reviewPending = useRef(false);
   const base =
     tab === "recovery"
       ? "/api/staff/recovery/cases"
@@ -104,10 +111,12 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
     setSelected(null);
     setEvidence(null);
     setRows(null);
+    reviewAction.setError(""); reviewAction.setNotice("");
     action.run(() => refresh());
     return () => { generation.current++; };
   }, [tab, filter]);
   async function open(row: Json) {
+    if (reviewPending.current) return;
     generation.current++;
     setSelected(null);
     setEvidence(null);
@@ -117,29 +126,54 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
       setReason("");
       setReference("");
       setDecision(tab === "recovery" ? "hold" : "review");
+      reviewAction.setError(""); reviewAction.setNotice("");
     });
   }
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!selected) return;
-    await action.run(async () => {
-      if (tab === "recovery")
-        await staffPost(`${base}/${selected.id}/review`, {
+    if (!selected || reviewPending.current || action.busy) return;
+    const invalid = reviewValidation(tab === "recovery", reference, reason);
+    if (invalid) {
+      reviewAction.setNotice(""); reviewAction.setError(invalid.message);
+      (e.currentTarget.elements.namedItem(invalid.field) as HTMLInputElement | null)?.focus();
+      return;
+    }
+    reviewPending.current = true;
+    await reviewAction.run(async () => {
+      const record = async (path: string, data: unknown) => {
+        try { return await staffPost(path, data); }
+        catch (error) {
+          if (error instanceof ApiError && error.status >= 400 && error.status < 500) throw error;
+          throw new Error(reviewUnconfirmed);
+        }
+      };
+      if (tab === "recovery") {
+        const response = await record(`${base}/${selected.id}/review`, {
           decision,
           evidenceReference: reference,
           reason,
         });
-      else
-        await staffPost(`${base}/${selected.id}/actions`, {
+        reviewAction.setNotice(recoveryReviewNotice(response, decision));
+      } else {
+        const response = await record(`${base}/${selected.id}/actions`, {
           action: decision,
           reason_code: reason
             .toLowerCase()
             .replace(/[^a-z_]/g, "_")
             .slice(0, 60),
         });
-      setSelected(await staffGet(`${base}/${selected.id}`));
-      await refresh();
-    }, "The review was recorded. Recovery transfers require approval from two distinct authorized reviewers.");
+        if (typeof response.id !== "string") throw new Error(reviewUnconfirmed);
+        reviewAction.setNotice("The moderation decision was recorded.");
+      }
+      try {
+        setSelected(await staffGet(`${base}/${selected.id}`));
+        await refresh();
+      } catch {
+        throw new Error("The decision was recorded, but the updated case could not be loaded. Refresh the case to inspect it; do not submit the decision again just to refresh this view.");
+      }
+    });
+    reviewPending.current = false;
+    reviewFeedback.current?.focus();
   }
   async function openEvidence() {
     if (!selected?.evidence_envelope) return;
@@ -179,6 +213,7 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
           <button
             className={`text-button ${tab === id ? "active" : ""}`}
             key={id}
+            disabled={reviewAction.busy}
             onClick={() => {
               setTab(id);
               setFilter("");
@@ -250,6 +285,7 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
           <h2>{tab === "recovery" ? "Recovery cases" : "Community reports"}</h2>
           <Button
             variant="quiet compact"
+            disabled={reviewAction.busy}
             onClick={() => action.run(() => refresh())}
           >
             Refresh
@@ -258,7 +294,7 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
         {
           <label className="field">
             <span>{tab === "moderation" ? "Report state" : "Case state"}</span>
-            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+            <select value={filter} disabled={reviewAction.busy} onChange={(e) => setFilter(e.target.value)}>
               <option value="">All states</option>
               {(tab === "moderation"
                 ? ["received", "reviewing", "resolved", "appealed"]
@@ -289,6 +325,7 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
             <button
               className="notification-row"
               key={row.id}
+              disabled={reviewAction.busy}
               onClick={() => open(row)}
             >
               <span className="feature-icon sage">
@@ -311,7 +348,7 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
         {cursor && (
           <Button
             variant="outline full"
-            busy={action.busy}
+            busy={action.busy || reviewAction.busy}
             onClick={() => action.run(() => refresh(true))}
           >
             Load more cases
@@ -409,7 +446,7 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
               )}
             </>
           )}
-          <form className="form-stack" onSubmit={submit}>
+          <form className="form-stack" onSubmit={submit} noValidate>
             <label className="field">
               <span>Review action</span>
               <select
@@ -443,12 +480,13 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
             {tab === "recovery" && (
               <Field
                 label="Corroborating evidence reference"
+                name="evidenceReference"
                 value={reference}
                 onChange={(e) => setReference(e.target.value)}
                 required
                 minLength={10}
                 maxLength={500}
-                help="Use a secure evidence reference. Do not paste passwords, recovery secrets, or unnecessary private data."
+                help="Required: 10–500 characters, excluding surrounding spaces. Use a secure evidence reference; never paste passwords, recovery secrets, or unnecessary private data."
               />
             )}
             <Field
@@ -458,12 +496,18 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
                   : "Reason code (letters and underscores)"
               }
               value={reason}
+              name="reason"
               onChange={(e) => setReason(e.target.value)}
               required
               minLength={tab === "recovery" ? 10 : 3}
               maxLength={tab === "recovery" ? 1000 : 60}
+              help={tab === "recovery" ? "Required: 10–1,000 characters, excluding surrounding spaces." : "Required: 3–60 characters."}
             />
-            <Button variant="primary" busy={action.busy}>
+            <div ref={reviewFeedback} tabIndex={-1} aria-label="Review decision feedback">
+              <Alert>{reviewAction.error}</Alert>
+              <Alert success>{reviewAction.notice}</Alert>
+            </div>
+            <Button variant="primary" busy={action.busy || reviewAction.busy}>
               Record review decision
             </Button>
           </form>
