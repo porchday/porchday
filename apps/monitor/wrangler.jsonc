@@ -7,6 +7,6 @@
   "preview_urls":false,
   "durable_objects":{"bindings":[{"name":"STATE","class_name":"Monitor"}]},
   "migrations":[{"tag":"v1","new_sqlite_classes":["Monitor"]}],
-  "vars":{"ENVIRONMENT":"staging","EMAIL_FROM":"Porchday <accounts@porchday.com>"},
+  "vars":{"ENVIRONMENT":"staging","EMAIL_FROM":"Porchday <accounts@porchday.com>","METRICS_ENABLED":"false"},
   "observability":{"enabled":true,"logs":{"enabled":true,"invocation_logs":false},"traces":{"enabled":false}}
 }
