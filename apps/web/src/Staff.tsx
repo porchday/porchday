@@ -1,6 +1,405 @@
-import React,{useEffect,useState} from 'react';
-import {decryptObject,type EncryptedEnvelope} from '@porchday/crypto';
-import {get,post,del,items,localDate,type Json} from './api';
-import {Alert,Button,Empty,Field,Icon,Loading,useAction} from './ui';
-import {useVault,Fingerprint} from './vault';
-export function StaffConsole(){const vault=useVault();const [tab,setTab]=useState('recovery');const [rows,setRows]=useState<Json[]|null>(null);const [selected,setSelected]=useState<Json|null>(null);const [reason,setReason]=useState('');const [reference,setReference]=useState('');const [decision,setDecision]=useState('hold');const [evidence,setEvidence]=useState<Json|null>(null);const [keys,setKeys]=useState<Json[]>([]);const action=useAction();const base=tab==='recovery'?'/api/staff/recovery/cases':'/api/staff/moderation/reports';async function refresh(){const data=await get(base);setRows(items(data));if(tab==='moderation')setKeys(items(await get('/api/staff/moderation/keys')));}useEffect(()=>{setSelected(null);setEvidence(null);setRows(null);action.run(refresh);},[tab]);async function open(row:Json){await action.run(async()=>{setSelected(await get(`${base}/${row.id}`));setEvidence(null);setReason('');setReference('');setDecision(tab==='recovery'?'hold':'review');});}async function submit(e:React.FormEvent){e.preventDefault();if(!selected)return;await action.run(async()=>{if(tab==='recovery')await post(`${base}/${selected.id}/review`,{decision,evidenceReference:reference,reason});else await post(`${base}/${selected.id}/actions`,{action:decision,reason_code:reason.toLowerCase().replace(/[^a-z_]/g,'_').slice(0,60)});setSelected(await get(`${base}/${selected.id}`));await refresh();},'The review was recorded. Recovery transfers require approval from two distinct authorized reviewers.');}async function openEvidence(){if(!selected?.evidence_envelope)return;await action.run(async()=>{const envelope=selected.evidence_envelope as EncryptedEnvelope;const author=await get(`${base}/${selected.id}/author-key`);const key=vault.keys.find(k=>envelope.recipients.some(r=>r.fingerprint===k.getFingerprint()));if(!key)throw new Error('This report was not encrypted for this trusted device. Use the original authorized moderation device.');const content=await decryptObject<Json>({envelope,expectedContext:envelope.context,privateKey:key,authorPublicKey:author.public_key});setEvidence(content);});}return <><div className="page-heading"><span className="eyebrow">AUTHORIZED HUMAN REVIEW</span><h1>Care for the circle.</h1><p>Staff access is role-limited and audited. Being staff never grants access to private walls.</p></div><nav className="settings-tabs" aria-label="Staff queues">{[['recovery','Account recovery'],['moderation','Community reports']].map(([id,label])=><button className={`text-button ${tab===id?'active':''}`} key={id} onClick={()=>setTab(id)}>{label}</button>)}</nav><Alert>{action.error}</Alert><Alert success>{action.notice}</Alert>{tab==='moderation'&&<section className="panel"><h2>Report evidence keys</h2><p>Register this trusted device to receive evidence members explicitly disclose in future reports. Existing reports cannot be decrypted by adding a new key.</p><Fingerprint device={vault.device}/>{keys.map(k=><div className="list-row" key={k.id}><span>{k.id===vault.device.id?'This device':k.id}<small>{k.revoked_at?'Revoked':'Active'}</small></span>{!k.revoked_at&&<Button variant="outline compact" busy={action.busy} onClick={()=>action.run(async()=>{await del(`/api/staff/moderation/keys/${k.id}`);await refresh();})}>Revoke</Button>}</div>)}<Button variant="outline" busy={action.busy} onClick={()=>action.run(async()=>{await post('/api/staff/moderation/keys',{id:vault.device.id,member_id:vault.member.id,public_key:vault.device.public_key,fingerprint:vault.device.fingerprint});await refresh();},'This trusted device can receive future, explicitly disclosed reports.')}>Register this device for report evidence</Button></section>}<section className="panel"><div className="section-title"><h2>{tab==='recovery'?'Recovery cases':'Community reports'}</h2><Button variant="quiet compact" onClick={()=>action.run(refresh)}>Refresh</Button></div>{rows===null?action.busy?<Loading/>:<p>Staff access is required. Sign in through the operator’s Cloudflare Access application with an authorized staff role.</p>:!rows.length?<Empty icon="shield" title="Nothing waiting here.">This queue contains no available cases.</Empty>:rows.map(row=><button className="notification-row" key={row.id} onClick={()=>open(row)}><span className="feature-icon sage"><Icon name="shield"/></span><span><strong>{tab==='recovery'?'Account recovery case':`${row.reason} report`}</strong><small>{row.id} · {localDate(row.created_at)}</small></span><span className="mini-tag">{row.state||row.status}</span></button>)}</section>{selected&&<section className="panel form-stack"><h2>Review case {String(selected.id).slice(0,8)}</h2><p>Status: <strong>{selected.state||selected.status}</strong></p>{tab==='recovery'?<><dl className="case-details"><dt>Account reference</dt><dd>{selected.account_reference}</dd><dt>Safe contact</dt><dd>{selected.safe_email}</dd><dt>Contact verified</dt><dd>{selected.contact_verified_at?'Yes — communication only, not ownership proof':'Not verified'}</dd><dt>Member’s description</dt><dd>{selected.description||'No description recorded.'}</dd><dt>Prior methods</dt><dd>{selected.trusted_method||'Not stated'}</dd></dl>{(selected.evidence||[]).map((e:Json)=><blockquote className="report-preview" key={e.id}><p>{e.description}</p><small>{e.evidence_reference||'No external reference'}{e.appeal?' · Appeal':''}</small></blockquote>)}<p>Do not infer ownership from public profile facts, a matching email string, or control of a newly supplied safe address. Corroborate established methods and security history. A hold stops extraction and destructive actions, while existing timers keep running.</p>{selected.reviews?.length>0&&<div className="report-preview"><strong>Recorded reviewer decisions</strong>{selected.reviews.map((r:Json,i:number)=><p key={r.id||i}>{r.decision} · {r.reason}</p>)}</div>}</>:<><p>Category: {selected.reason}. Target reference: {selected.target_id||selected.target_member||'Not provided'}.</p>{selected.evidence_disclosed&&selected.evidence_envelope?<><Button variant="outline" busy={action.busy} onClick={openEvidence}>Open explicitly disclosed evidence</Button>{evidence&&<div className="report-preview"><strong>Disclosed content</strong><blockquote>{String(evidence.selectedText||'')}</blockquote><p>{String(evidence.description||'')}</p><small>No undisclosed photos or private conversations are included.</small></div>}</>:<p>The member did not disclose private content. Review only the report and necessary behavioral metadata.</p>}</>}<form className="form-stack" onSubmit={submit}><label className="field"><span>Review action</span><select value={decision} onChange={e=>setDecision(e.target.value)}>{(tab==='recovery'?[['hold','Apply corroborated security hold'],['restore','Approve restoration (two reviewers required)'],['deny','Decline unsupported claim']]:[['review','Mark under review'],['resolve','Resolve report'],['restrict','Restrict social actions'],['suspend','Suspend account'],['restore','Restore permitted access'],['remove_content','Remove reported content']]).map(([id,label])=><option value={id} key={id}>{label}</option>)}</select></label>{tab==='recovery'&&<Field label="Corroborating evidence reference" value={reference} onChange={e=>setReference(e.target.value)} required maxLength={500} help="Use a secure evidence reference. Do not paste passwords, recovery secrets, or unnecessary private data."/>}<Field label={tab==='recovery'?'Reason for this decision':'Reason code (letters and underscores)'} value={reason} onChange={e=>setReason(e.target.value)} required minLength={3} maxLength={tab==='recovery'?2000:60}/><Button variant="primary" busy={action.busy}>Record review decision</Button></form></section>}</>}
+import React, { useEffect, useState } from "react";
+import { decryptObject, type EncryptedEnvelope } from "@porchday/crypto";
+import { get, post, del, items, localDate, type Json } from "./api";
+import { Alert, Button, Empty, Field, Icon, Loading, useAction } from "./ui";
+import { useVault, Fingerprint } from "./vault";
+export function StaffConsole() {
+  const vault = useVault();
+  const [tab, setTab] = useState("recovery");
+  const [rows, setRows] = useState<Json[] | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
+  const [selected, setSelected] = useState<Json | null>(null);
+  const [reason, setReason] = useState("");
+  const [reference, setReference] = useState("");
+  const [decision, setDecision] = useState("hold");
+  const [evidence, setEvidence] = useState<Json | null>(null);
+  const [keys, setKeys] = useState<Json[]>([]);
+  const action = useAction();
+  const base =
+    tab === "recovery"
+      ? "/api/staff/recovery/cases"
+      : "/api/staff/moderation/reports";
+  async function refresh(more = false) {
+    const query = new URLSearchParams({
+      ...(filter ? { state: filter } : {}),
+      ...(more && cursor ? { cursor } : {}),
+    });
+    const data = await get(base + (query.size ? "?" + query : ""));
+    const next: Json[] = data.cases || items(data);
+    setRows((old) =>
+      more
+        ? [
+            ...(old || []),
+            ...next.filter(
+              (row) => !old?.some((existing) => existing.id === row.id),
+            ),
+          ]
+        : next,
+    );
+    setCursor(data.next_cursor || null);
+    if (tab === "moderation" && !more)
+      setKeys(items(await get("/api/staff/moderation/keys")));
+  }
+  useEffect(() => {
+    setSelected(null);
+    setEvidence(null);
+    setRows(null);
+    action.run(() => refresh());
+  }, [tab, filter]);
+  async function open(row: Json) {
+    await action.run(async () => {
+      setSelected(await get(`${base}/${row.id}`));
+      setEvidence(null);
+      setReason("");
+      setReference("");
+      setDecision(tab === "recovery" ? "hold" : "review");
+    });
+  }
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!selected) return;
+    await action.run(async () => {
+      if (tab === "recovery")
+        await post(`${base}/${selected.id}/review`, {
+          decision,
+          evidenceReference: reference,
+          reason,
+        });
+      else
+        await post(`${base}/${selected.id}/actions`, {
+          action: decision,
+          reason_code: reason
+            .toLowerCase()
+            .replace(/[^a-z_]/g, "_")
+            .slice(0, 60),
+        });
+      setSelected(await get(`${base}/${selected.id}`));
+      await refresh();
+    }, "The review was recorded. Recovery transfers require approval from two distinct authorized reviewers.");
+  }
+  async function openEvidence() {
+    if (!selected?.evidence_envelope) return;
+    await action.run(async () => {
+      const envelope = selected.evidence_envelope as EncryptedEnvelope;
+      const author = await get(`${base}/${selected.id}/author-key`);
+      const key = vault.keys.find((k) =>
+        envelope.recipients.some((r) => r.fingerprint === k.getFingerprint()),
+      );
+      if (!key)
+        throw new Error(
+          "This report was not encrypted for this trusted device. Use the original authorized moderation device.",
+        );
+      const content = await decryptObject<Json>({
+        envelope,
+        expectedContext: envelope.context,
+        privateKey: key,
+        authorPublicKey: author.public_key,
+      });
+      setEvidence(content);
+    });
+  }
+  return (
+    <>
+      <div className="page-heading">
+        <span className="eyebrow">AUTHORIZED HUMAN REVIEW</span>
+        <h1>Care for the circle.</h1>
+        <p>
+          Staff access is role-limited and audited. Being staff never grants
+          access to private walls.
+        </p>
+      </div>
+      <nav className="settings-tabs" aria-label="Staff queues">
+        {[
+          ["recovery", "Account recovery"],
+          ["moderation", "Community reports"],
+        ].map(([id, label]) => (
+          <button
+            className={`text-button ${tab === id ? "active" : ""}`}
+            key={id}
+            onClick={() => {
+              setTab(id);
+              setFilter("");
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+      <Alert>{action.error}</Alert>
+      <Alert success>{action.notice}</Alert>
+      {tab === "moderation" && (
+        <section className="panel">
+          <h2>Report evidence keys</h2>
+          <p>
+            Register this trusted device to receive evidence members explicitly
+            disclose in future reports. Existing reports cannot be decrypted by
+            adding a new key.
+          </p>
+          <Fingerprint device={vault.device} />
+          {keys.map((k) => (
+            <div className="list-row" key={k.id}>
+              <span>
+                {k.id === vault.device.id ? "This device" : k.id}
+                <small>{k.revoked_at ? "Revoked" : "Active"}</small>
+              </span>
+              {!k.revoked_at && (
+                <Button
+                  variant="outline compact"
+                  busy={action.busy}
+                  onClick={() =>
+                    action.run(async () => {
+                      await del(`/api/staff/moderation/keys/${k.id}`);
+                      await refresh();
+                    })
+                  }
+                >
+                  Revoke
+                </Button>
+              )}
+            </div>
+          ))}
+          <Button
+            variant="outline"
+            busy={action.busy}
+            onClick={() =>
+              action.run(async () => {
+                await post("/api/staff/moderation/keys", {
+                  id: vault.device.id,
+                  member_id: vault.member.id,
+                  public_key: vault.device.public_key,
+                  fingerprint: vault.device.fingerprint,
+                });
+                await refresh();
+              }, "This trusted device can receive future, explicitly disclosed reports.")
+            }
+          >
+            Register this device for report evidence
+          </Button>
+        </section>
+      )}
+      <section className="panel">
+        <div className="section-title">
+          <h2>{tab === "recovery" ? "Recovery cases" : "Community reports"}</h2>
+          <Button
+            variant="quiet compact"
+            onClick={() => action.run(() => refresh())}
+          >
+            Refresh
+          </Button>
+        </div>
+        {
+          <label className="field">
+            <span>{tab === "moderation" ? "Report state" : "Case state"}</span>
+            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="">All states</option>
+              {(tab === "moderation"
+                ? ["received", "reviewing", "resolved", "appealed"]
+                : ["submitted", "reviewing", "hold", "restored", "denied"]
+              ).map((state) => (
+                <option key={state} value={state}>
+                  {state}
+                </option>
+              ))}
+            </select>
+          </label>
+        }
+        {rows === null ? (
+          action.busy ? (
+            <Loading />
+          ) : (
+            <p>
+              Staff access is required. Sign in through the operator’s
+              Cloudflare Access application with an authorized staff role.
+            </p>
+          )
+        ) : !rows.length ? (
+          <Empty icon="shield" title="Nothing waiting here.">
+            This queue contains no available cases.
+          </Empty>
+        ) : (
+          rows.map((row) => (
+            <button
+              className="notification-row"
+              key={row.id}
+              onClick={() => open(row)}
+            >
+              <span className="feature-icon sage">
+                <Icon name="shield" />
+              </span>
+              <span>
+                <strong>
+                  {tab === "recovery"
+                    ? "Account recovery case"
+                    : `${row.reason} report`}
+                </strong>
+                <small>
+                  {row.id} · {localDate(row.created_at)}
+                </small>
+              </span>
+              <span className="mini-tag">{row.state || row.status}</span>
+            </button>
+          ))
+        )}
+        {cursor && (
+          <Button
+            variant="outline full"
+            busy={action.busy}
+            onClick={() => action.run(() => refresh(true))}
+          >
+            Load more cases
+          </Button>
+        )}
+      </section>
+      {selected && (
+        <section className="panel form-stack">
+          <h2>Review case {String(selected.id).slice(0, 8)}</h2>
+          <p>
+            Status: <strong>{selected.state || selected.status}</strong>
+          </p>
+          {tab === "recovery" ? (
+            <>
+              <dl className="case-details">
+                <dt>Account reference</dt>
+                <dd>{selected.account_reference}</dd>
+                <dt>Safe contact</dt>
+                <dd>{selected.safe_email}</dd>
+                <dt>Contact verified</dt>
+                <dd>
+                  {selected.contact_verified_at
+                    ? "Yes — communication only, not ownership proof"
+                    : "Not verified"}
+                </dd>
+                <dt>Member’s description</dt>
+                <dd>{selected.description || "No description recorded."}</dd>
+                <dt>Prior methods</dt>
+                <dd>{selected.trusted_method || "Not stated"}</dd>
+              </dl>
+              {(selected.evidence || []).map((e: Json) => (
+                <blockquote className="report-preview" key={e.id}>
+                  <p>{e.description}</p>
+                  <small>
+                    {e.evidence_reference || "No external reference"}
+                    {e.appeal ? " · Appeal" : ""}
+                  </small>
+                </blockquote>
+              ))}
+              <p>
+                Do not infer ownership from public profile facts, a matching
+                email string, or control of a newly supplied safe address.
+                Corroborate established methods and security history. A hold
+                stops extraction and destructive actions, while existing timers
+                keep running.
+              </p>
+              {selected.reviews?.length > 0 && (
+                <div className="report-preview">
+                  <strong>Recorded reviewer decisions</strong>
+                  {selected.reviews.map((r: Json, i: number) => (
+                    <p key={r.id || i}>
+                      {r.decision} ·{" "}
+                      {r.reason || r.evidence_reference || r.reviewed_at}
+                    </p>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <p>
+                Category: {selected.reason}. Target reference:{" "}
+                {selected.target_id || selected.target_member || "Not provided"}
+                .
+              </p>
+              {selected.evidence_disclosed && selected.evidence_envelope ? (
+                <>
+                  <Button
+                    variant="outline"
+                    busy={action.busy}
+                    onClick={openEvidence}
+                  >
+                    Open explicitly disclosed evidence
+                  </Button>
+                  {evidence && (
+                    <div className="report-preview">
+                      <strong>Disclosed content</strong>
+                      <blockquote>
+                        {String(evidence.selectedText || "")}
+                      </blockquote>
+                      <p>{String(evidence.description || "")}</p>
+                      <small>
+                        No undisclosed photos or private conversations are
+                        included.
+                      </small>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <p>
+                  The member did not disclose private content. Review only the
+                  report and necessary behavioral metadata.
+                </p>
+              )}
+            </>
+          )}
+          <form className="form-stack" onSubmit={submit}>
+            <label className="field">
+              <span>Review action</span>
+              <select
+                value={decision}
+                onChange={(e) => setDecision(e.target.value)}
+              >
+                {(tab === "recovery"
+                  ? [
+                      ["hold", "Apply corroborated security hold"],
+                      [
+                        "restore",
+                        "Approve restoration (two reviewers required)",
+                      ],
+                      ["deny", "Decline unsupported claim"],
+                    ]
+                  : [
+                      ["review", "Mark under review"],
+                      ["resolve", "Resolve report"],
+                      ["restrict", "Restrict social actions"],
+                      ["suspend", "Suspend account"],
+                      ["restore", "Restore permitted access"],
+                      ["remove_content", "Remove reported content"],
+                    ]
+                ).map(([id, label]) => (
+                  <option value={id} key={id}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {tab === "recovery" && (
+              <Field
+                label="Corroborating evidence reference"
+                value={reference}
+                onChange={(e) => setReference(e.target.value)}
+                required
+                maxLength={500}
+                help="Use a secure evidence reference. Do not paste passwords, recovery secrets, or unnecessary private data."
+              />
+            )}
+            <Field
+              label={
+                tab === "recovery"
+                  ? "Reason for this decision"
+                  : "Reason code (letters and underscores)"
+              }
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+              minLength={3}
+              maxLength={tab === "recovery" ? 2000 : 60}
+            />
+            <Button variant="primary" busy={action.busy}>
+              Record review decision
+            </Button>
+          </form>
+        </section>
+      )}
+    </>
+  );
+}

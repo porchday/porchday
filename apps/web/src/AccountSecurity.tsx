@@ -1,6 +1,215 @@
-import React,{useEffect,useState} from 'react';
-import QRCode from 'qrcode';
-import {auth,get,saveFile} from './api';
-import {Alert,Button,Field,Icon,useAction} from './ui';
-export function EmailSettings(){const [email,setEmail]=useState('');const action=useAction();return <section className="panel form-stack"><h2>Your sign-in email</h2><p>Your email is private. Changing it requires a recent sign-in, approval from your current verified address, and verification of the new address.</p><form className="form-stack" onSubmit={e=>{e.preventDefault();action.run(async()=>{await auth('change-email',{newEmail:email,callbackURL:location.origin+'/login?emailChanged=1'});setEmail('');},'Check your current email to approve this request. You’ll then verify the new address. A completed change signs out existing sessions.');}}><Field label="New email address" type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} required maxLength={254}/><Button variant="outline" busy={action.busy}>Request an email change</Button><Alert>{action.error}</Alert><Alert success>{action.notice}</Alert></form><a href="/stolen-account" className="text-link">Can’t access your established methods? Report a stolen account.</a></section>}
-export function MfaSettings(){const [enabled,setEnabled]=useState<boolean|null>(null);const [password,setPassword]=useState('');const [setup,setSetup]=useState<{uri:string;codes:string[];qr:string}|null>(null);const [code,setCode]=useState('');const [saved,setSaved]=useState(false);const action=useAction();useEffect(()=>{get('/api/auth/get-session').then(r=>setEnabled(!!r.user?.twoFactorEnabled)).catch(()=>setEnabled(null));},[]);async function begin(e:React.FormEvent){e.preventDefault();await action.run(async()=>{const r=await auth('two-factor/enable',{password});setPassword('');setSetup({uri:r.totpURI,codes:r.backupCodes,qr:await QRCode.toDataURL(r.totpURI,{errorCorrectionLevel:'M',width:240,margin:2,color:{dark:'#244e43',light:'#fffefa'}})});});}async function finish(e:React.FormEvent){e.preventDefault();await action.run(async()=>{await auth('two-factor/verify-totp',{code,trustDevice:false});setCode('');setSetup(null);setEnabled(true);},'Your account now requires an authenticator or one-time backup code at sign-in.');}return <section className="panel form-stack"><h2>A second layer for your account</h2><p>An authenticator code protects your login in addition to your password. It does not replace your separate encryption recovery secret.</p><Alert>{action.error}</Alert><Alert success>{action.notice}</Alert>{setup?<form className="form-stack" onSubmit={finish}><p>Scan this code with your authenticator. The QR code is generated here on your device and is never sent to an outside QR service.</p><img className="mfa-qr" src={setup.qr} width={240} height={240} alt="Authenticator setup QR code"/><details><summary>Enter the key manually instead</summary><code className="secret-box">{new URL(setup.uri).searchParams.get('secret')}</code><p className="small-copy">Time-based code, 6 digits, changing every 30 seconds.</p></details><div className="report-preview"><strong>One-time backup codes</strong><div className="backup-codes">{setup.codes.map(c=><code key={c}>{c}</code>)}</div><Button type="button" variant="outline compact" onClick={()=>saveFile(new Blob([`Porchday account sign-in backup codes\nKeep these private. Each code works once. These are not encryption recovery secrets.\n\n${setup.codes.join('\n')}\n`],{type:'text/plain'}),'porchday-sign-in-backup-codes.txt')}><Icon name="download" size={16}/>Save backup codes</Button></div><label className="check-field"><input type="checkbox" checked={saved} onChange={e=>setSaved(e.target.checked)} required/><span>I stored the backup codes somewhere safe and separate from this device.</span></label><Field label="Code from your authenticator" value={code} onChange={e=>setCode(e.target.value)} autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" required/><Button variant="primary" busy={action.busy} disabled={!saved}>Verify & enable two-step sign-in</Button></form>:enabled?<form className="form-stack" onSubmit={e=>{e.preventDefault();action.run(async()=>{await auth('two-factor/disable',{password});setPassword('');setEnabled(false);},'Two-step sign-in has been turned off.');}}><Alert success>Two-step sign-in is enabled.</Alert><Field label="Password to disable two-step sign-in" type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/><Button variant="outline" busy={action.busy}>Disable two-step sign-in</Button></form>:<form className="form-stack" onSubmit={begin}><Field label="Confirm your password" type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required/><Button variant="outline" busy={action.busy}>Set up an authenticator</Button></form>}</section>}
+import React, { useEffect, useState } from "react";
+import QRCode from "qrcode";
+import { auth, get, saveFile } from "./api";
+import { Alert, Button, Field, Icon, useAction } from "./ui";
+export function EmailSettings() {
+  const [email, setEmail] = useState("");
+  const action = useAction();
+  return (
+    <section className="panel form-stack">
+      <h2>Your sign-in email</h2>
+      <p>
+        Your email is private. Changing it requires a recent sign-in, approval
+        from your current verified address, and verification of the new address.
+      </p>
+      <form
+        className="form-stack"
+        onSubmit={(e) => {
+          e.preventDefault();
+          action.run(async () => {
+            await auth("change-email", {
+              newEmail: email,
+              callbackURL: location.origin + "/login?emailChanged=1",
+            });
+            setEmail("");
+          }, "Check your current email to approve this request. You’ll then verify the new address. A completed change signs out existing sessions.");
+        }}
+      >
+        <Field
+          label="New email address"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          maxLength={254}
+        />
+        <Button variant="outline" busy={action.busy}>
+          Request an email change
+        </Button>
+        <Alert>{action.error}</Alert>
+        <Alert success>{action.notice}</Alert>
+      </form>
+      <a href="/stolen-account" className="text-link">
+        Can’t access your established methods? Report a stolen account.
+      </a>
+    </section>
+  );
+}
+export function MfaSettings() {
+  const [enabled, setEnabled] = useState<boolean | null>(null);
+  const [password, setPassword] = useState("");
+  const [setup, setSetup] = useState<{
+    uri: string;
+    codes: string[];
+    qr: string;
+  } | null>(null);
+  const [code, setCode] = useState("");
+  const [saved, setSaved] = useState(false);
+  const action = useAction();
+  useEffect(() => {
+    get("/api/auth/get-session")
+      .then((r) => setEnabled(!!r.user?.twoFactorEnabled))
+      .catch(() => setEnabled(null));
+  }, []);
+  async function begin(e: React.FormEvent) {
+    e.preventDefault();
+    await action.run(async () => {
+      const r = await auth("two-factor/enable", { password });
+      setPassword("");
+      setSetup({
+        uri: r.totpURI,
+        codes: r.backupCodes,
+        qr: await QRCode.toDataURL(r.totpURI, {
+          errorCorrectionLevel: "M",
+          width: 240,
+          margin: 2,
+          color: { dark: "#244e43", light: "#fffefa" },
+        }),
+      });
+    });
+  }
+  async function finish(e: React.FormEvent) {
+    e.preventDefault();
+    await action.run(async () => {
+      await auth("two-factor/verify-totp", { code, trustDevice: false });
+      setCode("");
+      setSetup(null);
+      setEnabled(true);
+    }, "Your account now requires an authenticator or one-time backup code at sign-in.");
+  }
+  return (
+    <section className="panel form-stack">
+      <h2>A second layer for your account</h2>
+      <p>
+        An authenticator code protects your login in addition to your password.
+        It does not replace your separate encryption recovery secret.
+      </p>
+      <Alert>{action.error}</Alert>
+      <Alert success>{action.notice}</Alert>
+      {setup ? (
+        <form className="form-stack" onSubmit={finish}>
+          <p>
+            Scan this code with your authenticator. The QR code is generated
+            here on your device and is never sent to an outside QR service.
+          </p>
+          <img
+            className="mfa-qr"
+            src={setup.qr}
+            width={240}
+            height={240}
+            alt="Authenticator setup QR code"
+          />
+          <details>
+            <summary>Enter the key manually instead</summary>
+            <code className="secret-box">
+              {new URL(setup.uri).searchParams.get("secret")}
+            </code>
+            <p className="small-copy">
+              Time-based code, 6 digits, changing every 30 seconds.
+            </p>
+          </details>
+          <div className="report-preview">
+            <strong>One-time backup codes</strong>
+            <div className="backup-codes">
+              {setup.codes.map((c) => (
+                <code key={c}>{c}</code>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="outline compact"
+              onClick={() =>
+                saveFile(
+                  new Blob(
+                    [
+                      `Porchday account sign-in backup codes\nKeep these private. Each code works once. These are not encryption recovery secrets.\n\n${setup.codes.join("\n")}\n`,
+                    ],
+                    { type: "text/plain" },
+                  ),
+                  "porchday-sign-in-backup-codes.txt",
+                )
+              }
+            >
+              <Icon name="download" size={16} />
+              Save backup codes
+            </Button>
+          </div>
+          <label className="check-field">
+            <input
+              type="checkbox"
+              checked={saved}
+              onChange={(e) => setSaved(e.target.checked)}
+              required
+            />
+            <span>
+              I stored the backup codes somewhere safe and separate from this
+              device.
+            </span>
+          </label>
+          <Field
+            label="Code from your authenticator"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            autoComplete="one-time-code"
+            inputMode="numeric"
+            pattern="[0-9]{6}"
+            required
+          />
+          <Button variant="primary" busy={action.busy} disabled={!saved}>
+            Verify & enable two-step sign-in
+          </Button>
+        </form>
+      ) : enabled ? (
+        <form
+          className="form-stack"
+          onSubmit={(e) => {
+            e.preventDefault();
+            action.run(async () => {
+              await auth("two-factor/disable", { password });
+              setPassword("");
+              setEnabled(false);
+            }, "Two-step sign-in has been turned off.");
+          }}
+        >
+          <Alert success>Two-step sign-in is enabled.</Alert>
+          <Field
+            label="Password to disable two-step sign-in"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <Button variant="outline" busy={action.busy}>
+            Disable two-step sign-in
+          </Button>
+        </form>
+      ) : (
+        <form className="form-stack" onSubmit={begin}>
+          <Field
+            label="Confirm your password"
+            type="password"
+            autoComplete="current-password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            required
+          />
+          <Button variant="outline" busy={action.busy}>
+            Set up an authenticator
+          </Button>
+        </form>
+      )}
+    </section>
+  );
+}
