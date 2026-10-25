@@ -5,6 +5,8 @@ import { withMember, type Db } from './db.js';
 import { envelopeSchema } from './social-contract.js';
 import { registerMediaRoutes } from './social-media.js';
 import { registerExportRoutes } from './social-exports.js';
+import { registerPushRoutes } from './social-push.js';
+import { registerNativePushRoutes } from './social-native-push.js';
 import type { Env, Variables } from './types.js';
 type C = Context<{
     Bindings: Env;
@@ -166,6 +168,14 @@ export function createSocialRoutes() {
             else {
                 if (b.authorization.type === 'initial')
                     fail('TRUSTED_DEVICE_REQUIRED', 403);
+                if (!b.backup) fail('RECOVERY_SETUP_REQUIRED');
+                await checkBackup(b.backup);
+                const [previous] = await db`select envelope from app.encrypted_key_backups where member_id=${c.get('memberId')} for update`;
+                if(!previous || canonicalJson(previous.envelope.recovery)!==canonicalJson(b.backup.recovery)
+                    || !b.backup.devices.some(d=>d.id===b.id&&d.public_key===b.public_key&&d.fingerprint===b.fingerprint)
+                    || new Set(b.backup.devices.map(d=>d.id)).size!==b.backup.devices.length
+                    || b.backup.devices.length!==previous.envelope.devices.length+1
+                    || !previous.envelope.devices.every((old:any)=>b.backup!.devices.some(d=>d.id===old.id&&canonicalJson(d)===canonicalJson(old)))) fail('BACKUP_KEY_MISMATCH');
                 const [challenge] = await db `select * from app.device_challenges where member_id=${c.get('memberId')} and device_id=${b.id} and consumed_at is null and expires_at>now() for update`;
                 if (!challenge || challenge.fingerprint !== b.fingerprint || challenge.public_key !== b.public_key)
                     fail('CHALLENGE_EXPIRED', 403);
@@ -190,6 +200,7 @@ export function createSocialRoutes() {
                     fail('INVALID_PROOF', 403);
                 }
                 await db `update app.device_challenges set consumed_at=now() where device_id=${b.id}`;
+                await db`update app.encrypted_key_backups set envelope=${db.json(b.backup)},updated_at=now() where member_id=${c.get('memberId')}`;
             }
             await db `insert into app.device_keys(id,member_id,public_key,fingerprint,authorization_proof) values(${b.id},${c.get('memberId')},${b.public_key},${b.fingerprint},${db.json(b.authorization)})`;
             return { id: b.id };
@@ -236,6 +247,25 @@ export function createSocialRoutes() {
             await attachMedia(db, c.get('memberId'), e.id, b.media_ids);
             return { id: e.id };
         }), 201);
+    });
+    app.post('/posts/:id/reshare', async c => {
+        const b = await body(c, envelopeBody.extend({source_expires_at:date.nullable(),media_ids:z.array(uuid).max(20).default([])}));
+        return c.json(await tx(c, async db => {
+            await writeAllowed(db);
+            const source = await requirePost(db,id(c.req.param('id')),true);
+            if(source.author_id!==c.get('memberId')) fail('FORBIDDEN',403);
+            if(iso(source.expires_at)!==iso(b.source_expires_at)) fail('PARENT_DEADLINE_CHANGED',409,{expires_at:iso(source.expires_at)});
+            const e=b.envelope.context;id(e.id);
+            if(e.id===source.id||e.parentId!==null) fail('ENVELOPE_CONTEXT');
+            if(source.expires_at&&(!e.expiresAt||Date.parse(e.expiresAt)>new Date(source.expires_at).getTime())) fail('EXPIRY_CANNOT_EXTEND',409);
+            await checkEnvelope(db,c.get('memberId'),b.envelope,'post');
+            const [existing]=await db`select id,envelope from app.posts where id=${e.id} and author_id=${c.get('memberId')}`;
+            if(existing){if(canonicalJson(existing.envelope)!==canonicalJson(b.envelope))fail('CONFLICT',409);return {id:e.id};}
+            await db`insert into app.posts(id,author_id,group_id,audience,envelope,epoch,created_at,expires_at) values(${e.id},${c.get('memberId')},${e.groupId},${e.audience},${db.json(b.envelope)},${e.epoch},${e.createdAt},${e.expiresAt})`;
+            for(const r of b.envelope.recipients)await db`insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
+            await attachMedia(db,c.get('memberId'),e.id,b.media_ids);
+            return {id:e.id};
+        }),201);
     });
     app.get('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const post = await requirePost(db, id(c.req.param('id'))); const comments = await db `select c.*,h.handle as author_handle,app.comment_deadline(c.id) as effective_expires_at from app.comments c left join lateral app.member_handles(array[c.author_id]) h on true where post_id=${post.id} order by created_at,id`; const reactions = await db `select * from app.post_reactions where post_id=${post.id}`; const comment_reactions = await db `select r.* from app.comment_reactions r join app.comments c on c.id=r.comment_id where c.post_id=${post.id}`; const media = await db `select id,envelope,byte_size,display_order from app.media_assets where post_id=${post.id} order by display_order`; return { post: { ...post, media }, comments, reactions, comment_reactions }; })));
     app.delete('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const rows = await db `delete from app.posts where id=${id(c.req.param('id'))} returning id`; if (!rows.length)
@@ -349,6 +379,8 @@ export function createSocialRoutes() {
     app.delete('/groups/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.delete_owned_group(${id(c.req.param('id'))})`; return { ok: true }; })));
     app.get('/notifications', async (c) => c.json({ items: await tx(c, db => db `select * from app.notifications order by created_at desc limit 100`) }));
     app.put('/notifications/:id/read', async (c) => c.json(await tx(c, async (db) => { await db `update app.notifications set read_at=now() where id=${id(c.req.param('id'))}`; return { ok: true }; })));
+    registerPushRoutes(app, {tx, body, fail, id});
+    registerNativePushRoutes(app, {tx, body, fail, id});
     registerMediaRoutes(app, { tx, body, checkEnvelope, writeAllowed, fail, id });
     app.get('/reports', async (c) => c.json({ items: await tx(c, db => db `select id,target_id,reason,status,created_at from app.reports order by created_at desc`) }));
     app.post('/reports', async (c) => { const b = await body(c, z.object({ id: uuid.optional(), target_member: uuid.nullable().default(null), target_id: uuid.nullable().default(null), reason: z.enum(['harassment', 'impersonation', 'spam', 'agent', 'safety', 'other', 'appeal']), evidence_envelope: envelopeSchema.nullable().default(null), evidence_disclosed: z.boolean().default(false) })); if (b.evidence_envelope && !b.evidence_disclosed)

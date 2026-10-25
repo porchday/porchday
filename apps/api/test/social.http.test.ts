@@ -29,7 +29,7 @@ async function connection(a: Person, b: Person) { const [r] = await sql `select 
 async function seal(a: Person, payload: unknown, override: Partial<ContentContext> = {}, postId?: string) { const audience = override.audience ?? 'connections'; const snap = await request(a.id, `/audiences?audience=${audience}${override.groupId ? '&group_id=' + override.groupId : ''}${postId ? '&post_id=' + postId : ''}`); expect(snap.status).toBe(200); const context: ContentContext = { id: randomUUID(), kind: 'post', authorId: a.id, authorDeviceId: a.deviceId, audience, parentId: null, groupId: null, epoch: snap.data.epoch, createdAt: new Date().toISOString(), expiresAt: null, revision: 1, ...override, epoch: snap.data.epoch }; return encryptObject({ context, payload, signingKey: a.key, recipients: snap.data.devices.map((d: any) => ({ memberId: d.member_id, deviceId: d.id, publicKey: d.public_key })) }); }
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
-        throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql'])
+        throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
         await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: { put: async (k: string, b: ArrayBuffer) => { objects.set(k, b); }, get: async (k: string) => objects.has(k) ? { body: objects.get(k) } : null, delete: async (k: string) => { objects.delete(k); } } } as unknown as Env; app = new Hono(); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
@@ -102,9 +102,13 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         const challenge = await request(a.id, '/devices/challenge', 'POST', { id: nextId, public_key: next.publicKey, fingerprint: next.fingerprint });
         expect(challenge.status).toBe(200);
         const signed = await authorizeDevice({ v: 1, purpose: 'porchday-device-authorization', memberId: a.id, authorizingDeviceId: a.deviceId, deviceId: nextId, fingerprint: next.fingerprint, challenge: challenge.data.challenge, expiresAt: challenge.data.expires_at }, a.key);
-        const bad = await request(a.id, '/devices', 'POST', { id: nextId, public_key: next.publicKey, fingerprint: next.fingerprint, authorization: { type: 'trusted', signed: { ...signed, statement: { ...signed.statement, challenge: 'B'.repeat(64) } } } });
+        const backup=(await request(a.id,'/keys/backup')).data.envelope;
+        backup.devices.push({id:nextId,public_key:next.publicKey,fingerprint:next.fingerprint,encrypted_private_key:next.encryptedPrivateKey});
+        expect((await request(a.id,'/devices','POST',{id:nextId,public_key:next.publicKey,fingerprint:next.fingerprint,authorization:{type:'trusted',signed}})).data.error.code).toBe('RECOVERY_SETUP_REQUIRED');
+        const bad = await request(a.id, '/devices', 'POST', { id: nextId, public_key: next.publicKey, fingerprint: next.fingerprint, backup, authorization: { type: 'trusted', signed: { ...signed, statement: { ...signed.statement, challenge: 'B'.repeat(64) } } } });
         expect(bad.status).toBe(403);
-        expect((await request(a.id, '/devices', 'POST', { id: nextId, public_key: next.publicKey, fingerprint: next.fingerprint, authorization: { type: 'trusted', signed } })).status).toBe(201);
+        expect((await request(a.id, '/devices', 'POST', { id: nextId, public_key: next.publicKey, fingerprint: next.fingerprint, backup, authorization: { type: 'trusted', signed } })).status).toBe(201);
+        expect((await request(a.id,'/keys/backup')).data.envelope).toEqual(backup);
         const [stored] = await sql `select consumed_at from app.device_challenges where device_id=${nextId}`;
         expect(stored.consumed_at).not.toBeNull();
         expect((await request(a.id, '/devices/' + a.deviceId, 'DELETE')).status).toBe(200);
@@ -113,8 +117,21 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         const newId = randomUUID(), malicious = await generateDeviceKeys(a.id, newId);
         const c2 = await request(a.id, '/devices/challenge', 'POST', { id: newId, public_key: malicious.publicKey, fingerprint: malicious.fingerprint });
         const revokedProof = await authorizeDevice({ v: 1, purpose: 'porchday-device-authorization', memberId: a.id, authorizingDeviceId: a.deviceId, deviceId: newId, fingerprint: malicious.fingerprint, challenge: c2.data.challenge, expiresAt: c2.data.expires_at }, a.key);
-        expect((await request(a.id, '/devices', 'POST', { id: newId, public_key: malicious.publicKey, fingerprint: malicious.fingerprint, authorization: { type: 'trusted', signed: revokedProof } })).status).toBe(403);
+        backup.devices.push({id:newId,public_key:malicious.publicKey,fingerprint:malicious.fingerprint,encrypted_private_key:malicious.encryptedPrivateKey});
+        expect((await request(a.id, '/devices', 'POST', { id: newId, public_key: malicious.publicKey, fingerprint: malicious.fingerprint, backup, authorization: { type: 'trusted', signed: revokedProof } })).status).toBe(403);
     }, 30000);
+    it('explicitly reshares only owned posts into a fresh audience without copying threads or extending expiry',async()=>{
+      const a=await person(),b=await person();const deadline=new Date(Date.now()+3600000).toISOString();
+      const source=await seal(a,{text:'Original private moment'},{audience:'only_me',expiresAt:deadline});expect((await request(a.id,'/posts','POST',{envelope:source})).status).toBe(201);
+      await connection(a,b);expect((await request(b.id,'/posts/'+source.context.id)).status).toBe(404);
+      const copy=await seal(a,{text:'Reviewed copy',reactionSecret:createReactionSecret(),provenance:{postId:source.context.id}},{expiresAt:deadline});
+      expect((await request(a.id,`/posts/${source.context.id}/reshare`,'POST',{envelope:copy,source_expires_at:null})).data.error.code).toBe('PARENT_DEADLINE_CHANGED');
+      const forever=await seal(a,{text:'Too long'},{expiresAt:null});expect((await request(a.id,`/posts/${source.context.id}/reshare`,'POST',{envelope:forever,source_expires_at:deadline})).data.error.code).toBe('EXPIRY_CANNOT_EXTEND');
+      expect((await request(a.id,`/posts/${source.context.id}/reshare`,'POST',{envelope:copy,source_expires_at:deadline})).status).toBe(201);
+      const shared=await request(b.id,'/posts/'+copy.context.id);expect(shared.status).toBe(200);expect(shared.data.comments).toEqual([]);expect(shared.data.reactions).toEqual([]);
+      const strangerCopy=await seal(b,{text:'Cannot forward another member'},{expiresAt:deadline});expect((await request(b.id,`/posts/${copy.context.id}/reshare`,'POST',{envelope:strangerCopy,source_expires_at:deadline})).status).toBe(403);
+      expect((await request(a.id,'/posts/'+source.context.id,'DELETE')).status).toBe(200);expect((await request(b.id,'/posts/'+copy.context.id)).status).toBe(200);
+    },30000);
     it('preserves suspended member own-data export and deletion while denying social access and takeover exports',async()=>{
       const a=await person();const envelope=await seal(a,{text:'My portable memory'},{audience:'only_me'});expect((await request(a.id,'/posts','POST',{envelope})).status).toBe(201);await sql`update app.members set status='suspended' where id=${a.id}`;
       const job=await request(a.id,'/exports','POST');expect(job.status).toBe(201);const page=await request(a.id,`/exports/${job.data.id}?section=posts`);expect(page.status).toBe(200);expect(page.data.posts).toHaveLength(1);expect((await request(a.id,'/devices/'+a.deviceId)).status).toBe(200);expect((await request(a.id,'/keys/backup')).status).toBe(200);expect((await request(a.id,'/feed')).data.items).toHaveLength(0);
@@ -177,6 +194,23 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(a.id,'/exports/'+job.id+'/validate','POST',{items:refs})).status).toBe(409);
         await request(a.id,'/exports/'+job.id,'DELETE');
         expect((await request(a.id,'/exports/'+job.id+'?section=posts')).status).toBe(409);
+    },30000);
+
+    it('bounds serialized export bytes as well as record count', async () => {
+        const a=await person();const base=await seal(a,{text:'Synthetic large-ciphertext routing fixture'},{audience:'only_me'});
+        for(let i=0;i<3;i++){
+            const id=randomUUID(),envelope={...base,context:{...base.context,id},ciphertext:'-----BEGIN PGP MESSAGE-----\\n'+'A'.repeat(2_200_000)};
+            await sql.unsafe('insert into app.posts(id,author_id,audience,envelope,epoch) values($1,$2,$3,$4,$5)',[id,a.id,'only_me',JSON.stringify(envelope),base.context.epoch]);
+        }
+        const job=(await request(a.id,'/exports','POST')).data;
+        let cursor='',count=0,pages=0;
+        do {
+            const page=await request(a.id,'/exports/'+job.id+'?section=posts'+(cursor?'&cursor='+encodeURIComponent(cursor):''));
+            expect(page.status).toBe(200);expect(page.data.posts).toHaveLength(1);
+            expect(new TextEncoder().encode(JSON.stringify(page.data)).byteLength).toBeLessThan(4_194_304);
+            count+=page.data.posts.length;pages++;cursor=page.data.next_cursor;
+        }while(cursor);
+        expect(count).toBe(3);expect(pages).toBe(3);
     },30000);
 
 });

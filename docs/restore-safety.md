@@ -1,0 +1,71 @@
+# Privacy-preserving restore procedure
+
+Restoring an old PostgreSQL backup must not reopen access to deleted content, removed connections, revoked devices, or superseded private text. Migration `027_restore_journal.sql`, the runtime privacy journal, and the privileged restore tool implement a separate record of these decisions in a private R2 bucket. This supplements provider backups; it does not replace them.
+
+The implementation has local protocol, PostgreSQL replay, and HTTP failure tests. A successful restore of the real hosted database has **not** been demonstrated. Do not describe production disaster recovery as verified until the operator performs and records that drill, including the chosen PlanetScale backup and restore procedure, media deletion, and application checks.
+
+## Guarantees and limits
+
+For a covered privacy mutation, the service first records an independent operation intent, commits the SQL transaction, publishes the resulting committed safety events into R2, writes a completion receipt, and removes the pending intent. It acknowledges success only after that process finishes. R2 failures can leave a committed SQL change with an HTTP 503 response; clients must refresh state before retrying. They must not interpret the failure as proof that the original content still exists.
+
+Events contain only identifiers, object paths, deadlines, revision floors, and access/security decisions. They contain no plaintext social content, encrypted private keys, passwords, email addresses, or media bytes. Identifiers and relationship decisions remain sensitive metadata: the bucket must be private, accessible only to the application and the restore operator, and excluded from public bucket domains and `r2.dev` access.
+
+The SQL counter is transactionally allocated, so a rolled-back transaction leaves no event gap and a later commit cannot appear behind a published cursor. Immutable event batches form a hash-linked chain. Native R2 conditional writes publish the head and pending-intent state using compare-and-swap. Concurrent privacy operations may flush each other's committed events without losing state. Member requests do not hold SQL transaction locks while calling R2.
+
+Ordinary reads remain available while a privacy operation is in progress. A pending operation older than 120 seconds causes quarantine in both the request guard and scheduled checkpoint job. Fresh pending operations are not proof of a rollback. Consequently, an **unacknowledged** SQL commit followed by a process crash and an immediate, unplanned database rollback can expose the older snapshot before the 120-second detector fires. Protecting against that sequence without explicit operator quarantine would require stopping reads during every pending privacy operation. This implementation protects acknowledged mutations and restores performed through the required quarantine workflow; it does not claim to detect every instantaneous, out-of-band rollback. All database restore access must follow this runbook.
+
+A missing batch, bad hash, mismatched database generation, database sequence behind the independent checkpoint, expired pending intent, or unresolved crash tail blocks access. A successful later flush never automatically clears quarantine. An operator cannot safely discard an unresolved intent merely because it is old, because its SQL commit may have been lost in the restore.
+
+The journal starts at migration/bootstrap time. It cannot reconstruct edits or access revocations that occurred before capture was installed. Initialization imports the existing deletion ledger, pending media deletions, and known timeouts. Do not serve real member traffic until initialization, baseline verification, and explicit release are complete.
+
+## Captured decisions and conservative replay
+
+The journal records post/comment deadlines, deletion tombstones, media object deletion paths, removed reactions, connections and family access changes, group ownership and role changes, group membership removal, post recipient removal, blocks, device revocation, member status changes, identity deletion, credential/MFA changes, and removal/replacement of encrypted key-backup entries. Profile imports that overwrite a profile use the same protected mutation path. Reaction creation is immutable: repeating the same target/member/tag does not replace its previous ciphertext.
+
+Edits record a minimum acceptable signed revision. If the restored post or comment is older, replay deletes it and its dependent data. If restored profile or group metadata is older, replay clears the stale envelope; the owner can recreate it. Replay never fabricates a higher signed revision and never restores deleted text from a separate content copy. Replaced media is removed through the independent object-deletion outbox.
+
+Restoration also invalidates all sessions, reset/verification records, stateless verification links through a fresh `credentials_changed_at`, invitations, recovery contact/session/restore capabilities, integration grants, exports, notification jobs, and transactional auth email outbox entries. Push subscriptions are removed and push preference is disabled until the member opts in again. Staff identities are disabled and moderator evidence keys are revoked until separately revalidated. Keep the Better Auth encryption secret available for existing MFA material; rotating it is not the token invalidation mechanism.
+
+An account whose credentials or MFA changed after the snapshot remains on a security hold after all status replay. A later historical “active” status event cannot reopen its restored old password, email, or MFA configuration. Such accounts require reviewed recovery against current evidence, followed by the member's separate encryption recovery procedure. Replaying an encryption-backup removal clears the obsolete restored backup rather than making it available again.
+
+## Runtime integration
+
+Each environment requires a distinct `RECOVERY_JOURNAL` R2 binding, separate from `MEDIA`. Bindings and database generations must never be mixed across staging and production. The `porchday_jobs` database role may read journal status/pages, but cannot replay events, reset the counter, or release quarantine. Restore commands require the database migration/owner identity.
+
+Mount `privacyReadGuard` on API traffic. Mount `privacyMutationMiddleware` only after verified member or staff authentication; it recognizes the actual privacy-affecting routes. This avoids durable writes for unauthenticated arbitrary DELETE requests. Public credential/recovery handlers use `withPrivacyJournal` only after body, rate, and token/session authorization checks, and repeat authorization inside their SQL transaction. Wrap cleanup jobs and account deletion in the same intent protocol. Scheduled checkpointing detects stale operations and flushes events; it does not resolve ambiguous intents.
+
+The only missing-binding bypass is `ENVIRONMENT=development`. Staging and production fail closed. Local configurations that include the binding still require its initialization; an empty bound bucket is never silently treated as safe.
+
+## Operator transport and credentials
+
+Run tools from a trusted operator workstation. Load existing credentials from the private configuration file using the deployment workflow; do not paste tokens into command arguments, logs, issues, or this repository. Required inputs are the Cloudflare account/token, the selected `RECOVERY_JOURNAL_BUCKET`, and the migration database URL. Replay additionally needs the separate `MEDIA_BUCKET`. PostgreSQL uses verified TLS unless `PG_LOCAL=true` is explicitly set for local fixtures.
+
+The ordinary Cloudflare R2 object REST endpoint was probed and ignored `If-None-Match`; it is **not** a valid journal compare-and-swap transport. The REST adapter deliberately refuses to proceed when its conditional-write probe fails. Do not weaken that check, emulate atomic writes with a later GET, or initialize `control.json` through that endpoint. Use the authenticated ephemeral operator Worker transport backed by native R2 conditional writes when available, or a separately verified conditional S3 transport. A probe against the exact active transport must succeed before any control write.
+
+The CLI entry point is `npx tsx scripts/restore-safety.ts <command>`. It prints fixed diagnostic codes and aggregate counts rather than provider responses or private identifiers. Transport setup and teardown must be completed successfully; never leave an unrestricted operator endpoint deployed. The lifecycle commands below describe the restore state machine independent of transport.
+
+## Initialization
+
+1. Disable member traffic and background consumers. Apply all migrations to the intended database. Verify the journal bucket is new, private, and belongs to this environment.
+2. Run `initialize`. This writes a new generation-matched baseline in **quarantine**. It refuses to overwrite an existing control object.
+3. Run `verify`. Inspect the reported checkpoint sequence. Resolve pre-existing deletion outbox work and stale capabilities with the same replay/cleanup procedure before release.
+4. Complete application/environment checks, set `RESTORE_REVIEWED_SEQUENCE` to the exact reviewed sequence, and run `release`. Open traffic only after successful release and a readiness check.
+
+## Restoring a backup
+
+1. Run `quarantine` against the independent live journal **before** touching database snapshots or routing. Disable/drain Worker traffic, queues, scheduled jobs, and any operator SQL writers. Quarantine remains in the independent bucket throughout the restore. Never restore that bucket from the older database backup, overwrite its control state, or initialize a new generation to bypass a failure.
+2. Run `reconcile-receipts`. A completion receipt can resolve an intent whose committed checkpoint reached R2 before a crash interrupted pending-list cleanup. Missing or invalid receipts stay unresolved.
+3. If intents remain and the original primary still exists, examine it before any destructive action. Only after verifying it is the complete, unrestored primary, set `ORIGINAL_DATABASE_MIGRATION_URL` separately from the restore-target URL and set `ORIGINAL_DATABASE_CONFIRMATION=I_VERIFIED_THIS_IS_THE_UNRESTORED_PRIMARY`. Run `checkpoint-original`. This is an explicit operator attestation: it is never safe to use a restored snapshot as that original source. The command checkpoints the intact tail and records receipts while keeping quarantine active.
+4. If the original tail is lost or its completeness is uncertain, **stop in quarantine**. A missing receipt does not establish that a mutation rolled back. There is no force-release flag. Resolve the uncertainty from independently established evidence or perform a separately reviewed recovery that cannot expose stale private data.
+5. Run `verify`. It requires no unresolved pending intents and validates the entire immutable hash chain. Keep the verified independent checkpoint intact. Restore the provider backup into an isolated target; apply any missing migrations with access disabled. Preserve its original journal generation and snapshot sequence.
+6. Point `DATABASE_MIGRATION_URL` only at that target, then run `replay`. The tool sets local quarantine, applies events newer than the snapshot, enforces revision/deadline/access decisions, purges restored capabilities, and deletes queued R2 media objects. It checks that the independent checkpoint has not changed. Any failure leaves quarantine active. Retrying replay is conservative and idempotent; do not skip object cleanup.
+7. Revalidate current staff identities/roles and review held-account recovery requirements. Check ownership, blocked relationships, expired content, old signed revisions, media 404s, and the inability of restored sessions/integration tokens/verification links to authenticate. Confirm data and media outboxes are drained and both checkpoint sequences match. Keep public traffic disabled during these checks.
+8. Record the checkpoint sequence reviewed, set `RESTORE_REVIEWED_SEQUENCE`, and run `release`. The tool rechecks the chain, cursor, outboxes, expiry cleanup, and restored capabilities before conditional release. Re-enable application traffic and background work, then verify readiness. Release never silently clears pending ambiguity.
+
+## Retention, monitoring, and drills
+
+Do not prune journal batches, intents, receipts, or deletion history yet. Retention must cover the maximum actual PostgreSQL backup/snapshot lifetime plus restore detection and reconciliation time; archived snapshots extend that requirement. Agree and test a pruning protocol before introducing lifecycle rules. The current operator verifier loads the checked chain into process memory and is intended for the pilot; measure its memory/runtime and add bounded streaming verification before long-lived high-volume operation.
+
+Alert on quarantine, pending-intent age, checkpoint lag, missing/corrupt batches, and object cleanup failure using aggregate telemetry only. Checkpoint success alone does not prove recoverability. Schedule controlled restore drills against isolated snapshots and record source snapshot age, replayed sequence range, media deletion confirmation, auth invalidation, held accounts, application checks, and elapsed recovery time. The local tests are necessary evidence for the protocol, not a substitute for that hosted drill.
+
+`apps/api/test/privacy-journal.test.ts` covers concurrent compare-and-swap, corrupted/missing batches, stale intents, failed durability acknowledgements, actual SQL replay, credential holds, edited post/profile/group removal, and permissions. `apps/api/test/recovery.integration.test.ts` also exercises recovery's durable wrapper after token validation. Use disposable databases for destructive test fixtures; their names are checked before schemas are recreated.
