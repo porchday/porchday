@@ -1,0 +1,122 @@
+{
+  "format": "porchday-synthetic-media-verification-v1",
+  "date": "2026-10-25",
+  "fullHostedSequencePassed": true,
+  "dataPathWindowUtc": {
+    "start": "2026-10-25T10:18:00.905Z",
+    "cleanupStarted": "2026-10-25T10:19:16.216Z"
+  },
+  "scope": {
+    "actualMediaHandlers": true,
+    "fullApplicationRoutesLoaded": 127,
+    "productionEntrypointsRetained": ["fetch", "scheduled", "queue"],
+    "syntheticDatabaseAdapter": true,
+    "hostedAuthenticationVerified": false,
+    "hostedPostgresOrHyperdriveVerified": false,
+    "realMemberDataOrPrivateKeysUploaded": false,
+    "crossRequestIsolateAffinityMeasured": false,
+    "measuredPeakMemory": false,
+    "productionPitrRestoreVerified": false
+  },
+  "runtime": {
+    "probeBundleBytes": 3927945,
+    "bindings": ["JOURNAL", "MEDIA", "BACKUP"],
+    "compatibilityDate": "2026-10-01",
+    "compatibilityFlags": ["nodejs_compat"],
+    "workerCpuLimitMs": 30000,
+    "workerMemoryLimitOverride": false,
+    "largeRequestClientDeadlineMs": 120000,
+    "exerciseRequestBudgetMs": 180000,
+    "capabilityLifetimeMinutes": 10,
+    "fixturePhaseTracingEnabled": true
+  },
+  "maximumUploadBytes": 22020096,
+  "genuineUploads": [
+    {"status": 200, "elapsedMs": 5308, "rawAndCanonicalHashesVerified": true},
+    {"status": 200, "elapsedMs": 5527, "rawAndCanonicalHashesVerified": true},
+    {"status": 200, "elapsedMs": 5568, "rawAndCanonicalHashesVerified": true}
+  ],
+  "adversarialUploads": [
+    {
+      "fixture": "15500000_ascii_characters_plus_1000000_escaped_lone_surrogates_and_feff",
+      "status": 409,
+      "error": "MEDIA_UPLOAD_MISMATCH",
+      "elapsedMs": 5789,
+      "pendingReservationPreserved": true,
+      "ownedTemporaryObjectRemoved": true
+    },
+    {
+      "fixture": "21990000_ascii_characters_plus_one_final_non_latin1_character",
+      "status": 409,
+      "error": "MEDIA_UPLOAD_MISMATCH",
+      "elapsedMs": 5010,
+      "pendingReservationPreserved": true,
+      "ownedTemporaryObjectRemoved": true
+    }
+  ],
+  "forcedSameIsolateReservationOverlap": [
+    {"statuses": [201, 429], "retryAfterSeconds": 1, "elapsedMs": 3067},
+    {"statuses": [201, 429], "retryAfterSeconds": 1, "elapsedMs": 2560},
+    {"statuses": [201, 429], "retryAfterSeconds": 1, "elapsedMs": 2664}
+  ],
+  "backupAndRestore": {
+    "objects": 8,
+    "bytes": 176160768,
+    "syntheticInventoryPreparationMs": 8824,
+    "boundedCopyPageMs": 18919,
+    "completionPublicationMs": 973,
+    "manifestAndObjectVerificationMs": 6799,
+    "nativeSourceDeletionAndRestoreVerified": true,
+    "restoredRawIntegrityVerified": true
+  },
+  "precedingAttempts": [
+    {
+      "outcome": "failed",
+      "code": "OPERATOR_BRIDGE_UNAVAILABLE",
+      "phase": "not_retained",
+      "stepTimingsRetained": false,
+      "memoryLimitFailureEstablished": false
+    },
+    {
+      "outcome": "failed",
+      "code": "OPERATOR_BRIDGE_TIMEOUT",
+      "phase": "first_genuine_maximum_upload_after_adversarial_checks",
+      "clientDeadlineMs": 30000,
+      "stepTimingsRetained": false,
+      "memoryLimitFailureEstablished": false
+    },
+    {
+      "outcome": "passed_genuine_only_diagnostic",
+      "reservationStatus": 201,
+      "reservationMs": 2687,
+      "uploadStatus": 200,
+      "uploadMs": 5926,
+      "clientDeadlineMs": 120000,
+      "nativeObjectIntegrityVerified": true,
+      "priorTimeoutCauseEstablished": false
+    }
+  ],
+  "localPairedRestoreDrill": {
+    "passed": true,
+    "elapsedMs": 1531,
+    "actualPostgresDumpAndRestore": true,
+    "reopenedNativeR2Persistence": true,
+    "privacyDecisionsReplayed": 14,
+    "survivingPosts": 2,
+    "encryptedMediaDecryptedAfterRestore": true,
+    "rlsAndAuthRevocationVerified": true,
+    "failedCleanupRetryVerified": true,
+    "rawVersusCanonicalUploadRegressionVerified": true,
+    "releaseRequiresLiveMediaVerification": true,
+    "nodeToR2FixtureBufferMaximumAssertedBytes": 65536,
+    "productionBufferingChanged": false
+  },
+  "cleanup": {
+    "attempts": 4,
+    "temporaryWorkersDomainsAndBucketsRemoved": true,
+    "independentProviderInventoryChecksPassed": true,
+    "remainingProbeWorkers": 0,
+    "remainingProbeDomains": 0,
+    "remainingProbeBuckets": 0
+  }
+}

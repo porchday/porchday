@@ -4,10 +4,10 @@ import {resolve4,resolve6,resolveCname,Resolver} from 'node:dns/promises';
 import {request as httpsRequest} from 'node:https';
 import type {JournalStore} from '../apps/api/src/privacy-journal.js';
 
-type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>;verifyMediaObject(value:{key:string;sha256:string;byteSize:number}):Promise<void>;restoreMediaObject(value:{snapshotId:string;key:string;sha256:string;byteSize:number}):Promise<void>};
+type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>;verifyMediaObject(value:{key:string;sha256:string;byteSize:number}):Promise<void>;restoreMediaObject(value:{snapshotId:string;key:string;sha256:string;byteSize:number}):Promise<void>;probeRequest?:(path:string,body?:unknown,method?:'POST'|'PUT')=>Promise<Response>};
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 /** A temporary private capability, never written to stdout, disk or command arguments. */
-export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucket?:string;backupBucket?:string;journalAccess?:'read-only'|'read-write';hostname?:string;onProgress?:(phase:string)=>void},work:(bridge:Bridge)=>Promise<T>):Promise<T> {
+export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucket?:string;backupBucket?:string;journalAccess?:'read-only'|'read-write';hostname?:string;onProgress?:(phase:string)=>void;probeModule?:{source:string;largeRequestTimeoutMs?:number}},work:(bridge:Bridge)=>Promise<T>):Promise<T> {
   const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
   if(!account||!token)throw Error('CLOUDFLARE_OPERATOR_CREDENTIALS_REQUIRED');
   const hostname=options.hostname??'ops.porchday.com';
@@ -15,6 +15,8 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
   for(const name of [options.journalBucket,options.mediaBucket,options.backupBucket].filter(Boolean))if(!/^porchday-[a-z0-9-]+$/.test(name!))throw Error('OPERATOR_BUCKET_INVALID');
   if(options.mediaBucket===options.journalBucket||(options.backupBucket&&[options.journalBucket,options.mediaBucket].includes(options.backupBucket)))throw Error('OPERATOR_BUCKETS_MUST_DIFFER');
   const bearer=randomBytes(32).toString('base64url'),script='porchday-ops-'+randomUUID().replaceAll('-','');
+  if(options.probeModule?.largeRequestTimeoutMs!==undefined&&(!Number.isInteger(options.probeModule.largeRequestTimeoutMs)||options.probeModule.largeRequestTimeoutMs<1000||options.probeModule.largeRequestTimeoutMs>120000))throw Error('OPERATOR_PROBE_TIMEOUT_INVALID');
+  let probeDeadline:number|undefined;
   async function api(path:string,method='GET',body?:unknown):Promise<any> {
     let response:Response;
     try{response=await fetch('https://api.cloudflare.com/client/v4'+path,{method,headers:{Authorization:'Bearer '+token,...(body!==undefined && !(body instanceof FormData)?{'Content-Type':'application/json'}:{})},body:body===undefined?undefined:body instanceof FormData?body:JSON.stringify(body),redirect:'error',signal:AbortSignal.timeout(30_000)});}catch{throw Error('OPERATOR_API_UNAVAILABLE');}
@@ -36,22 +38,31 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
   authoritative.setServers(await resolve4(nameserver));
   // Public preflight can populate an OS negative cache. Resolve this new custom
   // domain at its authoritative server while retaining normal TLS verification.
-  async function requestBridge(path:string,body:unknown,authorized=true):Promise<Response>{
-    const [address]=await authoritative.resolve4(hostname);if(!address)throw Error('OPERATOR_DNS_NOT_READY');
+  async function requestBridge(path:string,body:unknown,authorized=true,method='POST'):Promise<Response>{
+    const requestLimit=options.probeModule?.largeRequestTimeoutMs&&['/probe/reserve','/probe/reserve-overlap','/probe/upload'].includes(path)?options.probeModule.largeRequestTimeoutMs:30000;
+    const remaining=probeDeadline&&!['/probe/cleanup','/probe/diagnostics'].includes(path)?probeDeadline-Date.now():requestLimit;
+    if(remaining<=0)throw Error('OPERATOR_PROBE_RUNTIME_EXCEEDED');
+    let address:string|undefined;try{[address]=await authoritative.resolve4(hostname);}catch{throw Error('OPERATOR_DNS_NOT_READY');}if(!address)throw Error('OPERATOR_DNS_NOT_READY');
+    const binary=body instanceof Uint8Array,encoded=binary?body:JSON.stringify(body??{});
+    if(binary&&body.byteLength>26*1024*1024)throw Error('OPERATOR_REQUEST_TOO_LARGE');
     return new Promise((resolve,reject)=>{
-      const request=httpsRequest({hostname,servername:hostname,path,method:'POST',lookup:(_host,options,callback)=>{
+      const started=Date.now(),request=httpsRequest({hostname,servername:hostname,path,method,lookup:(_host,options,callback)=>{
         if(typeof options==='object'&&options.all)callback(null,[{address,family:4}] as never);else callback(null,address,4);
-      },headers:{...(authorized?{Authorization:'Bearer '+bearer}:{}),'Content-Type':'application/json'},timeout:15_000},response=>{
+      },headers:{...(authorized?{Authorization:'Bearer '+bearer}:{}),'Content-Type':binary?'application/octet-stream':'application/json'},timeout:Math.min(requestLimit,remaining)},response=>{
         const chunks:Buffer[]=[];let size=0;
         response.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>6*1024*1024){request.destroy();reject(Error('OPERATOR_RESPONSE_TOO_LARGE'));}else chunks.push(chunk);});
         response.on('end',()=>resolve(new Response(Buffer.concat(chunks),{status:response.statusCode??503})));response.on('error',()=>reject(Error('OPERATOR_BRIDGE_UNAVAILABLE')));
       });
-      request.on('timeout',()=>request.destroy(Error('OPERATOR_BRIDGE_TIMEOUT')));request.on('error',()=>reject(Error('OPERATOR_BRIDGE_UNAVAILABLE')));request.end(JSON.stringify(body));
+      // A fixed request deadline also bounds a peer that sends a slow trickle.
+      const deadlineTimer=setTimeout(()=>request.destroy(Error('OPERATOR_BRIDGE_TIMEOUT')),Math.min(requestLimit,remaining));
+      request.once('close',()=>clearTimeout(deadlineTimer));
+      if(options.probeModule&&['/probe/reserve','/probe/reserve-overlap','/probe/upload'].includes(path))request.once('finish',()=>options.onProgress?.('request-body-sent-'+path.slice(7)+'-'+(Date.now()-started)+'ms'));
+      request.on('timeout',()=>request.destroy(Error('OPERATOR_BRIDGE_TIMEOUT')));request.on('error',error=>reject(error.message==='OPERATOR_BRIDGE_TIMEOUT'?Error('OPERATOR_BRIDGE_TIMEOUT'):Error('OPERATOR_BRIDGE_UNAVAILABLE')));request.end(encoded);
     });
   }
-  let deployed=false,domainId:string|undefined;
+  let attemptedUpload=false,domainId:string|undefined;
   async function call(path:string,body:unknown):Promise<Response> {
-    try{return await requestBridge(path,body);}catch{throw Error('OPERATOR_BRIDGE_UNAVAILABLE');}
+    try{return await requestBridge(path,body);}catch(error){if(error instanceof Error&&/^OPERATOR_[A-Z_]+$/.test(error.message))throw error;throw Error('OPERATOR_BRIDGE_UNAVAILABLE');}
   }
   const journal:JournalStore={
     async get(key){const response=await call('/journal/get',{key});if(response.status===404)return null;if(!response.ok)throw Error('OPERATOR_READ_FAILED');const value=await response.json() as {etag:string;value:string};if(typeof value.etag!=='string'||typeof value.value!=='string')throw Error('OPERATOR_RESPONSE_INVALID');return {etag:value.etag,text:async()=>value.value};},
@@ -72,22 +83,33 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
       }finally{if(!(await call('/probe/delete',{key})).ok)throw Error('OPERATOR_PROBE_CLEANUP_FAILED');}
     },
   };
+  // Ordinary operator bundles never acquire probe routes, hooks or extra bindings.
+  if(options.probeModule)bridge.probeRequest=async(path,body,method='POST')=>{
+    if(!/^\/probe\/[a-z0-9_/-]+$/i.test(path))throw Error('OPERATOR_PROBE_PATH_INVALID');
+    return requestBridge(path,body,true,method);
+  };
   try{
-    const metadata={main_module:'operator.mjs',compatibility_date:'2026-10-01',observability:{enabled:false},bindings:[{type:'secret_text',name:'OPERATOR_BEARER',text:bearer},{type:'plain_text',name:'OPERATOR_EXPIRES_AT',text:String(Date.now()+60*60*1000)},{type:'plain_text',name:'JOURNAL_ACCESS',text:options.journalAccess??'read-write'},{type:'r2_bucket',name:'JOURNAL',bucket_name:options.journalBucket},...(options.mediaBucket?[{type:'r2_bucket',name:'MEDIA',bucket_name:options.mediaBucket}]:[]),...(options.backupBucket?[{type:'r2_bucket',name:'BACKUP',bucket_name:options.backupBucket}]:[])]};
-    const form=new FormData();form.set('metadata',JSON.stringify(metadata));form.set('operator.mjs',new Blob([await readFile(new URL('./r2-operator-worker.mjs',import.meta.url),'utf8')],{type:'application/javascript+module'}),'operator.mjs');
-    await api('/accounts/'+account+'/workers/scripts/'+script,'PUT',form);deployed=true;
+    options.onProgress?.('temporary-script-'+script);
+    const metadata={main_module:'operator.mjs',compatibility_date:'2026-10-01',...(options.probeModule?{compatibility_flags:['nodejs_compat'],limits:{cpu_ms:30000}}:{}),observability:{enabled:false},logpush:false,bindings:[{type:'secret_text',name:'OPERATOR_BEARER',text:bearer},{type:'plain_text',name:'OPERATOR_EXPIRES_AT',text:String(Date.now()+(options.probeModule?10:60)*60*1000)},{type:'plain_text',name:'JOURNAL_ACCESS',text:options.journalAccess??'read-write'},{type:'r2_bucket',name:'JOURNAL',bucket_name:options.journalBucket},...(options.mediaBucket?[{type:'r2_bucket',name:'MEDIA',bucket_name:options.mediaBucket}]:[]),...(options.backupBucket?[{type:'r2_bucket',name:'BACKUP',bucket_name:options.backupBucket}]:[])]};
+    const form=new FormData();form.set('metadata',JSON.stringify(metadata));form.set('operator.mjs',new Blob([options.probeModule?.source??await readFile(new URL('./r2-operator-worker.mjs',import.meta.url),'utf8')],{type:'application/javascript+module'}),'operator.mjs');
+    attemptedUpload=true;await api('/accounts/'+account+'/workers/scripts/'+script,'PUT',form);
     const domain=await api('/accounts/'+account+'/workers/domains','PUT',{hostname,service:script,enabled:true,previews_enabled:false,zone_id:zone});domainId=domain.id;if(typeof domainId!=='string')throw Error('OPERATOR_DOMAIN_RESPONSE_INVALID');options.onProgress?.('domain-attached-enabled-'+String(domain.enabled));
     let ready=false;for(let attempt=0;attempt<45;attempt++){try{const response=await call('/health',{});if(response.ok){ready=true;break;}options.onProgress?.('health-status-'+response.status);}catch{options.onProgress?.('health-not-yet-reachable');}await pause(1000);}
     if(!ready)throw Error('OPERATOR_HOSTNAME_NOT_READY');
     const unauthenticated=await requestBridge('/journal/put',{},false);
     if(unauthenticated.status!==401)throw Error('OPERATOR_AUTH_PROBE_FAILED');
     await bridge.verifyConditionalWrites();
+    if(options.probeModule)probeDeadline=Date.now()+180000;
     return await work(bridge);
   }finally{
     let failed=false;
-    if(domainId){try{await api('/accounts/'+account+'/workers/domains/'+domainId,'DELETE');}catch{failed=true;}}
-    if(deployed){try{await api('/accounts/'+account+'/workers/scripts/'+script,'DELETE');}catch{failed=true;}}
-    if(deployed&&!failed){try{
+    // Reconcile the unique script identity even when an API response was lost.
+    if(attemptedUpload)try{
+      const domains=await api('/accounts/'+account+'/workers/domains'),scripts=await api('/accounts/'+account+'/workers/scripts');
+      for(const domain of domains.filter((d:any)=>d.service===script))await api('/accounts/'+account+'/workers/domains/'+domain.id,'DELETE');
+      if(scripts.some((s:any)=>s.id===script))await api('/accounts/'+account+'/workers/scripts/'+script,'DELETE');
+    }catch{failed=true;}
+    if(attemptedUpload&&!failed){try{
       const remainingDomains=await api('/accounts/'+account+'/workers/domains');
       const remainingScripts=await api('/accounts/'+account+'/workers/scripts');
       if(remainingDomains.some((d:any)=>d.service===script)||remainingScripts.some((s:any)=>s.id===script))failed=true;

@@ -69,12 +69,19 @@ try {
  for(const [id,parent] of[[ids.deletedComment,ids.deleted],[ids.timedComment,ids.timed]]){const body=await envelope(id,'comment',1,parent);await source`insert into app.comments(id,post_id,author_id,envelope,created_at) values(${id},${parent},${alice},${source.json(body)},${created})`;}
  const mediaRecords: {key:string;file:string;sha256:string}[]=[];
  const uploadApp=new Hono<{Bindings:Env;Variables:Variables}>();uploadApp.use('*',async(c,next)=>{c.set('memberId',alice);c.set('authTime',Date.now());await next();});uploadApp.route('/',createSocialRoutes());
- const uploadURL=new URL(adminUrl);uploadURL.pathname='/'+sourceName;const uploadEnv={HYPERDRIVE_SOCIAL:{connectionString:uploadURL.toString()},MEDIA:sourceMedia} as unknown as Env;
+ // This drill invokes HTTP handlers in Node, which has no FixedLengthStream.
+ // Cross the Node -> native-R2 RPC boundary with a known-length fixture buffer.
+ // Maximum-size native streaming is covered separately inside actual workerd.
+ const uploadStorage={
+  async put(key:string,value:any,options:any){if(value instanceof ReadableStream){const bytes=await new Response(value).arrayBuffer();assert(bytes.byteLength<=65536,'LOCAL_DRILL_FIXTURE_TOO_LARGE');return sourceMedia.put(key,bytes,options);}return sourceMedia.put(key,value,options);},
+  get:(key:string)=>sourceMedia.get(key),head:(key:string)=>sourceMedia.head(key),delete:(key:string)=>sourceMedia.delete(key),
+ };
+ const uploadURL=new URL(adminUrl);uploadURL.pathname='/'+sourceName;const uploadEnv={HYPERDRIVE_SOCIAL:{connectionString:uploadURL.toString()},MEDIA:uploadStorage} as unknown as Env;
  for(const [id,parent] of[[ids.deletedMedia,ids.deleted],[ids.survivingMedia,ids.surviving]]){
   const body=await envelope(id,'media',1,parent,'only_me',{mime:'image/jpeg',data:'synthetic-photo-bytes',alt:'Synthetic photo'}),bytes=Buffer.from(JSON.stringify(body));const key='media/'+alice+'/'+id;
   assert.notEqual(digest(bytes),digest(canonicalJson(body)),'Real upload encoding must differ from canonical digest to cover backup regression');
-  const reserved=await uploadApp.request('https://porchday.test/media',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,envelope:body,byte_size:bytes.length})},uploadEnv);assert.equal(reserved.status,201);
-  const uploaded=await uploadApp.request('https://porchday.test/media/'+id+'/bytes',{method:'PUT',headers:{'content-type':'application/octet-stream'},body:bytes},uploadEnv);assert.equal(uploaded.status,200);
+  const reserved=await uploadApp.request('https://porchday.test/media',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id,envelope:body,byte_size:bytes.length})},uploadEnv);phase='HTTP_MEDIA_RESERVATION_'+reserved.status;assert.equal(reserved.status,201);
+  const uploaded=await uploadApp.request('https://porchday.test/media/'+id+'/bytes',{method:'PUT',headers:{'content-type':'application/octet-stream'},body:bytes},uploadEnv);phase='HTTP_MEDIA_UPLOAD_'+uploaded.status;assert.equal(uploaded.status,200);
   assert.equal((await source`select envelope_sha256 from app.media_assets where id=${id}`)[0].envelope_sha256,digest(canonicalJson(body)));
   await source`update app.media_assets set post_id=${parent},state='attached' where id=${id}`;
   const file='media-'+id+'.json';await writeFile(join(directory,file),bytes,{mode:0o600});mediaRecords.push({key,file,sha256:digest(bytes)});

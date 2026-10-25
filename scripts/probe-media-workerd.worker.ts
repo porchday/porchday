@@ -4,11 +4,13 @@ import {beginMediaBackup,copyMediaBackupPage,verifyMediaBackup,type BackupDataba
 import {initializePrivacyJournal,readJournalControl,type JournalStore} from '../apps/api/src/privacy-journal.js';
 import {Hono} from 'hono';
 import {createSocialRoutes} from '../apps/api/src/social.js';
+import productionWorker,{app as productionApp} from '../apps/api/src/index.js';
 import type{Env,Variables}from '../apps/api/src/types.js';
 const upload=new Hono<{Bindings:Env;Variables:Variables}>();upload.use('*',async(c,next)=>{c.set('memberId',(c.env as any).PROBE_MEMBER);c.set('authTime',Date.now());await next();});upload.route('/api',createSocialRoutes());
 let memoryControl:Uint8Array|undefined;
 export default {async fetch(request:Request,env:any){
  const path=new URL(request.url).pathname;
+ if(path==='/control/footprint')return Response.json({productionRoutesLoaded:productionApp.routes.length,productionEntrypointsLoaded:Object.keys(productionWorker)});
  if(path.startsWith('/api/'))return upload.fetch(request,{...env,MEDIA:env.SOURCE});
  if(path==='/control/allocate'){memoryControl=new Uint8Array(160*1024*1024);memoryControl.fill(17);return Response.json({retainedBytes:memoryControl.byteLength,first:memoryControl[0],last:memoryControl.at(-1)});}
  if(path==='/control/release'){memoryControl=undefined;return Response.json({released:true});}

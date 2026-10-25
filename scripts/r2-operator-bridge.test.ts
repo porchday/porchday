@@ -49,6 +49,10 @@ describe('Ephemeral operator Worker with real local R2 bindings',()=>{
       expect((await call('/journal/put',{key:immutable,value:'changed',ifMatch:etag})).status).toBe(400);
       expect((await call('/probe/delete',{key:'control.json'})).status).toBe(403);
       expect((await call('/media/delete',{key:'control.json'})).status).toBe(400);
+      // The regular operator bundle never enables the separately built media probe.
+      expect((await call('/probe/reset-media',{})).status).toBe(404);
+      expect((await call('/probe/cleanup',{})).status).toBe(404);
+      expect(await (await bucket.get('control.json'))!.text()).toBe('{"sequence":1}');
     } finally {await mf.dispose();}
   });
 });
