@@ -31,11 +31,18 @@ export function backupDatabase(sql:Sql):BackupDatabase{return{
  async missing(id,key){const[r]=await sql`select app.media_backup_missing(${id}::uuid,${key}) value`;return r.value===null?null:seq.parse(r.value);},
  async complete(id){await sql`select app.media_backup_complete(${id}::uuid)`;},async failed(id){await sql`select app.media_backup_failed(${id}::uuid)`;}
 };}
-export async function beginMediaBackup(storage:BackupStorage){const current=await assertJournalReadable(storage.journal,storage.db.journal);const r=await storage.db.start();live(r);if(current.value.generation!==r.generation)fail('BACKUP_SOURCE_MISMATCH');const state:State={v:1,run:r,cursor:null,head:null,pages:0,objects:0,bytes:0,omitted:0,proofSequence:r.base_sequence,lease:null};await storage.backup.put(prefix(r.id)+'state.json',JSON.stringify(state),{onlyIf:{etagDoesNotMatch:'*'}});return r.id;}
+async function initializeRunState(storage:BackupStorage,r:Run){
+ const state:State={v:1,run:r,cursor:null,head:null,pages:0,objects:0,bytes:0,omitted:0,proofSequence:r.base_sequence,lease:null};
+ await storage.backup.put(prefix(r.id)+'state.json',JSON.stringify(state),{onlyIf:{etagDoesNotMatch:'*'}});
+}
+export async function beginMediaBackup(storage:BackupStorage){const current=await assertJournalReadable(storage.journal,storage.db.journal);const r=await storage.db.start();live(r);if(current.value.generation!==r.generation)fail('BACKUP_SOURCE_MISMATCH');await initializeRunState(storage,r);return r.id;}
 /** One message copies at most eight objects, sequentially; no SQL lock spans R2 I/O. */
 export async function copyMediaBackupPage(storage:BackupStorage,id:string):Promise<'more'|'complete'|'busy'> {
  const {source,backup,db,journal}=storage;const currentJournal=await assertJournalReadable(journal,db.journal);const r=await db.info(id);live(r);if(currentJournal.value.generation!==r.generation)fail('BACKUP_SOURCE_MISMATCH');
- const base=prefix(id),old=await backup.get(base+'state.json');if(!old)fail('BACKUP_STATE_MISSING');const state=stateSchema.parse(JSON.parse(await old!.text()));
+ // An owner-created manual run, or a crash after SQL inventory capture, may
+ // reach the normal queue before its R2 state exists. Never replace a state;
+ // initialize only from this generation-checked, frozen database inventory.
+ const base=prefix(id);let old=await backup.get(base+'state.json');if(!old){await initializeRunState(storage,r);old=await backup.get(base+'state.json');}if(!old)fail('BACKUP_STATE_MISSING');const state=stateSchema.parse(JSON.parse(await old!.text()));
  if(JSON.stringify(state.run)!==JSON.stringify(r))fail('BACKUP_SOURCE_MISMATCH');
  const completed=await backup.get(base+'complete.json');if(completed){const manifest=manifestSchema.parse(JSON.parse(await completed.text()));if(JSON.stringify(manifest.run)!==JSON.stringify(r))fail('BACKUP_SOURCE_MISMATCH');await db.complete(id);return 'complete';}
  if(state.lease&&state.lease.until>Date.now())return 'busy';

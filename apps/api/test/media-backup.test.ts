@@ -17,6 +17,19 @@ async function fixture(count=17){
  return{mf,storage,run,items,events,deleted,completed:()=>completed};
 }
 describe('Private media snapshot pipeline through native R2',()=>{
+ it('initializes an owner-frozen run through the ordinary queue path without recreating its inventory or replacing state',async()=>{
+  const f=await fixture(2);try{
+   f.storage.db.start=async()=>{throw Error('Queue must not create another SQL inventory');};
+   expect(await f.storage.backup.get('snapshots/'+f.run.id+'/state.json')).toBeNull();
+   const results=await Promise.all([copyMediaBackupPage(f.storage,f.run.id),copyMediaBackupPage(f.storage,f.run.id)]);
+   expect(results.sort()).toEqual(['busy','more']);
+   expect(await copyMediaBackupPage(f.storage,f.run.id)).toBe('complete');
+   const state=await(await f.storage.backup.get('snapshots/'+f.run.id+'/state.json'))!.text();
+   expect(await copyMediaBackupPage(f.storage,f.run.id)).toBe('complete');
+   expect(await(await f.storage.backup.get('snapshots/'+f.run.id+'/state.json'))!.text()).toBe(state);
+   expect((await verifyMediaBackup(f.storage.backup,f.run.id,f.run.restore_at)).objects).toBe(2);
+  }finally{await f.mf.dispose();}
+ });
  it('copies only database inventory in bounded pages, resumes retries, and verifies complete manifests',async()=>{
   const f=await fixture();try{
    const id=await beginMediaBackup(f.storage);await expect(verifyMediaBackup(f.storage.backup,id,f.run.restore_at)).rejects.toThrow('BACKUP_INCOMPLETE');
