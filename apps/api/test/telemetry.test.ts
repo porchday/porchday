@@ -47,7 +47,8 @@ test('binding state is explicit per environment and neither absent nor failed me
  expect(()=>event('error',{}, {ENVIRONMENT:'production',get METRICS(){throw Error('missing runtime binding');}})).not.toThrow();
 });
 
-test('normalization exposes only feed, fixed auth actions and generic route classes',()=>{
+test('normalization separates fixed health probes, feed, auth actions and generic route classes',()=>{
+ expect(normalizedRoute('/api/operations/health')).toBe('/api/operations/health');
  expect(normalizedRoute('/api/v1/feed')).toBe('/api/v1/feed');
  expect(normalizedRoute('/api/auth/sign-in/email')).toBe('/api/auth/sign-in/email');
  for(const path of ['/api/auth/reset-password/private-token','/api/auth/verify-email?token=private-token'])expect(normalizedRoute(path)).toBe('/api/auth/*');
