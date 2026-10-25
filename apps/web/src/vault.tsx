@@ -38,6 +38,7 @@ import {
 } from "./api";
 import { Alert, Button, Field, Icon, Loading, useAction } from "./ui";
 import { LockedAccount } from "./LockedAccount";
+import { initializeEmptyProfile } from "./initial-profile";
 type BackupDevice = {
   id: string;
   public_key: string;
@@ -132,6 +133,9 @@ export function VaultProvider({
   const [saved, setSaved] = useState(false);
   const [secret, setSecret] = useState("");
   const [remember, setRemember] = useState(false);
+  const [profileReadyFor, setProfileReadyFor] = useState("");
+  const [profileSetupError, setProfileSetupError] = useState(false);
+  const [profileSetupAttempt, setProfileSetupAttempt] = useState(0);
   const action = useAction();
   const authorKeys = useRef(new Map<string, Promise<Device>>());
   useEffect(() => {
@@ -169,6 +173,41 @@ export function VaultProvider({
       canceled = true;
     };
   }, [member.id]);
+  useEffect(() => {
+    if (!active) return;
+    const readyKey = member.id + ":" + active.device.id;
+    if (["restricted", "suspended"].includes(member.status || "")) {
+      setProfileReadyFor(readyKey);
+      return;
+    }
+    const controller = new AbortController();
+    let canceled = false;
+    const timeout = setTimeout(() => {
+      controller.abort();
+      // Key operations may not observe AbortSignal. Cosmetic setup must still
+      // release the app; the aborted save cannot replace a later profile edit.
+      if (!canceled) {
+        setProfileSetupError(true);
+        setProfileReadyFor(readyKey);
+      }
+    }, 12000);
+    setProfileSetupError(false);
+    initializeEmptyProfile({
+      read: () => request("/me", {signal: controller.signal}),
+      seal: (profile) => seal(profile, {
+        id: member.id, kind: "profile", audience: "connections", revision: 1,
+      }, undefined, controller.signal),
+      save: (envelope) => request("/profiles/me", {
+        method: "PUT", body: JSON.stringify({envelope}), signal: controller.signal,
+      }),
+    }).catch(() => {
+      if (!canceled) setProfileSetupError(true);
+    }).finally(() => {
+      clearTimeout(timeout);
+      if (!canceled) setProfileReadyFor(readyKey);
+    });
+    return () => { canceled = true; clearTimeout(timeout); controller.abort(); };
+  }, [member.id, member.status, active?.device.id, profileSetupAttempt]);
   async function generate() {
     await action.run(async () => {
       const id = crypto.randomUUID();
@@ -512,13 +551,14 @@ export function VaultProvider({
     audience: Audience,
     groupId?: string | null,
     postId?: string,
+    signal?: AbortSignal,
   ) {
     const qs = new URLSearchParams(
       postId
         ? { post_id: postId }
         : { audience, ...(groupId ? { group_id: groupId } : {}) },
     );
-    const r = await get(`/audiences?${qs}`);
+    const r = await request(`/audiences?${qs}`, {signal});
     const list = items<Device>(r);
     if (
       (Array.isArray(r.pending_members) && r.pending_members.length) ||
@@ -537,6 +577,7 @@ export function VaultProvider({
       audience: Audience;
     },
     postId?: string,
+    signal?: AbortSignal,
   ) {
     if (
       ["restricted", "suspended"].includes(member.status || "") &&
@@ -549,6 +590,7 @@ export function VaultProvider({
       partial.audience,
       partial.groupId,
       postId,
+      signal,
     );
     const context: ContentContext = {
       id: crypto.randomUUID(),
@@ -617,6 +659,8 @@ export function VaultProvider({
       authorPublicKey: author.public_key,
     });
   }
+  if (profileReadyFor !== member.id + ":" + active.device.id)
+    return <Loading text="Getting your personal page ready…" />;
   return (
     <Vault.Provider
       value={{
@@ -634,6 +678,12 @@ export function VaultProvider({
         },
       }}
     >
+      {profileSetupError && (
+        <div className="panel" role="status">
+          <p>We couldn’t check your starter background. Your account and keys are ready; you can keep using Porchday or try again.</p>
+          <Button variant="outline" onClick={() => setProfileSetupAttempt((v) => v + 1)}>Try background setup again</Button>
+        </div>
+      )}
       {children}
     </Vault.Provider>
   );
