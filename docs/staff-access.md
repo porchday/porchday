@@ -74,6 +74,40 @@ Hosted configuration verified on 2026-10-25: the explicit create completed and i
 
 After configuration, the approved people personally open [the Launcher](https://porchday-staff.cloudflareaccess.com) or [the authenticator enrollment page](https://porchday-staff.cloudflareaccess.com/AddMfaDevice). Use email OTP, then Account → MFA devices. Never enroll or retain their authenticator for them. An already enrolled authenticator is required when adding or removing later MFA devices.
 
+## Staging recovery-role authorization
+
+`provision-staff-role.ts` is an operator-only tool, separate from Access provisioning. It supports only `staging`, only the privately configured `owner` or `reviewer`, and only the `recovery` role. It is **read-only by default**. Do not use `--apply` until the operator has confirmed that the named person completed the real staff sign-in and approved their exact signed subject/email pair. No hosted role grant has been performed by the preparation/testing of this tool.
+
+After that confirmation, create an owner-only directory `artifacts/private/staff-access` (mode `0700`) and a reference JSON file (mode exactly `0600`). Use these six fields, populated from the actual verified `/staff` identity and the operator's confirmation:
+
+```json
+{
+  "v": 1,
+  "environment": "staging",
+  "subject": "<actual Access account reference>",
+  "email": "<actual configured email>",
+  "confirmedAt": "<confirmation time in ISO 8601>",
+  "source": "human-confirmed-signed-staff-identity"
+}
+```
+
+The reference must be less than 24 hours old. Its source label records human-confirmed provenance; it is **not cryptographic proof**. Never put an assertion, JWT, cookie or one-time code in this file. Unknown fields, symlinks, public permissions, mismatched email or an invalid subject are rejected.
+
+```sh
+# Read-only preflight. Use owner.json/--identity owner for the owner.
+python3 scripts/with-secrets.py npx tsx scripts/provision-staff-role.ts staging --identity reviewer --reference-file artifacts/private/staff-access/reviewer.json
+# Only after explicit authorization of this exact confirmed identity:
+python3 scripts/with-secrets.py npx tsx scripts/provision-staff-role.ts staging --identity reviewer --reference-file artifacts/private/staff-access/reviewer.json --apply
+```
+
+Both modes first bind the configured Cloudflare account and staging database to the saved inventory, verify current Access policy/MFA configuration and the saved OTP/Launcher/application IDs and audiences, then call Cloudflare's authenticated [get-user API](https://developers.cloudflare.com/api/resources/zero_trust/subresources/access/subresources/users/methods/get/) for the exact subject and require its email to match the private configuration. Cloudflare documents the [application-token subject](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/application-token/) as the user ID, unique to an email within the account. Directory membership/Access-seat status does not prove MFA or admission to the staff application. A recreated directory identity must not silently replace an earlier subject.
+
+The database credential is the staging operator migration credential, with the `porchday-staging`/`main` metadata and branch checked against the saved staging inventory and TLS verified. No additional runtime permission is granted. Apply creates an exclusive private `.apply-receipt.jsonl` beside the reference **before** entering the transaction. The transaction locks the staff roster, rejects a same-email/different-subject or same-subject/different-email conflict, and refuses to reactivate an inactive row or change any existing role set. It creates only an active `recovery` row and `staff_recovery_role_provisioned` security-audit record atomically. The audit's staff subject is the affected identity; the protected receipt records the operator-confirmed source. An existing exact active recovery row is idempotent. Readback is checked inside and after the commit.
+
+A failed or uncertain apply keeps the intent receipt and blocks blind reuse of that reference. Inspect the protected receipt and rerun **read-only** before deciding what happened; never delete a receipt to force a retry. Terminal output contains fixed status/identity-choice labels, not email, subject, database URLs, provider bodies or credentials. The human must then refresh `/staff` and verify the real recovery queue is accessible. Production, moderation, role replacement, deactivation/reactivation and account recovery decisions remain separate authorized operations.
+
+The focused suite covers private-file/reference rules, exact directory and staging-branch checks, read-only defaults, identity and role conflicts, real PostgreSQL audit rollback, and concurrent duplicate submissions producing one grant/audit. Local database tests require `STAFF_ROLE_TEST_DATABASE_URL` pointing to a dedicated localhost database named `porchday_staff_role_test`; no hosted database is accepted for those tests.
+
 ## Remaining enrollment and launch checks
 
 1. Once each hostname is online, verify unauthenticated `/staff`, `/staff/`, `/api/staff`, `/api/staff/recovery` and `/api/staff/moderation` requests are protected by Access. Verify ordinary member routes remain accessible according to their own application authorization. Keep alternate Worker origins disabled and verify the application's assertion checks reject absent, forged or wrong-audience assertions.
