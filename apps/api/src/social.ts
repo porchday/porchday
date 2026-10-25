@@ -435,12 +435,19 @@ export function createSocialRoutes() {
         if (e.audience !== 'only_me' || e.groupId !== null || e.parentId !== null)
             fail('IMPORT_MUST_BE_PRIVATE');
         await checkEnvelope(db, c.get('memberId'), item.envelope, 'post', { allowPast: true });
-        const rows = await db `insert into app.posts(id,author_id,audience,envelope,epoch,created_at,expires_at,import_source) values(${e.id},${c.get('memberId')},'only_me',${db.json(item.envelope)},${e.epoch},${e.createdAt},${e.expiresAt},${item.source_id}) on conflict(author_id,import_source) where import_source is not null do nothing returning id`;
-        if (rows.length) {
+        // RETURNING and the partial conflict target apply the SELECT policy,
+        // whose STABLE lookup cannot see this command's new row. Preserve that
+        // policy and check a zero-count conflict in a subsequent statement.
+        const inserted = await db `insert into app.posts(id,author_id,audience,envelope,epoch,created_at,expires_at,import_source) values(${e.id},${c.get('memberId')},'only_me',${db.json(item.envelope)},${e.epoch},${e.createdAt},${e.expiresAt},${item.source_id}) on conflict do nothing`;
+        if (inserted.count === 1) {
             await attachMedia(db, c.get('memberId'), e.id, item.media_ids);
             for (const r of item.envelope.recipients)
                 await db `insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
             imported.push(e.id);
+        } else {
+            const [duplicate] = await db `select id from app.posts where author_id=${c.get('memberId')} and import_source=${item.source_id}`;
+            if (!duplicate)
+                fail('CONFLICT', 409);
         }
     } await db `insert into app.data_transfer_jobs(id,member_id,kind,state) values(${b.id},${c.get('memberId')},'import','complete') on conflict(id) do nothing`; return { id: b.id, imported }; }), 201); });
     return app;

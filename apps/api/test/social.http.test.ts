@@ -42,6 +42,34 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('imports private posts and photos through the restricted role without RETURNING visibility, and retries without duplicate rows or attachments', async () => {
+        const owner = await person(), stranger = await person();
+        const postId = randomUUID(), mediaId = randomUUID(), source = 'archive:' + randomUUID();
+        const post = await seal(owner, {text: 'Private imported photo', media: [{id: mediaId}]}, {id: postId, audience: 'only_me'});
+        const media = await seal(owner, {mime: 'image/jpeg', bytes: 'c2FtcGxl', alt: 'Imported fixture'}, {id: mediaId, kind: 'media', audience: 'only_me', parentId: postId});
+        const bytes = new TextEncoder().encode(JSON.stringify(media));
+        expect((await request(owner.id, '/media', 'POST', {id: mediaId, envelope: media, byte_size: bytes.length})).status).toBe(201);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {method: 'PUT', headers: {'x-test-member': owner.id, 'content-type': 'application/octet-stream'}, body: bytes}, env)).status).toBe(200);
+        const transfer = randomUUID();
+        const created = await request(owner.id, '/imports', 'POST', {id: transfer, posts: [{envelope: post, source_id: source, media_ids: [mediaId]}]});
+        expect(created).toEqual({status: 201, data: {id: transfer, imported: [postId]}});
+        expect((await request(owner.id, '/posts/' + postId)).status).toBe(200);
+        expect((await request(stranger.id, '/posts/' + postId)).status).toBe(404);
+        expect((await sql`select post_id,state from app.media_assets where id=${mediaId}`)[0]).toMatchObject({post_id: postId, state: 'attached'});
+        const [recipient] = await sql`select count(*)::int n from app.post_recipients where post_id=${postId}`;
+        expect(recipient.n).toBe(1);
+        const retryPost = await seal(owner, {text: 'Must not replace first import'}, {audience: 'only_me'});
+        const retried = await request(owner.id, '/imports', 'POST', {id: transfer, posts: [{envelope: retryPost, source_id: source, media_ids: [mediaId]}]});
+        expect(retried).toEqual({status: 201, data: {id: transfer, imported: []}});
+        expect(await sql`select id from app.posts where id=${retryPost.context.id}`).toHaveLength(0);
+        expect((await sql`select count(*)::int n from app.posts where author_id=${owner.id} and import_source=${source}`)[0].n).toBe(1);
+        expect((await sql`select post_id from app.media_assets where id=${mediaId}`)[0].post_id).toBe(postId);
+        const collision = await seal(owner, {text: 'A conflicting ID is not an imported-source retry'}, {id: postId, audience: 'only_me'});
+        expect((await request(owner.id, '/imports', 'POST', {id: randomUUID(), posts: [{envelope: collision, source_id: 'archive:' + randomUUID()}]})).status).toBe(409);
+        const invalid = await seal(owner, {text: 'Must roll back missing attachment'}, {audience: 'only_me'});
+        expect((await request(owner.id, '/imports', 'POST', {id: randomUUID(), posts: [{envelope: invalid, source_id: 'archive:' + randomUUID(), media_ids: [randomUUID()]}]})).status).toBe(409);
+        expect(await sql`select id from app.posts where id=${invalid.context.id}`).toHaveLength(0);
+    });
     it('preserves a committed upload after an ambiguous COMMIT response even when an account hold hides it under RLS',async()=>{
         const a=await person(),mediaId=randomUUID();
         const envelope=await seal(a,{mime:'image/jpeg',bytes:'c2FtcGxl',alt:'Ambiguous commit fixture'},{id:mediaId,kind:'media',parentId:a.id});
