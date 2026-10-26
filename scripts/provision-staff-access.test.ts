@@ -54,7 +54,7 @@ assert p.org['mfa_required_for_all_apps'] is True
 assert p.org['mfa_config']['amr_matching_enabled'] is False
 assert len(p.apps)==2 and len(p.policies)==2 and len(p.idps)==1
 for env,app,policy in zip(m.HOSTS,p.apps,p.policies):
- assert [d['uri'] for d in app['destinations']]==[m.HOSTS[env]+'/staff',m.HOSTS[env]+'/api/staff']
+ assert [d['uri'] for d in app['destinations']]==[host+path for host in m.staff_hosts(env) for path in ['/staff','/api/staff']]
  assert app['policies']==[{'id':policy['id'],'precedence':1}]
  assert policy['include']==[{'email':{'email':'owner@example.test'}}]
  assert policy['require']==[{'login_method':{'id':p.idps[0]['id']}}]
@@ -385,4 +385,113 @@ def provider(path,method='GET',body=None):
 m.enable_launcher(provider,'owner@example.test',roster)
 assert [w[:2] for w in p.writes]==[('/access/apps','POST')]
 assert len(p.policies)==3
+`));
+
+test('production domain migration changes only the primary domain and exact old/new staff paths',()=>run(String.raw`
+original=m.provision(p,'owner@example.test',legacy_production=True)
+assert p.apps[1]['domain']=='porchday.com/staff'
+p.apps[1].update(created_at='2026-01-01',updated_at='2026-01-01')
+before=copy.deepcopy((p.org,p.apps,p.policies,p.idps));p.writes=[]
+out=m.migrate_production_domain(p,'owner@example.test')
+assert out==original
+assert len(p.writes)==1 and p.writes[0][:2]==('/access/apps/'+p.apps[1]['id'],'PUT')
+assert p.apps[1]['domain']=='porchday.org/staff'
+assert [d['uri'] for d in p.apps[1]['destinations']]==['porchday.org/staff','porchday.org/api/staff','porchday.com/staff','porchday.com/api/staff']
+expected=copy.deepcopy(before)
+for key in ['domain','destinations']:expected[1][1][key]=copy.deepcopy(p.apps[1][key])
+assert (p.org,p.apps,p.policies,p.idps)==expected
+assert p.apps[1]['aud']==original['environments']['production']['staff_access_audience']
+assert 'aud' not in p.writes[0][2] and 'id' not in p.writes[0][2]
+p.writes=[]
+assert m.migrate_production_domain(p,'owner@example.test')==out
+assert m.provision(p,'owner@example.test',check=True)==out
+assert p.writes==[]
+`));
+
+test('default provisioning does not silently migrate a legacy production domain',()=>run(String.raw`
+m.provision(p,'owner@example.test',legacy_production=True);p.writes=[]
+for check in [True,False]:rejects(lambda:m.provision(p,'owner@example.test',check=check),'differs from required')
+assert p.writes==[]
+`));
+
+test('domain migration accepts embedded policy reads and preserves policy and audience',()=>run(String.raw`
+p.embed_policies=True
+original=m.provision(p,'owner@example.test',legacy_production=True);p.writes=[]
+policies=copy.deepcopy(p.policies)
+assert m.migrate_production_domain(p,'owner@example.test')==original
+assert p.policies==policies
+assert p.writes[0][2]['policies']==[{'id':p.policies[1]['id'],'precedence':1}]
+`));
+
+test('domain migration refuses broad paths, extra origins, unknown fields, MFA drift and audience changes',()=>run(String.raw`
+for kind in ['broad','extra','unknown','mfa','origin']:
+ p=Provider();m.provision(p,'owner@example.test',legacy_production=True);p.writes=[]
+ if kind=='broad':p.apps[1]['destinations'][0]['uri']='porchday.com/*'
+ elif kind=='extra':p.apps[1]['destinations'].append({'type':'public','uri':'attacker.test/staff'})
+ elif kind=='unknown':p.apps[1]['unreviewed_setting']=True
+ elif kind=='mfa':p.apps[1]['mfa_config']['mfa_disabled']=True
+ elif kind=='origin':p.apps[1]['domain']='attacker.test/staff'
+ try:m.migrate_production_domain(p,'owner@example.test')
+ except m.AccessError:pass
+ else:raise AssertionError('Unsafe domain configuration accepted')
+ assert p.writes==[]
+p=Provider();m.provision(p,'owner@example.test',legacy_production=True);p.writes=[]
+def changed_audience(path,method='GET',body=None):
+ result=p(path,method,body)
+ if method=='PUT':p.apps[1]['aud']='d'*64
+ return result
+rejects(lambda:m.migrate_production_domain(changed_audience,'owner@example.test'),'outcome requires manual review')
+assert len(p.writes)==1
+`));
+
+test('domain migration detects concurrent drift before its only write and does not retry ambiguous failures',()=>run(String.raw`
+m.provision(p,'owner@example.test',legacy_production=True);p.writes=[]
+org_reads=0
+def changing_api(path,method='GET',body=None):
+ global org_reads
+ if path=='/access/organizations' and method=='GET':
+  org_reads+=1
+  if org_reads==3:p.apps[0]['app_launcher_visible']=False
+ return p(path,method,body)
+rejects(lambda:m.migrate_production_domain(changing_api,'owner@example.test'),'changed before domain update')
+assert p.writes==[]
+p=Provider();m.provision(p,'owner@example.test',legacy_production=True);p.writes=[]
+def lost_response(path,method='GET',body=None):
+ result=p(path,method,body)
+ if method=='PUT':raise m.AccessError('Cloudflare request failed')
+ return result
+rejects(lambda:m.migrate_production_domain(lost_response,'owner@example.test'),'Do not retry automatically')
+assert len(p.writes)==1
+p.writes=[];m.migrate_production_domain(p,'owner@example.test');assert p.writes==[]
+`));
+
+test('domain migration preserves provider tags and eager cookie preference while checking deprecated host aliases',()=>run(String.raw`
+m.provision(p,'owner@example.test',legacy_production=True);p.writes=[]
+def aliased_api(path,method='GET',body=None):
+ result=p(path,method,body)
+ if path.startswith('/access/apps'):
+  for item in result if isinstance(result,list) else [result]:
+   if item.get('type')=='self_hosted':
+    item['uid']=item['id'];item['self_hosted_domains']=sorted(d['uri'] for d in item['destinations'])
+    item.setdefault('tags',[]);item.setdefault('eager_redirect_cookie_setting',True)
+ return result
+original=m.provision(aliased_api,'owner@example.test',check=True,legacy_production=True)
+assert m.migrate_production_domain(aliased_api,'owner@example.test')==original
+body=p.writes[0][2]
+assert body['tags']==[] and body['eager_redirect_cookie_setting'] is True
+assert 'self_hosted_domains' not in body and 'uid' not in body
+p.writes=[]
+assert m.migrate_production_domain(aliased_api,'owner@example.test')==original
+assert p.writes==[]
+for alias,value in [('uid','unexpected-id'),('self_hosted_domains',['attacker.test/staff'])]:
+ def wrong_alias(path,method='GET',body=None):
+  result=aliased_api(path,method,body)
+  if path.startswith('/access/apps'):
+   for item in result if isinstance(result,list) else [result]:
+    if item.get('type')=='self_hosted':item[alias]=value
+  return result
+ try:m.migrate_production_domain(wrong_alias,'owner@example.test')
+ except m.AccessError:pass
+ else:raise AssertionError('Unexpected provider alias accepted')
+ assert p.writes==[]
 `));

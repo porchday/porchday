@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { message } from "./api";
+import { needsDomainNavigation } from "./domain-navigation";
 export function Icon({
   name,
   size = 20,
@@ -371,7 +372,7 @@ export function useRoute(navigationEpoch?: { current: number }) {
       )
         return;
       const url = new URL(a.href);
-      if (url.origin !== location.origin || url.hash) return;
+      if (url.origin !== location.origin || url.hash || needsDomainNavigation(url, location.origin)) return;
       event.preventDefault();
       history.pushState({}, "", url.pathname + url.search);
       pop();
@@ -427,6 +428,11 @@ export function useRoute(navigationEpoch?: { current: number }) {
   return path;
 }
 export function navigate(path: string) {
+  const destination = new URL(path, location.href);
+  if (needsDomainNavigation(destination, location.origin)) {
+    location.assign(destination.href);
+    return;
+  }
   history.pushState({}, "", path);
   window.dispatchEvent(new PopStateEvent("popstate"));
   window.scrollTo(0, 0);

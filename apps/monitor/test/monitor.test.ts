@@ -21,6 +21,15 @@ function fixture(){
 }
 const healthy=()=>new Response(JSON.stringify({status:'ok',issues:[],snapshot:{cleanup_age_seconds:1}}));
 describe('Independent operational monitor',()=>{
+  it('probes canonical production directly and never follows a redirect with its health capability',async()=>{
+    const fetcher=vi.fn().mockResolvedValue(healthy()),token='x'.repeat(40);
+    expect(await probe('production',token,fetcher)).toEqual({healthy:true});
+    expect(fetcher.mock.calls[0][0]).toBe('https://porchday.org/api/operations/health');
+    expect(fetcher.mock.calls[0][1]).toMatchObject({redirect:'manual',headers:{Authorization:'Bearer '+token}});
+    fetcher.mockResolvedValue(new Response(null,{status:308,headers:{Location:'https://porchday.com/api/operations/health'}}));
+    expect(await probe('production',token,fetcher)).toEqual({healthy:false});
+    expect(fetcher.mock.calls.map(call=>call[0])).toEqual(Array(2).fill('https://porchday.org/api/operations/health'));
+  });
   it('uses a fixed target, bounded protected response, and refuses unsafe redirect semantics',async()=>{
     const fetcher=vi.fn().mockResolvedValue(healthy());
     expect(await probe('staging','x'.repeat(40),fetcher)).toEqual({healthy:true});

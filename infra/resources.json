@@ -42,7 +42,8 @@
       "signup_enabled": true,
       "worker_placement": {
         "region": "aws:us-west-2"
-      }
+      },
+      "app_url": "https://staging.porchday.com"
     },
     "production": {
       "bucket": "porchday-production-media",
@@ -83,7 +84,9 @@
       "media_backup_enabled": true,
       "verified_pitr_days": 7,
       "signup_enabled": true,
-      "worker_placement": null
+      "worker_placement": null,
+      "app_url": "https://porchday.org",
+      "legacy_app_url": "https://porchday.com"
     }
   },
   "staff_access_identity_provider_id": "76862f58-8faf-4670-9040-15cec794b211",

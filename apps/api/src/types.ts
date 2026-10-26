@@ -13,6 +13,8 @@ export interface Env {
   EMAIL: SendEmail;
   JOBS: Queue<{ kind: string; id?: string }>;
   APP_URL: string;
+  /** Explicit old HTTPS origin retained during a canonical-domain transition. */
+  LEGACY_APP_URL?: string;
   ENVIRONMENT: 'development' | 'staging' | 'production';
   BETTER_AUTH_SECRET: string;
   EMAIL_FROM: string;

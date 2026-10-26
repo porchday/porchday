@@ -10,6 +10,8 @@ config.update(name='porchday-monitor-'+name,account_id=resources['account_id'])
 config['vars']['ENVIRONMENT']=name
 config['vars']['ANALYTICS_ACCOUNT_ID']=resources['account_id']
 config['vars']['METRICS_ENABLED']='true' if '--enable-metrics' in sys.argv else 'false'
+# Only the production application moves to .org. Keep the independent status
+# hosts, verified sender and Durable Object identity unchanged.
 config['routes']=[{'pattern':'status.porchday.com' if name=='production' else 'staging-status.porchday.com','custom_domain':True}]
 config['triggers']={'crons':['* * * * *']}
 config['send_email']=[{'name':'EMAIL','allowed_sender_addresses':['accounts@porchday.com']}]

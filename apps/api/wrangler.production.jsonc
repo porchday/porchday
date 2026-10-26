@@ -15,15 +15,16 @@
     "run_worker_first": true
   },
   "vars": {
-    "APP_URL": "https://porchday.com",
+    "APP_URL": "https://porchday.org",
     "ENVIRONMENT": "production",
-    "SIGNUP_ENABLED": "false",
+    "SIGNUP_ENABLED": "true",
     "CONTENT_WRITES_PAUSED": "false",
     "MEDIA_UPLOADS_PAUSED": "false",
     "SOCIAL_INVITATIONS_PAUSED": "false",
     "EMAIL_FROM": "Porchday <accounts@porchday.com>",
+    "LEGACY_APP_URL": "https://porchday.com",
     "MEDIA_BACKUP_ENABLED": "true",
-    "VAPID_SUBJECT": "https://porchday.com/contact",
+    "VAPID_SUBJECT": "https://porchday.org/contact",
     "STAFF_ACCESS_ISSUER": "https://porchday-staff.cloudflareaccess.com",
     "STAFF_ACCESS_AUDIENCE": "89e708753278e4af729b9d6b5972c60041a023f8389d952a502a081bb1ae1071"
   },
@@ -112,7 +113,19 @@
   ],
   "routes": [
     {
+      "pattern": "porchday.org",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.porchday.org",
+      "custom_domain": true
+    },
+    {
       "pattern": "porchday.com",
+      "custom_domain": true
+    },
+    {
+      "pattern": "www.porchday.com",
       "custom_domain": true
     }
   ]

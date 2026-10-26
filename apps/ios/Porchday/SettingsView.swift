@@ -54,7 +54,7 @@ struct SettingsView: View {
                 Button("Change password and sign out other sessions") { Task { await model.perform { _ = try await model.api.auth("change-password", body: .object(["currentPassword":.string(currentPassword),"newPassword":.string(newPassword),"revokeOtherSessions":.bool(true)])); currentPassword = ""; newPassword = ""; await refresh() } } }.disabled(newPassword.count < 12 || currentPassword.isEmpty)
                 ForEach(Array(sessions.enumerated()), id: \.offset) { _, session in HStack { VStack(alignment:.leading) { Text(session["userAgent"].string ?? "Signed-in session").lineLimit(2); Text(session["createdAt"].string ?? "").font(.caption) }; Spacer(); Button("Sign out", role:.destructive) { Task { await model.perform { _ = try await model.api.auth("revoke-session", body:.object(["token":session["token"]])); await model.restore(); await refresh() } } } } }
                 Button("Sign out other sessions") { Task { await model.perform { _ = try await model.api.auth("revoke-other-sessions", body:.object([:])); await refresh() } } }
-                Link("Manage two-factor authentication and email", destination:URL(string:"https://porchday.com/app/settings/security")!)
+                Link("Manage two-factor authentication and email", destination:ServerConfiguration.origin.appendingPathComponent("app/settings/security"))
             }
             Section("Encryption devices") { ForEach(vault.devices) { device in VStack(alignment:.leading) { Text(device.id == vault.device?.id ? "This device" : "Trusted device"); Text(device.fingerprint).font(.system(.caption,design:.monospaced)).textSelection(.enabled); if device.revoked { Text("Revoked").foregroundStyle(.secondary) } else { Button("Revoke this device",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/devices/"+device.id,method:"DELETE"); if device.id == vault.device?.id { await model.signOut() } else { await refresh() } } } }.disabled(!model.canWriteSocial) } } }; Text("Revoking a device stops future sharing. It cannot erase content already saved on that device.").font(.footnote) }
             Section("Privacy and notifications") {
@@ -63,7 +63,7 @@ struct SettingsView: View {
                 NavigationLink("Your notifications") { NotificationsView() }
                 ForEach(Array(mutes.enumerated()),id:\.offset) { _, item in Button("Unmute " + (item["target"].string ?? "person")) { Task { await remove("/mutes/",item) } } }
                 ForEach(Array(blocks.enumerated()),id:\.offset) { _, item in Button("Unblock " + (item["target"].string ?? "person")) { Task { await remove("/blocks/",item) } } }
-                Link("Appeal a moderation decision",destination:URL(string:"https://porchday.com/appeals")!)
+                Link("Appeal a moderation decision",destination:ServerConfiguration.origin.appendingPathComponent("appeals"))
                 NavigationLink("Report a stolen account") { StolenAccountView() }
             }
             Section("Connected integrations") {
@@ -79,10 +79,10 @@ struct SettingsView: View {
                         else { Button("Revoke", role: .destructive) { Task { await model.perform { _ = try await model.api.social("/integrations/" + (grant["id"].string ?? ""), method: "DELETE"); await refresh() } } }.accessibilityLabel("Revoke " + summary.name) }
                     }
                 }
-                Link("Register or authorize a tool", destination: URL(string: "https://porchday.com/app/settings/data")!)
+                Link("Register or authorize a tool", destination: ServerConfiguration.origin.appendingPathComponent("app/settings/data"))
             }
             }
-            Section("About Porchday") { NavigationLink("Open source notices") { ThirdPartyNoticesView() }; Text("No ads. No influencers. No algorithm. An open source project under Apache 2.0, building toward philanthropy-funded service for the public good."); Link("Privacy and encryption limits",destination:URL(string:"https://porchday.com/privacy")!); Link("Community rules",destination:URL(string:"https://porchday.com/community")!) }
+            Section("About Porchday") { NavigationLink("Open source notices") { ThirdPartyNoticesView() }; Text("No ads. No influencers. No algorithm. An open source project under Apache 2.0, building toward philanthropy-funded service for the public good."); Link("Privacy and encryption limits",destination:ServerConfiguration.origin.appendingPathComponent("privacy")); Link("Community rules",destination:ServerConfiguration.origin.appendingPathComponent("community")) }
             Section("Groups you own") {
                 Text("Before deleting your account, delete the groups you own. Group content is permanently removed; saved copies cannot be recalled.").font(.footnote)
                 if ownedGroups.isEmpty { Text("No owned groups to resolve.") }
@@ -94,7 +94,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            if !socialSettingsAvailable { Section { Link("Appeal a moderation decision", destination: URL(string: "https://porchday.com/appeals")!); NavigationLink("Report a stolen account") { StolenAccountView() } } }
+            if !socialSettingsAvailable { Section { Link("Appeal a moderation decision", destination: ServerConfiguration.origin.appendingPathComponent("appeals")); NavigationLink("Report a stolen account") { StolenAccountView() } } }
             Section { Button("Sign out and clear this device's keys",role:.destructive) { Task { await model.signOut() } }; Button("Delete my account",role:.destructive) { deleting = true }.disabled(busy || !ownedGroups.isEmpty) }
         }.navigationTitle("Settings").task { await refresh() }
             .confirmationDialog("Delete this owned group and all its content?", isPresented: Binding(get: { deletingGroup != nil }, set: { if !$0 { deletingGroup = nil } }), titleVisibility: .visible) {

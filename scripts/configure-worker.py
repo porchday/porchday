@@ -11,9 +11,21 @@ for role in ['auth','social','jobs']:
  if not re.fullmatch('[a-f0-9]{32}',value) or value.startswith('00000000'):
   raise SystemExit('Missing verified '+name+' Hyperdrive '+role+' ID; provision it with query caching disabled first.')
 base=json.loads(Path('apps/api/wrangler.local.jsonc').read_text())
-host='porchday.com' if name=='production' else 'staging.porchday.com'
+expected_origin='https://porchday.org' if name=='production' else 'https://staging.porchday.com'
+origin=env.get('app_url',expected_origin)
+if origin!=expected_origin:raise SystemExit('app_url must match the reviewed canonical origin for this environment.')
+legacy=env.get('legacy_app_url')
+# Retiring the old origin needs an explicit reviewed source change: omitting
+# this field must never strand existing browser encryption keys or sessions.
+if name=='production' and legacy!='https://porchday.com':
+ raise SystemExit('legacy_app_url must be the reviewed production HTTPS origin during this transition.')
+if name!='production' and 'legacy_app_url' in env:
+ raise SystemExit('legacy_app_url is forbidden outside production during this transition.')
+host=origin.removeprefix('https://')
 base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev=False)
-base['vars'].update(APP_URL='https://'+host,ENVIRONMENT=name)
+base['vars'].update(APP_URL=origin,ENVIRONMENT=name)
+base['vars'].pop('LEGACY_APP_URL',None)
+if legacy is not None:base['vars']['LEGACY_APP_URL']=legacy
 # Placement is explicit per environment, not inherited from local development.
 placement=env.get('worker_placement')
 if placement is not None:
@@ -37,7 +49,7 @@ if env.get('media_backup_enabled'):
   raise SystemExit('Backup requires a separate private bucket and verified seven-day database backup/PITR retention policy.')
  base['r2_buckets'].append({'binding':'MEDIA_BACKUP','bucket_name':env['media_backup_bucket']})
  base['vars']['MEDIA_BACKUP_ENABLED']='true'
-base['vars']['VAPID_SUBJECT']='https://porchday.com/contact'
+base['vars']['VAPID_SUBJECT']='https://porchday.org/contact' if name=='production' else 'https://porchday.com/contact'
 base['queues']={'producers':[{'binding':'JOBS','queue':env['queue']}],'consumers':[{'queue':env['queue'],'max_batch_size':1,'max_batch_timeout':5,'max_retries':8,'dead_letter_queue':env['dead_letter_queue']}]}
 base['triggers']={'crons':['* * * * *','17 3 * * *']}
 base['limits']={'cpu_ms':30000}
@@ -47,7 +59,9 @@ base['limits']={'cpu_ms':30000}
 base['observability']={'enabled':False,'logs':{'enabled':False,'invocation_logs':False},'traces':{'enabled':False}}
 base['logpush']=False
 base['analytics_engine_datasets']=[{'binding':'METRICS','dataset':'porchday_'+name+'_operations_v1'}]
-base['routes']=[{'pattern':host,'custom_domain':True}]
+hosts=[host,'www.'+host] if name=='production' else [host]
+if legacy is not None:hosts.extend([legacy.removeprefix('https://'),'www.'+legacy.removeprefix('https://')])
+base['routes']=[{'pattern':hostname,'custom_domain':True} for hostname in hosts]
 for key in ['STAFF_ACCESS_ISSUER','STAFF_ACCESS_AUDIENCE']:
  if env.get(key.lower()):base['vars'][key]=env[key.lower()]
 path=Path('apps/api/wrangler.'+name+'.jsonc');path.write_text(json.dumps(base,indent=2)+'\n')

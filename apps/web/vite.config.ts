@@ -1,5 +1,5 @@
 import { defineConfig } from "vite";
-import { readFileSync, writeFileSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, readdirSync, copyFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
@@ -60,12 +60,14 @@ export default defineConfig({
       },
       closeBundle() {
         const dist = resolve(import.meta.dirname, "dist");
+        // A same-origin public shell still works when the old homepage redirects.
+        copyFileSync(resolve(dist, "index.html"), resolve(dist, "app-shell.html"));
         const installIcons = versionPwaIcons(dist);
         const assets = readdirSync(resolve(dist, "assets"))
           .filter((name) => /\.(js|css)$/.test(name))
           .map((name) => "/assets/" + name);
         const shell = [
-          "/",
+          "/app-shell",
           "/icon.svg",
           "/logo.svg",
           "/porch-pattern.svg",
@@ -88,7 +90,7 @@ export default defineConfig({
           hash.update(path);
           hash.update(
             readFileSync(
-              resolve(dist, path === "/" ? "index.html" : path.slice(1)),
+              resolve(dist, path === "/app-shell" ? "app-shell.html" : path.slice(1)),
             ),
           );
         }

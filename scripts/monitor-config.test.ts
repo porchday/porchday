@@ -27,3 +27,17 @@ it('renders separate disabled-by-default monitoring and requires a distinct read
  }
  const valid=run('upload-monitor-secrets.py',['staging','--check'],{...secrets,CLOUDFLARE_ANALYTICS_READ_TOKEN:'private-distinct-read-capability-1234567890'});expect(valid.status).toBe(0);expect(valid.stdout).toContain('verify read-only token scope');expect(valid.stdout+valid.stderr).not.toMatch(/private-/);
 });
+
+it('keeps status domains and the verified mail sender on .com during the application domain migration',()=>{
+ const {directory,run}=fixture();
+ for(const environment of ['staging','production']){
+  expect(run('configure-monitor.py',[environment,'--enable-metrics']).status).toBe(0);
+  const config=JSON.parse(readFileSync(join(directory,'apps/monitor/wrangler.'+environment+'.jsonc'),'utf8'));
+  expect(config.routes).toEqual([{pattern:environment==='production'?'status.porchday.com':'staging-status.porchday.com',custom_domain:true}]);
+  expect(config.vars.EMAIL_FROM).toBe('Porchday <accounts@porchday.com>');
+  expect(config.vars.METRICS_ENABLED).toBe('true');
+  expect(config.send_email).toEqual([{name:'EMAIL',allowed_sender_addresses:['accounts@porchday.com']}]);
+  expect(config.durable_objects.bindings).toEqual([{name:'STATE',class_name:'Monitor'}]);
+  expect(config.workers_dev).toBe(false);expect(config.preview_urls).toBe(false);
+ }
+});

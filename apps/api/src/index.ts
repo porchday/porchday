@@ -22,12 +22,14 @@ import {privacyReadGuard,privacyMutationMiddleware,withPrivacyJournal} from './p
 import {requireOperations,readOperationalHealth,recordCleanupSuccess} from './operations-health';
 import {incidentControls} from './incident-controls';
 import {createPlatformInvitationRoutes} from './platform-invitations';
+import {applicationDomains} from './application-domains';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
 app.use('*',secureHeaders({
  contentSecurityPolicy:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'blob:','data:'],fontSrc:["'self'"],connectSrc:["'self'"],workerSrc:["'self'",'blob:'],objectSrc:["'none'"],baseUri:["'none'"],formAction:["'self'"],frameAncestors:["'none'"]},
  referrerPolicy:'no-referrer',xFrameOptions:'DENY',permissionsPolicy:{camera:[],microphone:[],geolocation:[]},
 }));
+app.use('*',applicationDomains);
 app.use('*',async(c,next)=>{
  const start=Date.now();c.set('requestId',crypto.randomUUID());
  await next();

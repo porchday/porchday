@@ -94,7 +94,7 @@ final class MemberAccessTests: XCTestCase {
     }
 
     func testPasswordResetReturnsToTheImplementedPageOnTheSelectedOrigin() {
-        for host in ["porchday.com", "staging.porchday.com"] {
+        for host in ["porchday.org", "porchday.com", "staging.porchday.com"] {
             let origin = URL(string: "https://" + host)!
             let callback = ServerConfiguration.passwordResetRedirect(origin: origin)
             XCTAssertEqual(callback.absoluteString, "https://" + host + "/reset")

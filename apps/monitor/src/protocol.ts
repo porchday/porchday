@@ -5,10 +5,17 @@ export interface MonitorState {
 }
 export const initialState=():MonitorState=>({v:1,lastTick:-1,checkedAt:null,status:'checking',failures:0,successes:0,incidentAt:null,outageDelivered:false,lastDeliveredAt:null,pending:null});
 export type Environment='staging'|'production';
+// Keep credentials on an exact reviewed application origin, never a redirect
+// target or request-supplied URL. Status hosts and staging remain on .com.
+export function applicationOrigin(environment:Environment):string {
+  if(environment==='production')return 'https://porchday.org';
+  if(environment==='staging')return 'https://staging.porchday.com';
+  throw Error('MONITOR_ENVIRONMENT');
+}
 export interface ProbeResult {healthy:boolean}
 export async function probe(environment:Environment,token:string,request:typeof fetch=fetch):Promise<ProbeResult> {
   if(!['staging','production'].includes(environment)||!token||token.length<32||token.length>256)return{healthy:false};
-  const host=environment==='production'?'porchday.com':'staging.porchday.com';
+  const origin=applicationOrigin(environment);
   const controller=new AbortController();let timer:ReturnType<typeof setTimeout>|undefined;
   try {
     // Race also bounds injected/misbehaving transports that ignore AbortSignal.
@@ -16,7 +23,7 @@ export async function probe(environment:Environment,token:string,request:typeof 
     return await Promise.race([timeout,(async()=>{
       // workerd rejects redirect:'error' before sending. Manual returns the 3xx
       // without forwarding this capability; the strict 200 check rejects it.
-      const response=await request(`https://${host}/api/operations/health`,{headers:{Authorization:'Bearer '+token},redirect:'manual',signal:controller.signal});
+      const response=await request(`${origin}/api/operations/health`,{headers:{Authorization:'Bearer '+token},redirect:'manual',signal:controller.signal});
       if(response.status!==200){await response.body?.cancel();return{healthy:false};}
       // Bound response bytes and never persist/log the protected diagnostics.
       const reader=response.body?.getReader();if(!reader)return{healthy:false};

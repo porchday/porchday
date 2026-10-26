@@ -9,6 +9,17 @@ const response=(rows:unknown[])=>Response.json({data:rows});
 const beat=()=>Response.json({status:'ok',service:'porchday',environment:'staging'});
 
 describe('Bounded private aggregate metrics consumer',()=>{
+ it('sends the production heartbeat to the canonical origin while retaining staging and rejecting redirects',async()=>{
+  const fetcher=vi.fn().mockResolvedValue(Response.json({status:'ok',service:'porchday',environment:'production'}));
+  expect(await heartbeat('production',fetcher)).toBe(true);
+  expect(fetcher.mock.calls[0][0]).toBe('https://porchday.org/health');
+  expect(fetcher.mock.calls[0][1]).toMatchObject({method:'GET',redirect:'manual',cache:'no-store'});
+  expect(fetcher.mock.calls[0][1].headers).toBeUndefined();
+  fetcher.mockResolvedValue(beat());expect(await heartbeat('staging',fetcher)).toBe(true);
+  expect(fetcher.mock.calls[1][0]).toBe('https://staging.porchday.com/health');
+  fetcher.mockResolvedValue(new Response(null,{status:308,headers:{Location:'https://porchday.com/health'}}));
+  expect(await heartbeat('production',fetcher)).toBe(false);expect(fetcher).toHaveBeenCalledTimes(3);
+ });
  it('uses only fixed SQL, sampling weights, validated account/environment and a dedicated read capability',async()=>{
   vi.useFakeTimers();vi.setSystemTime(now);
   const fetcher=vi.fn().mockResolvedValue(response([row()]));

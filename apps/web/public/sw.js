@@ -1,7 +1,7 @@
 /* The application shell only. Never cache API responses, photos, or private content. */
 const CACHE = "porchday-shell-v1";
 const SHELL = [
-  "/",
+  "/app-shell",
   "/icon.svg",
   "/logo.svg",
   "/icon-192.png",
@@ -45,7 +45,7 @@ self.addEventListener("fetch", (event) => {
   } else if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request).catch(() =>
-        caches.match("/").then((cached) => cached || Response.error()),
+        caches.match("/app-shell").then((cached) => cached || Response.error()),
       ),
     );
   } else if (

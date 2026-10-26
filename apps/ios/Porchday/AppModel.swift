@@ -74,8 +74,8 @@ import Combine
         for url in files where url.lastPathComponent.hasPrefix("porchday-import-") || url.lastPathComponent.hasPrefix("porchday-export-") { try? FileManager.default.removeItem(at:url) }
     }
     func handleURL(_ url: URL) {
-        guard url.scheme == "https", url.host == "porchday.com" else { return }
-        let path = url.pathComponents; if path.count == 4, path[1] == "app", path[2] == "post", UUID(uuidString: path[3]) != nil { deepLinkPost = path[3] }
+        guard let postID = ServerConfiguration.postID(from: url) else { return }
+        deepLinkPost = postID
     }
     func perform(_ action: () async throws -> Void) async { error = nil; do { try await action() } catch { self.error = error.localizedDescription } }
 }

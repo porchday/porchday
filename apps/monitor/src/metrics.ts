@@ -1,4 +1,4 @@
-import {initialState,observe,type Environment,type MonitorState} from './protocol';
+import {applicationOrigin,initialState,observe,type Environment,type MonitorState} from './protocol';
 
 export interface MetricsConfig {
  ENVIRONMENT:Environment;METRICS_ENABLED?:string;ANALYTICS_ACCOUNT_ID?:string;
@@ -75,7 +75,7 @@ export async function readMetrics(env:MetricsConfig,now:number,request:typeof fe
 export async function heartbeat(environment:Environment,request:typeof fetch=fetch):Promise<boolean> {
  if(!['staging','production'].includes(environment))return false;
  try{return await bounded(async signal=>{
-  const value=await readJson(await request(`https://${environment==='production'?'porchday.com':'staging.porchday.com'}/health`,{method:'GET',redirect:'manual',cache:'no-store',signal}));
+  const value=await readJson(await request(`${applicationOrigin(environment)}/health`,{method:'GET',redirect:'manual',cache:'no-store',signal}));
   return !!value&&typeof value==='object'&&(value as any).status==='ok'&&(value as any).service==='porchday'&&(value as any).environment===environment;
  });}catch{return false;}
 }

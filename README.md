@@ -63,6 +63,10 @@ python3 scripts/generate-unicode-emoji.py --check
 
 To produce the tracked client source/rebuild archive locally, run `python3 scripts/package-client-source.py /tmp/porchday-client-source.tar.gz` from a Git checkout. This does not publish anything or include the server implementation. See [third-party notices](THIRD_PARTY_NOTICES.md) for distribution obligations.
 
+## Primary domain transition
+
+The selected new primary address is `https://porchday.org`. [The migration guide](docs/domain-migration.md) explains DNS, legacy-device access and rollout; [issue #17](https://github.com/andyk/porchday/issues/17) records whether the cutover is complete. Existing browser encryption keys remain on their original origin.
+
 ## Secrets
 
 Local development needs no hosted secrets. Existing operator tooling reads credentials from an external `~/.config/inner-circle/secrets.env` through `scripts/with-secrets.py`; that historical directory name is not a local-development requirement. Never source a credentials file as shell code, commit it, or include its values in logs, URLs or examples. Member encryption recovery keys are generated on member devices, not by deployment tooling.

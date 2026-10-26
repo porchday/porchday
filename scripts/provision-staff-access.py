@@ -2,7 +2,9 @@
 """Provision dedicated Porchday staff Access apps. Never enroll users or grant DB roles.
 
 Run through with-secrets.py. --check is read-only. --update-roster staging permits
-one reviewed owner-only to owner-plus-reviewer change. --enable-launcher adds
+one reviewed owner-only to owner-plus-reviewer change. --migrate-production-domain
+adds the canonical .org staff paths while retaining the legacy .com paths.
+--enable-launcher adds
 the separate OTP enrollment entry point. Output contains public
 resource IDs only; merge it into infra/resources.json separately after verification.
 """
@@ -15,7 +17,8 @@ import sys
 import urllib.error
 import urllib.request
 
-HOSTS = {'staging': 'staging.porchday.com', 'production': 'porchday.com'}
+HOSTS = {'staging': 'staging.porchday.com', 'production': 'porchday.org'}
+LEGACY_PRODUCTION_HOST = 'porchday.com'
 AUTHENTICATORS = ['security_key', 'biometrics']
 MFA = {'allowed_authenticators': AUTHENTICATORS, 'session_duration': '1h', 'mfa_disabled': False}
 POLICY_WRITABLE = {'name', 'decision', 'include', 'require', 'exclude', 'session_duration',
@@ -118,10 +121,19 @@ def verify_policy(actual, desired):
         raise AccessError('Staff policy independent MFA is missing or differs from the required settings.')
 
 
-def app_body(environment, idp_id, policy_id):
-    host = HOSTS[environment]
+def staff_hosts(environment, legacy_production=False):
+    if environment not in HOSTS:
+        raise AccessError('Unknown staff application environment.')
+    if environment == 'production':
+        return [LEGACY_PRODUCTION_HOST] if legacy_production else [HOSTS[environment], LEGACY_PRODUCTION_HOST]
+    return [HOSTS[environment]]
+
+
+def app_body(environment, idp_id, policy_id, legacy_production=False):
+    hosts = staff_hosts(environment, legacy_production)
+    host = hosts[0]
     return {'name': 'Porchday staff ' + environment, 'type': 'self_hosted', 'domain': host + '/staff',
-        'destinations': [{'type': 'public', 'uri': host + path} for path in ['/staff', '/api/staff']],
+        'destinations': [{'type': 'public', 'uri': hostname + path} for hostname in hosts for path in ['/staff', '/api/staff']],
         'allowed_idps': [idp_id], 'policies': [{'id': policy_id, 'precedence': 1}],
         'session_duration': '1h', 'mfa_config': copy.deepcopy(MFA),
         'app_launcher_visible': True, 'auto_redirect_to_identity': False,
@@ -132,6 +144,8 @@ def app_body(environment, idp_id, policy_id):
 
 
 def verify_app(actual, desired):
+    if 'uid' in actual and actual['uid'] != actual.get('id'):
+        raise AccessError('Staff application identity alias differs from its ID; manual review required.')
     for key in ['name', 'type', 'domain', 'allowed_idps', 'session_duration',
                 'allow_authenticate_via_warp', 'enable_binding_cookie', 'http_only_cookie_attribute',
                 'same_site_cookie_attribute', 'path_cookie_attribute', 'options_preflight_bypass',
@@ -141,9 +155,14 @@ def verify_app(actual, desired):
         if actual.get(key, default) != desired[key]:
             raise AccessError('Staff application setting differs from required configuration: ' + key)
     destinations = actual.get('destinations', [])
-    if len(destinations) != 2 or any(d.get('type') != 'public' or d.get('overrides') for d in destinations) or \
+    if len(destinations) != len(desired['destinations']) or any(d.get('type') != 'public' or d.get('overrides') for d in destinations) or \
             sorted(d.get('uri', '') for d in destinations) != sorted(d['uri'] for d in desired['destinations']):
         raise AccessError('Staff application paths or bypass overrides differ from required protection.')
+    if 'self_hosted_domains' in actual:
+        aliases = actual['self_hosted_domains']
+        if not isinstance(aliases, list) or not all(isinstance(value, str) for value in aliases) or \
+                sorted(aliases) != sorted(d['uri'] for d in destinations):
+            raise AccessError('Staff application legacy domain representation differs from its destinations.')
     policy_ids = [p if isinstance(p, str) else p.get('id') for p in actual.get('policies', [])]
     if policy_ids != [desired['policies'][0]['id']] or not mfa_matches(actual.get('mfa_config')):
         raise AccessError('Staff application policy/MFA mismatch; manual review required.')
@@ -195,7 +214,7 @@ def verify_launcher(actual, desired, domain):
         raise AccessError('Launcher audience is missing or invalid.')
 
 
-def provision(api, owner_email, team='porchday-staff', check=False, reviewers=None):
+def provision(api, owner_email, team='porchday-staff', check=False, reviewers=None, legacy_production=False):
     email, roster = reviewer_roster(owner_email, reviewers)
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', team) or len(team) > 63:
         raise AccessError('Invalid Access team name.')
@@ -233,7 +252,7 @@ def provision(api, owner_email, team='porchday-staff', check=False, reviewers=No
         if app:
             if not policy:
                 raise AccessError('Existing staff application has no expected policy.')
-            verify_app(api('/access/apps/' + app['id']), app_body(env, otp[0]['id'], policy['id']))
+            verify_app(api('/access/apps/' + app['id']), app_body(env, otp[0]['id'], policy['id'], legacy_production))
     domain = team + '.cloudflareaccess.com'
     launcher_policy = unique_named(policies, LAUNCHER_POLICY_NAME)
     if launcher_policy:
@@ -288,7 +307,7 @@ def provision(api, owner_email, team='porchday-staff', check=False, reviewers=No
             policy = api('/access/policies', 'POST', desired_policy)
         policy = api('/access/policies/' + policy['id'])
         verify_policy(policy, desired_policy)
-        desired_app = app_body(env, idp_id, policy['id'])
+        desired_app = app_body(env, idp_id, policy['id'], legacy_production)
         app = unique_named(apps, desired_app['name'])
         if not app:
             if check:
@@ -318,7 +337,7 @@ def policy_update_body(policy):
     return {key: copy.deepcopy(value) for key, value in policy.items() if key in POLICY_WRITABLE}
 
 
-def ready_snapshot(api, email, team, reviewers):
+def ready_snapshot(api, email, team, reviewers, legacy_production=False):
     snapshot = {}
     def read(path, method='GET', body=None):
         if method != 'GET':
@@ -328,7 +347,7 @@ def ready_snapshot(api, email, team, reviewers):
             raise AccessError('Staff configuration changed during preflight; no update attempted.')
         snapshot[path] = copy.deepcopy(value)
         return value
-    output = provision(read, email, team, check=True, reviewers=reviewers)
+    output = provision(read, email, team, check=True, reviewers=reviewers, legacy_production=legacy_production)
     return snapshot, output
 
 
@@ -342,6 +361,77 @@ def policy_snapshot_views(snapshot, policy_id, app_id):
         views.extend(policy for policy in app.get('policies', [])
             if isinstance(policy, dict) and policy.get('id') == policy_id)
     return views
+
+
+def application_snapshot_views(snapshot, app_id):
+    return [snapshot['/access/apps/' + app_id],
+            *[app for app in snapshot['/access/apps'] if app.get('id') == app_id]]
+
+
+def app_update_body(app):
+    # Only settings whose round-trip behavior is reviewed may be rewritten.
+    # Unknown provider fields require inspection rather than silent deletion.
+    writable = set(app_body('production', 'idp', 'policy')) | {'tags', 'eager_redirect_cookie_setting'}
+    # Cloudflare still returns self_hosted_domains as a deprecated alias. Its
+    # API ignores that field when destinations is supplied; validate it on reads
+    # and omit it from PUT. Preserve the observed eager-cookie preference.
+    readonly = {'id', 'uid', 'aud', 'created_at', 'updated_at', 'self_hosted_domains'}
+    if set(app) - writable - readonly:
+        raise AccessError('Unrecognized application settings; manual review required before domain update.')
+    body = {key: copy.deepcopy(value) for key, value in app.items() if key in writable}
+    links = body.get('policies', [])
+    if len(links) != 1 or not isinstance(links[0], dict) or links[0].get('precedence', 1) != 1:
+        raise AccessError('Staff application must retain its exact policy link before domain update.')
+    # App reads can embed read-only policy objects; send only the existing link.
+    body['policies'] = [{'id': links[0]['id'], 'precedence': 1}]
+    return body
+
+
+def migrate_production_domain(api, owner_email, reviewers=None, team='porchday-staff'):
+    email, roster = reviewer_roster(owner_email, reviewers)
+    candidate = unique_named(api('/access/apps'), 'Porchday staff production')
+    if not candidate:
+        raise AccessError('An existing production staff application is required before domain migration.')
+    candidate = api('/access/apps/' + candidate['id'])
+    if candidate.get('domain') not in [LEGACY_PRODUCTION_HOST + '/staff', HOSTS['production'] + '/staff']:
+        raise AccessError('Production staff application has an unreviewed primary domain.')
+    legacy = candidate['domain'] == LEGACY_PRODUCTION_HOST + '/staff'
+    before, output = ready_snapshot(api, email, team, roster, legacy_production=legacy)
+    identity = output['environments']['production']
+    app_id = identity['staff_access_application_id']
+    path = '/access/apps/' + app_id
+    if candidate != before[path]:
+        raise AccessError('Staff configuration changed during preflight; no update attempted.')
+    body = app_update_body(before[path])
+    again, again_output = ready_snapshot(api, email, team, roster, legacy_production=legacy)
+    if again != before or again_output != output:
+        raise AccessError('Staff configuration changed before domain update; no update attempted.')
+    if not legacy:
+        return output
+    desired = app_body('production', output['staff_access_identity_provider_id'], identity['staff_access_policy_id'])
+    for key in ['domain', 'destinations']:
+        body[key] = copy.deepcopy(desired[key])
+    try:
+        api(path, 'PUT', body)
+        after, after_output = ready_snapshot(api, email, team, roster)
+    except (AccessError, KeyError, ValueError, TypeError):
+        raise AccessError('Domain write outcome requires manual review; verification did not complete. Do not retry automatically.') from None
+    expected = copy.deepcopy(before)
+    for app in application_snapshot_views(expected, app_id):
+        for key in ['domain', 'destinations']:
+            app[key] = copy.deepcopy(desired[key])
+        if 'self_hosted_domains' in app:
+            app['self_hosted_domains'] = [d['uri'] for d in desired['destinations']]
+    for snapshot in [expected, after]:
+        for app in application_snapshot_views(snapshot, app_id):
+            app.pop('updated_at', None)
+            # Order of these exact protected paths has no routing semantics.
+            app['destinations'] = sorted(app['destinations'], key=lambda d: d['uri'])
+            if 'self_hosted_domains' in app:
+                app['self_hosted_domains'] = sorted(app['self_hosted_domains'])
+    if after != expected or after_output != output:
+        raise AccessError('Domain write outcome requires manual review; protected configuration changed. Do not retry automatically.')
+    return after_output
 
 
 def update_roster(api, owner_email, reviewers, environment, team='porchday-staff'):
@@ -444,13 +534,15 @@ def main():
     mode.add_argument('--check', action='store_true', help='Read-only verification; do not create or change resources.')
     mode.add_argument('--update-roster', choices=['staging'], help='Explicitly add the one privately configured staging recovery reviewer.')
     mode.add_argument('--enable-launcher', action='store_true', help='Create the approved OTP-only MFA enrollment Launcher without changing staff access.')
+    mode.add_argument('--migrate-production-domain', action='store_true', help='Add .org production staff paths while retaining .com and all existing security settings.')
     parser.add_argument('--team', default='porchday-staff', help='Access team name; existing populated teams cannot be renamed.')
     args = parser.parse_args()
     try:
         api = Cloudflare(os.environ.get('CLOUDFLARE_ACCOUNT_ID', ''), os.environ.get('CLOUDFLARE_API_TOKEN', ''))
         owner = os.environ.get('cloudflare_username', '')
         reviewers = {env: os.environ.get('STAFF_' + env.upper() + '_RECOVERY_REVIEWER_EMAIL', '') for env in HOSTS}
-        result = enable_launcher(api, owner, reviewers, args.team) if args.enable_launcher else \
+        result = migrate_production_domain(api, owner, reviewers, args.team) if args.migrate_production_domain else \
+            enable_launcher(api, owner, reviewers, args.team) if args.enable_launcher else \
             update_roster(api, owner, reviewers, args.update_roster, args.team) if args.update_roster else \
             provision(api, owner, args.team, args.check, reviewers=reviewers)
         print(json.dumps(result, indent=2))

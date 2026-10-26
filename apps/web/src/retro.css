@@ -2309,3 +2309,16 @@ body
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.domain-move-notice {
+  padding: 12px max(16px, calc((100% - 1100px) / 2));
+  border-bottom: 1px solid var(--line);
+  background: var(--paper);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.domain-move-notice p { margin: 0; }
+.domain-move-notice details { margin-top: 4px; }
+.domain-move-notice summary { cursor: pointer; }
+.domain-move-notice details p { max-width: 78ch; margin-top: 6px; }
+.domain-unlock-hint { font-size: 14px; }

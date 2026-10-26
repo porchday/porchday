@@ -107,6 +107,41 @@ describe("client interaction safety", () => {
   });
 });
 describe("PWA privacy boundaries", () => {
+  it("installs from a same-origin public shell when the old homepage redirects, and retains that offline fallback", async () => {
+    const handlers: Record<string, (event: any) => void> = {};
+    const addAll = vi.fn(async (paths: string[]) => {
+      // A redirected homepage must not be fetched by the installation transaction.
+      if (paths.includes("/")) throw new Error("Cross-origin homepage redirect");
+    });
+    const network = vi.fn();
+    const match = vi.fn();
+    runInNewContext(readFileSync("apps/web/public/sw.js", "utf8"), {
+      URL, Response,
+      location: { origin: "https://porchday.com" },
+      fetch: network,
+      caches: { open: async () => ({ addAll }), match },
+      self: { addEventListener: (name: string, handler: (event: any) => void) => { handlers[name] = handler; } },
+    });
+    let installed!: Promise<unknown>;
+    handlers.install({ waitUntil: (promise: Promise<unknown>) => { installed = promise; } });
+    await installed;
+    expect(addAll).toHaveBeenCalledWith(expect.arrayContaining(["/app-shell"]));
+    expect(addAll.mock.calls[0][0]).not.toContain("/");
+    expect(addAll.mock.calls[0][0].some(path => path.startsWith("/api/") || path === "/app")).toBe(false);
+    const request = { url: "https://porchday.com/app", method: "GET", mode: "navigate" };
+    let response!: Promise<Response>;
+    const offlineShell = new Response("public shell only");
+    network.mockRejectedValueOnce(new Error("offline"));
+    match.mockResolvedValueOnce(offlineShell);
+    handlers.fetch({ request, respondWith: (promise: Promise<Response>) => { response = promise; } });
+    expect(await response).toBe(offlineShell);
+    expect(match).toHaveBeenCalledWith("/app-shell");
+    const redirect = Response.redirect("https://porchday.org/about?from=legacy", 307);
+    network.mockResolvedValueOnce(redirect);
+    handlers.fetch({ request: { ...request, url: "https://porchday.com/about?from=legacy" }, respondWith: (promise: Promise<Response>) => { response = promise; } });
+    expect(await response).toBe(redirect);
+    expect(match).toHaveBeenCalledOnce();
+  });
   it("reads fresh installed-app metadata online and uses only its public offline fallback", async () => {
     const handlers: Record<string, (event: any) => void> = {};
     const network = vi.fn();

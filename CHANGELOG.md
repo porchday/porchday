@@ -6,6 +6,7 @@ This file records notable development changes, not a list of supported releases.
 
 ### Development update — 2026-10-26
 
+- Prepared the move to `porchday.org`, retaining strict same-origin `.com` account/API compatibility for existing browsers and native clients, safe public-navigation redirects, and a public PWA shell that stays available on the old origin. DNS and deployed cutover are tracked separately in issue #17.
 - Prepared source publication with a history/CI-output credential review, a pinned full-history secret-scan workflow, stronger local credential checks, contributor setup verification and GitHub reporting policies. The repository remains private.
 - Added a searchable, bundled Unicode 17 emoji catalog, including skin tones and joined sequences, to web/PWA and native post/comment reactions. Existing reaction identities remain compatible; members can use multiple distinct reactions.
 - Added static custom-image reactions and an owner-only encrypted collection of up to 48 saved images. Included the collection in archive export/import and added the explicit `emoji:read` integration scope. Existing grants do not gain access automatically. Migration `045_emoji_library.sql` is required. Existing reactions and archives without the new collection field remain readable.

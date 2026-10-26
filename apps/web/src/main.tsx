@@ -30,6 +30,7 @@ import { StaffConsole, StaffEntry } from "./Staff";
 import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
 import { BackgroundControls } from "./BackgroundControls";
+import { LegacyDomainNotice } from "./DomainMigration";
 import { initSiteAppearance } from "./site-appearance";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import "./styles.css";
@@ -271,6 +272,7 @@ function App() {
           </Button>
         </div>
       )}
+      <LegacyDomainNotice origin={location.origin} path={path} />
       {page}
     </>
   );
