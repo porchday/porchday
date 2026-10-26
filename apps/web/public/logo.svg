@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <rect width="192" height="192" fill="#fff"/>
+  <g transform="translate(-7.5 -9)">
+  <!-- One-color corn mark: a scalloped cob framed by softly tapered, peeling husks. -->
+  <g fill="#974013">
+    <path d="M90 43C85 36 94 28 101 35C105 28 118 32 116 40C124 37 133 44 128 51C136 50 141 59 135 65C143 66 145 76 138 81L119 145H96Z"/>
+    <path d="M80 30C94 48 103 96 104.5 134C93 121 82 110 71 102c-2-22 1-41 6-59 1-5 1-9 1-12 0-2 1-3 2-1Z"/>
+    <path d="M57 85c21 10 37 24 48 41 9 15 14 29 14 43-28 3-47-13-49-39-2-18-6-32-15-43-2-3-1-4 2-2Z"/>
+    <path d="M148 77c2-1 3 0 3 2-2 22-3 43-8 62-3 18-12 27-25 29-2-18-7-34-16-48 12-21 27-36 46-45Z"/>
+    <path d="M101 163h19c-2 3-3 5-3 8v4a6.5 6.5 0 0 1-13 0v-4c0-3-1-5-3-8Z"/>
+  </g>
+  <!-- Background-colored cuts keep the overlapping leaves readable at icon size. -->
+  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M77 24C96 44 105 96 106.5 134" stroke-width="3.8"/>
+    <path d="M159 67C137 77 118 101 107 121" stroke-width="3.8"/>
+    <path d="M55 79C80 91 108 128 115.5 152Q117.5 158 116 163C111 137 79 96 55 83Z" fill="#fff" stroke="none"/>
+  </g>
+  </g>
+</svg>

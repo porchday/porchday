@@ -65,6 +65,7 @@ export default defineConfig({
         const shell = [
           "/",
           "/icon.svg",
+          "/logo.svg",
           "/porch-pattern.svg",
           "/wallpaper-checker.svg",
           "/wallpaper-daisies.svg",

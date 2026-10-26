@@ -159,7 +159,7 @@ export function Logo({ small = false }: { small?: boolean }) {
       href="/"
       aria-label="Porchday home"
     >
-      <img className="logo-mark" src="/icon.svg" width="40" height="40" alt="" />
+      <img className="logo-mark" src="/logo.svg" width="40" height="40" alt="" />
       <span>
         porchday<span className="logo-dot">.</span>
       </span>

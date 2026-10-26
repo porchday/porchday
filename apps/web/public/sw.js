@@ -3,6 +3,7 @@ const CACHE = "porchday-shell-v1";
 const SHELL = [
   "/",
   "/icon.svg",
+  "/logo.svg",
   "/icon-192.png",
   "/icon-512.png",
   "/manifest.webmanifest",

@@ -106,7 +106,7 @@ try {
   const cache = await page.evaluate(async () => {
     const names = await caches.keys();
     const urls = (await Promise.all(names.map(async n => (await (await caches.open(n)).keys()).map(r => new URL(r.url))))).flat();
-    const publicFiles = new Set(['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/icon-192.png',
+    const publicFiles = new Set(['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/logo.svg', '/icon-192.png',
       '/icon-512.png', '/apple-touch-icon.png', '/porch-pattern.svg', '/wallpaper-checker.svg',
       '/wallpaper-daisies.svg', '/wallpaper-diamonds.svg', '/fonts.css', '/third-party-notices.txt']);
     return { cacheCount: names.length, entryCount: urls.length, publicOnly: urls.length > 0 && urls.every(u =>

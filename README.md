@@ -35,7 +35,7 @@ Infrastructure resource names are recorded in `infra/resources.json`. Use separa
 
 The [operations guide](docs/operations.md) links the admission and deployment procedures. Use the [monitoring runbook](docs/independent-monitoring.md), [staff Access procedure](docs/staff-access.md), [incident response guide](docs/incident-response.md) and [restore-safety procedure](docs/restore-safety.md) for their respective operational checks. The [hosted web/PWA checklist](docs/hosted-verification.md) and [hosted native procedure](docs/hosted-native-verification.md) define remaining acceptance work; deployment alone does not establish that those checks passed.
 
-The shared corn logo source is `apps/web/public/icon.svg`. After editing it, run `node apps/web/scripts/generate-icons.mjs` with the project's Playwright Chromium installed. This regenerates the web/PWA PNGs, iOS app icon and native in-app mark from the same vector; inspect the generated assets before committing them.
+The shared corn logo source is `apps/web/public/icon.svg`. After editing it, run `node apps/web/scripts/generate-icons.mjs` with the project's Playwright Chromium installed. This regenerates the inverted website mark (`logo.svg`), web/PWA PNGs, iOS app icon and native in-app mark from the same vector; inspect the generated assets before committing them.
 
 ## Operator handoff
 
