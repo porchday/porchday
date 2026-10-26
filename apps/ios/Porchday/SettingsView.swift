@@ -65,7 +65,21 @@ struct SettingsView: View {
                 Link("Appeal a moderation decision",destination:URL(string:"https://porchday.com/appeals")!)
                 NavigationLink("Report a stolen account") { StolenAccountView() }
             }
-            Section("Connected integrations") { Text("Approved tools can read only your own ciphertext. They never receive keys or permission to post as you."); ForEach(Array(grants.enumerated()),id:\.offset) { _,grant in HStack { Text(grant["name"].string ?? "Approved integration"); Spacer(); Button("Revoke",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/integrations/"+(grant["id"].string ?? ""),method:"DELETE"); await refresh() } } } } }; Link("Register or authorize a tool",destination:URL(string:"https://porchday.com/app/settings/data")!) }
+            Section("Connected integrations") {
+                Text("Approved tools can read only your own ciphertext. They never receive keys or permission to post as you.")
+                ForEach(Array(grants.enumerated()), id: \.offset) { _, grant in
+                    let summary = IntegrationGrantSummary(grant)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(summary.name).font(.headline)
+                        Text(summary.purpose)
+                        Text("Requested data: " + summary.scopes.joined(separator: ", ")).font(.footnote)
+                        Text(summary.lastUsed.map { "Last used: " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "Not used yet").font(.footnote)
+                        if summary.revoked { Text("Revoked").font(.footnote) }
+                        else { Button("Revoke", role: .destructive) { Task { await model.perform { _ = try await model.api.social("/integrations/" + (grant["id"].string ?? ""), method: "DELETE"); await refresh() } } }.accessibilityLabel("Revoke " + summary.name) }
+                    }
+                }
+                Link("Register or authorize a tool", destination: URL(string: "https://porchday.com/app/settings/data")!)
+            }
             }
             Section("About Porchday") { NavigationLink("Open source notices") { ThirdPartyNoticesView() }; Text("No ads. No influencers. No algorithm. An open source project under Apache 2.0, building toward philanthropy-funded service for the public good."); Link("Privacy and encryption limits",destination:URL(string:"https://porchday.com/privacy")!); Link("Community rules",destination:URL(string:"https://porchday.com/community")!) }
             Section("Groups you own") {
@@ -88,7 +102,21 @@ struct SettingsView: View {
             } message: { Text("This cannot be undone. Other members will lose access. Copies they already saved cannot be recalled.") }
             .fileImporter(isPresented:$choosing,allowedContentTypes:[.data],allowsMultipleSelection:true) { result in Task { await model.perform { let urls = try result.get(); preview = try ArchiveSelection.load(urls:urls,secret:importKey) } } }
             .sheet(isPresented:$sharing) { ShareArchiveFiles(urls:files) }
-            .sheet(isPresented:$deleting) { NavigationStack { Form { Text("This permanently removes your profile and contributions and revokes sessions. Transfer or delete groups you own first. Saved exports cannot be recalled. A recent sign-in is required."); TextField("Type DELETE",text:$confirm).textInputAutocapitalization(.characters); Button("Permanently delete my account",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/account",method:"DELETE",body:.object(["confirm":.string("DELETE")])); await model.signOut(); deleting = false } } }.disabled(confirm != "DELETE") }.navigationTitle("Delete your account?").toolbar { Button("Cancel") { deleting = false } } } }
+            .sheet(isPresented: $deleting) {
+                NavigationStack {
+                    Form {
+                        Text("This revokes sessions and integration grants when accepted. Encrypted data and identity cleanup run in the background; encrypted backups age out within seven days. Saved copies cannot be recalled. Transfer or delete groups you own first. A recent sign-in is required.")
+                        TextField("Type DELETE", text: $confirm).textInputAutocapitalization(.characters)
+                        if model.deletionPhase == .submitting { ProgressView("Submitting your deletion request…") }
+                        if model.deletionPhase == .unconfirmed { Text(AccountDeletionResponse.unconfirmed).accessibilityAddTraits(.isStaticText) }
+                        Button("Permanently delete my account", role: .destructive) {
+                            Task { await model.perform { try await model.deleteAccount(confirm: confirm, ownedGroups: ownedGroups); deleting = false } }
+                        }.disabled(confirm != "DELETE" || !ownedGroups.isEmpty || model.deletionPhase != .idle)
+                    }.navigationTitle("Delete your account?")
+                        .toolbar { Button("Cancel") { deleting = false }.disabled(model.deletionPhase == .submitting) }
+                        .interactiveDismissDisabled(model.deletionPhase == .submitting)
+                }
+            }
     }
     private func refresh() async { await model.perform {
         guard let member = model.member else { return }

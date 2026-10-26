@@ -36,7 +36,7 @@ describe("restricted member controls", () => {
   });
   it("explains profile restrictions while preserving data and safety navigation", () => {
     const html = renderToStaticMarkup(
-      createElement(Settings, { tab: "profile", onLogout: async () => {} }),
+      createElement(Settings, { tab: "profile", onLogout: async () => {}, onAccountDeleted: async () => {} }),
     );
     expect(html).toContain("Profile changes are unavailable");
     expect(html).toContain("Privacy &amp; safety");

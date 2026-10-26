@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { get, post, type Json } from "./api";
+import { get, post, localDate, type Json } from "./api";
 import { Alert, Button, Icon, Loading, useAction } from "./ui";
 export const scopeLabels: Record<string, string> = {
   "profile:read": "Your encrypted profile and public handle",
@@ -7,6 +7,16 @@ export const scopeLabels: Record<string, string> = {
   "media:read": "Your own encrypted photos and their routing metadata",
   "export:read": "Your own export job status",
 };
+export function IntegrationGrantDetails({ grant }: { grant: Json }) {
+  return <div className="member-info">
+    <strong>{grant.name || grant.client_name}</strong>
+    <p>{grant.purpose}</p>
+    <small>
+      {grant.scopes?.join(", ")} · {grant.last_used_at ? localDate(grant.last_used_at) : "Not used yet"}
+      {grant.revoked_at ? " · Revoked" : ""}
+    </small>
+  </div>;
+}
 export function IntegrationConsent() {
   const [client, setClient] = useState<Json | null>(null);
   const action = useAction();

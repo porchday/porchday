@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { get, auth, type Member } from "./api";
 import {
@@ -29,6 +29,7 @@ import { IntegrationConsent } from "./Integrations";
 import { StaffConsole, StaffEntry } from "./Staff";
 import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
+import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import "./styles.css";
 import "./retro.css";
 class ErrorBoundary extends React.Component<
@@ -62,7 +63,9 @@ class ErrorBoundary extends React.Component<
   }
 }
 function App() {
-  const route = useRoute();
+  const navigationEpoch = useRef(0);
+  const route = useRoute(navigationEpoch);
+  const navigationAtRender = navigationEpoch.current;
   const path = route.split("?")[0];
   const [member, setMember] = useState<Member | null>(null);
   const [loading, setLoading] = useState(false);
@@ -73,7 +76,14 @@ function App() {
     useState<ServiceWorkerRegistration | null>(null);
   const [update, setUpdate] = useState(false);
   const [updateNotice, setUpdateNotice] = useState("");
+  const [deletionReceipt, setDeletionReceipt] = useState<DeletionReceipt | null>(null);
+  const [deletionCleanupBusy, setDeletionCleanupBusy] = useState(false);
+  const authenticationGeneration = useRef(0);
+  const generationAtRender = authenticationGeneration.current;
+  const deletionAttempt = useRef<symbol | null>(null);
+  useEffect(() => { if (path !== "/account-deletion") { setDeletionReceipt(null); deletionAttempt.current = null; } }, [path]);
   async function session() {
+    authenticationGeneration.current++;
     setLoading(true);
     setError("");
     setRestricted(false);
@@ -133,6 +143,7 @@ function App() {
         : `${path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Connections" : path.includes("wall") ? "My wall" : path.includes("app") ? "Home" : "Porchday"} · Porchday`;
   }, [path]);
   async function signOut() {
+    authenticationGeneration.current++;
     try {
       await signOutSafely();
       setError("");
@@ -151,9 +162,31 @@ function App() {
     setOnline(true);
     window.dispatchEvent(new Event("online"));
   }
+  async function accountDeleted() {
+    const attempt = Symbol();
+    await completeDeletionInCurrentSession({
+      canStart: () => !!member && deletionContextMatches(
+        { route, authentication: generationAtRender, navigation: navigationAtRender },
+        { route: location.pathname + location.search, authentication: authenticationGeneration.current, navigation: navigationEpoch.current },
+      ),
+      start: () => {
+        deletionAttempt.current = attempt;
+        setDeletionCleanupBusy(true);
+        setDeletionReceipt({ clearing: true, cleanupUnconfirmed: false });
+        setMember(null); setError(""); navigate("/account-deletion");
+      },
+      cleanup: signOutSafely,
+      receiptIsCurrent: () => deletionAttempt.current === attempt && location.pathname === "/account-deletion" && authenticationGeneration.current === generationAtRender,
+      finish: cleanupUnconfirmed => setDeletionReceipt({ clearing: false, cleanupUnconfirmed }),
+      end: () => setDeletionCleanupBusy(false),
+    });
+  }
   let page: React.ReactNode;
-  if (!online && ((!member && path.startsWith("/app")) || path === "/staff" || path === "/staff/" || path === "/staff/moderation"))
+  if (deletionCleanupBusy && path !== "/account-deletion")
+    page = <main id="main-content" className="narrow-page"><Loading text="Finishing sign-out…" /></main>;
+  else if (!online && ((!member && path.startsWith("/app")) || path === "/staff" || path === "/staff/" || path === "/staff/moderation"))
     page = <OfflineScreen onRetry={retryConnection} />;
+  else if (path === "/account-deletion") page = <AccountDeletionReceipt receipt={deletionReceipt} onClose={() => { setDeletionReceipt(null); navigate("/"); }} />;
   else if (path === "/") page = <Landing />;
   else if (path === "/stolen-account") page = <StolenAccount />;
   else if (path === "/recovery") page = <Recovery />;
@@ -187,8 +220,8 @@ function App() {
       <>
         {!online && <OfflineScreen onRetry={retryConnection} />}
         <div hidden={!online}>
-          <VaultProvider member={member}>
-            <AppShell path={path} routeKey={route} onLogout={signOut} />
+          <VaultProvider member={member} onAccountDeleted={accountDeleted}>
+            <AppShell path={path} routeKey={route} onLogout={signOut} onAccountDeleted={accountDeleted} />
           </VaultProvider>
         </div>
       </>
@@ -278,10 +311,12 @@ function AppShell({
   path,
   routeKey,
   onLogout,
+  onAccountDeleted,
 }: {
   path: string;
   routeKey: string;
   onLogout: () => Promise<void>;
+  onAccountDeleted: () => Promise<void>;
 }) {
   const vault = useVault();
   const [count, setCount] = useState<number | null>(null);
@@ -305,7 +340,7 @@ function AppShell({
         <a className="button outline" href="/appeals">
           Request an independent review
         </a>
-        <Settings tab="data" onLogout={logout} />
+        <Settings tab="data" onLogout={logout} onAccountDeleted={onAccountDeleted} />
       </>
     );
   else if (path === "/staff/moderation") content = <StaffConsole initialTab="moderation" />;
@@ -329,7 +364,7 @@ function AppShell({
     content = <IntegrationConsent />;
   else if (path.startsWith("/app/settings"))
     content = (
-      <Settings tab={path.split("/")[3] || "profile"} onLogout={logout} />
+      <Settings tab={path.split("/")[3] || "profile"} onLogout={logout} onAccountDeleted={onAccountDeleted} />
     );
   else
     content = (

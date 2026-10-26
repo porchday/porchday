@@ -344,10 +344,18 @@ export function useAction() {
   }
   return { busy, error, notice, run, setError, setNotice };
 }
-export function useRoute() {
+export function useRoute(navigationEpoch?: { current: number }) {
   const [path, setPath] = useState(location.pathname + location.search);
+  const observedPath = React.useRef(path);
   useEffect(() => {
-    const pop = () => setPath(location.pathname + location.search);
+    const pop = () => {
+      const next = location.pathname + location.search;
+      if (next !== observedPath.current) {
+        observedPath.current = next;
+        if (navigationEpoch) navigationEpoch.current++;
+      }
+      setPath(next);
+    };
     const clicks = (event: MouseEvent) => {
       const a = (event.target as HTMLElement).closest("a");
       if (

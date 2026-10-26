@@ -116,9 +116,11 @@ async function checkDevice(device: Device) {
 export function VaultProvider({
   member,
   children,
+  onAccountDeleted,
 }: {
   member: Member;
   children: React.ReactNode;
+  onAccountDeleted: () => Promise<void>;
 }) {
   const [devices, setDevices] = useState<Device[] | null>(null);
   const [active, setActive] = useState<{
@@ -415,7 +417,7 @@ export function VaultProvider({
           <Alert>{error}</Alert>
           <Button onClick={() => location.reload()}>Try again</Button>
         </div>
-        <LockedAccount member={member} />
+        <LockedAccount member={member} onAccountDeleted={onAccountDeleted} />
       </div>
     );
   if (!devices) return <Loading text="Checking encryption keys…" />;
@@ -557,7 +559,7 @@ export function VaultProvider({
           account, connection, delivery, and timing metadata.{" "}
           <a href="/privacy">Read the privacy notice.</a>
         </p>
-        <LockedAccount member={member} />
+        <LockedAccount member={member} onAccountDeleted={onAccountDeleted} />
       </main>
     );
   async function audience(

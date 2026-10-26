@@ -1,14 +1,17 @@
-import React, { useState } from "react";
-import { auth, del, get, items, request, type Json, type Member } from "./api";
+import React, { useRef, useState } from "react";
+import { del, get, items, type Json, type Member } from "./api";
 import { Alert, Button, Field, Icon, useAction } from "./ui";
 import { signOutSafely } from "./logout";
+import { DeletionUnconfirmedError, requestAccountDeletion } from "./account-deletion";
 
 /** Account access and deletion never depend on possessing encryption keys. */
-export function LockedAccount({ member }: { member: Member }) {
+export function LockedAccount({ member, onAccountDeleted }: { member: Member; onAccountDeleted: () => Promise<void> }) {
   const action = useAction();
   const [deleting, setDeleting] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const [groups, setGroups] = useState<Json[]>([]);
+  const [deletionUnconfirmed, setDeletionUnconfirmed] = useState(false);
+  const deletionAttempt = useRef(false);
   async function signOut() {
     await signOutSafely();
     location.assign("/login");
@@ -91,20 +94,25 @@ export function LockedAccount({ member }: { member: Member }) {
           />
           <Button
             variant="danger"
-            disabled={confirmText !== "DELETE"}
+            disabled={confirmText !== "DELETE" || deletionUnconfirmed || groups.length > 0}
             busy={action.busy}
             onClick={() =>
               action.run(async () => {
-                await request("/account", {
-                  method: "DELETE",
-                  body: JSON.stringify({ confirm: "DELETE" }),
-                });
-                await signOut();
+                if (deletionAttempt.current) return;
+                deletionAttempt.current = true;
+                try { await requestAccountDeletion(); }
+                catch (error) {
+                  if (error instanceof DeletionUnconfirmedError) setDeletionUnconfirmed(true);
+                  else deletionAttempt.current = false;
+                  throw error;
+                }
+                await onAccountDeleted();
               })
             }
           >
             Permanently delete my account
           </Button>
+          {action.busy && <p role="status">Submitting your deletion request…</p>}
           <p className="small-copy">
             Requires a recent sign-in. A security hold can temporarily pause
             deletion while ownership is reviewed.

@@ -37,3 +37,38 @@ test('deployment renderer separates aggregate datasets and keeps request log/tra
   }
  }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+test('deployment renderer reproduces retained staging placement without inheriting it into production',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'porchday-placement-config-'));
+ try{
+  await mkdir(join(directory,'infra'));await mkdir(join(directory,'apps/api'),{recursive:true});
+  const local=JSON.parse(await readFile('apps/api/wrangler.local.jsonc','utf8'));
+  local.placement={region:'aws:us-east-1'};
+  await writeFile(join(directory,'apps/api/wrangler.local.jsonc'),JSON.stringify(local));
+  const resources=JSON.parse(await readFile('infra/resources.json','utf8'));
+  const manifest=join(directory,'infra/resources.json');
+  await writeFile(manifest,JSON.stringify(resources));
+  for(const name of ['staging','production']){
+   const result=spawnSync('python3',[resolve('scripts/configure-worker.py'),name],{cwd:directory,encoding:'utf8'});
+   expect(result.status,result.stderr).toBe(0);
+   const config=JSON.parse(await readFile(join(directory,'apps/api/wrangler.'+name+'.jsonc'),'utf8'));
+   if(name==='staging')expect(config.placement).toEqual({region:'aws:us-west-2'});
+   else expect(config).not.toHaveProperty('placement');
+   expect(config.vars.SIGNUP_ENABLED).toBe(name==='staging'?'true':'false');
+   expect(config.workers_dev).toBe(false);expect(config.preview_urls).toBe(false);
+  }
+  const output=join(directory,'apps/api/wrangler.staging.jsonc'),before=await readFile(output,'utf8');
+  for(const invalid of [true,'aws:us-west-2',{},[],{region:7},{region:'https://example.com'},{region:'aws:us-west-2',mode:'smart'}]){
+   resources.environments.staging.worker_placement=invalid;
+   await writeFile(manifest,JSON.stringify(resources));
+   const rejected=spawnSync('python3',[resolve('scripts/configure-worker.py'),'staging'],{cwd:directory,encoding:'utf8'});
+   expect(rejected.status).not.toBe(0);expect(rejected.stderr).toContain('worker_placement must be null or an object');
+   expect(await readFile(output,'utf8')).toBe(before);
+  }
+  delete resources.environments.production.worker_placement;
+  await writeFile(manifest,JSON.stringify(resources));
+  const absent=spawnSync('python3',[resolve('scripts/configure-worker.py'),'production'],{cwd:directory,encoding:'utf8'});
+  expect(absent.status,absent.stderr).toBe(0);
+  expect(JSON.parse(await readFile(join(directory,'apps/api/wrangler.production.jsonc'),'utf8'))).not.toHaveProperty('placement');
+ }finally{await rm(directory,{recursive:true,force:true});}
+});

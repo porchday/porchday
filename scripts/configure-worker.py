@@ -14,6 +14,13 @@ base=json.loads(Path('apps/api/wrangler.local.jsonc').read_text())
 host='porchday.com' if name=='production' else 'staging.porchday.com'
 base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev=False)
 base['vars'].update(APP_URL='https://'+host,ENVIRONMENT=name)
+# Placement is explicit per environment, not inherited from local development.
+placement=env.get('worker_placement')
+if placement is not None:
+ if not isinstance(placement,dict) or set(placement)!={'region'} or not isinstance(placement['region'],str) or not re.fullmatch(r'[a-z][a-z0-9-]{1,15}:[a-z0-9][a-z0-9-]{1,63}',placement['region']):
+  raise SystemExit('worker_placement must be null or an object containing one provider:region string.')
+base.pop('placement',None)
+if placement is not None:base['placement']=placement
 signup=env.get('signup_enabled',False)
 if type(signup) is not bool:raise SystemExit('signup_enabled must be a JSON boolean.')
 base['vars']['SIGNUP_ENABLED']='true' if signup else 'false'

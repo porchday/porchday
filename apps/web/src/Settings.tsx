@@ -29,7 +29,7 @@ import {
 } from "./ui";
 import { useVault, Fingerprint } from "./vault";
 import { THEMES } from "./Community";
-import { RegisterIntegration } from "./Integrations";
+import { IntegrationGrantDetails, RegisterIntegration } from "./Integrations";
 import { EmailSettings, MfaSettings } from "./AccountSecurity";
 import { AssetPicker, useAssetUpload, type PendingAsset } from "./Media";
 import { DataTransfer } from "./DataTransfer";
@@ -37,12 +37,15 @@ import { TimeSettings } from "./TimeSettings";
 import { enableCurrentPush, disableAllPush } from "./push";
 import { PROFILE_SLOTS, planSurfacePhotos } from "./surface-media";
 import { WALLPAPERS, wallpaperId } from "./wallpaper";
+import { DeletionUnconfirmedError, requestAccountDeletion } from "./account-deletion";
 export function Settings({
   tab = "profile",
   onLogout,
+  onAccountDeleted,
 }: {
   tab?: string;
   onLogout: () => Promise<void>;
+  onAccountDeleted: () => Promise<void>;
 }) {
   return (
     <>
@@ -73,7 +76,7 @@ export function Settings({
       ) : tab === "security" ? (
         <SecuritySettings onLogout={onLogout} />
       ) : (
-        <DataSettings onLogout={onLogout} />
+        <DataSettings onAccountDeleted={onAccountDeleted} />
       )}
     </>
   );
@@ -717,10 +720,12 @@ function SecuritySettings({ onLogout }: { onLogout: () => Promise<void> }) {
     </>
   );
 }
-function DataSettings({ onLogout }: { onLogout: () => Promise<void> }) {
+function DataSettings({ onAccountDeleted }: { onAccountDeleted: () => Promise<void> }) {
   const vault = useVault();
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [deletionUnconfirmed, setDeletionUnconfirmed] = useState(false);
+  const deletionAttempt = useRef(false);
   const [grants, setGrants] = useState<Json[]>([]);
   const [ownedGroups, setOwnedGroups] = useState<Json[]>([]);
   const action = useAction();
@@ -753,16 +758,7 @@ function DataSettings({ onLogout }: { onLogout: () => Promise<void> }) {
             grants.map((g) => (
               <div className="member-row" key={g.id}>
                 <Icon name="external" />
-                <div className="member-info">
-                  <strong>{g.name || g.client_name}</strong>
-                  <small>
-                    {g.scopes?.join(", ")} ·{" "}
-                    {g.last_used_at
-                      ? localDate(g.last_used_at)
-                      : "Not used yet"}
-                    {g.revoked_at ? " · Revoked" : ""}
-                  </small>
-                </div>
+                <IntegrationGrantDetails grant={g} />
                 {!g.revoked_at && (
                   <Button
                     variant="outline compact"
@@ -852,18 +848,22 @@ function DataSettings({ onLogout }: { onLogout: () => Promise<void> }) {
               autoComplete="off"
             />
             <Alert>{action.error}</Alert>
+            {action.busy && <p role="status">Submitting your deletion request…</p>}
             <Button
               variant="danger"
               busy={action.busy}
-              disabled={deleteConfirm !== "DELETE"}
+              disabled={deleteConfirm !== "DELETE" || deletionUnconfirmed}
               onClick={() =>
                 action.run(async () => {
-                  await request("/account", {
-                    method: "DELETE",
-                    body: JSON.stringify({ confirm: "DELETE" }),
-                  });
-                  await onLogout();
-                  navigate("/");
+                  if (deletionAttempt.current) return;
+                  deletionAttempt.current = true;
+                  try { await requestAccountDeletion(); }
+                  catch (error) {
+                    if (error instanceof DeletionUnconfirmedError) setDeletionUnconfirmed(true);
+                    else deletionAttempt.current = false;
+                    throw error;
+                  }
+                  await onAccountDeleted();
                 })
               }
             >

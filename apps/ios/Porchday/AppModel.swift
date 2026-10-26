@@ -8,6 +8,9 @@ import Combine
     @Published var error: String?
     @Published var notice: String?
     @Published var deepLinkPost: String?
+    @Published var deletionPhase: AccountDeletionPhase = .idle
+    @Published var deletionClearingLocalData = false
+    private(set) var authenticationGeneration = 0
     @Published private(set) var initialProfileVersion = 0
     private var profileInitialization: (id: UUID, memberID: String, task: Task<Bool, Never>)?
     let vault = CryptoVault()
@@ -18,7 +21,7 @@ import Combine
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { loading = false; return }
         #endif
         loading = true; defer { loading = false }
-        do { let session = try await api.auth("get-session", method: "GET"); guard session["user"]["id"].string != nil else { member = nil; vault.clear(); return }; let member = try Member(try await api.social("/me")); self.member = member; try await vault.load(member: member) }
+        do { let session = try await api.auth("get-session", method: "GET"); guard session["user"]["id"].string != nil else { member = nil; vault.clear(); return }; let member = try Member(try await api.social("/me")); if self.member?.id != member.id { acceptAuthenticatedMember(member) } else { self.member = member }; try await vault.load(member: member) }
         catch { member = nil; vault.clear(); self.error = error.localizedDescription }
     }
     func signIn(email: String, password: String) async throws {
@@ -26,9 +29,12 @@ import Combine
         if result["twoFactorRedirect"].boolean { needsTwoFactor = true; return }
         try await finishSignIn()
     }
-    func finishSignIn() async throws { let member = try Member(try await api.social("/me")); self.member = member; needsTwoFactor = false; try await vault.load(member: member) }
+    func acceptAuthenticatedMember(_ member: Member) { authenticationGeneration += 1; deletionPhase = .idle; self.member = member; needsTwoFactor = false }
+    func finishSignIn() async throws { let member = try Member(try await api.social("/me")); acceptAuthenticatedMember(member); try await vault.load(member: member) }
     func verifySecondFactor(code:String,backup:Bool) async throws { _ = try await api.auth(backup ? "two-factor/verify-backup-code":"two-factor/verify-totp",body:.object(["code":.string(code),"trustDevice":.bool(false)])); try await finishSignIn() }
     func signOut() async {
+        authenticationGeneration += 1
+        if deletionPhase != .accepted { deletionPhase = .idle }
         profileInitialization?.task.cancel(); profileInitialization = nil
         await NativeNotifications.shared.signOut(model: self)
         _ = try? await api.auth("sign-out", body: .object([:])); await api.clearSession(); vault.clear(); SecureStore.clear(); clearTemporaryArchives(); member = nil; needsTwoFactor = false

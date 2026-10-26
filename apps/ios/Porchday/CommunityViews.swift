@@ -5,7 +5,7 @@ struct ConnectionsView: View {
     @State private var data: JSON = .null
     @State private var handle = ""
     @State private var kind = "friend"
-    @State private var searched: JSON?
+    @State private var verifiedRecipient: VerificationRecipient?
     var body: some View { List {
         Section { Text("\(data["items"].array.count) of 300 friends, including family").font(.headline); TextField("Find an exact @handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled(); Picker("Connection", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }; Button("Send connection request") { Task { await model.perform { _ = try await model.api.social("/connections/requests", method: "POST", body: .object(["handle": .string(handle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "")), "kind": .string(kind)])); handle = ""; await refresh() } } }.disabled(handle.isEmpty || !model.canWriteSocial); Text("A new connection sees future posts. Historical encrypted content needs an explicit share from its author.").font(.caption).foregroundStyle(.secondary) }
         PlatformInvitationSection()
@@ -14,9 +14,12 @@ struct ConnectionsView: View {
             let person = connection["member_a"].string == model.member?.id ? connection["member_b"].string ?? "" : connection["member_a"].string ?? ""
             NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { Label("@\(name(person)) · \(connection["kind"].string ?? "friend")", systemImage: connection["kind"].string == "family" ? "house" : "person") }
                 .swipeActions { Button("Remove", role: .destructive) { Task { await action("/connections/\(connection["id"].string ?? "")", method: "DELETE") } }.disabled(!model.canWriteSocial); Button("Mute") { Task { await action("/mutes/" + person, method: "PUT") } } }
-                .contextMenu { Button("Propose family label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("family")])) } }.disabled(!model.canWriteSocial); Button("Propose friend label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("friend")])) } }.disabled(!model.canWriteSocial); Button("Block", role: .destructive) { Task { await action("/blocks/" + person, method: "PUT") } } }
+                .contextMenu { Button("Verify encryption keys") { verifiedRecipient = VerificationRecipient(id: person, handle: name(person)) }; Button("Propose family label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("family")])) } }.disabled(!model.canWriteSocial); Button("Propose friend label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("friend")])) } }.disabled(!model.canWriteSocial); Button("Block", role: .destructive) { Task { await action("/blocks/" + person, method: "PUT") } } }
         } }
-    }.navigationTitle("Connections").task { await refresh() }.refreshable { await refresh() } }
+    }.navigationTitle("Connections").task { await refresh() }.refreshable { await refresh() }
+        .sheet(item: $verifiedRecipient) { recipient in NavigationStack { RecipientKeyVerificationView(recipient: recipient) }.id(recipient.id) }
+        .onChange(of: model.member?.id) { _, _ in verifiedRecipient = nil }
+    }
     private func name(_ id: String?) -> String { data["handles"].array.first { $0["member_id"].string == id || $0["id"].string == id }?["handle"].string ?? "member" }
     private func refresh() async { await model.perform { data = try await model.api.social("/connections") } }
     private func action(_ path: String, method: String = "POST", body: JSON = .object([:])) async { await model.perform { _ = try await model.api.social(path, method: method, body: method == "DELETE" ? nil : body); await refresh() } }

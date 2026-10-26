@@ -20,7 +20,8 @@ struct RootView: View {
     @EnvironmentObject var vault: CryptoVault
     var body: some View {
         Group {
-            if model.loading { ProgressView("Loading…") }
+            if model.deletionPhase == .accepted { AccountDeletionView() }
+            else if model.loading { ProgressView("Loading…") }
             else if model.needsTwoFactor { TwoFactorLoginView() }
             else if let member = model.member {
                 if vault.unlocked || (member.access.restoresKeysLocally && vault.devices.isEmpty) { if !member.access.readsSocial || !vault.unlocked { NavigationStack { SettingsView() } } else { MainTabs(member: member) } } else { UnlockView(member: member) }

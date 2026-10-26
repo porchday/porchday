@@ -131,7 +131,7 @@ try {
       session = false; return reply({ok: true});
     }
     if (path === '/api/auth/sign-out') { session = false; return reply({ok: true}); }
-    if (path === '/integrations') return reply({clients: [], grants: []});
+    if (path === '/integrations') return reply({clients: [], grants: [{id: 'synthetic-grant', name: 'Photo archive', purpose: 'Save a local copy of my own photos', scopes: ['media:read', 'export:read'], last_used_at: '2026-10-25T12:00:00.000Z'}]});
     if (['/notifications', '/mutes', '/owned-groups', '/push/subscriptions'].includes(path)) return reply({items: []});
     unexpected.push('UNEXPECTED_MEMBER_API:' + method + ' ' + path);
     return reply({error: {code: 'UNEXPECTED_TEST_API'}}, 400);
@@ -237,6 +237,8 @@ try {
   await memberPage.keyboard.press('Enter'); await focused(options);
   await activate(memberPage, memberPage.locator('.sidebar').getByRole('link', {name: 'Settings', exact: true}));
   await activate(memberPage, memberPage.getByRole('link', {name: 'My data', exact: true}));
+  await memberPage.getByText('Save a local copy of my own photos', {exact: true}).waitFor();
+  assert.match(await memberPage.locator('.member-info').filter({hasText: 'Photo archive'}).innerText(), /media:read, export:read/);
   const deleteAccount = memberPage.getByRole('button', {name: 'Delete my account', exact: true});
   await activate(memberPage, deleteAccount);
   const permanentDelete = memberPage.getByRole('button', {name: 'Permanently delete my account', exact: true});
@@ -251,8 +253,13 @@ try {
   assert.equal(await memberPage.getByRole('textbox', {name: 'Type DELETE to confirm', exact: true}).inputValue(), 'DELETE');
   assert.equal(await memberPage.evaluate(() => !!document.activeElement?.closest('dialog[open]')), true);
   await activate(memberPage, permanentDelete);
-  await memberPage.waitForURL(target.origin + '/');
+  await memberPage.waitForURL(target.origin + '/account-deletion');
   await focused(memberPage.locator('#main-content h1'));
+  await memberPage.getByRole('heading', {name: 'Account deletion accepted', exact: true}).waitFor();
+  assert.match(await memberPage.locator('#main-content').innerText(), /Completion has not been verified/);
+  assert.match(await memberPage.locator('#main-content').innerText(), /within seven days/);
+  await memberPage.reload();
+  await memberPage.getByRole('heading', {name: 'No deletion confirmation', exact: true}).waitFor();
   assert.equal(deletions, 2); assert.deepEqual(unexpected, []);
   assert.equal(mutations.length, 13);
   await memberContext.close();
