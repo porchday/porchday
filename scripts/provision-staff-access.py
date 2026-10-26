@@ -368,6 +368,17 @@ def application_snapshot_views(snapshot, app_id):
             *[app for app in snapshot['/access/apps'] if app.get('id') == app_id]]
 
 
+def normalize_application_inventory(snapshot):
+    """Inventory order has no policy semantics; retain every field and identity."""
+    apps = snapshot.get('/access/apps')
+    if not isinstance(apps, list) or any(not isinstance(app, dict) or
+            not isinstance(app.get('id'), str) or not app['id'] for app in apps):
+        raise AccessError('Staff application inventory has invalid identities; manual review required.')
+    if len({app['id'] for app in apps}) != len(apps):
+        raise AccessError('Staff application inventory has duplicate identities; manual review required.')
+    snapshot['/access/apps'] = sorted(apps, key=lambda app: app['id'])
+
+
 def app_update_body(app):
     # Only settings whose round-trip behavior is reviewed may be rewritten.
     # Unknown provider fields require inspection rather than silent deletion.
@@ -397,6 +408,7 @@ def migrate_production_domain(api, owner_email, reviewers=None, team='porchday-s
         raise AccessError('Production staff application has an unreviewed primary domain.')
     legacy = candidate['domain'] == LEGACY_PRODUCTION_HOST + '/staff'
     before, output = ready_snapshot(api, email, team, roster, legacy_production=legacy)
+    normalize_application_inventory(before)
     identity = output['environments']['production']
     app_id = identity['staff_access_application_id']
     path = '/access/apps/' + app_id
@@ -404,6 +416,7 @@ def migrate_production_domain(api, owner_email, reviewers=None, team='porchday-s
         raise AccessError('Staff configuration changed during preflight; no update attempted.')
     body = app_update_body(before[path])
     again, again_output = ready_snapshot(api, email, team, roster, legacy_production=legacy)
+    normalize_application_inventory(again)
     if again != before or again_output != output:
         raise AccessError('Staff configuration changed before domain update; no update attempted.')
     if not legacy:
@@ -414,6 +427,7 @@ def migrate_production_domain(api, owner_email, reviewers=None, team='porchday-s
     try:
         api(path, 'PUT', body)
         after, after_output = ready_snapshot(api, email, team, roster)
+        normalize_application_inventory(after)
     except (AccessError, KeyError, ValueError, TypeError):
         raise AccessError('Domain write outcome requires manual review; verification did not complete. Do not retry automatically.') from None
     expected = copy.deepcopy(before)

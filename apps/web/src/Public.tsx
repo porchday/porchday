@@ -24,7 +24,7 @@ export function PublicFooter() {
     <footer className="public-footer wrap">
       <div>
         <Logo small />
-        <small>© {new Date().getFullYear()} Porchday. By invitation only.</small>
+        <small>By invitation only.</small>
       </div>
       <nav aria-label="Information">
         <a href="/about">Our mission</a>

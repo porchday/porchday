@@ -1026,6 +1026,8 @@ hr {
   margin: 14px 0;
 }
 .public-footer small {
+  display: block;
+  margin-top: 8px;
   font-size: 9px;
   color: #9aa28e;
 }

@@ -495,3 +495,53 @@ for alias,value in [('uid','unexpected-id'),('self_hosted_domains',['attacker.te
  else:raise AssertionError('Unexpected provider alias accepted')
  assert p.writes==[]
 `));
+
+
+test('domain migration accepts reordered app inventories without changing any other state',()=>run(String.raw`
+original=m.provision(p,'owner@example.test',legacy_production=True)
+p.embed_policies=True;p.writes=[]
+before=copy.deepcopy((p.org,p.apps,p.policies,p.idps))
+reads=0
+def reordered(path,method='GET',body=None):
+ global reads
+ result=p(path,method,body)
+ if path=='/access/apps' and method=='GET':
+  reads+=1
+  if reads%2==0:return list(reversed(result))
+ return result
+assert m.migrate_production_domain(reordered,'owner@example.test')==original
+assert len(p.writes)==1 and p.writes[0][:2]==('/access/apps/'+p.apps[1]['id'],'PUT')
+expected=copy.deepcopy(before)
+for key in ['domain','destinations']:expected[1][1][key]=copy.deepcopy(p.apps[1][key])
+assert (p.org,p.apps,p.policies,p.idps)==expected
+p.writes=[]
+assert m.migrate_production_domain(reordered,'owner@example.test')==original
+assert p.writes==[]
+`));
+
+test('reordered domain inventories cannot hide MFA, policy, audience or unrelated field changes',()=>run(String.raw`
+for kind in ['mfa','policy','audience','tags']:
+ p=Provider();m.provision(p,'owner@example.test',legacy_production=True)
+ p.embed_policies=True;p.writes=[]
+ def changed(path,method='GET',body=None):
+  result=p(path,method,body)
+  if method=='PUT':
+   if kind=='mfa':p.apps[1]['mfa_config']['mfa_disabled']=True
+   elif kind=='policy':p.apps[1]['policies'][0]['precedence']=2
+   elif kind=='audience':p.apps[1]['aud']='d'*64
+   else:p.apps[0]['tags']=['unexpected']
+  if path=='/access/apps' and p.writes:return list(reversed(result))
+  return result
+ rejects(lambda:m.migrate_production_domain(changed,'owner@example.test'),'outcome requires manual review')
+ assert len(p.writes)==1
+`));
+
+test('domain inventory normalization rejects duplicate or missing IDs instead of collapsing records',()=>run(String.raw`
+for apps,reason in [([{'id':'one','name':'first'},{'id':'one','name':'second'}],'duplicate identities'),
+ ([{'name':'missing'}],'invalid identities'),([{'id':''}],'invalid identities'),
+ ([{'id':None}],'invalid identities'),([{'id':1}],'invalid identities')]:
+ snapshot={'/access/apps':apps};before=copy.deepcopy(snapshot)
+ rejects(lambda:m.normalize_application_inventory(snapshot),reason)
+ assert snapshot==before
+assert p.writes==[]
+`));
