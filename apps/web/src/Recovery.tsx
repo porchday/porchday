@@ -303,11 +303,7 @@ function ResumeRecovery({ blocked = false, linkNotice = "" }: {
       <PublicHeader />
       <main id="main-content" className="narrow-page">
         <span className="eyebrow">ACCOUNT RECOVERY</span>
-        <h1>
-          Come back to
-          <br />
-          your case.
-        </h1>
+        <h1>Resume account recovery</h1>
         <p>
           Request a fresh, single-use link at the safe contact address you
           originally verified. This does not change a recovery decision or give

@@ -45,7 +45,7 @@ class ErrorBoundary extends React.Component<
         <Logo />
         <Empty
           icon="leaf"
-          title="Let’s take a breath."
+          title="Unable to load Porchday"
           action={
             <Button variant="primary" onClick={() => location.reload()}>
               Try again
@@ -201,7 +201,7 @@ function App() {
       </a>
       {update && (
         <div className="update-banner" role="status">
-          <span>A fresh Porchday is ready. {updateNotice}</span>
+          <span>An update is available. {updateNotice}</span>
           <Button
             variant="outline compact"
             onClick={() => {

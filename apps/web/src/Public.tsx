@@ -140,7 +140,7 @@ export function Landing() {
                 <div className="classic-profile-about">
                   <h3>Jamie’s page</h3>
                   <div className="classic-example-avatar" aria-hidden="true">
-                    J<span>✳</span>
+                    J
                   </div>
                   <p>Reading and gardening.</p>
                   <table>
@@ -169,10 +169,9 @@ export function Landing() {
                     <div
                       className="classic-example-photo"
                       role="img"
-                      aria-label="Simple illustration of a sunny window and a plant"
+                      aria-label="Example photo placeholder"
                     >
-                      <span aria-hidden="true">☀</span>
-                      <span aria-hidden="true">🪴</span>
+                      <Icon name="photo" size={32} aria-hidden="true" />
                     </div>
                     <p className="classic-example-reactions">
                       ♡ &nbsp; ☀ &nbsp; Multiple reactions per person
@@ -452,7 +451,7 @@ export function AuthPage({
                   onChange={(e) => setPassword(e.target.value)}
                   help={
                     join || reset
-                      ? "Use a unique passphrase of at least 12 characters. Password managers are welcome."
+                      ? "Use a unique passphrase of at least 12 characters. You can use a password manager."
                       : undefined
                   }
                   required
@@ -554,7 +553,7 @@ export function StolenAccount() {
       <PublicHeader />
       <main id="main-content" tabIndex={-1} className="narrow-page">
         <span className="eyebrow">ACCOUNT SAFETY</span>
-        <h1>Let’s help you find your way back.</h1>
+        <h1>Report a stolen account</h1>
         <p>
           You can report a stolen account even if its email or password was
           changed. This report does not freeze or transfer an account by itself.

@@ -650,7 +650,7 @@ export function GroupDetail({ id }: { id: string }) {
       <Alert success>{action.notice}</Alert>
       {manage && data && (
         <section className="panel form-stack">
-          <h2>People at the table</h2>
+          <h2>Group members</h2>
           {["owner", "moderator"].includes(myRole) &&
             vault.member.status !== "restricted" && (
               <form

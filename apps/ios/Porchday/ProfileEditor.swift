@@ -25,13 +25,13 @@ struct ProfileEditor: View {
     private var currentProfile: JSON { committedProfile ?? profile }
     var body:some View {
         Form {
-            Section("The person behind the handle") {
+            Section("Profile details") {
                 TextField("Display name",text:$name)
                 TextField("Status",text:$status)
                 TextField("About me",text:$bio,axis:.vertical)
                 TextField("Interests, separated by commas",text:$interests)
             }
-            Section("A few pictures of you") {
+            Section("Photos") {
                 Picker("Photo position",selection:$slot) { Text("Profile photo").tag("avatar");Text("Cover photo").tag("cover");Text("Wall background").tag("background") }
                 PhotosPicker(selection:$selection,matching:.images) { Label("Choose photo",systemImage:"photo") }
                 ForEach(["avatar","cover","background"],id:\.self) { key in

@@ -180,7 +180,7 @@ function ProfileSettings() {
   return (
     <form onSubmit={submit} className="form-stack">
       <section className="panel form-stack">
-        <h2>The person behind the handle</h2>
+        <h2>Profile details</h2>
         <p>
           Your handle, <strong>@{vault.member.handle}</strong>, is public for
           exact lookup. Choose who can read these encrypted profile details and
@@ -226,16 +226,16 @@ function ProfileSettings() {
           />
         </label>
         <Field
-          label="A few things you love"
+          label="Interests"
           help="Separate interests with commas."
-          placeholder="Used bookstores, long walks, Sunday pancakes"
+          placeholder="Books, gardening, music"
           value={String(profile.interests || "")}
           onChange={(e) => update("interests", e.target.value)}
           maxLength={300}
         />
       </section>
       <section className="panel form-stack">
-        <h2>A few pictures of you</h2>
+        <h2>Profile photos</h2>
         <p>
           Photos are resized, stripped of location metadata, and encrypted on
           this device before upload.
@@ -324,7 +324,7 @@ function ProfileSettings() {
               value={String(profile.font || "serif")}
               onChange={(e) => update("font", e.target.value)}
             >
-              <option value="serif">Bookish serif</option>
+              <option value="serif">Serif</option>
               <option value="sans">Simple sans serif</option>
             </select>
           </label>
@@ -785,7 +785,7 @@ function DataSettings({ onLogout }: { onLogout: () => Promise<void> }) {
         </section>
       )}
       <section className="panel danger-panel">
-        <h2>Say goodbye, on your terms.</h2>
+        <h2>Delete account</h2>
         <p>
           Deleting your account removes your profile, contributions,
           connections, and access. You can export first, but you don’t have to.

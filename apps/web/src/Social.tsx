@@ -723,7 +723,7 @@ export function PostCard({
                       }}
                     >
                       <Icon name="arrow" size={16} />
-                      Share this memory again
+                      Share as a new post
                     </button>
                   )}
                 </>
@@ -1715,7 +1715,7 @@ function ReshareDialog({
     });
   }
   return (
-    <Modal title="Share this memory again" onClose={onClose}>
+    <Modal title="Share as a new post" onClose={onClose}>
       <form className="form-stack" onSubmit={share}>
         <p>
           This creates a new post for your selected current audience, including
@@ -1819,7 +1819,7 @@ function ReshareProvenance({ content }: { content: Content }) {
     return null;
   return (
     <p className="small-copy">
-      <Icon name="clock" size={13} /> A memory from{" "}
+      <Icon name="clock" size={13} /> Originally posted on{" "}
       {localDate(provenance.created_at)}, shared again by its author.
     </p>
   );

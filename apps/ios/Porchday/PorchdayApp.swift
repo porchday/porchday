@@ -62,7 +62,7 @@ struct LoginView: View {
         NavigationStack {
             Form {
                 Section { VStack(alignment: .leading, spacing: 12) { Image("PorchdayMark").resizable().frame(width: 64, height: 64).accessibilityHidden(true); Text("Porchday").font(.largeTitle.bold()); Text("a simple social network").font(.title3); Text("No ads. No influencers. No algorithm.").font(.headline); Text("Your private content is end-to-end encrypted.") }.padding(.vertical) }
-                Section(joining ? "Join by invitation" : "Welcome back") {
+                Section(joining ? "Create account" : "Log in") {
                     TextField("Email address", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("Password", text: $password).textContentType(joining ? .newPassword : .password)
                     if joining { TextField("Public handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled(); SecureField("Invitation code", text: $invitation); Toggle("I am at least 18 years old", isOn: $adult); Toggle("I accept the community rules", isOn: $rules); Link("Read the community rules", destination: URL(string: "https://porchday.com/community")!) }
