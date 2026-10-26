@@ -159,7 +159,7 @@ hr {
 .logo {
   display: inline-flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   text-decoration: none;
   color: var(--pine);
   font:
@@ -3078,7 +3078,7 @@ hr {
   }
   .logo {
     font-size: 31px;
-    gap: 8px;
+    gap: 0;
   }
   .logo .logo-mark {
     width: 56px;

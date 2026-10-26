@@ -90,7 +90,7 @@ summary:focus-visible {
   font-size: 30px;
   letter-spacing: -1.4px;
   color: #fffaf0;
-  gap: 7px;
+  gap: 0;
 }
 .logo .logo-mark,
 .logo-small .logo-mark {
@@ -604,7 +604,7 @@ summary:focus-visible {
   font-size: 25px;
   padding: 10px 7px;
   margin-bottom: 12px;
-  gap: 5px;
+  gap: 0;
 }
 .sidebar > .logo .logo-mark {
   width: 40.25px;
