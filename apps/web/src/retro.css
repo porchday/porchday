@@ -94,8 +94,8 @@ summary:focus-visible {
 }
 .logo .logo-mark,
 .logo-small .logo-mark {
-  width: 27px;
-  height: 27px;
+  width: 47.25px;
+  height: 47.25px;
 }
 .logo-dot {
   color: #ffd89c;
@@ -607,8 +607,8 @@ summary:focus-visible {
   gap: 5px;
 }
 .sidebar > .logo .logo-mark {
-  width: 23px;
-  height: 23px;
+  width: 40.25px;
+  height: 40.25px;
 }
 .sidebar nav {
   gap: 0;
@@ -1435,8 +1435,8 @@ body
   text-shadow: 2px 2px #fff8df;
 }
 .homemade-sign .logo .logo-mark {
-  width: 38px;
-  height: 38px;
+  width: 66.5px;
+  height: 66.5px;
 }
 .homemade-sign .logo-dot {
   color: #7e320c;

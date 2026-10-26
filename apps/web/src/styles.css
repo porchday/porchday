@@ -170,8 +170,8 @@ hr {
   white-space: nowrap;
 }
 .logo .logo-mark {
-  width: 36px;
-  height: 36px;
+  width: 63px;
+  height: 63px;
 }
 .logo-dot {
   color: var(--coral);
@@ -180,8 +180,8 @@ hr {
   font-size: 29px;
 }
 .logo-small .logo-mark {
-  width: 30px;
-  height: 30px;
+  width: 52.5px;
+  height: 52.5px;
 }
 .eyebrow,
 .tiny-label {
@@ -1412,8 +1412,8 @@ hr {
   margin-bottom: 45px;
 }
 .sidebar > .logo .logo-mark {
-  width: 32px;
-  height: 32px;
+  width: 56px;
+  height: 56px;
 }
 .sidebar nav {
   display: flex;
@@ -2906,8 +2906,8 @@ hr {
     font-size: 28px;
   }
   .sidebar > .logo .logo-mark {
-    width: 29px;
-    height: 29px;
+    width: 50.75px;
+    height: 50.75px;
   }
   .nav-item {
     font-size: 12px;
@@ -3081,8 +3081,8 @@ hr {
     gap: 8px;
   }
   .logo .logo-mark {
-    width: 32px;
-    height: 32px;
+    width: 56px;
+    height: 56px;
   }
   .public-header nav {
     gap: 12px;
@@ -3383,8 +3383,8 @@ hr {
     font-size: 25px;
   }
   .public-footer .logo .logo-mark {
-    width: 26px;
-    height: 26px;
+    width: 45.5px;
+    height: 45.5px;
   }
   .public-footer > div > p {
     font-size: 9px;
@@ -3484,8 +3484,8 @@ hr {
     font-size: 28px;
   }
   .app-mobile-header .logo .logo-mark {
-    height: 27px;
-    width: 27px;
+    height: 47.25px;
+    width: 47.25px;
   }
   .app-main {
     padding: 28px 0 95px;
