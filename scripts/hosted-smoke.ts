@@ -218,8 +218,9 @@ async function publicChecks() {
     "PWA_MANIFEST_INVALID",
   );
   for (const icon of manifest.icons) {
+    const match = /^\/icon-(192|512)-([a-f0-9]{16})\.png$/.exec(icon.src);
     check(
-      ["/icon-192.png", "/icon-512.png"].includes(icon.src),
+      Boolean(match) && icon.sizes === `${match![1]}x${match![1]}`,
       "PWA_ICON_UNEXPECTED",
     );
     const response = await api.request(icon.src);
@@ -228,7 +229,11 @@ async function publicChecks() {
         response.headers.get("content-type")?.includes("image/png"),
       "PWA_ICON_MISSING",
     );
-    await response.arrayBuffer();
+    const bytes = Buffer.from(await response.arrayBuffer());
+    check(
+      createHash("sha256").update(bytes).digest("hex").startsWith(match![2]),
+      "PWA_ICON_VERSION_MISMATCH",
+    );
   }
   const worker = await api.request("/sw.js");
   check(

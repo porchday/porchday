@@ -107,6 +107,45 @@ describe("client interaction safety", () => {
   });
 });
 describe("PWA privacy boundaries", () => {
+  it("reads fresh installed-app metadata online and uses only its public offline fallback", async () => {
+    const handlers: Record<string, (event: any) => void> = {};
+    const network = vi.fn();
+    const match = vi.fn();
+    runInNewContext(readFileSync("apps/web/public/sw.js", "utf8"), {
+      URL,
+      Response,
+      location: { origin: "https://porchday.test" },
+      fetch: network,
+      caches: { match },
+      self: {
+        addEventListener: (name: string, handler: (event: any) => void) => {
+          handlers[name] = handler;
+        },
+      },
+    });
+    const request = { url: "https://porchday.test/manifest.webmanifest", method: "GET" };
+    function readManifest(): Promise<Response> {
+      let response!: Promise<Response>;
+      handlers.fetch({ request, respondWith: (value: Promise<Response>) => { response = value; } });
+      return response;
+    }
+    const fresh = new Response("current corn icon metadata");
+    network.mockResolvedValueOnce(fresh);
+    expect(await readManifest()).toBe(fresh);
+    expect(network).toHaveBeenCalledWith(request, { cache: "no-cache" });
+    expect(match).not.toHaveBeenCalled();
+
+    const cached = new Response("public offline manifest");
+    network.mockRejectedValueOnce(new Error("offline"));
+    match.mockResolvedValueOnce(cached);
+    expect(await readManifest()).toBe(cached);
+    expect(match).toHaveBeenCalledWith("/manifest.webmanifest");
+
+    const unavailable = new Response("unavailable", { status: 503 });
+    network.mockResolvedValueOnce(unavailable);
+    expect(await readManifest()).toBe(unavailable);
+    expect(match).toHaveBeenCalledOnce();
+  });
   it("uses a protected start URL and real raster install icons", () => {
     const manifest = JSON.parse(
       readFileSync("apps/web/public/manifest.webmanifest", "utf8"),

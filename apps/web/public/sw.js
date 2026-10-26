@@ -34,7 +34,15 @@ self.addEventListener("fetch", (event) => {
     event.request.method !== "GET"
   )
     return;
-  if (event.request.mode === "navigate") {
+  if (url.pathname === "/manifest.webmanifest") {
+    // Installed-app metadata must stay fresh independently of the cached shell.
+    // Keep the precached public manifest as an offline fallback only.
+    event.respondWith(
+      fetch(event.request, { cache: "no-cache" }).catch(() =>
+        caches.match("/manifest.webmanifest").then((cached) => cached || Response.error()),
+      ),
+    );
+  } else if (event.request.mode === "navigate") {
     event.respondWith(
       fetch(event.request).catch(() =>
         caches.match("/").then((cached) => cached || Response.error()),

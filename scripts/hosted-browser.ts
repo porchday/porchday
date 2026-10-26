@@ -110,7 +110,7 @@ try {
       '/icon-512.png', '/apple-touch-icon.png', '/porch-pattern.svg', '/wallpaper-checker.svg',
       '/wallpaper-daisies.svg', '/wallpaper-diamonds.svg', '/fonts.css', '/third-party-notices.txt']);
     return { cacheCount: names.length, entryCount: urls.length, publicOnly: urls.length > 0 && urls.every(u =>
-      u.origin === location.origin && !u.search && (publicFiles.has(u.pathname) || u.pathname.startsWith('/assets/'))) };
+      u.origin === location.origin && !u.search && (publicFiles.has(u.pathname) || /^\/icon-(192|512)-[a-f0-9]{16}\.png$/.test(u.pathname) || u.pathname.startsWith('/assets/'))) };
   });
   check(cache.publicOnly, 'PRIVATE_CACHE_ENTRY_FOUND');
   observed.cache = cache;

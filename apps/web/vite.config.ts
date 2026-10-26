@@ -3,6 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
+import { versionPwaIcons } from "./scripts/pwa-icons";
 const cryptoRequire = createRequire(
   resolve(import.meta.dirname, "../../packages/crypto/package.json"),
 );
@@ -59,6 +60,7 @@ export default defineConfig({
       },
       closeBundle() {
         const dist = resolve(import.meta.dirname, "dist");
+        const installIcons = versionPwaIcons(dist);
         const assets = readdirSync(resolve(dist, "assets"))
           .filter((name) => /\.(js|css)$/.test(name))
           .map((name) => "/assets/" + name);
@@ -72,6 +74,7 @@ export default defineConfig({
           "/wallpaper-diamonds.svg",
           "/icon-192.png",
           "/icon-512.png",
+          ...installIcons,
           "/apple-touch-icon.png",
           "/manifest.webmanifest",
           "/fonts.css",
