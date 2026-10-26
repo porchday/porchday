@@ -78,7 +78,7 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 type Authorization = {
   memberId: string;
   journal: boolean;
-  changedEmailUser?: { id: string; email: string };
+  changedEmailUser?: { id: string; email: string; newEmail: string };
   emailTokenHash?: string;
 };
 
@@ -186,8 +186,9 @@ async function authorize(
       journal: true,
       emailTokenHash,
       changedEmailUser:
-        claims.requestType === "change-email-verification"
-          ? account
+        claims.requestType === "change-email-verification" &&
+        typeof claims.updateTo === "string"
+          ? { id: account.id, email: account.email, newEmail: claims.updateTo }
           : undefined,
     };
   }
@@ -348,6 +349,7 @@ authRoutes.all("/*", async (c) => {
           [incoming.email.toLowerCase()],
         )
       ).rows[0]?.id;
+    let completedEmailChange = false;
     const work = async () => {
       const client = await physicalPool.connect();
       const proxyClient = {
@@ -496,10 +498,14 @@ authRoutes.all("/*", async (c) => {
           }
           if (changedEmailUser && response.status < 400) {
             const current = await pool.query(
-              "SELECT email FROM public.auth_user WHERE id=$1",
+              'SELECT email,"emailVerified" FROM public.auth_user WHERE id=$1',
               [changedEmailUser.id],
             );
-            if (current.rows[0]?.email !== changedEmailUser.email) {
+            if (
+              current.rows[0]?.email === changedEmailUser.newEmail &&
+              current.rows[0].emailVerified === true &&
+              current.rows[0].email !== changedEmailUser.email
+            ) {
               await pool.query(
                 'DELETE FROM public.auth_session WHERE "userId"=$1',
                 [changedEmailUser.id],
@@ -524,6 +530,7 @@ authRoutes.all("/*", async (c) => {
                   "Your Porchday email changed",
                   `Your login email changed. Sign in again using the verified new address. If you did not authorize this, report a stolen account at ${c.env.APP_URL}/recovery.`,
                 );
+              completedEmailChange = true;
             }
           }
           if (signupId && !response.ok) {
@@ -553,6 +560,22 @@ authRoutes.all("/*", async (c) => {
       ? await withPrivacyJournal(c.env, work)
       : await work();
     committedAndConfirmed = true;
+    // The shared callback describes both steps. Show completion only after the
+    // exact new address is verified and SQL plus the privacy journal confirm it.
+    if (
+      completedEmailChange &&
+      response.status === 302 &&
+      response.headers.get("location") ===
+        c.env.APP_URL + "/login?emailChanged=1"
+    ) {
+      const headers = new Headers(response.headers);
+      headers.set("location", c.env.APP_URL + "/login?verified=1");
+      return new Response(response.body, {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      });
+    }
     return response;
   } catch (error) {
     if (error instanceof AuthRejection)
