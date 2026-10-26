@@ -28,7 +28,7 @@
         "base_monthly_usd": 5,
         "minimum_storage_gb": 10,
         "maximum_storage_gb": 50,
-        "migrations_applied": 43,
+        "migrations_applied": 45,
         "backup_retention_days": 7,
         "backup_policy_id": "qwymc9zsey4d",
         "initial_backup_id": "xm87si2d59n5"
@@ -68,7 +68,7 @@
         "base_monthly_usd": 50,
         "minimum_storage_gb": 10,
         "maximum_storage_gb": 50,
-        "migrations_applied": 43,
+        "migrations_applied": 45,
         "backup_retention_days": 7,
         "backup_policy_id": "ojzr7qivd2i8",
         "initial_backup_id": "nb2sischn10x"

@@ -13,7 +13,9 @@ import ImageIO
         return PreparedPhoto(bytes: bytes, width: thumbnail.width, height: thumbnail.height)
     }
     static func safelyDecode(_ data: Data) throws -> UIImage {
-        guard data.count <= 20 * 1024 * 1024, let source = CGImageSourceCreateWithData(data as CFData, nil), let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any], let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int, width > 0, height > 0, width <= 2400, height <= 2400, let image = UIImage(data: data) else { throw PorchError.message("This photo exceeds safe image limits.") }; return image
+        let decoded = try ReceivedPhoto.decodeJPEG(data)
+        let orientations: [UIImage.Orientation] = [.up, .upMirrored, .down, .downMirrored, .leftMirrored, .right, .rightMirrored, .left]
+        return UIImage(cgImage: decoded.image, scale: 1, orientation: orientations[Int(decoded.orientation) - 1])
     }
 }
 struct EncryptedPhotoView: View {

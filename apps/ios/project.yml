@@ -54,6 +54,8 @@ targets:
       - PorchdayTests
       - path: ../../packages/crypto/test/fixtures/openpgp-v1.json
         buildPhase: resources
+      - path: ../../docs/archive/sample/photos/77777777-7777-4777-8777-777777777777.jpg
+        buildPhase: resources
     dependencies:
       - target: Porchday
   PorchdayUITests:
