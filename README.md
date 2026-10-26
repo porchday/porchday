@@ -63,9 +63,9 @@ python3 scripts/generate-unicode-emoji.py --check
 
 To produce the tracked client source/rebuild archive locally, run `python3 scripts/package-client-source.py /tmp/porchday-client-source.tar.gz` from a Git checkout. This does not publish anything or include the server implementation. See [third-party notices](THIRD_PARTY_NOTICES.md) for distribution obligations.
 
-## Primary domain transition
+## Production domains
 
-The selected new primary address is `https://porchday.org`. [The migration guide](docs/domain-migration.md) explains DNS, legacy-device access and rollout; [issue #17](https://github.com/andyk/porchday/issues/17) records whether the cutover is complete. Existing browser encryption keys remain on their original origin.
+[porchday.org](https://porchday.org) became the primary production address on October 26, 2026. Public `.com` pages forward to `.org`; [porchday.com/app](https://porchday.com/app) remains available for existing devices because their saved encryption keys belong to that origin. Use the same account at `.org` and your encryption recovery secret to unlock its history. Keep the old browser data and installed app until that succeeds. See the [migration guide](docs/domain-migration.md) and [issue #17](https://github.com/andyk/porchday/issues/17) for verification and remaining device checks.
 
 ## Secrets
 
@@ -75,7 +75,7 @@ Use the [operations guide](docs/operations.md) for deployment and admission proc
 
 | Surface | Starting point |
 | --- | --- |
-| Production | [porchday.com](https://porchday.com); invitation-only signup is enabled for authorized owner use. |
+| Production | [porchday.org](https://porchday.org); invitation-only signup is enabled for authorized owner use. |
 | Staging | [staging.porchday.com](https://staging.porchday.com); invitation-only signup is enabled. |
 | Status | [Production](https://status.porchday.com) and [staging](https://staging-status.porchday.com); monitors share Cloudflare's platform. |
 | Staff recovery | `/staff` on the corresponding hostname; personal Access login, MFA and an assigned role are required. |

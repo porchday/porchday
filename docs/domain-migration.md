@@ -1,6 +1,6 @@
 # Moving the primary website to porchday.org
 
-The owner selected `https://porchday.org` as the primary production address on October 26, 2026. The implementation is being prepared; [issue #17](https://github.com/andyk/porchday/issues/17) records DNS, deployment and verification status. Do not infer that the cutover is complete from the desired configuration in Git.
+The public cutover to [porchday.org](https://porchday.org) completed on October 26, 2026. Both `.org` and `.com` apex domains and their `www` aliases are attached to the existing production Worker. Public `.com` navigation forwards to `.org`; existing-device account and API access on `.com` remains available. [Issue #17](https://github.com/andyk/porchday/issues/17) records the dated deployment evidence and device-acceptance follow-up. This is a completed public-address change, not retirement of the legacy origin.
 
 ## Domain behavior
 
@@ -26,11 +26,21 @@ New native iOS builds use `.org` and accept supported post links from both exact
 
 The verified sender remains `Porchday <accounts@porchday.com>`. Changing the email sender is a separate DNS and Email Sending verification task. Requests made on the canonical site generate `.org` action links; existing messages and actions initiated by legacy clients can retain `.com` links. The legacy origin continues to validate those callbacks without weakening the same-origin checks or one-use/replay protection.
 
-Extend the existing production Cloudflare Access application to the four exact protected destinations: `.org/staff`, `.org/api/staff`, `.com/staff` and `.com/api/staff`. Preserve its application ID, audience, policies, MFA, session duration and unrelated cookie preferences. The guarded `scripts/provision-staff-access.py --migrate-production-domain` command requires the known original state, makes one update, verifies readback and stops on uncertainty. Ordinary provisioning must not silently repair or repeat a partial migration.
+The existing production Cloudflare Access application now protects the four exact destinations: `.org/staff`, `.org/api/staff`, `.com/staff` and `.com/api/staff`. Its application ID, audience, policies, MFA, session duration and unrelated cookie preferences were preserved. The guarded `scripts/provision-staff-access.py --migrate-production-domain` command performs the transition and verifies readback; completed state is checked without another update. Ordinary provisioning must not silently repair or repeat a partial migration.
 
-The production monitor probes `.org` directly after the new hostname has working DNS/TLS and health checks. It continues refusing redirects for capability-bearing requests. Existing status-page hostnames remain on `.com`. The old health routes remain usable during deployment overlap.
+The production monitor now probes `.org` directly and has reported a fresh operational check with metrics ready. It continues refusing redirects for capability-bearing requests. Status remains at [status.porchday.com](https://status.porchday.com), with staging at [staging.porchday.com](https://staging.porchday.com) and its monitor at [staging-status.porchday.com](https://staging-status.porchday.com). The old application health routes remain usable during the transition.
 
-## Rollout and verification
+## Verified cutover and remaining device checks
+
+The October 26 cutover used source `f37b9b6`, verified on staging before production. Production release verification completed at 23:13 UTC: both origins passed protected health with no issues, the executable and 30 embedded application sources matched the candidate, all 23 built assets were checked, and live policy, queues and enabled signup were preserved except for the declared production domain variables. The updated production monitor reported operational status and metrics ready at 23:15 UTC. These are dated migration checkpoints; later releases may supersede the application version without changing the domain policy.
+
+Hosted desktop/mobile public-browser checks passed redirects, invitation-fragment retention, legacy account paths, service-worker installation on both origins, origin-isolated synthetic browser storage and the offline public shell. They made no hosted account writes and did not move a member's actual encryption keys. TLS validation remained enabled during a temporary public-DNS IPv4 override; the local resolver still returned unreachable IPv6 addresses during the normal-browser check. The override verifies the deployed service, not recovery of that machine’s DNS cache.
+
+Existing-member sign-in, recovery-secret unlock and re-enrollment on `.org`, installed-PWA notification permissions and physical iOS Universal Links remain separate device acceptance. Keep `.com` compatibility until those needs are resolved; physical native checks are tracked in [issue #7](https://github.com/andyk/porchday/issues/7). Cloudflare's injected analytics script was blocked by the existing CSP during browser checks, with no external response or beacon submission observed; provider-side removal remains [issue #18](https://github.com/andyk/porchday/issues/18). Neither follow-up is claimed complete by the public cutover.
+
+## Rollout procedure
+
+The completed rollout followed this order; retain these checks for any later domain-policy change.
 
 1. Add `porchday.org` to Cloudflare and change its registrar nameservers to the pair Cloudflare assigns. Confirm the zone is active and DNSSEC delegation is consistent; never guess the assigned nameservers.
 2. Build one committed candidate, run CI and verify both origin behaviors in isolated tests. Preserve the live enabled-signup policy, all unrelated bindings/secrets, privacy settings, queues, placement and resource IDs.
@@ -39,4 +49,4 @@ The production monitor probes `.org` directly after the new hostname has working
 5. Check canonical and legacy protected health, served assets, public redirects with paths/query/fragments, old account/API routes, denied cross-origin mutations and both staff protections. Update the production monitor and confirm its new direct target is healthy.
 6. Record exact versions and evidence in the issue and implementation record. Existing-device acceptance and any eventual retirement of legacy account routes are separate from public-navigation forwarding.
 
-No database migration or new encryption key is required for the domain change. Do not disable signup, reset member credentials, delete browser keys, remove the legacy API, or recreate staff roles as a shortcut. Operator receipts and authentication test material remain private.
+No database migration, password reset or rotation of existing content keys was required for the domain change. Do not disable signup, reset member credentials, delete browser keys, remove the legacy API, or recreate staff roles as a shortcut. Operator receipts and authentication test material remain private.
