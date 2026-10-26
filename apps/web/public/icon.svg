@@ -1,17 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
   <rect width="192" height="192" fill="#974013"/>
-  <!-- One-color corn mark: a scalloped cob framed by a pointed, peeling husk. -->
+  <g transform="translate(-7.5 -9)">
+  <!-- One-color corn mark: a scalloped cob framed by softly tapered, peeling husks. -->
   <g fill="#fff">
-    <path d="M90 46c0-12 9-20 18-13 6-4 14 0 14 6 8-1 13 6 9 12 8 2 11 9 6 15 7 4 9 11 3 16 6 5 6 12 0 17l-25 31-13-55Z"/>
-    <path d="M77 23c14 10 23 29 28 51 5 21 8 42 9 61-13-14-27-25-43-33-2-22 1-41 6-59 3-9 4-14 0-20Z"/>
-    <path d="M48 79c24 8 44 25 57 47 9 15 14 29 14 43-28 3-47-13-49-39-2-22-8-39-22-51Z"/>
-    <path d="M151 72c-2 23-3 48-8 69-3 18-12 27-25 29-2-18-7-34-16-48 13-23 29-40 49-50Z"/>
-    <path d="M104 163h13v12a6.5 6.5 0 0 1-13 0Z"/>
+    <path d="M90 43C85 36 94 28 101 35C105 28 118 32 116 40C124 37 133 44 128 51C136 50 141 59 135 65C143 66 145 76 138 81L119 145H96Z"/>
+    <path d="M80 30C94 48 103 96 104.5 134C93 121 82 110 71 102c-2-22 1-41 6-59 1-5 1-9 1-12 0-2 1-3 2-1Z"/>
+    <path d="M57 85c21 10 37 24 48 41 9 15 14 29 14 43-28 3-47-13-49-39-2-18-6-32-15-43-2-3-1-4 2-2Z"/>
+    <path d="M148 77c2-1 3 0 3 2-2 22-3 43-8 62-3 18-12 27-25 29-2-18-7-34-16-48 12-21 27-36 46-45Z"/>
+    <path d="M101 163h19c-2 3-3 5-3 8v4a6.5 6.5 0 0 1-13 0v-4c0-3-1-5-3-8Z"/>
   </g>
   <!-- Background-colored cuts keep the overlapping leaves readable at icon size. -->
   <g fill="none" stroke="#974013" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M89 28C99 53 106 99 108 140" stroke-width="4"/>
-    <path d="M159 67C137 77 118 101 107 121" stroke-width="4"/>
-    <path d="M57 91C91 109 111 140 115 164c1 7 5 12 10 16" stroke-width="4"/>
+    <path d="M77 24C96 44 105 96 106.5 134" stroke-width="3.8"/>
+    <path d="M159 67C137 77 118 101 107 121" stroke-width="3.8"/>
+    <path d="M55 79C80 91 108 128 115.5 152Q117.5 158 116 163C111 137 79 96 55 83Z" fill="#974013" stroke="none"/>
+  </g>
   </g>
 </svg>
