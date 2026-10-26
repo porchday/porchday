@@ -7,7 +7,7 @@ import { authPool, createAuth, hashToken } from "./auth";
 import type { Env, Variables } from "./types";
 import { event } from "./telemetry";
 import { enqueueAccountEmail, processAccountEmails } from "./email-outbox";
-import { JournalError, withPrivacyJournal } from "./privacy-journal";
+import { JournalError, withHttpPrivacyJournal } from "./privacy-journal";
 
 type AuthContext = Context<{ Bindings: Env; Variables: Variables }>;
 class AuthRejection extends Error {
@@ -557,7 +557,7 @@ authRoutes.all("/*", async (c) => {
       }
     };
     const response = proof?.journal
-      ? await withPrivacyJournal(c.env, work)
+      ? await withHttpPrivacyJournal(c, work)
       : await work();
     committedAndConfirmed = true;
     // The shared callback describes both steps. Show completion only after the

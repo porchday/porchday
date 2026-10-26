@@ -212,7 +212,7 @@ function knownRollback(error:unknown):boolean {
 export const privacyMutationMiddleware=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
   if(!isPrivacyMutation(c.req.method,c.req.path)||(!c.get('memberId')&&!c.get('staffSubject'))){await next();return;}
   try {
-    await withPrivacyJournal(c.env,async()=>{await next();if(c.error&&!knownRollback(c.error))throw c.error;});
+    await withHttpPrivacyJournal(c,async()=>{await next();if(c.error&&!knownRollback(c.error))throw c.error;});
   }catch(error){
     if(!(error instanceof JournalError))throw error;
     // The handler may already have finalized a 2xx response. Replace it before
@@ -221,6 +221,25 @@ export const privacyMutationMiddleware=createMiddleware<{Bindings:Env;Variables:
     return c.res;
   }
 });
+type HttpJournalContext={env:RuntimeEnv;readonly executionCtx:Pick<ExecutionContext,'waitUntil'>};
+/** Retain the same awaited operation during HTTP disconnects, within Workers'
+ * bounded waitUntil grace period. The observer never forwards private errors
+ * to detached runtime logging; the original promise still rejects to its caller.
+ */
+export async function withHttpPrivacyJournal<T>(context:HttpJournalContext,work:()=>Promise<T>):Promise<T> {
+  let keepAlive:((promise:Promise<unknown>)=>void)|undefined;
+  try {
+    const execution=context.executionCtx;
+    keepAlive=execution.waitUntil.bind(execution);
+  } catch {
+    // Hono's local app.request has no execution context. Hosted requests must
+    // supply one before any journal intent or application work can start.
+    if(context.env.ENVIRONMENT!=='development')throw new JournalError('JOURNAL_EXECUTION_CONTEXT_REQUIRED');
+  }
+  const operation=withPrivacyJournal(context.env,work);
+  if(keepAlive)keepAlive(operation.then(()=>undefined,()=>undefined));
+  return await operation;
+}
 export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>):Promise<T> {
   const resources=runtime(env);
   if(!resources)return work();

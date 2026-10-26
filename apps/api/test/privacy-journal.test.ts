@@ -243,7 +243,9 @@ suite('PostgreSQL restore reconciliation',()=>{
     const app=new Hono<{Bindings:Env;Variables:Variables}>();
     app.use('*',async(c,next)=>{c.set('memberId',member);await next();});app.use('*',privacyMutationMiddleware);
     app.delete('/api/v1/posts/:id',async c=>{await sql`delete from app.posts where id=${post}`;return c.json({ok:true});});
-    const response=await app.request('https://porchday.test/api/v1/posts/'+post,{method:'DELETE'},{RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:url},ENVIRONMENT:'staging'} as unknown as Env);
+    const retained:Promise<unknown>[]=[];
+    const response=await app.request('https://porchday.test/api/v1/posts/'+post,{method:'DELETE'},{RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:url},ENVIRONMENT:'staging'} as unknown as Env,{waitUntil(p:Promise<unknown>){retained.push(p);},passThroughOnException(){},props:{}} as ExecutionContext);
+    await expect(Promise.all(retained)).resolves.toEqual([undefined]);
     expect(response.status).toBe(503);expect((await response.json() as any).error.code).toBe('PRIVACY_CHECKPOINT_REQUIRED');
     expect(await sql`select id from app.posts where id=${post}`).toHaveLength(0);expect((await readJournalControl(store)).value.pending).toHaveLength(1);
   });

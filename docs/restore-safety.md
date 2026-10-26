@@ -34,6 +34,8 @@ Each environment requires a distinct `RECOVERY_JOURNAL` R2 binding, separate fro
 
 Mount `privacyReadGuard` on API traffic. Mount `privacyMutationMiddleware` only after verified member or staff authentication; it recognizes the actual privacy-affecting routes. This avoids durable writes for unauthenticated arbitrary DELETE requests. Public credential/recovery handlers use `withPrivacyJournal` only after body, rate, and token/session authorization checks, and repeat authorization inside their SQL transaction. Wrap cleanup jobs and account deletion in the same intent protocol. Scheduled checkpointing detects stale operations and flushes events; it does not resolve ambiguous intents.
 
+HTTP journal operations use `withHttpPrivacyJournal` to register a nonrejecting observer of the same operation with the Worker's `waitUntil`, while still awaiting the original operation through checkpoint, receipt and connection close before returning success. This gives completion work the runtime's bounded grace period after a client disconnect; it does not provide durable execution or remove the unresolved-intent safeguard. Queue operations retain their existing lifecycle. A missing hosted execution context refuses the operation before creating an intent.
+
 The only missing-binding bypass is `ENVIRONMENT=development`. Staging and production fail closed. Local configurations that include the binding still require its initialization; an empty bound bucket is never silently treated as safe.
 
 ## Operator transport and credentials

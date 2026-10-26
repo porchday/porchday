@@ -5,7 +5,7 @@ import { isPasswordCompromised } from "better-auth/plugins";
 import type { PoolClient } from "pg";
 import { authPool, hashToken } from "./auth";
 import type { Env, Variables } from "./types";
-import { withPrivacyJournal, JournalError } from "./privacy-journal";
+import { withHttpPrivacyJournal, JournalError } from "./privacy-journal";
 import {
   enqueueAccountEmail,
   enqueueRecoveryEmail,
@@ -333,7 +333,7 @@ reports.post("/complete", async (c) => {
         400,
       );
     const password = await hashPassword(input.data.newPassword);
-    const rejected = await withPrivacyJournal(c.env, async () => {
+    const rejected = await withHttpPrivacyJournal(c, async () => {
       const db = await pool.connect();
       try {
         await db.query("BEGIN");
