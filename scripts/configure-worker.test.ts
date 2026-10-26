@@ -54,7 +54,7 @@ test('deployment renderer reproduces retained staging placement without inheriti
    const config=JSON.parse(await readFile(join(directory,'apps/api/wrangler.'+name+'.jsonc'),'utf8'));
    if(name==='staging')expect(config.placement).toEqual({region:'aws:us-west-2'});
    else expect(config).not.toHaveProperty('placement');
-   expect(config.vars.SIGNUP_ENABLED).toBe(name==='staging'?'true':'false');
+   expect(config.vars.SIGNUP_ENABLED).toBe(resources.environments[name].signup_enabled===true?'true':'false');
    expect(config.workers_dev).toBe(false);expect(config.preview_urls).toBe(false);
   }
   const output=join(directory,'apps/api/wrangler.staging.jsonc'),before=await readFile(output,'utf8');

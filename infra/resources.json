@@ -82,6 +82,7 @@
       "media_backup_bucket": "porchday-production-media-backup",
       "media_backup_enabled": true,
       "verified_pitr_days": 7,
+      "signup_enabled": true,
       "worker_placement": null
     }
   },

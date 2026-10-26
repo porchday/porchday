@@ -2,7 +2,7 @@
 
 ## Admission and launch gates
 
-Registration requires an email-bound, expiring invitation issued by an operator or eligible member, adult attestation, accepted community rules, and verified email. `SIGNUP_ENABLED` is a deliberate deployment gate. Do not issue real-member invitations before the encryption review, support staffing, nonprofit/legal disclosures and backup/restore gates in the design are resolved. Synthetic test accounts are operational test identities, not autonomous social participants.
+Registration requires an email-bound, expiring invitation issued by an operator or eligible member, adult attestation, accepted community rules, and verified email. `SIGNUP_ENABLED` is a deliberate deployment gate. The owner has authorized production access and explicitly requested that production invited signup remain enabled. Both environments therefore persist `signup_enabled=true`; preserve production's setting unless the owner requests that it be disabled. This authorization covers owner use and does not remove the encryption review, support staffing, nonprofit/legal disclosures and other admission requirements for a broader launch. Synthetic test accounts are operational test identities, not autonomous social participants.
 
 The source repository stays private. Apache-2.0 is the code license; don't claim that source is publicly downloadable until the owner publishes it.
 
@@ -38,7 +38,7 @@ Large envelope parsing and hashing use one nonwaiting permit per Worker isolate.
 
 ## Invitations
 
-`python3 scripts/with-secrets.py node scripts/invite.ts EMAIL` creates a one-use invitation and writes its link into a 0600 file under the private configuration directory, never stdout. Invitation codes are hashed in PostgreSQL and expire after seven days. Never distribute real invitations before the admission gates are satisfied.
+`python3 scripts/with-secrets.py node scripts/invite.ts EMAIL` creates a one-use invitation and writes its link into a 0600 file under the private configuration directory, never stdout. Invitation codes are hashed in PostgreSQL and expire after seven days. Explicitly select the intended environment's migration database URL and `APP_URL` before invocation. The owner's production invitation is authorized; broader admission remains subject to the launch requirements above.
 
 ## Deletion and expiry
 
@@ -56,11 +56,11 @@ This corrects a verified scheduling false alarm: on October 25, one staging outb
 
 During restoration, apply deletion-ledger decisions and expiration before resuming member traffic. A completed database restore alone is not a successful media restore. The [isolated hosted staging drill](hosted-restore-drill.md#second-hosted-attempt-verified-and-cleaned-up) passed database/media recovery, independent deletion and expiry replay, restricted-role release and original-key decryption on October 25, 2026. Its measured result is evidence for that coordinated cut, not an availability or recovery-time guarantee. Retain the provisional 24-hour RPO/8-hour RTO objectives and repeat the drill quarterly and after relevant recovery changes.
 
-Owner development access (October 25, 2026): invited signup is enabled on staging at the owner’s request to play with Porchday during development. A seven-day invitation was issued for the owner’s Gmail address. This is development use; production admission remains closed. `environments.staging.signup_enabled` preserves this setting when generating deployment configuration.
+Owner development access (October 25, 2026): invited signup was enabled on staging at the owner’s request to play with Porchday during development. A seven-day invitation was issued for the owner’s Gmail address. Production admission was closed at that checkpoint. The owner subsequently authorized their own production account and requested that production invited signup stay enabled. Both environment settings now persist that policy in `infra/resources.json`; the latest runtime verification belongs in the [build record](build-status.md).
 
 Member invitations: Connections → Invite someone accepts one email address. Active, verified members can request ten invitations per rolling 24 hours; each recipient has a seven-day issuance cooldown. The API's generic 202 response acknowledges the request without disclosing whether an account exists or proving delivery. Codes are single-use and bound to the recipient email. They do not create a friendship. The signup and social-invitation pause settings gate the feature. Account/recovery mail is prioritized over invitation mail. Invitation payloads remain encrypted in the outbox until delivery or their exact seven-day deadline, with retry backoff capped at six hours. Sender deletion invalidates invitations; seven-day keyed recipient cooldown metadata retains no deleted sender identity. The operator CLI continues to save a private invitation link without sending mail.
 
-Before deploying from parallel work, compare the current provider version and settings with the saved configuration. Stop on unexpected changes before uploading; do not rely solely on a comparison after deployment. Preserve `environments.staging.signup_enabled=true` for owner development and production's false value. A code-only rollout must not silently undo another authorized session's signup setting or invitation-link fix.
+Before deploying from parallel work, compare the current provider version and settings with the saved configuration. Stop on unexpected changes before uploading; do not rely solely on a comparison after deployment. Preserve `environments.staging.signup_enabled=true` and `environments.production.signup_enabled=true`. Do not disable production signup after issuing the owner's invitation or during later deployments unless the owner requests it. A code-only rollout must not silently undo another authorized session's signup setting or invitation-link fix.
 
 ## Email and monitoring
 
@@ -106,7 +106,7 @@ Authenticator MFA uses the maintained BetterAuth TOTP/backup-code implementation
 
 ## Configuration and verification
 
-`apps/api/wrangler.local.jsonc` contains synthetic local bindings only and must never be used to deploy. `scripts/configure-worker.py staging|production` refuses to produce deployment configuration until real Hyperdrive IDs exist in `infra/resources.json`. Disable Hyperdrive query caching for identity, social and jobs bindings. Production registration stays closed (`SIGNUP_ENABLED=false`) until the admission gates pass.
+`apps/api/wrangler.local.jsonc` contains synthetic local bindings only and must never be used to deploy. `scripts/configure-worker.py staging|production` refuses to produce deployment configuration until real Hyperdrive IDs exist in `infra/resources.json`. Disable Hyperdrive query caching for identity, social and jobs bindings. Preserve the owner's requested production invitation-only signup setting (`SIGNUP_ENABLED=true`); broader launch requirements remain separate.
 
 For local workerd verification, build the web workspace, create a local-only `apps/api/.dev.vars` containing `BETTER_AUTH_SECRET`, and run `node --import tsx scripts/initialize-local-journal.ts` after applying migrations. This uses the current Miniflare `resourcePersistencePath` to share the actual Wrangler storage directory; obsolete `r2Persist` would silently create an ephemeral store and does not count as initialization. Start `npx wrangler dev --config apps/api/wrangler.local.jsonc --local --port 8788`. Run `TEST_DATABASE_URL=postgres://postgres:porchday-local@localhost:54329/porchday node --import tsx apps/api/scripts/smoke-workerd.ts` to verify real Workers password sign-in, authorization, cookie revocation and public security headers using a temporary synthetic account. The script refuses remote targets and removes its fixture. Keep local email/debug output in ignored private artifacts; never tail raw production auth URLs. Local synthetic debugging retains application console events with invocation logging/tracing disabled; generated staging/production configurations additionally disable application log persistence and Logpush.
 

@@ -1,6 +1,8 @@
 # Porchday implementation and verification record
 
-Updated October 25, 2026. Porchday is deployed at [porchday.com](https://porchday.com) and [staging.porchday.com](https://staging.porchday.com), with separate databases and private storage. Production keeps `SIGNUP_ENABLED=false`; staging invited signup is enabled for owner-requested development use. The [private repository](https://github.com/bobbyhwilder/porchday) is Apache-2.0 licensed. The agreed MVP build and planned hosted acceptance are complete, with the limits and admission requirements below. This record does not authorize real-member admission.
+Updated October 25, 2026. Porchday is deployed at [porchday.com](https://porchday.com) and [staging.porchday.com](https://staging.porchday.com), with separate databases and private storage. The owner has now authorized their own production account and explicitly requested that production invited signup remain enabled. Both environments persist `signup_enabled=true`; future deployments must preserve that setting unless the owner requests a change. The [private repository](https://github.com/bobbyhwilder/porchday) is Apache-2.0 licensed. The agreed MVP build and planned hosted acceptance are complete, with the limits and broader-launch admission requirements below.
+
+The production signup configuration change and owner invitation are being applied separately from the completed MVP acceptance. Runtime verification is pending at this documentation checkpoint; the earlier production-closed release records below remain historical evidence.
 
 ## Latest staging incident
 
