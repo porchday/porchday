@@ -591,7 +591,7 @@ Load testing should cover the confirmed initial scale of up to 10,000 registered
 | Native iOS release | Select the minimum iOS version and finalize App Store, TestFlight, signing, APNs, and platform privacy configuration. |
 | MVP monitoring | Validate Cloudflare alerts and PlanetScale diagnostics, select retention and sampling budgets, and assign alert ownership. Datadog is deferred. |
 | Product and organization name | Use Porchday as the working product name and porchday.com as the domain; the legal organization name remains to be settled. |
-| Cloudflare authentication library | Better Auth email/password is deployed on Workers with PlanetScale/Hyperdrive, with verified session/MFA checks and completed two-person stolen-account recovery acceptance. Reserve Access for staff; human email-change/reset acceptance remains unfinished. |
+| Cloudflare authentication library | Better Auth email/password is deployed on Workers with PlanetScale/Hyperdrive, with verified session/MFA checks and completed delivered-email password reset and two-person stolen-account recovery acceptance. Reserve Access for staff; human email-change acceptance remains unfinished. |
 | PlanetScale provisioning | Staging PS-5 ARM and production PS-20 ARM with two replicas are provisioned in Oregon, billed through Cloudflare, with separate runtime roles, migration access and seven-day backup retention. Both have 45 migrations; actual capacity and accrued billing still need ongoing observation. |
 | Definition of family | Include chosen family through mutual confirmation without documentary proof. |
 | Content permanence | Default to no timer, with clearly visible optional expiration; shortening only after publishing. |
