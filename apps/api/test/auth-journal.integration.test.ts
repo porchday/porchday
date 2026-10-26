@@ -312,6 +312,127 @@ suite("Authenticated account privacy journal boundary", () => {
     expect(store.writes).toBe(after);
     expect((await readJournalControl(store)).value.pending).toHaveLength(0);
   });
+  it("does not consume email-change links opened while a different account is signed in", async () => {
+    const target = await person(),
+      other = await person(),
+      store = await journal(target.id),
+      nextEmail = "changed-" + target.email,
+      callbackURL = env.APP_URL + "/login?emailChanged=1";
+    expect(
+      (
+        await call(
+          "change-email",
+          { newEmail: nextEmail, callbackURL },
+          target.cookie,
+        )
+      ).response.status,
+    ).toBe(200);
+    const approval = emails
+      .filter((mail) => mail.subject === "Confirm a Porchday email change")
+      .at(-1)!;
+    const linkFrom = (text: string) =>
+      new URL(
+        text.match(/http:\/\/localhost:5173\/api\/auth\/verify-email\?\S+/)![0],
+      );
+    const approvalURL = linkFrom(approval.text);
+    const assertWrongAccountPreservesLink = async (url: URL) => {
+      const beforeWrites = store.writes,
+        beforeEmails = emails.length,
+        sessions = (
+          await owner.query(
+            'SELECT id,"userId" FROM public.auth_session WHERE "userId" IN ($1,$2) ORDER BY id',
+            [target.id, other.id],
+          )
+        ).rows;
+      const response = (
+        await call("verify-email" + url.search, undefined, other.cookie)
+      ).response;
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: { code: "INVALID_USER" } });
+      expect(store.writes).toBe(beforeWrites);
+      expect(emails).toHaveLength(beforeEmails);
+      expect(
+        (
+          await owner.query(
+            "SELECT 1 FROM public.used_email_links WHERE token_hash=$1",
+            [await hashToken(url.searchParams.get("token")!)],
+          )
+        ).rowCount,
+      ).toBe(0);
+      expect(
+        (
+          await owner.query("SELECT email FROM public.auth_user WHERE id=$1", [
+            target.id,
+          ])
+        ).rows[0].email,
+      ).toBe(target.email);
+      expect(
+        (
+          await owner.query(
+            'SELECT id,"userId" FROM public.auth_session WHERE "userId" IN ($1,$2) ORDER BY id',
+            [target.id, other.id],
+          )
+        ).rows,
+      ).toEqual(sessions);
+    };
+    await assertWrongAccountPreservesLink(approvalURL);
+    const approved = (
+      await call("verify-email" + approvalURL.search, undefined, target.cookie)
+    ).response;
+    expect(approved.status).toBe(302);
+    expect(approved.headers.get("location")).toBe(callbackURL);
+    const replayedApproval = (
+      await call("verify-email" + approvalURL.search, undefined, target.cookie)
+    ).response;
+    expect(replayedApproval.status).toBe(400);
+    expect(await replayedApproval.json()).toEqual({
+      error: { code: "LINK_ALREADY_USED" },
+    });
+    const verification = emails
+      .filter((mail) => mail.subject === "Verify your Porchday email")
+      .at(-1)!;
+    const verificationURL = linkFrom(verification.text);
+    await assertWrongAccountPreservesLink(verificationURL);
+    // A signed-out recipient can complete the same unconsumed link. The normal
+    // change still revokes target sessions and leaves the other account alone.
+    const completed = (await call("verify-email" + verificationURL.search))
+      .response;
+    expect(completed.status).toBe(302);
+    expect(completed.headers.get("location")).toBe(callbackURL);
+    expect(
+      (
+        await owner.query("SELECT email FROM public.auth_user WHERE id=$1", [
+          target.id,
+        ])
+      ).rows[0].email,
+    ).toBe(nextEmail);
+    expect(
+      (
+        await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1', [
+          target.id,
+        ])
+      ).rowCount,
+    ).toBe(0);
+    expect(
+      (await (await call("get-session", undefined, other.cookie)).response.json())
+        .user.id,
+    ).toBe(other.id);
+    for (const url of [approvalURL, verificationURL])
+      expect(
+        (
+          await owner.query(
+            "SELECT 1 FROM public.used_email_links WHERE token_hash=$1",
+            [await hashToken(url.searchParams.get("token")!)],
+          )
+        ).rowCount,
+      ).toBe(1);
+    const beforeReplay = store.writes;
+    expect(
+      (await call("verify-email" + verificationURL.search)).response.status,
+    ).toBe(400);
+    expect(store.writes).toBe(beforeReplay);
+    expect((await readJournalControl(store)).value.pending).toHaveLength(0);
+  });
   it("journals MFA enrollment and backup-code consumption while ordinary TOTP login remains read-only to R2", async () => {
     const p = await person(),
       store = await journal(p.id);

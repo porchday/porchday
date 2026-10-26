@@ -20,7 +20,9 @@ export class R2JournalStore implements JournalStore {
   }
   private async send(method: string, key: string, body?: string, condition?: Conditional): Promise<Response> {
     if (!key || key.length>1024 || key.split('/').some(part=>part==='.' || part==='..') || /[\x00-\x1f\x7f]/.test(key)) throw new Error('R2_OBJECT_KEY_INVALID');
-    const path=key.split('/').map(encodeURIComponent).join('/');
+    // The REST route takes the entire object key as one path parameter,
+    // including any slashes that form an R2 key prefix.
+    const path=encodeURIComponent(key);
     const headers=new Headers({Authorization:'Bearer '+this.apiToken});
     if (body!==undefined) headers.set('Content-Type','application/json');
     if (condition?.onlyIf?.etagMatches) headers.set('If-Match',quoteETag(condition.onlyIf.etagMatches));

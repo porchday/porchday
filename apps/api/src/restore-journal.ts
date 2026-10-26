@@ -1,5 +1,6 @@
 import type {Sql} from 'postgres';
-import {JournalError,readJournalControl,verifyJournalChain,type JournalStore,type JournalControl} from './privacy-journal.js';
+import {z} from 'zod';
+import {JournalError,readJournalControl,verifyJournalChain,controlSchema,sha256,type JournalStore,type JournalControl} from './privacy-journal.js';
 
 /** Privileged operator code, never mounted in the member or staff HTTP API. */
 export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedia:(key:string)=>Promise<void>) {
@@ -126,4 +127,113 @@ export async function reconcileDurableReceipts(store:JournalStore) {
   }
   if(!await store.put('control.json',JSON.stringify({...current.value,pending:remaining}),{onlyIf:{etagMatches:current.etag}}))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
   return {resolved:current.value.pending.length-remaining.length,unresolved:remaining.length};
+}
+
+const digest=z.string().regex(/^[a-f0-9]{64}$/);
+const originalStatus=z.object({generation:z.uuid(),sequence:z.string().regex(/^(0|[1-9][0-9]*)$/),quarantined:z.literal(false)}).strict();
+const observedStatus=originalStatus.extend({quarantined:z.boolean()});
+/** An operator attestation is evidence to review, never a runtime auto-repair flag. */
+export const originalPrimaryRecoveryTicketSchema=z.object({
+  v:z.literal(1),kind:z.literal('porchday-original-primary-recovery'),id:z.uuid(),environment:z.literal('staging'),
+  source:z.object({organization:z.string().min(1),name:z.string().min(1),branch:z.literal('main'),branchId:z.string().min(1),reviewedCommit:z.string().regex(/^[a-f0-9]{40}$/)}).strict(),
+  journalBucket:z.string().min(1),mediaBucket:z.string().min(1),reviewedAt:z.iso.datetime(),writersDrainedAt:z.iso.datetime(),
+  unrestoredPrimaryConfirmed:z.literal(true),noRestoreOrRoutingChangeConfirmed:z.literal(true),writersDrained:z.literal(true),
+  evidenceSha256:digest,initialControl:controlSchema,initialControlSha256:digest,initialSql:originalStatus,capabilitiesSha256:digest,
+}).strict();
+export type OriginalPrimaryRecoveryTicket=z.infer<typeof originalPrimaryRecoveryTicketSchema>;
+
+// Fixed identifiers only. Full row hashes are calculated inside SQL: tokens,
+// credential hashes, addresses and encrypted key material never leave the DB.
+const preservedTables=[
+  'public.auth_user','public.auth_account','public.auth_two_factor','public.auth_session','public.auth_verification',
+  'public.used_email_links','public.pilot_invitations','public.auth_email_outbox','public.recovery_cases','public.recovery_reviews',
+  'public.recovery_evidence','public.security_contact_history','public.staff_users',
+  'app.members','app.device_keys','app.encrypted_key_backups','app.recovery_keys','app.integration_grants',
+  'app.moderator_identities','app.moderator_keys','app.native_push_subscriptions','app.native_push_outbox',
+  'app.push_subscriptions','app.push_outbox','app.data_transfer_jobs','app.notifications',
+] as const;
+
+/** Read-only, repeatable snapshot suitable for a restricted operator ticket. */
+export async function inspectOriginalPrimaryState(sql:Sql){
+  return sql.begin('isolation level repeatable read read only',async tx=>{
+    const[status]=await tx`select app.safety_status() as value`;
+    const tables=[];
+    for(const table of preservedTables){
+      const[row]=await tx.unsafe(`select count(*)::int as count,encode(sha256(convert_to(coalesce(string_agg(row_hash,'' order by row_hash),''),'UTF8')),'hex') as sha256 from (select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') as row_hash from ${table} t) hashed`);
+      tables.push({table,count:Number(row.count),sha256:String(row.sha256)});
+    }
+    const[blocked]=await tx`select exists(select from app.deletion_outbox where completed_at is null)
+      or exists(select from app.identity_deletion_outbox where completed_at is null)
+      or exists(select from app.posts where expires_at<=now())
+      or exists(select from app.comments where app.comment_deadline(id)<=now())
+      or exists(select from app.media_assets where (state<>'attached' and created_at<now()-interval '24 hours')or app.media_deadline(id)<=now()) as value`;
+    return {status:observedStatus.parse(status.value),capabilities:{tables,sha256:await sha256(JSON.stringify(tables))},cleanupBlocked:blocked.value===true};
+  });
+}
+
+/** Reopen only an externally verified, unrestored original primary. Unlike
+ * restore release this does not modify SQL or invalidate live capabilities. */
+export async function recoverOriginalPrimary(store:JournalStore,sql:Sql,untrustedTicket:unknown,verifyMedia:MediaVerification){
+  const ticket=originalPrimaryRecoveryTicketSchema.parse(untrustedTicket),now=Date.now();
+  const reviewed=Date.parse(ticket.reviewedAt),drained=Date.parse(ticket.writersDrainedAt);
+  if(reviewed>now||now-reviewed>30*60_000||drained>reviewed||now-drained<120_000)throw new JournalError('ORIGINAL_PRIMARY_ATTESTATION_EXPIRED');
+  const initial=ticket.initialControl;
+  if(initial.mode!=='quarantine'||initial.reason!=='unresolved_privacy_operation'||!initial.pending.length
+    ||new Set(initial.pending.map(p=>p.id)).size!==initial.pending.length
+    ||initial.pending.some(p=>Date.parse(p.started_at)>drained)
+    ||ticket.initialSql.generation!==initial.generation||ticket.initialSql.sequence!==initial.sequence
+    ||await sha256(JSON.stringify(initial))!==ticket.initialControlSha256)throw new JournalError('ORIGINAL_PRIMARY_TICKET_INVALID');
+  const current=await readJournalControl(store);
+  if(JSON.stringify(current.value)!==JSON.stringify(initial))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
+  const assertState=async()=>{
+    const state=await inspectOriginalPrimaryState(sql);
+    if(JSON.stringify(state.status)!==JSON.stringify(ticket.initialSql))throw new JournalError('ORIGINAL_PRIMARY_DATABASE_CHANGED');
+    if(state.capabilities.sha256!==ticket.capabilitiesSha256)throw new JournalError('ORIGINAL_PRIMARY_CAPABILITIES_CHANGED');
+    if(state.cleanupBlocked)throw new JournalError('RESTORE_CLEANUP_INCOMPLETE');
+    return state;
+  };
+  const before=await assertState();
+  // This first incident path accepts only an already-caught-up original. An
+  // uncheckpointed tail requires the separate recovery workflow, not a retry
+  // that loses its original control pin after publishing a new checkpoint.
+  const checkpoint=initial;
+  if(checkpoint.mode!==initial.mode||checkpoint.reason!==initial.reason||checkpoint.generation!==initial.generation
+    ||checkpoint.sequence!==ticket.initialSql.sequence||JSON.stringify(checkpoint.pending)!==JSON.stringify(initial.pending))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
+  // This candidate is never exposed to the runtime guard. The actual pending
+  // list remains intact until exact durable receipts and all release checks pass.
+  const reconciled:JournalControl={...checkpoint,pending:[]};
+  const verifyCandidate=async()=>{
+    const actual=await readJournalControl(store);
+    if(JSON.stringify(actual.value)!==JSON.stringify(checkpoint))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
+    return verifyJournalChain({
+      async get(key){return key==='control.json'?{etag:actual.etag,text:async()=>JSON.stringify(reconciled)}:store.get(key);},
+      async put(){throw new JournalError('ORIGINAL_PRIMARY_VERIFIER_READ_ONLY');},
+    });
+  };
+  await verifyCandidate();
+  const verifiedMedia=await verifyRestoredMedia(sql,verifyMedia);
+  await assertState();
+  const ticketHash=await sha256(JSON.stringify(ticket));
+  for(const intent of initial.pending){
+    const text=JSON.stringify({v:1,id:intent.id,generation:checkpoint.generation,sequence:checkpoint.sequence,head:checkpoint.head,
+      operator_verified_original:true,recovery_ticket_sha256:ticketHash,source:ticket.source,evidence_sha256:ticket.evidenceSha256,initial_control_sha256:ticket.initialControlSha256});
+    const key=`receipts/${intent.id}.json`,existing=await store.get(key);
+    if(existing){if(await existing.text()!==text)throw new JournalError('ORIGINAL_PRIMARY_RECEIPT_CONFLICT');}
+    else if(!await store.put(key,text,{onlyIf:{etagDoesNotMatch:'*'}}))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
+    const durable=await store.get(key);
+    if(!durable||await durable.text()!==text)throw new JournalError('INVALID_JOURNAL_RECEIPT');
+  }
+  await verifyCandidate();
+  const after=await assertState(),latest=await readJournalControl(store);
+  if(JSON.stringify(latest.value)!==JSON.stringify(checkpoint))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
+  const active:JournalControl={...reconciled,mode:'active',reason:null};
+  let published:Awaited<ReturnType<JournalStore['put']>>;
+  try{published=await store.put('control.json',JSON.stringify(active),{onlyIf:{etagMatches:latest.etag}});}
+  catch{throw new JournalError('ORIGINAL_PRIMARY_RELEASE_UNCONFIRMED');}
+  if(!published)throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
+  try{if(JSON.stringify((await readJournalControl(store)).value)!==JSON.stringify(active))throw new Error();}
+  catch{throw new JournalError('ORIGINAL_PRIMARY_RELEASE_UNCONFIRMED');}
+  return {recovered:true,sequence:active.sequence,resolvedIntents:initial.pending.length,verifiedMedia,
+    ticketSha256:ticketHash,initialControlSha256:ticket.initialControlSha256,finalControlSha256:await sha256(JSON.stringify(active)),
+    capabilitiesBefore:before.capabilities,capabilitiesAfter:after.capabilities};
 }

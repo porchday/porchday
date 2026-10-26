@@ -154,6 +154,23 @@ async function authorize(
           Math.floor(new Date(account.credentials_changed_at).getTime() / 1000))
     )
       reject("INVALID_LINK");
+    if (claims.updateTo !== undefined) {
+      // Better Auth rejects a change link opened in another account's session
+      // with a 302 error callback. Check before reserving the single-use token
+      // so that failed redirect cannot commit a consumed link. authorize runs
+      // again under the target identity lock before the handler is invoked.
+      const session = await createAuth(c.env, pool, undefined, true).api.getSession(
+        {
+          headers: request.headers,
+          query: { disableRefresh: true, disableCookieCache: true },
+        },
+      );
+      if (
+        session &&
+        (session.user.id !== account.id || session.user.email !== account.email)
+      )
+        reject("INVALID_USER", 403);
+    }
     const emailTokenHash = await hashToken(token);
     if (
       (
