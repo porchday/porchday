@@ -82,14 +82,16 @@ describe('Active stale-intent receipt reconciliation',()=>{
     const control=store.rows.get('control.json');vi.setSystemTime(start+120001);
     await expect(assertJournalReadable(store,db)).rejects.toThrow('INVALID_JOURNAL_RECEIPT');expect(store.rows.get('control.json')).toEqual(control);
   });
-  it('rejects a valid orphan/fork batch that was never on the current control chain',async()=>{
+  it.each(['current','older'])('rejects a valid %s orphan/fork checkpoint that was never on the control chain',async age=>{
     const {store,db}=await setup(),intent=await leaveDurableReceipt(store,db),control=(await readJournalControl(store)).value;
     const batch=JSON.parse(store.rows.get(control.head!.key)!.text);batch.events[0].id=randomUUID();
     const text=JSON.stringify(batch),hash=await sha256(text),key=`batches/${db.generation}/1-1-${hash}.json`;
     await store.put(key,text);const receiptKey=`receipts/${intent.id}.json`,receipt=store.rows.get(receiptKey)!;
     store.rows.set(receiptKey,{...receipt,text:JSON.stringify({...JSON.parse(receipt.text),head:{key,hash}})});
+    if(age==='older'){const next=await beginPrivacyIntent(store,db);db.append();await completePrivacyIntent(store,db,next);}
+    const before=(await readJournalControl(store)).value;
     vi.setSystemTime(start+120001);await expect(assertJournalReadable(store,db)).rejects.toThrow('INVALID_JOURNAL_RECEIPT');
-    expect((await readJournalControl(store)).value).toEqual(control);
+    expect((await readJournalControl(store)).value).toEqual(before);
   });
   it.each(['missing','tampered','range gap'])('refuses %s ancestry rather than trusting the receipt alone',async kind=>{
     const {store,db}=await setup();await leaveDurableReceipt(store,db);const control=(await readJournalControl(store)).value,row=store.rows.get(control.head!.key)!;
