@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {execFileSync} from 'node:child_process';
 import {restoreMediaSnapshot} from './restore-media.js';
 import {readRestorePrivate,writeRestorePrivate} from './restore-private-files.js';
-import {validateOriginalPrimaryConfiguration} from './original-primary-recovery-config.js';
+import {originalPrimaryRecoveryArguments,validateOriginalPrimaryConfiguration} from './original-primary-recovery-config.js';
 import {backupReaderFromEnvironment} from './r2-backup-reader.js';
 import {withOperatorR2} from './r2-operator-bridge.js';
 import {initializePrivacyJournal,checkpointJournal,quarantineJournal,readJournalControl,verifyJournalChain,type JournalDatabase,JournalError} from '../apps/api/src/privacy-journal.js';
@@ -26,11 +26,10 @@ try {
   const mediaBucket=['replay','restore-media','release','recover-original'].includes(command)?process.env.MEDIA_BUCKET:undefined;
   let recoveryTicket:OriginalPrimaryRecoveryTicket|undefined,recoveryTicketPath:string|undefined,recoveryResult:Awaited<ReturnType<typeof recoverOriginalPrimary>>|undefined;
   if(command==='recover-original'){
-    const args=process.argv.slice(3),tickets=args.filter(a=>a.startsWith('--ticket=')),evidence=args.filter(a=>a.startsWith('--evidence='));
-    if(args.length!==3||!args.includes('--run')||tickets.length!==1||evidence.length!==1)throw Error('ORIGINAL_PRIMARY_EXPLICIT_ARGUMENTS_REQUIRED');
-    recoveryTicketPath=tickets[0].slice(9);
-    const external=await readRestorePrivate(evidence[0].slice(11));
-    recoveryTicket=await validateOriginalPrimaryConfiguration({ticket:await readRestorePrivate(recoveryTicketPath),evidence:external,
+    const args=originalPrimaryRecoveryArguments(process.argv.slice(3));
+    recoveryTicketPath=args.ticketPath;
+    const external=await readRestorePrivate(args.evidencePath);
+    recoveryTicket=await validateOriginalPrimaryConfiguration({ticket:await readRestorePrivate(recoveryTicketPath),environment:args.environment,evidence:external,
       resources:JSON.parse(await readFile(new URL('../infra/resources.json',import.meta.url),'utf8')),account:process.env.CLOUDFLARE_ACCOUNT_ID,
       bucket,mediaBucket,databaseUrl:process.env.ORIGINAL_DATABASE_MIGRATION_URL,pgLocal:process.env.PG_LOCAL,
       head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),trackedChanges:execFileSync('git',['status','--porcelain','--untracked-files=no'],{encoding:'utf8'})});

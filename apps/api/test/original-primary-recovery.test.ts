@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {initializePrivacyJournal,readJournalControl,checkpointJournal,sha256,assertJournalReadable,type JournalStore,type JournalDatabase} from '../src/privacy-journal';
 import {recoverOriginalPrimary,inspectOriginalPrimaryState,originalPrimaryRecoveryTicketSchema,type OriginalPrimaryRecoveryTicket} from '../src/restore-journal';
-import {validateOriginalPrimaryConfiguration} from '../../../scripts/original-primary-recovery-config';
+import {originalPrimaryRecoveryArguments,validateOriginalPrimaryConfiguration} from '../../../scripts/original-primary-recovery-config';
 
 class MemoryStore implements JournalStore{
  rows=new Map<string,{etag:string;text:string}>();serial=0;failCas=false;loseCasResponse=false;failReadAfterActive=false;onReceipt?:()=>void;
@@ -22,26 +22,39 @@ class MemoryStore implements JournalStore{
 }
 
 const source={organization:'andykonwinski',name:'porchday-staging',branch:'main' as const,branchId:'oha68ugb1ahm',reviewedCommit:'a'.repeat(40)};
+const sourceFor=(environment:'staging'|'production')=>environment==='staging'?source:{...source,name:'porchday-production',branchId:'synthetic-production-branch'};
 const evidence={providerBranchReviewed:true,noRestore:true,writersDrained:true};
 function testDatabaseUrl(branch=source.branchId,hostname='sample.pg.psdb.cloud'){
  const url=new URL('postgres://sample.pg.psdb.cloud:5432/postgres');url.username='operator.'+branch;url.password='synthetic';url.hostname=hostname;return url.href;
 }
-async function makeTicket(control:any,status:any,capabilitiesSha256:string):Promise<OriginalPrimaryRecoveryTicket>{
- return originalPrimaryRecoveryTicketSchema.parse({v:1,kind:'porchday-original-primary-recovery',id:randomUUID(),environment:'staging',source,
-  journalBucket:'porchday-staging-recovery-journal',mediaBucket:'porchday-staging-media',reviewedAt:new Date().toISOString(),writersDrainedAt:new Date(Date.now()-180_000).toISOString(),
+async function makeTicket(control:any,status:any,capabilitiesSha256:string,environment:'staging'|'production'='staging'):Promise<OriginalPrimaryRecoveryTicket>{
+ return originalPrimaryRecoveryTicketSchema.parse({v:1,kind:'porchday-original-primary-recovery',id:randomUUID(),environment,source:sourceFor(environment),
+  journalBucket:'porchday-'+environment+'-recovery-journal',mediaBucket:'porchday-'+environment+'-media',reviewedAt:new Date().toISOString(),writersDrainedAt:new Date(Date.now()-180_000).toISOString(),
   unrestoredPrimaryConfirmed:true,noRestoreOrRoutingChangeConfirmed:true,writersDrained:true,evidenceSha256:await sha256(JSON.stringify(evidence)),
   initialControl:control,initialControlSha256:await sha256(JSON.stringify(control)),initialSql:status,capabilitiesSha256});
 }
 
 describe('Original-primary operator configuration',()=>{
- it('requires exact staged source, verified TLS, reviewed clean checkout and evidence',async()=>{
+ it('requires an explicit single environment with the run, ticket and evidence arguments',()=>{
+  const common=['--run','--ticket=private-ticket.json','--evidence=private-evidence.json'];
+  for(const environment of ['staging','production'])expect(originalPrimaryRecoveryArguments([...common,'--environment='+environment])).toEqual({environment,ticketPath:'private-ticket.json',evidencePath:'private-evidence.json'});
+  for(const args of [common,[...common,'--environment='],[...common,'--environment=preview'],[...common,'--environment=production','--environment=staging'],
+   ['--ticket=private-ticket.json','--evidence=private-evidence.json','--environment=production'],[...common,'--environment=production','--unexpected'],
+   ['--run','--ticket=','--evidence=private-evidence.json','--environment=production'],['--run','--ticket=private-ticket.json','--evidence=','--environment=production']])expect(()=>originalPrimaryRecoveryArguments(args)).toThrow('ORIGINAL_PRIMARY_EXPLICIT_ARGUMENTS_REQUIRED');
+ });
+ it.each(['staging','production'] as const)('requires exact %s source, verified TLS, reviewed clean checkout and evidence',async(environment)=>{
+  const source=sourceFor(environment),other=environment==='staging'?'production':'staging';
   const generation=randomUUID(),control={v:1,generation,mode:'quarantine',sequence:'1',head:null,pending:[{id:randomUUID(),started_at:new Date(Date.now()-300_000).toISOString()}],reason:'unresolved_privacy_operation'};
-  const ticket=await makeTicket(control,{generation,sequence:'1',quarantined:false},'0'.repeat(64));
-  const input={ticket,evidence,resources:{account_id:'account',environments:{staging:{database:{organization:source.organization,name:source.name,branch:'main',branch_id:source.branchId},recovery_journal_bucket:ticket.journalBucket,bucket:ticket.mediaBucket}}},account:'account',bucket:ticket.journalBucket,mediaBucket:ticket.mediaBucket,databaseUrl:testDatabaseUrl(),head:source.reviewedCommit,trackedChanges:''};
+  const ticket=await makeTicket(control,{generation,sequence:'1',quarantined:false},'0'.repeat(64),environment);
+  const environments=Object.fromEntries((['staging','production'] as const).map(name=>{const source=sourceFor(name);return [name,{database:{organization:source.organization,name:source.name,branch:'main',branch_id:source.branchId},recovery_journal_bucket:'porchday-'+name+'-recovery-journal',bucket:'porchday-'+name+'-media'}];}));
+  const input={ticket,environment,evidence,resources:{account_id:'account',environments},account:'account',bucket:ticket.journalBucket,mediaBucket:ticket.mediaBucket,databaseUrl:testDatabaseUrl(source.branchId),head:source.reviewedCommit,trackedChanges:''};
   expect(await validateOriginalPrimaryConfiguration(input)).toEqual(ticket);
   for(const patch of [{account:'other'},{bucket:'production'},{mediaBucket:ticket.journalBucket},{head:'b'.repeat(40)},{trackedChanges:' M scripts/restore-safety.ts'},{pgLocal:'true'},{evidence:{changed:true}},
    {databaseUrl:testDatabaseUrl('other')},{databaseUrl:testDatabaseUrl(source.branchId,'localhost')},
-   {ticket:{...ticket,source:{...source,branchId:'other'}}},{ticket:{...ticket,environment:'production'}}])await expect(validateOriginalPrimaryConfiguration({...input,...patch})).rejects.toThrow();
+   {ticket:{...ticket,source:{...source,branchId:'other'}}},{ticket:{...ticket,environment:other}},{environment:other},{environment:''},
+   {resources:{account_id:'account',environments:{[other]:environments[other]}}},
+   {bucket:environments[other].recovery_journal_bucket},{mediaBucket:environments[other].bucket},{databaseUrl:testDatabaseUrl(sourceFor(other).branchId)},
+   {ticket:{...ticket,source:sourceFor(other)}}])await expect(validateOriginalPrimaryConfiguration({...input,...patch})).rejects.toThrow();
  });
 });
 
@@ -81,8 +94,9 @@ suite('Original-primary incident recovery against real PostgreSQL',()=>{
  });
  const verifyMedia=async(item:{key:string;sha256:string;byteSize:number})=>{expect(item).toEqual({key:mediaKey,sha256:mediaDigest,byteSize:25});};
  const mode=()=>JSON.parse(store.rows.get('control.json')!.text).mode;
- it('preserves existing member/session/email/integration/staff rows and verifies actual media metadata before reopening',async()=>{
+ it.each(['staging','production'] as const)('preserves existing member/session/email/integration/staff rows and actual media metadata for a %s ticket',async(environment)=>{
   const before=await inspectOriginalPrimaryState(sql);expect(before.cleanupBlocked).toBe(false);
+  ticket=await makeTicket((await readJournalControl(store)).value,before.status,before.capabilities.sha256,environment);
   const result=await recoverOriginalPrimary(store,sql,ticket,verifyMedia);
   expect(result).toMatchObject({recovered:true,resolvedIntents:1,verifiedMedia:1});
   expect(result.capabilitiesBefore).toEqual(result.capabilitiesAfter);expect(await inspectOriginalPrimaryState(sql)).toEqual(before);

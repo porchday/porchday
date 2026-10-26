@@ -134,7 +134,7 @@ const originalStatus=z.object({generation:z.uuid(),sequence:z.string().regex(/^(
 const observedStatus=originalStatus.extend({quarantined:z.boolean()});
 /** An operator attestation is evidence to review, never a runtime auto-repair flag. */
 export const originalPrimaryRecoveryTicketSchema=z.object({
-  v:z.literal(1),kind:z.literal('porchday-original-primary-recovery'),id:z.uuid(),environment:z.literal('staging'),
+  v:z.literal(1),kind:z.literal('porchday-original-primary-recovery'),id:z.uuid(),environment:z.enum(['staging','production']),
   source:z.object({organization:z.string().min(1),name:z.string().min(1),branch:z.literal('main'),branchId:z.string().min(1),reviewedCommit:z.string().regex(/^[a-f0-9]{40}$/)}).strict(),
   journalBucket:z.string().min(1),mediaBucket:z.string().min(1),reviewedAt:z.iso.datetime(),writersDrainedAt:z.iso.datetime(),
   unrestoredPrimaryConfirmed:z.literal(true),noRestoreOrRoutingChangeConfirmed:z.literal(true),writersDrained:z.literal(true),
