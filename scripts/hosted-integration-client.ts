@@ -173,7 +173,7 @@ try {
   await page.getByLabel('Encryption recovery secret', { exact: true }).fill(a.device.keys.recoverySecret);
   await page.getByRole('checkbox', { name: /Remember this private device/ }).check();
   await page.getByRole('button', { name: 'Unlock', exact: true }).click();
-  await page.getByText('FROM YOUR PEOPLE', { exact: true }).waitFor({ timeout: 90000 });
+  await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({ timeout: 90000 });
   ensure(baselineDevices === digest(devices(await memberAPI('/api/v1/devices'))), 'DEVICE_SET_CHANGED');
   progress('register-ui'); await page.goto(stagingOrigin + '/app/settings/data');
   await page.getByRole('button', { name: 'Register a tool you’re building', exact: true }).click();

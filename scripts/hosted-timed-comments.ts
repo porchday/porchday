@@ -207,7 +207,7 @@ try {
   await page.getByLabel('Encryption recovery secret', { exact: true }).fill(a.device.keys.recoverySecret);
   await page.getByRole('checkbox', { name: /Remember this private device/ }).check();
   await page.getByRole('button', { name: 'Unlock', exact: true }).click();
-  await page.getByText('FROM YOUR PEOPLE', { exact: true }).waitFor({ timeout: 90000 });
+  await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({ timeout: 90000 });
   check(baselineDevices === deviceDigest(await api('/api/v1/devices')), 'DEVICE_SET_CHANGED');
   progress('create-private-timed-post'); const composer = page.locator('form.composer');
   await composer.getByLabel('Write a post', { exact: true }).fill(postText);

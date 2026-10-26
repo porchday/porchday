@@ -136,7 +136,7 @@ try{
  await page.getByRole('heading',{name:'Unlock this device',exact:true}).waitFor();
  await page.getByLabel('Encryption recovery secret',{exact:true}).fill(a.device.keys.recoverySecret);
  await page.getByRole('checkbox',{name:/Remember this private device/}).check();await page.getByRole('button',{name:'Unlock'}).click();
- await page.getByText('FROM YOUR PEOPLE',{exact:true}).waitFor({timeout:90000});
+ await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({timeout:90000});
  check(baselineDevices===digest(JSON.stringify(list(await api('/api/v1/devices')).map(d=>[d.id,d.fingerprint,d.revoked_at]).sort())),'ARCHIVE_ENROLLED_EXTRA_DEVICE');
  progress('original-photo');await page.goto(stagingOrigin+'/app/post/'+state.interop.webPostId);
  progress('original-photo-text');await page.getByText(state.interop.expectedPostText,{exact:true}).waitFor({timeout:60000});await knownPhoto();

@@ -115,7 +115,7 @@ try{
  progress('local-verification');const verification=await destination.verification();await targetPage.goto(verification);check(new URL(targetPage.url()).origin===destination.origin,'LOCAL_VERIFICATION_REDIRECTED');
  await login(targetPage,destination.origin,destination.email,destination.password);targetCookie=(await target.cookies(destination.origin)).map(c=>`${c.name}=${c.value}`).join('; ');
  const me=await targetAPI('/api/v1/me');member=me.id;check(me.handle===destination.handle&&me.status==='active'&&me.connection_count===0,'FRESH_DESTINATION_REQUIRED');
- progress('local-key-setup');await targetPage.getByRole('button',{name:'Create my private keys',exact:false}).click();await targetPage.getByRole('heading',{name:'Keep this somewhere safe.',exact:true}).waitFor();
+ progress('local-key-setup');await targetPage.getByRole('button',{name:'Create my private keys',exact:false}).click();await targetPage.getByRole('heading',{name:'Save your recovery secret',exact:true}).waitFor();
  targetSecret=(await targetPage.locator('.secret-box code').textContent())!.trim();check(targetSecret.length>20,'DESTINATION_SECRET_REQUIRED');
  await targetPage.getByRole('checkbox',{name:/I saved my secret/}).check();await targetPage.getByRole('checkbox',{name:/Remember keys on this private device/}).check();await targetPage.getByRole('button',{name:'Continue',exact:true}).click();
  await targetPage.locator('.feed-heading').getByText('Posts',{exact:true}).waitFor({timeout:90000});await Promise.all(tasks);check(!observerFailure&&!uncertain,'LOCAL_ONBOARDING_UNCONFIRMED');

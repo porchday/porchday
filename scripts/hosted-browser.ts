@@ -64,7 +64,7 @@ try {
   await page.getByLabel('Encryption recovery secret', { exact: true }).fill(a.device.keys.recoverySecret);
   await page.getByRole('checkbox', { name: /Remember this private device/ }).check();
   await page.getByRole('button', { name: 'Unlock' }).click();
-  await page.getByText('FROM YOUR PEOPLE', { exact: true }).waitFor({ timeout: 90_000 });
+  await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({ timeout: 90_000 });
   await page.getByRole('button', { name: 'Newest first', exact: true }).waitFor();
   observed.defaultHome = new URL(page.url()).pathname === '/app';
   observed.historyVisible = false;
@@ -101,7 +101,7 @@ try {
   progress('cache-and-offline');
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
   await page.reload();
-  await page.getByText('FROM YOUR PEOPLE', { exact: true }).waitFor({ timeout: 60_000 });
+  await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({ timeout: 60_000 });
   check(await page.evaluate(() => !!navigator.serviceWorker.controller), 'SERVICE_WORKER_NOT_CONTROLLING');
   const cache = await page.evaluate(async () => {
     const names = await caches.keys();
@@ -117,11 +117,11 @@ try {
   await context.setOffline(true);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: 'You’re offline', exact: true }).waitFor();
-  check(await page.getByText('FROM YOUR PEOPLE', { exact: true }).count() === 0, 'OFFLINE_PRIVATE_FEED_VISIBLE');
+  check(await page.locator('.feed-heading').getByText('Posts', { exact: true }).count() === 0, 'OFFLINE_PRIVATE_FEED_VISIBLE');
   observed.authenticatedColdOfflinePrivateContentAbsent = true;
   await context.setOffline(false);
   await page.reload();
-  await page.getByText('FROM YOUR PEOPLE', { exact: true }).waitFor({ timeout: 60_000 });
+  await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({ timeout: 60_000 });
   progress('signout');
   await page.getByRole('button', { name: 'Sign out', exact: true }).filter({ visible: true }).click();
   await page.waitForURL(stagingOrigin + '/login');
@@ -146,7 +146,7 @@ try {
   check(remaining === 0, 'SIGNOUT_RETAINED_KEYS');
   await page.goto(stagingOrigin + '/app');
   await page.getByRole('button', { name: 'Log in', exact: true }).waitFor();
-  check(await page.getByText('FROM YOUR PEOPLE', { exact: true }).count() === 0, 'SIGNOUT_PRIVATE_FEED_VISIBLE');
+  check(await page.locator('.feed-heading').getByText('Posts', { exact: true }).count() === 0, 'SIGNOUT_PRIVATE_FEED_VISIBLE');
   await context.setOffline(true);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByRole('heading', { name: 'You’re offline', exact: true }).waitFor();
