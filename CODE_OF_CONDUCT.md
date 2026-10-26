@@ -12,7 +12,7 @@ Protect privacy. Do not disclose another person's contact details, private conve
 
 ## Reporting and current contact limitation
 
-The repository is currently private. Collaborators who already have an established private project contact with the repository owner, [@bobbyhwilder](https://github.com/bobbyhwilder), should use that channel to request a confidential conduct review. Share only the information needed: what happened, relevant links or dates, and any immediate concern. Avoid posting sensitive details in an issue visible to all collaborators.
+The repository is currently private and owned on GitHub by [@andyk](https://github.com/andyk); this does not designate a conduct-reporting contact. Collaborators who already have an established private project contact should use that channel to request a confidential conduct review and confirm the responsible maintainer. Share only the information needed: what happened, relevant links or dates, and any immediate concern. Avoid posting sensitive details in an issue visible to all collaborators.
 
 The profile link identifies the repository owner; it is not a private messaging endpoint. A dedicated conduct-reporting contact and an independent alternate for concerns involving the owner have **not been established in this repository**. Do not assume an unlisted email address exists. Before opening community participation or admitting real members, the owner must designate those contacts, confirm that they accept reports, and publish the usable instructions here. Until an independent alternate exists, the project cannot promise an independent review of reports involving the owner.
 

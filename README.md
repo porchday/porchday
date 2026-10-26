@@ -8,6 +8,8 @@ Porchday is under active development. The repository is private during developme
 
 See the [contribution guide](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [changelog](CHANGELOG.md), [security-reporting policy](SECURITY.md), and [name/branding statement](TRADEMARKS.md). Public reporting contacts and branding-rights ownership remain explicit launch gates; these files do not announce public source availability or a staffed response service.
 
+Track bugs and planned work in [GitHub Issues](https://github.com/andyk/porchday/issues). Priorities use `P1`–`P3`; `deferred` marks future features, and `needs verification` marks delivered changes awaiting acceptance. See [the issue-tracking workflow](AGENTS.md).
+
 ## Architecture
 
 - React + TypeScript PWA, Cloudflare Worker API/static assets.
@@ -47,8 +49,8 @@ The web build gives install icons content-based URLs while preserving the PWA id
 | Staging web app and PWA | [staging.porchday.com](https://staging.porchday.com); invited signup is enabled for owner development. |
 | Status | [Production](https://status.porchday.com) and [staging](https://staging-status.porchday.com). These monitors share Cloudflare's platform. |
 | Staff account recovery | `/staff` on the corresponding app hostname; personal Access login, MFA and an assigned application role are required. |
-| Native iOS simulator | [Native CI](https://github.com/bobbyhwilder/porchday/actions/workflows/ios.yml) supplies the tested simulator archive and screenshot. For local builds, use `apps/ios/build-native.sh` with full Xcode, an installed iOS Simulator runtime, Go and XcodeGen. |
-| Source | [Private GitHub repository](https://github.com/bobbyhwilder/porchday), Apache-2.0 licensed. Publishing it remains an owner decision. |
+| Native iOS simulator | [Native CI](https://github.com/andyk/porchday/actions/workflows/ios.yml) supplies the tested simulator archive and screenshot. For local builds, use `apps/ios/build-native.sh` with full Xcode, an installed iOS Simulator runtime, Go and XcodeGen. |
+| Source | [Private GitHub repository](https://github.com/andyk/porchday), Apache-2.0 licensed. Publishing it remains an owner decision. |
 
 Start with the current deployment and open acceptance items in [build status](docs/build-status.md). A public `/health` response establishes basic availability only; the private operations check and monitor also evaluate cleanup, backups, email and review queues. A green status does not prove inbox delivery or pilot capacity.
 

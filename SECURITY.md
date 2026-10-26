@@ -6,7 +6,7 @@ Porchday is an unreleased project in a private repository. No stable release or 
 
 Do not disclose a suspected vulnerability in an ordinary issue, pull request, public discussion or screenshot. Repository issues are visible to every collaborator with the relevant access, even while the repository is private.
 
-Current collaborators who already have an established private project contact with the repository owner, [@bobbyhwilder](https://github.com/bobbyhwilder), should use that contact to request a restricted security-reporting channel. Start with a short description of the affected component and impact; share reproduction details only after the recipient and channel are confirmed. The profile link identifies the owner and is **not** a GitHub private-message endpoint.
+The GitHub repository is owned by [@andyk](https://github.com/andyk); this does not designate a security-reporting contact. Current collaborators who already have an established private project contact should use it to request a restricted security-reporting channel and confirm the responsible maintainer. Start with a short description of the affected component and impact; share reproduction details only after the recipient and channel are confirmed. The profile link identifies the repository owner and is **not** a GitHub private-message endpoint.
 
 There is currently **no dedicated public security inbox or independently verified private reporting endpoint documented for Porchday**. If you do not already have a private contact, this file does not provide a working substitute. Do not guess an email address or send vulnerability details to a general-purpose public channel.
 

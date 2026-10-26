@@ -1,6 +1,6 @@
 # Porchday name and branding
 
-Porchday is the working project and service name; `porchday.com` is the selected service domain. The repository is currently administered by [@bobbyhwilder](https://github.com/bobbyhwilder). Repository administration and domain selection do not establish trademark ownership, registration or nonprofit legal status.
+Porchday is the working project and service name; `porchday.com` is the selected service domain. The repository is currently owned on GitHub by [@andyk](https://github.com/andyk). Repository administration and domain selection do not establish trademark ownership, registration or nonprofit legal status.
 
 ## Separate from the code license
 

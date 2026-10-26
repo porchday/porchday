@@ -1,16 +1,16 @@
 # Contributing to Porchday
 
-Porchday is under active development in the private [`bobbyhwilder/porchday`](https://github.com/bobbyhwilder/porchday) repository. These instructions apply to collaborators who already have access. Public source publication is a separate owner decision; the Apache-2.0 license does not make this private repository publicly accessible.
+Porchday is under active development in the private [`andyk/porchday`](https://github.com/andyk/porchday) repository. These instructions apply to collaborators who already have access. Public source publication is a separate owner decision; the Apache-2.0 license does not make this private repository publicly accessible.
 
 Read the [design](design/social-network-design.md) for intended behavior and the [implementation record](docs/build-status.md) for what has actually been verified. The intended operator is a philanthropy-funded nonprofit; this repository does not establish that legal status.
 
 ## Proposing a change
 
-Use an issue or pull request in the private repository for ordinary bugs and changes. Describe the affected flow, expected behavior, a minimal reproduction using synthetic data, and relevant versions. Discuss changes to the encryption protocol, access rules, data lifecycle or product scope with the maintainer before implementing them. Send suspected vulnerabilities through the process in [SECURITY.md](SECURITY.md), not an ordinary issue or pull request.
+Use [GitHub Issues](https://github.com/andyk/porchday/issues) or a pull request in the private repository for ordinary bugs and changes. Search for an existing issue first. Describe the affected flow, expected behavior, a minimal reproduction using synthetic data, and relevant versions. Follow the [issue-tracking workflow](AGENTS.md), including keeping delivered changes open when acceptance remains unverified. Discuss changes to the encryption protocol, access rules, data lifecycle or product scope with the maintainer before implementing them. Send suspected vulnerabilities through the process in [SECURITY.md](SECURITY.md), not an ordinary issue or pull request.
 
 Preserve the product commitments: a chronological friends feed, a maximum of 300 mutually accepted connections including family, no ads or influencer mechanics, human-operated member accounts, and practical data export/deletion. Changes must preserve audience restrictions, inherited expiry, recovery safeguards and client-side content encryption. The design is the source of detail; do not weaken a safeguard just to make a test pass.
 
-Follow the [code of conduct](CODE_OF_CONDUCT.md). The current repository owner, [@bobbyhwilder](https://github.com/bobbyhwilder), controls collaborator access and release decisions. This identifies repository administration, not a legal nonprofit or trademark owner.
+Follow the [code of conduct](CODE_OF_CONDUCT.md). The current repository owner, [@andyk](https://github.com/andyk), controls collaborator access and release decisions. This identifies repository administration, not a legal nonprofit or trademark owner.
 
 ## Local development
 
