@@ -37,6 +37,8 @@ The [operations guide](docs/operations.md) links the admission and deployment pr
 
 The shared corn logo source is `apps/web/public/icon.svg`. After editing it, run `node apps/web/scripts/generate-icons.mjs` with the project's Playwright Chromium installed. This regenerates the transparent orange website mark (`logo.svg`), web/PWA PNGs, iOS app icon and native in-app mark from the same vector; inspect the generated assets before committing them.
 
+The web build gives install icons content-based URLs while preserving the PWA identity and existing image aliases. Chrome may require approval for an installed app's changed icon: apply Porchday's **Update now** if offered, close and reopen the installed app, then use its **⋮ → Review app update** when offered. Do not clear site data or reinstall to refresh artwork. See [Chrome's installed-app update behavior](https://developer.chrome.com/blog/improvements-to-web-app-updates).
+
 ## Operator handoff
 
 | Surface | Address / starting point |
