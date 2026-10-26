@@ -898,7 +898,7 @@ export function Wall({ id }: { id?: string }) {
           )}
           {profile?.status && <span>{profile.status}</span>}
         </div>
-        <div className="wall-profile">
+        <div className="wall-profile" style={{flexWrap:"wrap"}}>
           {profile?.avatar ? (
             <span className="avatar large profile-avatar-photo">
               <EncryptedPhoto media={profile.avatar as MediaPayload} />
@@ -910,7 +910,7 @@ export function Wall({ id }: { id?: string }) {
               theme={theme}
             />
           )}
-          <div>
+          <div style={{flex:"1 1 12rem",minWidth:0,overflowWrap:"anywhere"}}>
             <h1>{profile?.displayName || `@${handle || "Member"}`}</h1>
             <p>@{handle || "private"}</p>
           </div>

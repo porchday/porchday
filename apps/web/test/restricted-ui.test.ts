@@ -4,7 +4,10 @@ import { createElement } from "react";
 vi.mock("../src/vault", () => ({
   useVault: () => ({
     member: { id: "member", handle: "reader", status: "restricted" },
+    device: { id: "device", member_id: "member" },
     devices: [],
+    profileVersion: 0,
+    notifyProfileChanged() {},
   }),
 }));
 import { Composer, Reactions } from "../src/Social";
