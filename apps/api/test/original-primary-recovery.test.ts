@@ -89,6 +89,7 @@ suite('Original-primary incident recovery against real PostgreSQL',()=>{
   await sql`select app.append_safety_decision(${sql.json({action:'test_original_primary'})})`;
   store=new MemoryStore();await initializePrivacyJournal(store,db);
   const control=(await readJournalControl(store)).value;control.reason='unresolved_privacy_operation';control.pending=[{id:randomUUID(),started_at:new Date(Date.now()-300_000).toISOString()}];
+  await store.put('intents/'+control.pending[0].id+'.json',JSON.stringify({v:1,...control.pending[0]}));
   await store.put('control.json',JSON.stringify(control));const state=await inspectOriginalPrimaryState(sql);
   ticket=await makeTicket(control,state.status,state.capabilities.sha256);
  });
@@ -103,6 +104,27 @@ suite('Original-primary incident recovery against real PostgreSQL',()=>{
   expect(before.capabilities.tables.find(row=>row.table==='public.auth_session')?.count).toBe(1);expect(before.capabilities.tables.find(row=>row.table==='app.integration_grants')?.count).toBe(1);
   expect((await readJournalControl(store)).value.pending).toEqual([]);await expect(assertJournalReadable(store,db)).resolves.toBeDefined();
   const receipt=JSON.parse(store.rows.get('receipts/'+ticket.initialControl.pending[0].id+'.json')!.text);expect(receipt).toMatchObject({operator_verified_original:true,recovery_ticket_sha256:result.ticketSha256,source:ticket.source});
+ });
+ it('preserves an existing ordinary durable receipt byte-for-byte and recovers with SQL writes prohibited',async()=>{
+  const control=ticket.initialControl,intent=control.pending[0],key='receipts/'+intent.id+'.json';
+  const text=JSON.stringify({v:1,id:intent.id,generation:control.generation,sequence:control.sequence,head:control.head},null,2)+'\n';
+  await store.put(key,text);const original=store.rows.get(key),before=await inspectOriginalPrimaryState(sql);
+  await sql`set default_transaction_read_only=on`;
+  try{
+   expect((await recoverOriginalPrimary(store,sql,ticket,verifyMedia)).recovered).toBe(true);
+   expect(await inspectOriginalPrimaryState(sql)).toEqual(before);expect(store.rows.get(key)).toEqual(original);
+   expect(JSON.parse(store.rows.get(key)!.text)).not.toHaveProperty('operator_verified_original');
+  }finally{await sql`set default_transaction_read_only=off`;}
+ });
+ it('rejects an invalid existing ordinary receipt without changing SQL, receipt bytes, or quarantine',async()=>{
+  const control=ticket.initialControl,intent=control.pending[0],key='receipts/'+intent.id+'.json';
+  await store.put(key,JSON.stringify({v:1,id:intent.id,generation:randomUUID(),sequence:control.sequence,head:control.head}));
+  const original=store.rows.get(key),before=await inspectOriginalPrimaryState(sql);
+  await sql`set default_transaction_read_only=on`;
+  try{
+   await expect(recoverOriginalPrimary(store,sql,ticket,verifyMedia)).rejects.toThrow('INVALID_JOURNAL_RECEIPT');
+   expect(await inspectOriginalPrimaryState(sql)).toEqual(before);expect(store.rows.get(key)).toEqual(original);expect((await readJournalControl(store)).value).toEqual(control);
+  }finally{await sql`set default_transaction_read_only=off`;}
  });
  it('refuses wrong reason, local quarantine, database tail and stale/incomplete operator evidence',async()=>{
   for(const bad of [

@@ -1,6 +1,6 @@
 import type {Sql} from 'postgres';
 import {z} from 'zod';
-import {JournalError,readJournalControl,verifyJournalChain,controlSchema,sha256,type JournalStore,type JournalControl} from './privacy-journal.js';
+import {JournalError,readJournalControl,verifyJournalChain,provePrivacyReceipts,controlSchema,sha256,type JournalStore,type JournalControl} from './privacy-journal.js';
 
 /** Privileged operator code, never mounted in the member or staff HTTP API. */
 export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedia:(key:string)=>Promise<void>) {
@@ -215,10 +215,22 @@ export async function recoverOriginalPrimary(store:JournalStore,sql:Sql,untruste
   await assertState();
   const ticketHash=await sha256(JSON.stringify(ticket));
   for(const intent of initial.pending){
-    const text=JSON.stringify({v:1,id:intent.id,generation:checkpoint.generation,sequence:checkpoint.sequence,head:checkpoint.head,
+    let text=JSON.stringify({v:1,id:intent.id,generation:checkpoint.generation,sequence:checkpoint.sequence,head:checkpoint.head,
       operator_verified_original:true,recovery_ticket_sha256:ticketHash,source:ticket.source,evidence_sha256:ticket.evidenceSha256,initial_control_sha256:ticket.initialControlSha256});
     const key=`receipts/${intent.id}.json`,existing=await store.get(key);
-    if(existing){if(await existing.text()!==text)throw new JournalError('ORIGINAL_PRIMARY_RECEIPT_CONFLICT');}
+    if(existing){
+      const original=await existing.text();
+      if(original!==text){
+        // The ordinary operation may have durably completed and only lost its
+        // final pending-list update. Preserve that original receipt byte for
+        // byte after proving its intent and ancestry; never relabel it as a
+        // newly attested operation or accept another operator ticket's receipt.
+        let value:unknown;try{value=JSON.parse(original);}catch{throw new JournalError('INVALID_JOURNAL_RECEIPT');}
+        if(value&&typeof value==='object'&&'operator_verified_original' in value)throw new JournalError('ORIGINAL_PRIMARY_RECEIPT_CONFLICT');
+        if(!(await provePrivacyReceipts(store,checkpoint,[intent])).has(intent.id))throw new JournalError('ORIGINAL_PRIMARY_RECEIPT_CONFLICT');
+        text=original;
+      }
+    }
     else if(!await store.put(key,text,{onlyIf:{etagDoesNotMatch:'*'}}))throw new JournalError('RESTORE_CHECKPOINT_CHANGED');
     const durable=await store.get(key);
     if(!durable||await durable.text()!==text)throw new JournalError('INVALID_JOURNAL_RECEIPT');

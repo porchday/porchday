@@ -20,6 +20,8 @@ export type JournalControl = z.infer<typeof controlSchema>;
 export const eventSchema = z.object({sequence, id: z.uuid(), occurred_at: z.string(), decision: z.record(z.string(), z.unknown())}).strict();
 export type JournalEvent = z.infer<typeof eventSchema>;
 const batchSchema = z.object({v: z.literal(1), generation: z.uuid(), from: sequence, to: sequence, previous: pointer.nullable(), events: z.array(eventSchema).min(1).max(500)}).strict();
+const receiptSchema=z.object({v:z.literal(1),id:z.uuid(),generation:z.uuid(),sequence,head:pointer.nullable()}).strict();
+const intentSchema=z.object({v:z.literal(1),id:z.uuid(),started_at:z.string().datetime()}).strict();
 export interface JournalDatabase {
   status(): Promise<{generation: string; sequence: string; quarantined: boolean}>;
   page(after: string): Promise<JournalEvent[]>;
@@ -59,14 +61,13 @@ export async function assertJournalReadable(store: JournalStore, db: JournalData
   let [remote, local] = await Promise.all([readJournalControl(store), readJournalStatus(db)]);
   for(let attempt=0;attempt<2;attempt++){
     if (remote.value.mode !== 'active' || local.quarantined) stop('RESTORE_QUARANTINED');
-    // Fresh in-flight privacy operations do not stop ordinary member reads.
-    // A crashed operation must fail closed even if the scheduled job is delayed.
-    if (remote.value.pending.some(p=>Date.now()-Date.parse(p.started_at)>120_000)) {
-      await quarantineJournal(store,'unresolved_privacy_operation');
-      stop('RESTORE_QUARANTINED');
-    }
     if (remote.value.generation !== local.generation) stop('DATABASE_ROLLBACK_DETECTED');
-    if (BigInt(local.sequence) >= BigInt(remote.value.sequence)) return remote;
+    if (BigInt(local.sequence) >= BigInt(remote.value.sequence)) {
+      // A durable receipt can outlive a failed final pending-list CAS. Finish
+      // only that bookkeeping before deciding a stale operation is unresolved.
+      if(remote.value.pending.some(p=>Date.now()-Date.parse(p.started_at)>120_000))return reconcileStalePrivacyReceipts(store,db,remote);
+      return remote;
+    }
     if(attempt===1)stop('DATABASE_ROLLBACK_DETECTED');
     // A concurrent commit/checkpoint can advance R2 after the parallel SQL
     // snapshot. Recheck once in order, so SQL observes at least the committed
@@ -75,6 +76,87 @@ export async function assertJournalReadable(store: JournalStore, db: JournalData
     local=await readJournalStatus(db);
   }
   return stop('DATABASE_ROLLBACK_DETECTED');
+}
+
+type ReceiptProofBudget={remaining:number};
+const receiptProofBudget=():ReceiptProofBudget=>({remaining:1024});
+async function proofRead(store:JournalStore,key:string,budget:ReceiptProofBudget){
+  if(--budget.remaining<0)stop('JOURNAL_RECEIPT_PROOF_LIMIT');
+  try{return await store.get(key);}catch{return stop('JOURNAL_STORE_READ_FAILED');}
+}
+async function proofText(object:{text():Promise<string>}){
+  try{return await object.text();}catch{return stop('JOURNAL_STORE_READ_FAILED');}
+}
+/** Read-only proof shared by active bookkeeping and the attested operator path.
+ * A receipt must name an actual checkpoint on this exact control's immutable
+ * ancestry. A valid orphan batch is not proof of committed coverage. Proof stops
+ * after all requested nonzero checkpoints; zero requires the canonical root.
+ * Missing receipts remain unresolved; malformed or unprovable receipts refuse.
+ */
+export async function provePrivacyReceipts(store:JournalStore,control:JournalControl,intents=control.pending,budget=receiptProofBudget()):Promise<Set<string>>{
+  if(new Set(control.pending.map(p=>p.id)).size!==control.pending.length)stop('INVALID_JOURNAL_RECEIPT');
+  const receipts:z.infer<typeof receiptSchema>[]=[];
+  for(const intent of intents){
+    if(!control.pending.some(p=>p.id===intent.id&&p.started_at===intent.started_at))stop('INVALID_JOURNAL_RECEIPT');
+    const object=await proofRead(store,`receipts/${intent.id}.json`,budget);
+    if(!object)continue;
+    let receipt:z.infer<typeof receiptSchema>;
+    try{receipt=receiptSchema.parse(JSON.parse(await proofText(object)));}catch(error){if(error instanceof JournalError)throw error;return stop('INVALID_JOURNAL_RECEIPT');}
+    if(receipt.id!==intent.id||receipt.generation!==control.generation||BigInt(receipt.sequence)>BigInt(control.sequence)||(receipt.sequence==='0')!==(receipt.head===null))stop('INVALID_JOURNAL_RECEIPT');
+    const original=await proofRead(store,`intents/${intent.id}.json`,budget);
+    if(!original)stop('INVALID_JOURNAL_RECEIPT');
+    let recorded:z.infer<typeof intentSchema>;
+    try{recorded=intentSchema.parse(JSON.parse(await proofText(original!)));}catch(error){if(error instanceof JournalError)throw error;return stop('INVALID_JOURNAL_RECEIPT');}
+    if(recorded.id!==intent.id||recorded.started_at!==intent.started_at)stop('INVALID_JOURNAL_RECEIPT');
+    receipts.push(receipt);
+  }
+  if(!receipts.length)return new Set();
+  const proven=new Set<string>();
+  let current=control.head,expected=BigInt(control.sequence),batches=0;
+  while(current){
+    if(++batches>512)stop('JOURNAL_RECEIPT_PROOF_LIMIT');
+    const object=await proofRead(store,current.key,budget);
+    if(!object)stop('JOURNAL_GAP');
+    const content=await proofText(object!);
+    if(await sha256(content)!==current.hash)stop('JOURNAL_HASH_MISMATCH');
+    let batch:z.infer<typeof batchSchema>;
+    try{batch=batchSchema.parse(JSON.parse(content));}catch{return stop('JOURNAL_GAP');}
+    if(batch.generation!==control.generation||BigInt(batch.from)<1n||BigInt(batch.to)!==expected||BigInt(batch.from)+BigInt(batch.events.length)-1n!==expected||(batch.from==='1')!==(batch.previous===null)||current.key!==`batches/${batch.generation}/${batch.from}-${batch.to}-${current.hash}.json`)stop('JOURNAL_GAP');
+    for(let i=0;i<batch.events.length;i++)if(BigInt(batch.events[i].sequence)!==BigInt(batch.from)+BigInt(i))stop('JOURNAL_GAP');
+    for(const receipt of receipts)if(receipt.sequence===expected.toString()){
+      if(JSON.stringify(receipt.head)!==JSON.stringify(current))stop('INVALID_JOURNAL_RECEIPT');
+      proven.add(receipt.id);
+    }
+    if(proven.size===receipts.length)return proven;
+    expected=BigInt(batch.from)-1n;current=batch.previous;
+  }
+  if(expected!==0n)stop('JOURNAL_GAP');
+  for(const receipt of receipts)if(receipt.sequence==='0'&&receipt.head===null)proven.add(receipt.id);
+  if(proven.size!==receipts.length)stop('INVALID_JOURNAL_RECEIPT');
+  return proven;
+}
+async function reconcileStalePrivacyReceipts(store:JournalStore,db:JournalDatabase,initial:Awaited<ReturnType<typeof readJournalControl>>){
+  let remote=initial;const budget=receiptProofBudget();
+  for(let attempt=0;attempt<8;attempt++){
+    const local=await readJournalStatus(db);
+    if(remote.value.mode!=='active'||local.quarantined)stop('RESTORE_QUARANTINED');
+    if(remote.value.generation!==local.generation||BigInt(local.sequence)<BigInt(remote.value.sequence))stop('DATABASE_ROLLBACK_DETECTED');
+    const stale=remote.value.pending.filter(p=>Date.now()-Date.parse(p.started_at)>120_000);
+    if(!stale.length)return remote;
+    const completed=await provePrivacyReceipts(store,remote.value,stale,budget);
+    // Revalidate SQL after the potentially longer immutable-chain proof.
+    const latest=await readJournalStatus(db);
+    if(latest.quarantined)stop('RESTORE_QUARANTINED');
+    if(latest.generation!==remote.value.generation||BigInt(latest.sequence)<BigInt(remote.value.sequence))stop('DATABASE_ROLLBACK_DETECTED');
+    const next:JournalControl=completed.size?{...remote.value,pending:remote.value.pending.filter(p=>!completed.has(p.id))}:{...remote.value,mode:'quarantine',reason:'unresolved_privacy_operation'};
+    // A concurrent completion, new intent, checkpoint, or quarantine must be
+    // reread and re-proved, never overwritten using an old pending snapshot.
+    const changed=await replace(store,next,remote.etag);
+    if(changed&&!completed.size)stop('RESTORE_QUARANTINED');
+    if(--budget.remaining<0)stop('JOURNAL_RECEIPT_PROOF_LIMIT');
+    remote=await readJournalControl(store);
+  }
+  return stop('JOURNAL_BUSY');
 }
 /** An owner initializes once, with member traffic disabled until this completes. */
 export async function initializePrivacyJournal(store: JournalStore, db: JournalDatabase) {
@@ -247,7 +329,7 @@ export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>):
   // it does not prove rollback or authorize clearing an unresolved intent.
   let failedPhase:JournalFailureCode='journal_begin_failed';
   try {
-    await detectStalePrivacyIntents(resources.store);
+    await assertJournalReadable(resources.store,resources.db);
     const intent=await beginPrivacyIntent(resources.store,resources.db);
     let value:T;
     failedPhase='journal_work_failed';
@@ -262,5 +344,5 @@ export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>):
 }
 export async function checkpointPrivacyJournal(env:RuntimeEnv) {
   const resources=runtime(env);if(!resources)return;
-  try {if(await detectStalePrivacyIntents(resources.store))stop('RESTORE_QUARANTINED');await checkpointJournal(resources.store,resources.db);} finally {await resources.close();}
+  try {await assertJournalReadable(resources.store,resources.db);await checkpointJournal(resources.store,resources.db);} finally {await resources.close();}
 }
