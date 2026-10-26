@@ -43,7 +43,7 @@ describe("public pilot acceptance contract", () => {
     const html = renderToStaticMarkup(
       createElement(AuthPage, { mode: "login", onSignedIn: () => {} }),
     );
-    expect(html).toContain('role="status"');
+    expect(html.match(/<main\b[\s\S]*?<\/main>/)?.[0]).toContain('role="status"');
     expect(html).toContain("approval at your current");
     expect(html).toContain("address and verification at the new one");
     expect(html).toContain("check your new inbox");
@@ -56,7 +56,7 @@ describe("public pilot acceptance contract", () => {
     );
     expect(failed).toContain('role="alert"');
     expect(failed).toContain("This email-change step could not be completed");
-    expect(failed).not.toContain('role="status"');
+    expect(failed.match(/<main\b[\s\S]*?<\/main>/)?.[0]).not.toContain('role="status"');
     expect(failed).not.toContain('class="alert success"');
     expect(failed).not.toContain("private-provider-detail");
   });
@@ -73,9 +73,11 @@ describe("public pilot acceptance contract", () => {
     locationFor();
     const html = renderToStaticMarkup(createElement(Landing));
     expect(html).toContain("a simple social network");
-    expect(html).toContain("No ads. No influencers. No algorithm.");
-    expect(html).toContain("We’re building Porchday for nonprofit stewardship");
-    expect(html).toContain("philanthropy");
+    expect(html).toContain("No ads, algorithms, or influencers.");
+    expect(html).not.toContain("<h2>Features</h2>");
+    expect(html).not.toContain("Profile example");
+    expect(html).not.toContain("<h2>About the project</h2>");
+    expect(html).not.toContain("Site directory");
     expect(html).toContain("By invitation only.");
     expect(html).not.toContain("friends &amp; family &amp; being yourself");
     expect(html).not.toContain("classic-status");

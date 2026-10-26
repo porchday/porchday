@@ -29,6 +29,8 @@ import { IntegrationConsent } from "./Integrations";
 import { StaffConsole, StaffEntry } from "./Staff";
 import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
+import { BackgroundControls } from "./BackgroundControls";
+import { initSiteAppearance } from "./site-appearance";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import "./styles.css";
 import "./retro.css";
@@ -455,6 +457,9 @@ function AppShell({
           </Alert>
         )}
         <React.Fragment key={routeKey}>{content}</React.Fragment>
+        <footer className="member-appearance-footer">
+          <BackgroundControls />
+        </footer>
       </main>
       <aside className="right-rail">
         <div className="rail-date">
@@ -501,6 +506,7 @@ function AppShell({
     </div>
   );
 }
+initSiteAppearance();
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
     <App />

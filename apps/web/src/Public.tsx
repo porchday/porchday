@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { auth, post, localDate } from "./api";
 import { Logo, Icon, Button, Field, Alert, useAction, navigate } from "./ui";
+import { BackgroundControls } from "./BackgroundControls";
 export function PublicHeader() {
   return (
     <header className="public-header wrap">
@@ -33,6 +34,7 @@ export function PublicFooter() {
         <a href="/help">Help & contact</a>
         <a href="/third-party-notices.txt">Open-source notices</a>
       </nav>
+      <BackgroundControls />
     </footer>
   );
 }
@@ -40,173 +42,16 @@ export function Landing() {
   return (
     <>
       <PublicHeader />
-      <main id="main-content" tabIndex={-1} className="classic-home wrap">
-        <div className="classic-columns">
-          <aside className="classic-side">
-            <section className="classic-box login-scrap">
-              <h2>Account</h2>
-              <div className="classic-box-body">
-                <p>Already have an account?</p>
-                <a className="button primary" href="/login">
-                  Member log in
-                </a>
-                <p className="invitation-line">Have an invitation? <a href="/join">create account</a></p>
-              </div>
-            </section>
-            <section className="classic-box">
-              <h2>Information</h2>
-              <nav className="classic-directory" aria-label="Site directory">
-                <a href="/about">What is Porchday?</a>
-                <a href="/principles">Principles</a>
-                <a href="/privacy">Your data & privacy</a>
-                <a href="/community">Community rules</a>
-                <a href="/help">Help & contact</a>
-              </nav>
-            </section>
-          </aside>
-          <div className="classic-content">
-            <section className="classic-welcome classic-box">
-              <h1>a simple social network</h1>
-              <div className="classic-box-body">
-                <p className="classic-promise">
-                  No ads. No influencers. No algorithm.
-                </p>
-                <p>
-                  Share updates with friends and family. Post to your own wall
-                  and see your connections’ posts in chronological order.
-                </p>
-                <p>
-                  <strong>For the public good. Funded by philanthropy.</strong>{" "}
-                  We’re building Porchday for nonprofit stewardship, with no ads
-                  and no sale of your data.
-                </p>
-                <div className="classic-welcome-links">
-                  <a href="/join">Join with an invitation</a>
-                  <span aria-hidden="true"> | </span>
-                  <a href="/about">About the project</a>
-                </div>
-              </div>
-            </section>
-            <section className="classic-box">
-              <h2>Features</h2>
-              <dl className="classic-features">
-                <div>
-                  <dt>Friends, not followers</dt>
-                  <dd>
-                    Up to 300 mutual connections, including family. Real people
-                    operating their own accounts. No AI agents.
-                  </dd>
-                </div>
-                <div>
-                  <dt>Newest posts first</dt>
-                  <dd>
-                    Your connections’ eligible posts, in chronological order. No
-                    recommendations, sponsored posts, or engagement ranking.
-                  </dd>
-                </div>
-                <div>
-                  <dt>Your profile and groups</dt>
-                  <dd>
-                    Personalize your wall, share photos, make named groups,
-                    leave comments, and add more than one reaction.
-                  </dd>
-                </div>
-                <div>
-                  <dt>Posts and comments can expire</dt>
-                  <dd>
-                    Set a timer for a post or comment. Replies inherit its
-                    deadline, and you can give them an earlier one.
-                  </dd>
-                </div>
-                <div>
-                  <dt>You control your data</dt>
-                  <dd>
-                    Export, integrate, migrate, or delete. Private social
-                    content is encrypted on your device.{" "}
-                    <a href="/privacy">How privacy works »</a>
-                  </dd>
-                </div>
-              </dl>
-            </section>
-            <section
-              className="classic-box classic-profile-example"
-              aria-label="Illustrated personal wall preview, not a real member"
-            >
-              <h2>
-                Profile example{" "}
-                <small>Illustrated example — no public posts</small>
-              </h2>
-              <div className="classic-profile-columns">
-                <div className="classic-profile-about">
-                  <h3>Jamie’s page</h3>
-                  <div className="classic-example-avatar" aria-hidden="true">
-                    J
-                  </div>
-                  <p>Reading and gardening.</p>
-                  <table>
-                    <caption>About this illustrated profile</caption>
-                    <tbody>
-                      <tr>
-                        <th>Interests</th>
-                        <td>books, plants, gardening</td>
-                      </tr>
-                      <tr>
-                        <th>Mood</th>
-                        <td>good</td>
-                      </tr>
-                      <tr>
-                        <th>Theme</th>
-                        <td>garden</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                <div className="classic-example-wall">
-                  <h3>Jamie’s wall</h3>
-                  <article>
-                    <strong>Jamie</strong> <small>Today · Friends</small>
-                    <p>Spent the afternoon gardening.</p>
-                    <div
-                      className="classic-example-photo"
-                      role="img"
-                      aria-label="Example photo placeholder"
-                    >
-                      <Icon name="photo" size={32} aria-hidden="true" />
-                    </div>
-                    <p className="classic-example-reactions">
-                      ♡ &nbsp; ☀ &nbsp; Multiple reactions per person
-                    </p>
-                  </article>
-                  <div className="classic-example-comment">
-                    <strong>Sam:</strong> The plant looks healthy.
-                  </div>
-                </div>
-              </div>
-            </section>
-            <section className="classic-box">
-              <h2>About the project</h2>
-              <div className="classic-box-body">
-                <p>
-                  We believe the places where society connects should serve the
-                  public good. Porchday is being built for nonprofit stewardship
-                  and philanthropic funding.
-                </p>
-                <p>
-                  We’re an early, invitation-only pilot. Legal nonprofit status,
-                  governance, and public financial reporting are being
-                  established. We aren’t accepting tax-deductible donations
-                  here.
-                </p>
-                <p>
-                  Our planned <strong>Apache 2.0</strong> source release will
-                  make how it works open to everyone. The development repository
-                  is private for now.
-                </p>
-                <a href="/about">More about the project »</a>
-              </div>
-            </section>
+      <main id="main-content" tabIndex={-1} className="classic-home simple-home wrap">
+        <section className="classic-welcome classic-box">
+          <h1>a simple social network</h1>
+          <div className="classic-box-body">
+            <p className="classic-promise">No ads, algorithms, or influencers.</p>
+            <p>Already have an account?</p>
+            <a className="button primary" href="/login">Member log in</a>
+            <p className="invitation-line">Have an invitation? <a href="/join">create account</a></p>
           </div>
-        </div>
+        </section>
       </main>
       <PublicFooter />
     </>
@@ -645,7 +490,7 @@ const policyContent: Record<
     sections: [
       [
         "For the public good",
-        "Our intention is nonprofit stewardship, funded by philanthropy. We want decisions to serve members, with published governance and financial reporting. The legal entity, nonprofit status, board, and donation arrangements are still being established. This private pilot makes no tax-deductibility claims.",
+        "Porchday is inspired by the likes of Wikipedia, Firefox, Signal, and Internet Archive. We want decisions to serve members, with published governance and financial reporting. The legal entity, nonprofit status, board, and donation arrangements are still being established. This private pilot makes no tax-deductibility claims.",
       ],
       [
         "How Porchday works",
@@ -678,12 +523,12 @@ const policyContent: Record<
         "Your eligible friends’ posts appear newest first. Ordinary software still handles permissions, sorting, and safety; we do not rank your feed to maximize engagement.",
       ],
       [
-        "Real people. No AI agents.",
+        "No AI agents",
         "People operate their own accounts. Assistive technology, dictation, and translation are welcome when a person chooses and submits the action. Technical proof of humanity is future work; we do not claim verified human identity.",
       ],
       [
-        "You control your data",
-        "Export your contributions, authorize scoped tools, migrate using the open archive format, or delete your account. Exported copies and screenshots cannot be recalled.",
+        "No need to trust us",
+        "You own your data. Export it, move it, or delete your account. Porchday is being built around open-source code and an open protocol so you can inspect how it works and choose other tools and services. The code is licensed under Apache 2.0; public release of the source and protocol documentation is a launch milestone. Our open archive format already supports portable exports.",
       ],
     ],
   },

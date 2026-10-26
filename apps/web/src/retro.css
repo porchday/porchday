@@ -1971,7 +1971,9 @@ body
 }
 
 :root {
-  background: #f3efe7;
+  background-color: var(--site-background-color, #281b13);
+  background-image: var(--site-background-image, url('/porch-pattern.svg'));
+  background-repeat: repeat;
 }
 .page-heading {
   background: transparent;
@@ -2149,4 +2151,65 @@ body
 }
 .empty {
   padding: 24px;
+}
+
+/* Keep the public landing page focused on joining and signing in. */
+.simple-home {
+  max-width: 640px;
+}
+
+/* The site backdrop is a browser preference, separate from personal wall themes. */
+.homemade-sign {
+  background: #fffaf0;
+  border: 1px solid #d2c5b3;
+}
+.app-layout {
+  background: #fffaf0;
+}
+.public-footer {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.public-footer > .background-controls {
+  grid-column: 1 / -1;
+  border-top: 1px solid #d2c5b3;
+  padding-top: 12px;
+}
+.member-appearance-footer {
+  margin-top: 24px;
+  border-top: 1px solid #d2c5b3;
+  padding-top: 12px;
+}
+.background-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: #3c2a20;
+  background: #fffaf0;
+  font-size: 12px;
+}
+.background-controls button {
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #b89a78;
+  border-radius: 0;
+  color: #633014;
+  background: #fffaf0;
+}
+.background-controls button[aria-pressed="true"] {
+  background: #f2dfc3;
+  border-color: #974013;
+  font-weight: 700;
+}
+.background-controls button:hover {
+  background: #f2dfc3;
+}
+.background-controls-status:not(:empty) {
+  flex-basis: 100%;
+  color: #66503e;
+}
+@media (max-width: 640px) {
+  .public-footer {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
