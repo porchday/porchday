@@ -1,55 +1,80 @@
 # Porchday for iOS
 
-The native client uses SwiftUI and URLSession, with the same authorized social API and signed encrypted envelope format as the web client. It is not a web-view wrapper. Photo selection/camera access, EXIF removal, encryption, recovery, multipart export/import and Keychain storage run on the device.
+The native client uses SwiftUI and URLSession with the same authorized social API and signed encrypted envelope format as the web client. It is not a web-view wrapper. Photo processing, encryption, recovery, multipart export/import and Keychain storage run on the device.
 
 ## Build and test
 
-Install full Xcode with an iOS simulator runtime, Go matching packages/crypto/native/go.mod, and XcodeGen. Node 24 plus npm ci is needed for the shared cryptographic interoperability tests.
+Requirements:
 
-    npm ci
-    cd packages/crypto/native
-    go test ./...
-    cd ../../..
-    apps/ios/build-native.sh
-    xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday \
-      -destination 'platform=iOS Simulator,name=iPhone 16' \
-      -derivedDataPath apps/ios/build/DerivedData \
-      test
+- macOS with **full Xcode**, its selected developer directory, and an installed iOS Simulator runtime. Command Line Tools alone are insufficient.
+- Go matching [go.mod](../../packages/crypto/native/go.mod), currently 1.27.3, and XcodeGen.
+- Node 24 and npm for the shared JavaScript/native interoperability tests.
+- Network access to retrieve the pinned npm, Go and Swift package dependencies.
 
-Choose an installed simulator from xcrun simctl list devices available. The build script creates the native Porchcrypto.xcframework from pinned GopenPGP and gomobile dependencies, then generates the Xcode project. Generated binaries/build output are ignored by Git. Do not override simulator signing with CODE_SIGNING_ALLOWED=NO: the resulting app loses the entitlements needed for its real Keychain storage. The SDK-specific project settings sign simulator builds ad hoc and keep hardware signing separate. The normal native suite includes a real Keychain write/read/update/delete test and verifies device-only accessibility.
+From the repository root:
 
-The Verify native iOS GitHub Actions workflow builds the bridge and app on a macOS runner, executes native crypto/portability unit tests and onboarding UI tests, launches the app in the simulator, and keeps the test result bundle and screenshot for seven days. It does not use production credentials. DEBUG-only --ui-testing skips automatic session restoration so onboarding UI tests do not depend on production availability; no test argument supplies an authenticated session or bypasses server authorization.
+```sh
+npm ci
+(cd packages/crypto/native && go test ./...)
+apps/ios/build-native.sh
+xcrun simctl list devices available
+```
 
-The separate manual [hosted interoperability workflow](../../docs/hosted-native-verification.md) uses short-lived synthetic staging credentials to exercise real login, recovery/device enrollment and web↔native encrypted posts/photos. It requires explicit operator preparation and reports a skip as incomplete. Its DEBUG-only staging flag cannot change release builds, and its private logs/results are not uploaded as artifacts.
+The build script creates `packages/crypto/native/build/Porchcrypto.xcframework` from the pinned GopenPGP/gomobile dependencies, then generates `apps/ios/Porchday.xcodeproj` from [project.yml](project.yml). Edit the source configuration rather than the generated project.
 
-A simulator build requires no Apple Developer account or App Store listing. Running on a physical iPhone requires a signing identity and provisioning selected in Xcode; free personal-team development has Apple-imposed limits. App Store distribution, APNs entitlement and verified Universal Links need the corresponding Apple capabilities and operator configuration. These are separate from simulator verification. The app already accepts validated https://porchday.com/app/post/{UUID} links when a signed build is configured for associated domains; the source does not claim that the domain association is deployed.
+Choose an available iPhone simulator UUID from the list. Substitute it in this command:
+
+```sh
+xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday \
+  -destination 'platform=iOS Simulator,id=YOUR_SIMULATOR_UUID' \
+  -derivedDataPath apps/ios/build/DerivedData \
+  test
+```
+
+Do not add `CODE_SIGNING_ALLOWED=NO`: the simulator's real Keychain tests require entitlements in an ad-hoc signature. The project signs simulator builds ad hoc and keeps physical-device signing separate. A simulator build needs no Apple Developer account, App Store listing or hosted Porchday credentials. The suite includes real Keychain write/read/update/delete and device-only accessibility checks, alongside crypto, reactions, profile, portability and onboarding tests.
+
+The [native CI workflow](../../.github/workflows/ios.yml) selects an installed simulator, runs these checks, and captures the app, result bundle and screenshot for seven days. Dated successful runs and limitations are in [build status](../../docs/build-status.md). Local Go interoperability tests are not a substitute for an Xcode compiler/simulator run.
+
+## Server selection and hosted tests
+
+Normal builds target **https://porchday.com**. There is no general localhost server selector; the client requires its configured HTTPS origin. Do not use an ordinary simulator launch to create synthetic accounts on production.
+
+The DEBUG-only `--ui-testing` argument skips automatic session restoration for unauthenticated onboarding UI tests. It supplies no session and bypasses no server authorization. The standard CI workflow uses no production credentials.
+
+The separate [hosted native procedure](../../docs/hosted-native-verification.md) uses prepared, short-lived synthetic staging accounts for real login, recovery/device enrollment and web/native encrypted posts/photos. Its DEBUG-only `PORCHDAY_HOSTED_STAGING_TEST=1` setting selects a fixed staging origin and separate Keychain namespace; release builds ignore it. That procedure requires explicit operator preparation, and a skipped step remains incomplete. Private hosted test logs/results are not uploaded as CI artifacts.
 
 ## Privacy and data handling
 
-Login cookies and private device keys use kSecAttrAccessibleWhenUnlockedThisDeviceOnly. Keys are not synced to iCloud or written to user defaults. Private content is opened only in memory; URLSession uses no HTTP response cache or shared cookie store. A privacy cover obscures the app in the app switcher. Signing out removes local keys/session state and staged archives.
+Login cookies and private device keys use `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`. Keys are not synced to iCloud or written to user defaults. Private content opens in memory; URLSession uses neither an HTTP response cache nor a shared cookie store. A privacy cover obscures the app in the app switcher. Sign-out removes local keys/session state and staged archives.
 
-The account password is independent of the randomly generated encryption recovery secret. Restoring an active account authorizes a fresh device using the independent recovery signing key while recovering old decryption keys for history. A suspended account can open its backup for export without adding a new publishing device. Device fingerprints are pinned locally; this does not constitute an independently witnessed transparency service. Read docs/crypto-protocol.md for the threat model, metadata visible to the service, absence of forward secrecy, and independent review gate.
+The account password is independent of the randomly generated encryption recovery secret. Restoring an active account authorizes a new device with the recovery signing key while retaining decryption keys for history. A suspended account can open its backup for export without adding a publishing device. Device fingerprints are pinned locally; this is not an independently witnessed transparency service. See the [protocol](../../docs/crypto-protocol.md) for visible metadata, the absence of forward secrecy and the independent-review requirement.
 
-Archives use the same versioned JSON, JPEG files and ordinary ZIP/OpenPGP format as the web client. Parts hold up to 20 MiB of estimated raw material, capped at 30 MiB per ZIP. Each part has archive_set.id/index; the last supplies total and complete:true. Imports require every part and validate IDs, paths, CRCs, photo SHA-256 checksums and deadlines. Photos can be referenced across parts. Parts are processed separately to avoid retaining a member's entire photo library in memory. The importer validates up to 1,000 selected parts per operation.
+Posts and comments share the reaction picker: multiple Unicode or custom-image reactions per member are supported. Unicode metadata is bundled from the shared pinned dataset. Clients validate each reaction descriptor and tag before display; uploaded custom images are normalized locally, while received images retain their exact validated identity. Personal emoji libraries are encrypted and included in the optional archive field.
 
-Export defaults to a separate high-entropy archive secret; plaintext ZIP is an explicit choice. Staged files use complete file protection. User-saved exports cannot be recalled after a post expires. Imports re-encrypt contributions for the destination account and start as Only me; comments/reactions and standalone photos become private journal posts, while connections and group memberships are reference data. They do not send invitations or recreate another person's threads.
+## Data portability
 
-## Release validation
+Archives use the shared versioned JSON, image and ZIP/OpenPGP formats. Parts hold up to 20 MiB of estimated raw material, with a 30 MiB limit per ZIP. Each part identifies its archive set and index; the final part supplies the total and completion marker. Imports require every part and validate IDs, paths, CRCs, image checksums and deadlines. Up to 1,000 parts are accepted, processed separately to avoid holding the entire photo library in memory. See the [archive contract](../../docs/archive/README.md).
 
-A successful build/test run is evidence of compilation and the exercised flows, not a security audit or a claim of complete behavioral coverage. Before a public launch, record the exact simulator CI run, verify the signed app on a real device against the deployed API, exercise recovery across independent devices, and complete the independent encryption review described in the design. Any missing Apple identity or device test should be recorded as an external prerequisite, never replaced with fabricated test evidence.
+Export defaults to encryption with a separate archive secret; plaintext ZIP is an explicit choice. Staged files use complete file protection. User-saved exports cannot be recalled when content expires. Imports re-encrypt contributions for the destination account and start as Only me; comments/reactions and standalone photos become private journal posts. Connections and memberships are reference data, and imports do not send invitations or recreate other people's threads.
 
-## Signed build capabilities
+## Profile appearance
 
-The checked-in entitlements declare applinks:porchday.com and an APNs environment build variable. Simulator CI uses an ad-hoc signature and a separate simulator-only app-local Keychain entitlement; PORCHDAY_PUSH_ENABLED=NO. It does not use an Apple team or provisioning profile. For a physical build, select a real development team, enable Push Notifications and Associated Domains for com.porchday.app in that Apple account, allow signing, set PORCHDAY_PUSH_ENABLED=YES, and choose PORCHDAY_APNS_ENVIRONMENT=development for sandbox or production for a distribution profile. Do not put an APNs provider private key in the app or repository.
+Profile wallpapers use the same four curated IDs as the web client: `porch-stars`, `orange-checker`, `sunny-daisies`, `midnight-diamonds`, plus `none`. SwiftUI draws these locally; profile values cannot become URLs, markup or code. On first unlocked access, an account without a saved profile gets a random choice through revision-one creation. An existing profile always wins, and conflicting saves are reread without overwriting. Failure of this cosmetic setup leaves account access and keys intact.
 
-The native permission button appears only when this signed-build flag and /api/v1/native-push/config both enable delivery. Only pressing Enable requests notification authorization. Previously opted-in launches ask APNs for a fresh device token and send it through the authenticated API; token bytes are never cached on disk. Opt-out and sign-out remove this device's server subscription and unregister locally. Notifications carry generic text only; tapping opens the authorized in-app inbox. No notification service extension downloads or decrypts private content.
+The editor previews and changes the stored choice. Export/import and unrelated edits retain it, including unknown future values, which render without a pattern. The device-local **Use standard theme** switch hides wallpapers, custom background photos, heading styles and section order without changing encrypted profiles. This is separate from the web site's device-local Autumn/Clean/generated background controls.
 
-Configure the backend with the matching real APNs team, key, bundle ID and provider key before enabling delivery. Publish /.well-known/apple-app-site-association as JSON with the real TEAM_ID.com.porchday.app application identifier and /app/post/* path components, without a redirect. An ad-hoc simulator build does not verify APNs or the Apple domain association. Record a physical-device push and universal-link test once signing is available. No fake Apple team identifier is supplied or published.
+## Physical devices and distribution
 
-Apple references: https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns ; https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications ; https://developer.apple.com/documentation/xcode/supporting-associated-domains .
+Simulator verification does not establish physical-device, APNs or Universal Links behavior. A physical build needs a real signing identity and provisioning selected in Xcode. App Store/TestFlight distribution and notification/domain capabilities require separate Apple setup and operator approval.
 
-The app's About screen contains the bundled third-party notices. Regenerate them with scripts/build-third-party-notices.py; original Porchday code is Apache 2.0 and dependencies retain their own licenses. Source/rebuild details are in THIRD_PARTY_NOTICES.md.
+The checked-in entitlements declare `applinks:porchday.com` and an APNs environment variable. Simulator CI uses its own app-local Keychain entitlement and `PORCHDAY_PUSH_ENABLED=NO`. For a physical build, configure the real development team, Push Notifications and Associated Domains for `com.porchday.app`, enable signing, set `PORCHDAY_PUSH_ENABLED=YES`, and select the matching `PORCHDAY_APNS_ENVIRONMENT`. An APNs provider private key belongs only in the operator's backend secret storage, never the app or repository.
 
-Profile wallpaper uses the same four fixed IDs as the web client (`porch-stars`, `orange-checker`, `sunny-daisies`, `midnight-diamonds`) and the explicit `none` choice. SwiftUI draws the curated tiles locally; profile values cannot become URLs, markup, or code. On first unlocked access, an account with no saved profile gets one random choice in its encrypted profile, using revision-one creation. Any existing profile, including an older profile without wallpaper, wins; concurrent saves are reread without overwriting. A failed cosmetic save leaves enrollment, keys and account access intact and can retry on a later unlock or wall visit.
+The permission button appears only when the build flag and `/api/v1/native-push/config` both enable delivery. Only pressing **Enable** requests authorization. Opted-in launches register the current token through the authenticated API; token bytes are not cached on disk. Opt-out and sign-out remove the subscription and unregister locally. Notifications contain generic text and open the authorized inbox; no extension decrypts private content.
 
-The profile editor previews and changes the persisted choice. Export/import retains the wallpaper field in the profile payload through the existing portable format, and unrelated profile/photo edits retain it, including an unknown future value. Unknown values render as no pattern. A device-local **Use standard theme** toggle hides wallpapers, custom background photos, heading styles and section ordering without changing anyone’s encrypted profile. The native wallpaper tests cover persisted selection, existing/concurrent profiles, failed saves, safe rendering and preservation during profile/photo edits.
+For Universal Links, publish the correct Apple application identifier and `/app/post/*` components in `/.well-known/apple-app-site-association`, without a redirect. The client validates `https://porchday.com/app/post/{UUID}` links, but the presence of client code does not prove deployed domain association. Record real-device push and link tests after signing is configured. See Apple's [APNs registration](https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns), [notification permission](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications) and [Associated Domains](https://developer.apple.com/documentation/xcode/supporting-associated-domains) documentation.
+
+A passing build is not a security audit. Broader launch also requires independent encryption review and the remaining [admission requirements](../../docs/operations.md#admission-and-launch-gates).
+
+## Licenses and rebuilds
+
+The About screen contains bundled third-party notices. From the repository root, regenerate them with `python3 scripts/build-third-party-notices.py`. Original Porchday source is Apache-2.0; dependencies retain their own licenses. Source packaging and replacement-build details are in [third-party notices](../../THIRD_PARTY_NOTICES.md).

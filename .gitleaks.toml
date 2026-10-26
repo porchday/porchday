@@ -1,0 +1,85 @@
+title = "Porchday reviewed secret-scan exceptions"
+
+# Keep the upstream detector rules. Every exception below requires BOTH its
+# exact file and reviewed value/field. Do not exclude test trees or commits.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Cloudflare Access audience IDs are routing metadata, not authentication credentials."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ["(?:^|/)apps/api/wrangler\\.(?:staging|production)\\.jsonc$"]
+regexes = ["^\\s*\"STAFF_ACCESS_AUDIENCE\"\\s*:\\s*\"[a-f0-9]{64}\"[,]?\\s*$"]
+
+[[allowlists]]
+description = "Provider resource IDs identify Access policies/apps or Hyperdrive bindings; they do not authenticate."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ["(?:^|/)infra/resources\\.json$"]
+regexes = ["^\\s*\"(?:staff_access_audience|staff_access_application_id|staff_access_policy_id|staff_access_launcher_policy_id|hyperdrive_auth)\"\\s*:\\s*\"(?:[a-f0-9]{32}|[a-f0-9]{64}|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12})\"[,]?\\s*$"]
+
+[[allowlists]]
+description = "Exact synthetic monitor-test constants; no real provider credential is accepted."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ["(?:^|/)apps/monitor/test/workerd\\.test\\.ts$"]
+regexes = [
+  "^synthetic-health-capability-123456789$",
+]
+
+[[allowlists]]
+description = "Exact synthetic interoperability fixture values; regenerate only with explicit fixture review."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ["(?:^|/)packages/crypto/test/fixtures/openpgp-v1\\.json$"]
+regexes = [
+  "^S6VKDoJnYkyNXbw9GMwhxBWYlTYd0Bnt40OGK3RvLzc$",
+  "^kecevQ5_KPrN8CooBqKwSdITQtVH8XXzSX9yF6wvivk$",
+  "^zdoGvI71fc3iQNiuGRfjqM7Dy9PlSNxy5Obmj9sf6BU$",
+]
+
+[[allowlists]]
+description = "Exact synthetic interoperability fixture values; regenerate only with explicit fixture review."
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ["(?:^|/)packages/crypto/test/fixtures/openpgp-v1\\.json$"]
+regexes = [
+  "^-----BEGIN PGP PRIVATE KEY BLOCK-----\\\\n\\\\nxXYGat2i1BsAAAAg/zpaiL4rHPz19gy\\+Ygc0aqQX2ZPexHjCpPXRv2cAe879\\\\nGgkDCwMI7oNAi\\+a\\+SgvgWC6yP0StiRg10bKSmocobeHpZGkimSnIok/Y64cf\\\\nbR4GqUe7pTY/s9g3hzOesIzptCKQMgDkKi4h7UEXwrsGHxsKAAAATAWCat2i\\\\n1AMLCQcFFQoIDgwEFgACAQKbAwIeCSKhBkxrsHqRJl8mLM6HWSyhVGHk3MWG\\\\nVsO\\+FIfIRLH3vm76DScJAwcDCQEHAQkCBwIAAAAAzacgXLkVszQfjfT3vtVv\\\\npQG\\+QGjPzYNOxPH4MPzEk\\+ndN7CRnj9bfdoVxCrZou13LOnCB\\+KHRQQmbqUP\\\\nXxyhVA/6fLu4G8yJrgjxQV5oCL7s63pi9SuZyW/8SQ7u84MXsdoOzSpQb3Jj\\\\naGRheSBmaXh0dXJlLWFsaWNlL2ZpeHR1cmUtYWxpY2UtcGhvbmXCmwYTGwoA\\\\nAAAsBYJq3aLUAhkBIqEGTGuwepEmXyYszodZLKFUYeTcxYZWw74Uh8hEsfe\\+\\\\nbvoAAAAA4GIgHRdW05x1DIXAFuFcTzjnbl3fu2XaHvO9t/Zlc3cOuvvO9Nfv\\\\nKkHZooEG323HBYesBTm83QS2B\\+FIOPBCg/VL51LwQ4WJ0UUBIVdBECFdh7Wl\\\\nO4zD0\\+p68AYm6aGZpZwMx3YGat2i1BkAAAAgPeytprTqqJeQtXTM8Db62osS\\\\nM9zcMdAOH1jWxzDKIhH9GgkDCwMIlqyN0atGeUvgDjmXRb\\+lDsBHZUUN2BNt\\\\nWXOt/E6ZGWOG8j\\+9GT64ohgPmwXURm3whd0S1n0/1WWRdsWVeSxUeGmOovIb\\\\nwpsGGBsKAAAALAWCat2i1AKbDCKhBkxrsHqRJl8mLM6HWSyhVGHk3MWGVsO\\+\\\\nFIfIRLH3vm76AAAAAKn9IK3wu4SVIl4pVKIGfBCvpz/sDSVOXLcUiVD7/sGD\\\\nDGU4plb/qqIUP8gLiQIRWOoCO0sowbQhh7UhaQyYSQJ4In3RfGuwAU0Ke\\+UR\\\\nP00JLPxX5QcWOpWeuNdkRgiaI2WvCw==\\\\n-----END PGP PRIVATE KEY BLOCK-----$",
+  "^-----BEGIN PGP PRIVATE KEY BLOCK-----\\\\n\\\\nxXYGat2i1BsAAAAgOqGhszdBL9yxISMIo8AqDR7DraTMDpYDUbWnLTeRsj39\\\\nGgkDCwMI38NKKp5/CDXgLLqWKHsyYiLQygs\\+DayYNZOcj04lclv2CQ74pYjS\\\\nIvImYslePsRTSpO0qdWUB1ljbLprSQareDiuiC90wrsGHxsKAAAATAWCat2i\\\\n1AMLCQcFFQoIDgwEFgACAQKbAwIeCSKhBjpLepKoeSynYBxPhFZIOrvveMS0\\\\nxwuRnOe6mJgfMSgBDScJAwcDCQEHAQkCBwIAAAAA1LwgNwEMeoTr/6EImqC\\+\\\\n6Jx2oZ5EaZ7vfx5TU/8ixBnWkCw5XDAUeLA35qvRHSpzlMAFGWkTtrMmBHil\\\\nm9HqULEhhR9lxdBhoYeFdPKgPrfU21wUZodDi/G5wUJvdAFatwoJzSZQb3Jj\\\\naGRheSBmaXh0dXJlLWJvYi9maXh0dXJlLWJvYi1waG9uZcKbBhMbCgAAACwF\\\\ngmrdotQCGQEioQY6S3qSqHksp2AcT4RWSDq773jEtMcLkZznupiYHzEoAQAA\\\\nAAC8VCDc5NpCLCe/P8sFpSI6AGAYaXOdaguV1JB5tvSX6ll6G48B1PHqdQdn\\\\nVEBhJ5k24lPOGcV4LYCMU8yzgyRUBb8QRDrlShvvOGK3P66ZO50CkXXEMAcg\\\\nbhRrvarX4G/1Uw7HdgZq3aLUGQAAACC4yOHPBXz7S668c9RtJfLbPwVu/SWT\\\\nlYjrd4sonqVqJv0aCQMLAwgDNjKrzGSjieCwG3J7JbuO7W0OgoJ4WPja/TUU\\\\n5LsDS3upj2bGcIipjy7n2vBDsgt9ENIL5L6UXzJHftvTD6YPDYEewBTCmwYY\\\\nGwoAAAAsBYJq3aLUApsMIqEGOkt6kqh5LKdgHE\\+EVkg6u\\+94xLTHC5Gc57qY\\\\nmB8xKAEAAAAAvX4gV2fQ7aZ/S0EAEtYNyQvoU\\+R6qvXNh1vTuKUMa3ZH0WAZ\\\\nMt3VbLbxHLJ7carNd\\+DOch8oRmRLQJ5YjUQp8L83\\+H/aYjG3RMJBU9j5idY3\\\\nVTsLrGCg5eXLdcweqe8lRCkD\\\\n-----END PGP PRIVATE KEY BLOCK-----$",
+]
+
+[[allowlists]]
+description = "Exact synthetic interoperability fixture values; regenerate only with explicit fixture review."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ["(?:^|/)packages/crypto/test/fixtures/reactions-v1\\.json$"]
+regexes = [
+  "^AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8$",
+]
+
+[[allowlists]]
+description = "Exact synthetic monitor-test constants; no real provider credential is accepted."
+targetRules = ["cloudflare-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ["(?:^|/)scripts/monitor-config\\.test\\.ts$"]
+regexes = [
+  "^private-deployment-capability-1234567890$",
+]
+
+[[allowlists]]
+description = "Exact synthetic monitor-test constants; no real provider credential is accepted."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ["(?:^|/)scripts/monitor-config\\.test\\.ts$"]
+regexes = [
+  "^private-health-capability-1234567890$",
+]

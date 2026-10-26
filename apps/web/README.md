@@ -2,54 +2,143 @@
 
 React and TypeScript provide the public site and installable PWA. Vite builds static assets served by the Cloudflare application. The API is same-origin at `/api/auth`, `/api/v1`, `/api/account-recovery`, and role-protected `/api/staff`.
 
-## Local work
+## Local setup
 
-From the repository root:
+Run commands from the repository root with Node 24, npm, Python 3 and Docker installed. No hosted account or credentials are required. Install dependencies with `npm ci`.
+
+For frontend-only work, `npm run dev` serves [localhost:5173](http://localhost:5173). Authenticated pages also need the API and database below. `npm run build` builds production web assets in `apps/web/dist`; a static server alone does not provide the API.
+
+### Disposable development database
+
+The development API currently expects PostgreSQL on **port 54329**. Use a dedicated disposable instance; do not reuse a database with real data. If that port is occupied, stop here and identify its owner rather than modifying the existing instance.
 
 ```sh
-npm run dev -w @porchday/web
-npm run build -w @porchday/web
-npx vitest run apps/web/test
+docker run --rm -d --name porchday-dev-postgres \
+  -p 127.0.0.1:54329:5432 \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -e POSTGRES_DB=porchday postgres:17
+
+docker exec porchday-dev-postgres pg_isready -U postgres
 ```
 
-The development proxy expects the local API on port 8787. Use the root development script and isolated test database; never point the local frontend at production account data.
+Wait for `accepting connections` before applying migrations:
+
+```sh
+PG_LOCAL=true \
+DATABASE_MIGRATION_URL='postgres://postgres@127.0.0.1:54329/porchday' \
+node scripts/migrate.ts
+```
+
+This passwordless trust configuration is for the loopback-only disposable container. It is not a hosted database configuration. `PG_LOCAL=true` selects the local non-TLS connection; migrations require the container's owner role. The dev API installs synthetic local passwords on its three runtime roles when it starts.
+
+In separate terminals at the repository root:
+
+```sh
+npm run dev:api
+```
+
+```sh
+npm run dev
+```
+
+Open **http://localhost:5173**, which matches the API's configured origin. Vite proxies API requests to `127.0.0.1:8787`.
+
+### Create a local account
+
+Local signup still requires an invitation and email verification. Create a synthetic invitation with an explicit local destination:
+
+```sh
+PG_LOCAL=true \
+DATABASE_MIGRATION_URL='postgres://postgres@127.0.0.1:54329/porchday' \
+APP_URL='http://localhost:5173' \
+node scripts/invite.ts developer@example.test
+```
+
+The command prints the path of an owner-only invitation file under `~/.config/inner-circle/invitations`. Open its link in your browser, use the same synthetic email address, and complete signup. Choose a local test password; do not reuse an actual account password. The password-breach check can require outbound access to the Pwned Passwords service.
+
+The dev API captures outgoing mail as private `email-*.json` files in ignored `artifacts/private/dev`; it sends no real mail. Open the latest verification link from the local capture, then sign in and complete encryption-key setup. Keep invitation, verification and recovery material private even in local testing.
+
+The Node adapter stores encrypted media in the same private directory. Its jobs sender is a no-op, and `ENVIRONMENT=development` deliberately permits running without the independent privacy journal. This setup does **not** exercise scheduled deletion, queue retries, Cloudflare Access, hosted delivery, backups or restore safety. `apps/api/wrangler.local.jsonc` is a separate local Worker verification configuration, not a drop-in production deployment or this Node setup; see [operations](../../docs/operations.md).
+
+Stop both dev processes with Ctrl-C when finished, then remove only your disposable database with `docker stop porchday-dev-postgres`. With `--rm` and no volume, its data is discarded. Private mail/media captures remain under `artifacts/private/dev` until you remove your own local test files.
+
+## Tests and reproducibility
+
+For frontend tests and static checks, from the root:
+
+```sh
+npx vitest run apps/web/test
+npm run typecheck
+npm run build
+python3 scripts/check-format.py
+```
+
+`npm test` also runs crypto and API/script tests. PostgreSQL suites skip without their environment variables. To exercise them, use a **separate disposable test database**; tests reset synthetic schemas and must not target the development database or hosted data.
+
+```sh
+docker run --rm -d --name porchday-test-postgres \
+  -p 127.0.0.1:54330:5432 \
+  -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -e POSTGRES_DB=porchday postgres:17
+
+docker exec porchday-test-postgres pg_isready -U postgres
+```
+
+Once it reports `accepting connections`, run this subshell. Every URL is explicitly local, and the environment changes end with the subshell:
+
+```sh
+(
+  export PG_LOCAL=true
+  export TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday'
+  export DATABASE_MIGRATION_URL="$TEST_DATABASE_URL"
+  export MODERATION_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_moderation_test'
+  export SOCIAL_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_social_test'
+  export SOCIAL_HTTP_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_http_test'
+  export PUSH_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_push_test'
+  export NATIVE_PUSH_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_native_push_test'
+  export JOURNAL_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_journal_test'
+  export AUTH_JOURNAL_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_auth_journal_test'
+  export STAFF_ROLE_TEST_DATABASE_URL='postgres://postgres@127.0.0.1:54330/porchday_staff_role_test'
+  node scripts/migrate.ts &&
+  node scripts/prepare-test-databases.ts &&
+  npm test
+)
+```
+
+Afterward, `docker stop porchday-test-postgres` discards that test instance. The equivalent automated setup is in [CI](../../.github/workflows/ci.yml). Package installation and container image retrieval need network access; the local SQL suites use synthetic identities and mocked external services.
+
+Frontend tests cover expiry/audiences, reactions and custom PNG validation, profile state, PWA privacy, portability, consent and author-only resharing. They supplement server authorization and shared cryptography tests. Browser-intercepted synthetic tests, actual hosted-account tests, inbox confirmation and independent accessibility/security review are distinct evidence; see [build status](../../docs/build-status.md) and the [hosted checklist](../../docs/hosted-verification.md).
 
 ## Routes
 
-| Route                                                     | Purpose                                                                                                 |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `/`                                                       | Public marketing and illustrated product preview                                                        |
-| `/join`, `/login`, `/verify`, `/forgot`, `/reset`         | Invitation registration, verification, password sign-in/reset, MFA challenges                           |
-| `/stolen-account`, `/recovery`                            | Stolen-account report, safe-contact confirmation, case resume/evidence/appeals, reviewed restoration    |
-| `/app`                                                    | Chronological Home and encrypted composer                                                               |
-| `/app/wall/:member?`, `/app/post/:id`                     | Personal wall and a post's conversation                                                                 |
-| `/app/connections`, `/app/groups`, `/app/groups/:id`      | Mutual connections and private named groups                                                             |
-| `/app/notifications`                                      | Access-checked in-app updates                                                                           |
-| `/app/settings/profile`, `/privacy`, `/security`, `/data` | Profile visibility/themes, safety/preferences, account/keys, data controls (each under `/app/settings`) |
-| `/app/integrations/authorize`                             | Explicit PKCE integration consent                                                                       |
-| `/appeals`                                                | Moderation review, available without decrypting content                                                 |
-| `/staff`                                                  | Cloudflare Access and server-role-protected human review                                                |
+| Route | Purpose |
+| --- | --- |
+| `/` | Public site and product preview. |
+| `/join`, `/login`, `/verify`, `/forgot`, `/reset` | Invitations, verification, email/password sign-in/reset and MFA challenges. |
+| `/stolen-account`, `/recovery` | Stolen-account reporting, safe-contact verification and reviewed restoration. |
+| `/app` | Chronological Home and encrypted composer. |
+| `/app/wall/:member?`, `/app/post/:id` | Personal wall and post conversation. |
+| `/app/connections`, `/app/groups`, `/app/groups/:id` | Mutual connections, invitations and private named groups. |
+| `/app/notifications` | Access-checked notifications. |
+| `/app/settings/profile`, `/app/settings/privacy`, `/app/settings/security`, `/app/settings/data` | Profile, preferences, account/keys and data controls. |
+| `/app/integrations/authorize` | Explicit PKCE integration consent. |
+| `/appeals` | Moderation review without decrypting private content. |
+| `/staff` | Cloudflare Access and application-role-protected human review. |
 
 ## Privacy boundaries
 
-Private social content is signed and encrypted through `@porchday/crypto` before upload. Login passwords and the encryption recovery secret serve separate purposes. A dedicated recovery signing identity authorizes fresh device keys; stored backups contain encrypted private-key armor only. Remembering keys on a private browser requires an explicit opt-in. Sign-out clears remembered keys and revokes the browser's push subscription.
+Private social content is signed and encrypted through `@porchday/crypto` before upload. Login passwords and the encryption recovery secret serve separate purposes. A recovery signing identity authorizes new device keys; backups contain encrypted private-key armor. Remembering keys on a private browser requires opt-in. Sign-out clears remembered keys and revokes the browser's push subscription. Account and access metadata remain visible to the service; see the [protocol](../../docs/crypto-protocol.md).
 
-The service worker caches application assets only. It never intercepts API requests, stores decrypted posts/photos, or reads push payloads. Push uses a fixed generic notification. Vite versions the shell cache from built assets. A waiting update requires an explicit action and checks for active drafts.
+The service worker caches application assets only, including offline manifest fallback. It does not intercept API requests, store decrypted content, or read push payloads. Push uses fixed generic text. Vite versions the shell cache and install-icon URLs; a waiting update requires an explicit action and checks for active drafts.
 
-Post/comment audiences come from a fresh server snapshot. Missing recipient keys stop publication. Reactions verify the canonical encrypted tag and count distinct members per emoji. Absolute deadlines hide loaded content when it expires. Reply forms show the inherited deadline and require another review if the server reports a changed deadline.
+Post/comment audiences come from fresh server snapshots; missing recipient keys stop publication. Reactions validate their encrypted descriptor and per-target/member tag. Unicode metadata is pinned; custom images and saved personal emoji libraries are encrypted. Viewers can save a visible custom reaction to their own library. Absolute deadlines hide expired content, and replies show their inherited deadline before submission.
 
-Ordinary edits do not broaden historical audiences. **Share this memory again** is an explicit author-only copy to a selected current audience. It creates fresh ciphertext, media IDs, and reaction namespace, keeps the original absolute expiry or shortens it, preserves encrypted provenance, and copies no prior comments or reactions. The dedicated server endpoint checks ownership and the reviewed source deadline atomically. Later deletion/shortening of the source does not alter the independent copy; the confirmation explains this.
+Ordinary edits do not broaden historical audiences. **Share this memory again** is an explicit author-only copy for a selected current audience, with fresh ciphertext/media and no copied comments or reactions. It retains or shortens the original absolute expiry. Later deletion or shortening of the source does not alter the independent copy; the confirmation explains this.
 
-Profile/group saves deliberately re-encrypt retained pictures for the chosen current recipients. Existing immutable posts are unchanged. A profile can be private to its member or shared with current connections; the exact-lookup handle stays public.
+Profile/group edits re-encrypt retained pictures for current recipients; existing immutable posts stay unchanged. Profile visibility can be private or shared with current connections, while exact-lookup handles remain public. Browser-wide Autumn/Clean/generated backgrounds are device-local appearance preferences, separate from encrypted member profile themes.
 
 ## Data portability
 
-Exports page through owned records, decrypt locally, validate current revisions/deadlines before each download, and write bounded multipart ZIP archives. Default downloads encrypt each ZIP with a separate random archive secret. Readable ZIPs require explicit selection. The final completion part is mandatory; imports require every part, validate paths/expansion limits and photo checksums, and preview the result before writing.
+Exports decrypt locally, check revisions/deadlines, and produce bounded multipart ZIP archives. Downloads encrypt each ZIP with a separate archive secret by default; readable ZIPs require explicit selection. Imports require all parts and the completion marker, validate paths/expansion limits/checksums, and show a preview before writing. User-saved exports cannot be recalled when content expires.
 
-Own imported comments/reactions become private journal entries with context references. Other people's threads are never recreated. Connections and group memberships are reference data; imports never create social relationships. Suspended members retain a read-only vault unlock, owned export, deletion, and appeals. Account deletion remains available from the locked vault even without encryption keys.
-
-## Verification
-
-Frontend tests cover absolute/inherited deadlines, changed-audience messaging, busy-submit locking, timezone display, PWA privacy, archive schema/checksums/HTML escaping/ZIP limits/multipart completeness, and author-only resharing. They supplement server authorization tests and cross-client cryptography tests.
-
-Before opening the pilot, exercise real browser and installed-PWA flows: invitation and email verification; remembering/forgetting keys; two accounts connecting and commenting; nonfriend comments within an authorized thread; image sharing; expiry while a page is open; device recovery and revocation; group moderator removal; exports/imports; account theft recovery and independent staff approval; push permission denial/opt-out; keyboard navigation and small-screen layouts. Browser visual QA and independent accessibility/security review are separate checks, not implied by a successful build.
+Imported own comments/reactions become private journal entries with context references. Other people's threads are not recreated. Connections and memberships are references, never automatically recreated relationships. The optional personal emoji library preserves its validated custom-image identities. Suspended members retain read-only vault unlock, owned export, deletion and appeals. Account deletion remains available from a locked vault without encryption keys. See the [archive contract](../../docs/archive/README.md).

@@ -13,6 +13,10 @@ dist/
 coverage/
 *.pem
 *.key
+*.p8
+*.p12
+*.pfx
+*.mobileprovision
 *.local
 *.local.*
 .envrc
@@ -25,4 +29,5 @@ xcuserdata/
 
 !apps/api/wrangler.local.jsonc
 apps/ios/build/
+apps/ios/Porchday.xcodeproj/
 packages/crypto/native/build/

@@ -1,0 +1,27 @@
+name: Feature request
+description: Propose a change to Porchday.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first and use synthetic examples. Do not include private member information or credentials.
+        For suspected vulnerabilities, follow [SECURITY.md](https://github.com/andyk/porchday/security/policy) instead of opening an issue.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Who needs this, and what is difficult today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the change and any simpler alternatives you considered.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How would we verify it?
+      description: Optional examples of success, relevant platform/build, and any privacy, accessibility or compatibility considerations.

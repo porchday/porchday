@@ -6,8 +6,8 @@ Updated October 25, 2026 Pacific after authenticated provisioning, live applicat
 
 | Environment | Provider resource | Created at (UTC) | Configuration | Base rate |
 |---|---|---|---|---:|
-| Staging | `andykonwinski/porchday-staging`, branch `main` | 2026-10-25 15:52:58.591 | PostgreSQL 17.11, `PS_5_AWS_ARM`, one node | $5/month |
-| Production | `andykonwinski/porchday-production`, branch `main` | 2026-10-25 15:55:23.504 | PostgreSQL 17.11, `PS_20_AWS_ARM`, primary plus two replicas | $50/month |
+| Staging | `porchday-staging` in the deployment-owned organization, branch `main` | 2026-10-25 15:52:58.591 | PostgreSQL 17.11, `PS_5_AWS_ARM`, one node | $5/month |
+| Production | `porchday-production` in the deployment-owned organization, branch `main` | 2026-10-25 15:55:23.504 | PostgreSQL 17.11, `PS_20_AWS_ARM`, primary plus two replicas | $50/month |
 
 Both are AWS Oregon (`us-west`), with 10 GiB minimum and 50 GiB maximum gp3 storage, 3,000 IOPS and 125 MiB/s baseline throughput. The authenticated catalog confirmed the selected prices before purchase. These are provisioned recurring resources, not capacity-test results. New member admission remains closed pending hosted acceptance checks.
 

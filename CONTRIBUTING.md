@@ -1,48 +1,64 @@
 # Contributing to Porchday
 
-Porchday is under active development in the private [`andyk/porchday`](https://github.com/andyk/porchday) repository. These instructions apply to collaborators who already have access. Public source publication is a separate owner decision; the Apache-2.0 license does not make this private repository publicly accessible.
+Porchday is developed in the private [`andyk/porchday`](https://github.com/andyk/porchday) repository. These instructions apply to collaborators with access. Apache-2.0 is the source license; publishing the repository remains a separate owner decision.
 
-Read the [design](design/social-network-design.md) for intended behavior and the [implementation record](docs/build-status.md) for what has actually been verified. The intended operator is a philanthropy-funded nonprofit; this repository does not establish that legal status.
+Start with the [README](README.md), [product design](design/social-network-design.md) and [implementation record](docs/build-status.md). The design describes the intended product; the implementation record distinguishes delivered behavior, verification and remaining work. Nonprofit operation is the intended model, not a legal status established by this repository.
 
-## Proposing a change
+## Propose a change
 
-Use [GitHub Issues](https://github.com/andyk/porchday/issues) or a pull request in the private repository for ordinary bugs and changes. Search for an existing issue first. Describe the affected flow, expected behavior, a minimal reproduction using synthetic data, and relevant versions. Follow the [issue-tracking workflow](AGENTS.md), including keeping delivered changes open when acceptance remains unverified. Discuss changes to the encryption protocol, access rules, data lifecycle or product scope with the maintainer before implementing them. Send suspected vulnerabilities through the process in [SECURITY.md](SECURITY.md), not an ordinary issue or pull request.
+Search [open and closed issues](https://github.com/andyk/porchday/issues) before filing a bug or proposing a feature. For a bug, include the affected build and platform, expected and observed behavior, and a small reproduction using synthetic data. Follow the [issue-tracking workflow](AGENTS.md): delivered work awaiting acceptance stays marked `needs verification`, and deferred work does not become a release requirement without a scope decision.
 
-Preserve the product commitments: a chronological friends feed, a maximum of 300 mutually accepted connections including family, no ads or influencer mechanics, human-operated member accounts, and practical data export/deletion. Changes must preserve audience restrictions, inherited expiry, recovery safeguards and client-side content encryption. The design is the source of detail; do not weaken a safeguard just to make a test pass.
+Discuss changes to encryption, access rules, data lifecycle or product scope with the maintainer before implementation. Preserve the chronological feed, 300-connection limit including family, no-ad model, human-operated accounts and data portability. Audience restrictions, inherited expiry and recovery safeguards must not be weakened to make a test pass. Suspected vulnerabilities belong in the private reporting process in [SECURITY.md](SECURITY.md), not an ordinary issue or pull request.
 
-Follow the [code of conduct](CODE_OF_CONDUCT.md). The current repository owner, [@andyk](https://github.com/andyk), controls collaborator access and release decisions. This identifies repository administration, not a legal nonprofit or trademark owner.
+Follow the [code of conduct](CODE_OF_CONDUCT.md). The repository owner, [@andyk](https://github.com/andyk), currently controls collaborator access and release decisions. That identifies repository administration, not a nonprofit entity or trademark owner.
 
-## Local development
+## Develop locally
 
-Use Node 24 or newer, npm, Python 3, and Docker for a disposable PostgreSQL 17 instance. Begin with:
+Use Node 24 (the CI version), npm, Python 3 and Docker for disposable PostgreSQL 17. Install the locked dependencies:
 
 ```sh
 npm ci
-npm run typecheck
-npm run build
 ```
 
-Follow [operations](docs/operations.md) for the local database, migrations, runtime roles, development API and local journal configuration. Run `npm run dev:api` and `npm run dev` in separate terminals after setup. Use synthetic accounts and local email/media artifacts. Do not point development or test tools at production.
+Follow [operations](docs/operations.md) for local database creation, migrations, restricted runtime roles and local journal setup. Then run these in separate terminals:
 
-The [Linux CI workflow](.github/workflows/ci.yml) is the executable reference for the complete disposable database environment. It sets all eight test database URLs, applies migrations to the base database, runs `node scripts/prepare-test-databases.ts`, then runs `npm test`. Without the database configuration, a local test run can skip integration coverage; report that limitation. Test database preparation creates local databases and requires a local role allowed to create them.
+```sh
+npm run dev:api
+npm run dev
+```
 
-For native work, follow the [iOS build instructions](apps/ios/README.md) and [native CI workflow](.github/workflows/ios.yml). Full Xcode, an installed simulator runtime, the pinned Go toolchain and XcodeGen are required. Simulator builds do not require an App Store listing. Verify shared encrypted payloads across the JavaScript and native implementations when changing that protocol.
+Use synthetic accounts and the local email/media adapters. Local development does not need production credentials. Never point development or test tools at a hosted member database.
 
-## Pull requests and verification
+For native work, use the [iOS build instructions](apps/ios/README.md). Full Xcode, an installed simulator runtime, XcodeGen and the Go version pinned in the native module are required. Simulator builds do not require an App Store listing. The [native CI workflow](.github/workflows/ios.yml) is the executable reference.
 
-- Keep each change focused. Explain the concrete problem, resulting behavior, migration or compatibility effects, and verification performed.
-- Add regression coverage for changed authorization, expiry, encryption, recovery, media, retry or deletion behavior. Use synthetic fixtures and the existing test suites; documentation-only changes need accurate links and commands rather than new implementation tests.
-- Run the relevant tests, `npm run typecheck`, `npm run build`, and `python3 scripts/check-secrets.py`. Record skipped checks and unavailable tools explicitly. Native changes also need the applicable native CI checks.
-- Add a new numbered migration for schema changes. Do not rewrite migrations that have already been applied. Consider restricted runtime roles and restore/deletion behavior, not just a privileged local connection.
-- Update user/developer documentation and [CHANGELOG.md](CHANGELOG.md) when behavior changes. Local tests, CI, isolated cloud probes and production verification are different evidence; label them accurately.
-- Do not commit secrets, member data, recovery material, private reports or generated build artifacts. Inspect screenshots, logs and fixtures before attaching them. A passing pattern scan is not a substitute for that inspection.
+## Verify a change
 
-Keep private credentials outside the checkout. The project convention is `~/.config/inner-circle/secrets.env`; [README.md](README.md#secrets) explains the trusted command wrapper. Never execute that file as shell code or copy its values into a pull request, client bundle or test fixture. Normal CI should use disposable resources and synthetic credentials.
+Run the checks relevant to your change, and the standard checks before submitting a code change:
+
+```sh
+python3 scripts/check-format.py
+npm run typecheck
+npm test
+npm run build
+python3 scripts/check-secrets.py
+```
+
+The [Linux CI workflow](.github/workflows/ci.yml) defines the full disposable database setup. It supplies `TEST_DATABASE_URL` plus eight suite-specific test URLs, applies migrations to the base database, and runs `node scripts/prepare-test-databases.ts` before `npm test`. The preparation command creates local databases and needs a role with that permission. Without those URLs, some integration tests skip: a passing partial run is not full database coverage. Record skipped checks and unavailable tools explicitly.
+
+Add regression coverage for changed authorization, expiry, encryption, recovery, media, retries and deletion. Shared payload changes need JavaScript/native compatibility checks. Use a new numbered migration for schema changes; do not rewrite applied migrations. Check restricted runtime roles and restore/deletion behavior as well as a privileged local connection. Documentation-only changes need accurate links and commands, not new application tests.
+
+Keep pull requests focused. Describe the concrete problem, resulting behavior, compatibility or migration effects, and checks performed. Distinguish local tests, CI, isolated provider probes and hosted acceptance. Update the relevant documentation and [changelog](CHANGELOG.md) for behavior changes.
+
+## Keep private material out of contributions
+
+Do not commit credentials, member data, encryption/recovery material, private reports, local evidence or generated build output. Inspect screenshots, logs and fixtures before attaching them. A passing pattern scan does not replace that review. Use the [formatting policy](docs/formatting.md) for text changes.
+
+Deployment credentials stay outside the checkout; the project convention is `~/.config/inner-circle/secrets.env`. The [README](README.md#secrets) documents the trusted command wrapper. Do not execute that file as shell code, copy its values into commands or URLs, or expose them to a client bundle. Normal CI uses disposable resources and synthetic credentials. A contribution or passing CI run does not authorize deployment or a change to repository visibility.
 
 ## Licensing and dependencies
 
-Original Porchday code is licensed under [Apache License 2.0](LICENSE). Intentional contributions submitted for inclusion follow that license under its contribution terms unless an explicit separate agreement applies. Submit only material you have the right to contribute; retain required upstream notices.
+Original Porchday code uses [Apache License 2.0](LICENSE). Contributions intentionally submitted for inclusion follow its contribution terms unless explicitly stated otherwise. Submit only material you have the right to contribute and retain upstream notices.
 
-Dependencies retain their own licenses. Review the actual upstream license and bundled/transitive notices before adding or upgrading one. Update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), the relevant files in [third-party-licenses](third-party-licenses), and app-visible notices using `python3 scripts/build-third-party-notices.py` when applicable. Follow the corresponding-source and replacement-build requirements documented there before distributing clients. Do not claim that the root Apache license relicenses a dependency.
+Dependencies retain their own licenses. Review upstream and transitive licensing when changing dependencies. Update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [third-party-licenses](third-party-licenses) and app-visible notices with `python3 scripts/build-third-party-notices.py` where applicable. Follow the documented corresponding-source and replacement-build requirements before distributing clients; the root Apache license does not relicense dependencies.
 
-Names and branding are addressed separately in [TRADEMARKS.md](TRADEMARKS.md). A public release also requires a verified private security-reporting channel and conduct-reporting contacts; their current gaps are recorded in the respective policies.
+Names and branding are addressed in [TRADEMARKS.md](TRADEMARKS.md). Public source publication, opening community participation and broader service admission are separate decisions. Use the GitHub reporting routes described in [SECURITY.md](SECURITY.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Private vulnerability reporting must be enabled and verified at publication; GitHub abuse reports cover GitHub policy violations, not a general private Porchday conduct process.

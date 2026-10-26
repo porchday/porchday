@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible problem in Porchday.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Search existing issues first. Use synthetic examples and remove private data from screenshots or errors.
+        Do not include credentials, recovery keys, invitation/reset links, or member content.
+        For suspected vulnerabilities, follow [SECURITY.md](https://github.com/andyk/porchday/security/policy) instead of opening an issue.
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and observed behavior
+      description: What did you try to do, and what happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Give the smallest example using synthetic data. If you cannot reproduce it, say so.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Build and environment
+      description: Commit/build if known, web/PWA/iOS, browser and operating system.
+  - type: textarea
+    id: checks
+    attributes:
+      label: Checks and additional context
+      description: Optional sanitized error code, related issue, workaround, or checks already tried. Do not upload raw logs or private evidence.

@@ -1,63 +1,90 @@
 # Porchday
 
-A simple social network for people who know each other. No ads, no influencer mechanics, and a chronological feed. The intended operator is a philanthropy-funded nonprofit; legal status and independent security review are launch prerequisites.
+A simple social network for people who know each other: no ads, no influencer mechanics, and a chronological feed. The intended operator is a philanthropy-funded nonprofit. Establishing that organization and completing independent security review remain launch prerequisites.
 
-Porchday is under active development. The repository is private during development. Application source is licensed Apache-2.0; dependency license notices apply separately.
+Porchday is an actively developed, invitation-only adult pilot. The repository is currently private; preparing it for open source does not change its visibility. Original application source is [Apache-2.0 licensed](LICENSE), with separate [dependency notices](THIRD_PARTY_NOTICES.md).
 
-## Project policies and history
+## What is implemented
 
-See the [contribution guide](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [changelog](CHANGELOG.md), [security-reporting policy](SECURITY.md), and [name/branding statement](TRADEMARKS.md). Public reporting contacts and branding-rights ownership remain explicit launch gates; these files do not announce public source availability or a staffed response service.
+- Up to 300 mutual connections, including family; personal walls, named groups and audience controls.
+- Photos, threaded comments, and multiple Unicode or custom-image reactions per person on posts and comments.
+- Optional post/comment expiration, with replies inheriting their parent's deadline or a shorter one.
+- Encrypted profiles and personalization, a web/PWA client, and a native SwiftUI iOS client.
+- Member invitations, email/password accounts, device enrollment, account recovery, reporting and moderation workflows.
+- Local export/import, scoped integrations and deletion controls.
 
-Track bugs and planned work in [GitHub Issues](https://github.com/andyk/porchday/issues). Priorities use `P1`–`P3`; `deferred` marks future features, and `needs verification` marks delivered changes awaiting acceptance. See [the issue-tracking workflow](AGENTS.md).
+Private social content is signed and encrypted on member devices. The operator still processes account details and access metadata; this is not a claim that every database field is unreadable. See the [cryptographic protocol and limitations](docs/crypto-protocol.md). Password recovery and content-key recovery are separate.
 
-## Architecture
+Google/GitHub sign-in, Datadog and technical proof of humanity are deferred. The [design](design/social-network-design.md) describes the intended product; the dated [build status](docs/build-status.md) records what was actually verified and what remains open.
 
-- React + TypeScript PWA, Cloudflare Worker API/static assets.
-- PlanetScale Postgres through separate Hyperdrive auth/social/jobs bindings, query caching disabled.
-- Private Cloudflare R2 ciphertext storage and idempotent Queue/Cron cleanup.
-- Email/password accounts, invitation-only enrollment and Cloudflare transactional email.
-- Standard OpenPGP client-side encryption, maintained libraries, native/web interoperability tests.
-- SwiftUI iOS client; full Xcode and an iOS Simulator runtime required for simulator verification.
+## Start developing
 
-## Develop
+Use **Node 24**, npm, and Python 3. From a clone you are authorized to access:
 
-Use Node 24+ and Docker. Run `npm ci`, then the documented local database setup. `npm test` runs crypto and unit tests; database integration tests require `TEST_DATABASE_URL`. `npm run typecheck` validates workspace types. `npm run build` builds the web app.
+```sh
+git clone https://github.com/andyk/porchday.git
+cd porchday
+npm ci
+npm run typecheck
+npm run build
+npm test
+```
 
-The design in [design/social-network-design.md](design/social-network-design.md) defines the complete feature and security requirements. [docs/build-status.md](docs/build-status.md) tracks actual evidence and outstanding work. Do not infer readiness from this README.
+These commands need no Cloudflare, PlanetScale or Apple credentials. Without database environment variables, `npm test` skips the PostgreSQL integration suites. To run those suites, or to sign in to a local app, follow the [web development setup](apps/web/README.md), which uses disposable PostgreSQL 17 containers. `npm run dev` starts only the frontend; it does not provision an API or database.
 
-The [portable archive contract](docs/archive/README.md) includes its schema, synthetic samples, version policy and importer guide. The [integration API guide](docs/integration-api.md) documents the implemented consent flow, scopes and limits. These documents are checked into this private repository; they do not announce a public API or source release.
+For native builds and interoperability tests, see the [iOS instructions](apps/ios/README.md). Full Xcode and an installed iOS Simulator runtime are required for simulator tests; Command Line Tools alone are insufficient.
+
+## Repository guide
+
+| Path | Purpose |
+| --- | --- |
+| `apps/web` | React/TypeScript public site and PWA, built with Vite. |
+| `apps/api` | Cloudflare Worker, PostgreSQL migrations and API tests. |
+| `apps/ios` | SwiftUI client and simulator tests. |
+| `packages/crypto` | Shared OpenPGP protocol, Unicode metadata, JavaScript and Go interoperability fixtures. |
+| `scripts` | Development, verification and operator tools. Hosted scripts require explicit operator preparation. |
+| `design`, `docs` | Product requirements, protocols, verification records and runbooks. |
+| `infra` | Deployment resource manifest and provisioning/configuration tools. |
+
+The hosted service uses PlanetScale Postgres through separate auth/social/jobs Hyperdrive bindings, private Cloudflare R2 storage, Queues/Cron cleanup and Cloudflare transactional email. The local development adapters are smaller substitutes; they do not verify hosted cleanup, delivery or restore safety.
+
+The [portable archive contract](docs/archive/README.md) supplies the schema, samples and version policy. The [integration API guide](docs/integration-api.md) documents consent, scopes and limits. These are implementation contracts, not an announcement of public API access.
+
+## Contributing and licensing
+
+Start with the [contribution guide](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [security policy](SECURITY.md), [changelog](CHANGELOG.md) and [branding policy](TRADEMARKS.md). Track work in [andyk/porchday issues](https://github.com/andyk/porchday/issues); the [issue workflow](AGENTS.md) defines priorities and verification status. The security policy uses GitHub private vulnerability reporting, which the repository owner must enable and verify when publishing. Conduct reports use GitHub’s abuse-reporting process, with the limits described in the code of conduct. The [open-source readiness checklist](docs/open-source-readiness.md) tracks publication requirements separately from repository visibility.
+
+After changing dependencies or bundled data, review their licenses and regenerate the client notices:
+
+```sh
+python3 scripts/build-third-party-notices.py
+python3 scripts/generate-unicode-emoji.py --check
+```
+
+To produce the tracked client source/rebuild archive locally, run `python3 scripts/package-client-source.py /tmp/porchday-client-source.tar.gz` from a Git checkout. This does not publish anything or include the server implementation. See [third-party notices](THIRD_PARTY_NOTICES.md) for distribution obligations.
 
 ## Secrets
 
-Credentials are outside the repository in `~/.config/inner-circle/secrets.env`. `scripts/with-secrets.py` runs a trusted command with that environment without printing values. Never source the file as shell code, embed credentials in commands/URLs, log them, or commit them. Production credentials never reach clients. Encryption recovery keys are generated on member devices, not by deployment tooling.
+Local development needs no hosted secrets. Existing operator tooling reads credentials from an external `~/.config/inner-circle/secrets.env` through `scripts/with-secrets.py`; that historical directory name is not a local-development requirement. Never source a credentials file as shell code, commit it, or include its values in logs, URLs or examples. Member encryption recovery keys are generated on member devices, not by deployment tooling.
 
-## Deployment and verification
+Use the [operations guide](docs/operations.md) for deployment and admission procedures. Preserve the live environment's bindings, secrets, signup policy and logging restrictions; compare live settings before changing them. Never deploy `apps/api/wrangler.local.jsonc`. A successful build or public `/health` response does not establish delivery, restore safety or pilot capacity.
 
-Infrastructure resource names are recorded in `infra/resources.json`. Use separate staging and production databases, R2 buckets, queues, auth secrets and encryption test identities. Complete the requirements checklist and real deployed tests before declaring the MVP ready. Public source release, App Store/TestFlight distribution and independent review are separate milestones.
-
-The [operations guide](docs/operations.md) links the admission and deployment procedures. Use the [monitoring runbook](docs/independent-monitoring.md), [staff Access procedure](docs/staff-access.md), [incident response guide](docs/incident-response.md) and [restore-safety procedure](docs/restore-safety.md) for their respective operational checks. The [hosted web/PWA checklist](docs/hosted-verification.md) and [hosted native procedure](docs/hosted-native-verification.md) define remaining acceptance work; deployment alone does not establish that those checks passed.
-
-The shared corn logo source is `apps/web/public/icon.svg`. After editing it, run `node apps/web/scripts/generate-icons.mjs` with the project's Playwright Chromium installed. This regenerates the transparent orange website mark (`logo.svg`), web/PWA PNGs, iOS app icon and native in-app mark from the same vector; inspect the generated assets before committing them.
-
-The web build gives install icons content-based URLs while preserving the PWA identity and existing image aliases. Chrome may require approval for an installed app's changed icon: apply Porchday's **Update now** if offered, close and reopen the installed app, then use its **⋮ → Review app update** when offered. Do not clear site data or reinstall to refresh artwork. See [Chrome's installed-app update behavior](https://developer.chrome.com/blog/improvements-to-web-app-updates).
-
-## Operator handoff
-
-| Surface | Address / starting point |
+| Surface | Starting point |
 | --- | --- |
-| Production web app and installable PWA | [porchday.com](https://porchday.com); registration remains closed. |
-| Staging web app and PWA | [staging.porchday.com](https://staging.porchday.com); invited signup is enabled for owner development. |
-| Status | [Production](https://status.porchday.com) and [staging](https://staging-status.porchday.com). These monitors share Cloudflare's platform. |
-| Staff account recovery | `/staff` on the corresponding app hostname; personal Access login, MFA and an assigned application role are required. |
-| Native iOS simulator | [Native CI](https://github.com/andyk/porchday/actions/workflows/ios.yml) supplies the tested simulator archive and screenshot. For local builds, use `apps/ios/build-native.sh` with full Xcode, an installed iOS Simulator runtime, Go and XcodeGen. |
-| Source | [Private GitHub repository](https://github.com/andyk/porchday), Apache-2.0 licensed. Publishing it remains an owner decision. |
+| Production | [porchday.com](https://porchday.com); invitation-only signup is enabled for authorized owner use. |
+| Staging | [staging.porchday.com](https://staging.porchday.com); invitation-only signup is enabled. |
+| Status | [Production](https://status.porchday.com) and [staging](https://staging-status.porchday.com); monitors share Cloudflare's platform. |
+| Staff recovery | `/staff` on the corresponding hostname; personal Access login, MFA and an assigned role are required. |
+| Native verification | [iOS CI](https://github.com/andyk/porchday/actions/workflows/ios.yml); dated outcomes are recorded in build status. |
 
-Start with the current deployment and open acceptance items in [build status](docs/build-status.md). A public `/health` response establishes basic availability only; the private operations check and monitor also evaluate cleanup, backups, email and review queues. A green status does not prove inbox delivery or pilot capacity.
+The October 26, 2026 verification record includes delivered-email acceptance for signup, ordinary password reset, stolen-account recovery, two-address email change, and member-invitation delivery through recipient signup, verification and login. See [email and invitation evidence](docs/operations.md#email-and-monitoring) and [recipient acceptance](docs/member-invitations-and-sharing.md). These checks used authorized test accounts and human inbox participation; they are not evidence for every mail provider or for bounce handling.
 
-For a release, review additive migrations and run the documented verification first. Render the intended environment with `python3 scripts/configure-worker.py staging` or `production`, compare its version and full settings with the provider immediately before deployment, and preserve the existing signup policy, bindings, secrets and logging restrictions. Check both public/protected health and served assets afterward. Keep rollback compatible with the installed schema. See [operations](docs/operations.md) for environment-specific credentials and steps; never deploy the local-verification configuration.
+Broader admission remains separate from enabled signup. Outstanding requirements include independent encryption/security review, support and moderation staffing, two-person recovery coverage, nonprofit/legal/contact disclosures, operating-budget approval, and remaining accessibility, capacity and alert checks. Physical-device signing, APNs, Universal Links and App Store/TestFlight distribution require separate Apple setup.
 
-For an incident, use the [incident runbook](docs/incident-response.md) and [bounded queue recovery procedure](docs/queue-recovery.md). For a restore, follow [restore safety](docs/restore-safety.md): isolate the target and replay independent privacy/deletion decisions before allowing traffic. Daily database backups and private media snapshots have seven-day retention. A restore must not revive expired or deleted content. Staff-led ownership recovery cannot recover missing content-encryption keys.
+For incidents and restores, use the [incident guide](docs/incident-response.md), [queue recovery procedure](docs/queue-recovery.md) and [restore-safety procedure](docs/restore-safety.md). Consult the dated [cost ledger](docs/cost-ledger.md) for spending evidence. Current public/private acceptance boundaries are in [build status](docs/build-status.md), [hosted web/PWA verification](docs/hosted-verification.md) and [hosted native verification](docs/hosted-native-verification.md).
 
-The latest bounded cost inventory records approximately **$60/month in platform base charges before usage and overages** ($55 PlanetScale plus $5 Workers Paid), excluding support/moderation and other operating expenses. The last confirmed paid setup invoice is $5; recent accrued usage is not fully reported. The $10 usage alert is enabled, but is neither a hard cap nor the cumulative setup budget. The authorization is **$1,000 total setup spending**, not a monthly budget. Consult the dated [cost ledger](docs/cost-ledger.md) before making further commitments.
+## Shared artwork and installed app updates
 
-Completion and admission are separate. Delivered-email password-reset acceptance is complete. Email-change and recipient invitation signup/verification still need human participation. Before admitting real pilot members, complete independent encryption/security review, staffed moderation and two-person recovery, legal/nonprofit/contact disclosures, operating-budget approval, and the remaining accessibility, capacity and alert-delivery checks. Physical-device signing, APNs/universal links and App Store/TestFlight distribution require separate Apple setup. Google/GitHub login, Datadog and technical proof of humanity are deferred. The [verification record](docs/build-status.md) distinguishes actual hosted evidence from local/simulator checks and unverified claims.
+The shared corn logo source is `apps/web/public/icon.svg`. With Playwright Chromium installed, `node apps/web/scripts/generate-icons.mjs` regenerates the website, PWA and native artwork. Inspect the results before committing.
+
+The web build gives installed-app icons content-based URLs while preserving PWA identity. Apply Porchday's **Update now** if offered, close and reopen the installed app, and use Chrome's **⋮ → Review app update** when offered. Do not clear site data or reinstall solely to refresh artwork; see [Chrome's update behavior](https://developer.chrome.com/blog/improvements-to-web-app-updates).
