@@ -5,11 +5,15 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 const publicDir = new URL("../public/", import.meta.url);
 const iosAssets = new URL("../../ios/Porchday/Assets.xcassets/", import.meta.url);
 const svg = await readFile(new URL("icon.svg", publicDir), "utf8");
-// The website reverses the same two inks; installed app icons keep the original.
-await writeFile(new URL("logo.svg", publicDir), svg
-  .replaceAll("#974013", "__PORCHDAY_INK__")
-  .replaceAll("#fff", "#974013")
-  .replaceAll("__PORCHDAY_INK__", "#fff"));
+// Use the shared silhouette as a mask so both the background and husk cuts
+// are transparent. A tighter viewBox makes the website mark subtly larger.
+const silhouette = svg.replace(/<svg[^>]*>/, "").replace("</svg>", "")
+  .replaceAll("#974013", "#000");
+await writeFile(new URL("logo.svg", publicDir), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="12 12 168 168">
+  <defs><mask id="corn" maskUnits="userSpaceOnUse" x="0" y="0" width="192" height="192">${silhouette}</mask></defs>
+  <rect width="192" height="192" fill="#974013" mask="url(#corn)"/>
+</svg>
+`);
 const browser = await chromium.launch({ headless: true });
 try {
   for (const size of [180, 192, 512, 1024]) {
