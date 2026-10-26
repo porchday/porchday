@@ -3,9 +3,11 @@ import {
   emojiSourceDimensions,
   prepareCustomEmoji,
   validateCustomEmojiPixels,
+  stripCanvasPngMetadata,
 } from "../src/emoji-images";
 import { custom, tinyPng, pngChunk } from "./emoji-fixtures";
 import { customPngBytes, validateCustomPng } from "@porchday/crypto/reactions";
+import webkitFixture from "./fixtures/webkit-canvas-png.json";
 
 afterEach(() => vi.unstubAllGlobals());
 function jpeg(width: number, height: number) {
@@ -51,7 +53,12 @@ function webp(animated = false) {
   value[27] = 31;
   return value;
 }
-function browser(width: number, height: number, fail = false) {
+function browser(
+  width: number,
+  height: number,
+  fail = false,
+  encoded?: Uint8Array,
+) {
   const close = vi.fn(),
     draw = vi.fn();
   vi.stubGlobal(
@@ -68,7 +75,7 @@ function browser(width: number, height: number, fail = false) {
           callback(
             fail
               ? null
-              : new Blob([tinyPng(4, canvas.width, canvas.height)], {
+              : new Blob([encoded ?? tinyPng(4, canvas.width, canvas.height)], {
                   type: "image/png",
                 }),
           );
@@ -80,6 +87,74 @@ function browser(width: number, height: number, fail = false) {
   return { close, draw };
 }
 describe("static custom image normalization", () => {
+  it("normalizes actual Safari canvas EXIF output without changing pixels, alpha or safe color chunks", async () => {
+    const original = Buffer.from(webkitFixture.png, "base64"),
+      chunks: { kind: string; bytes: Uint8Array }[] = [];
+    for (let at = 8; at < original.length; ) {
+      const end = at + original.readUInt32BE(at) + 12;
+      chunks.push({
+        kind: original.subarray(at + 4, at + 8).toString("ascii"),
+        bytes: original.subarray(at, end),
+      });
+      at = end;
+    }
+    expect(chunks.map((chunk) => chunk.kind)).toContain("eXIf");
+    expect(() => validateCustomPng(original)).toThrow(/Unsupported/);
+    const result = stripCanvasPngMetadata(original);
+    expect(result).toEqual(
+      new Uint8Array(
+        Buffer.concat([
+          original.subarray(0, 8),
+          ...chunks
+            .filter((chunk) => chunk.kind !== "eXIf")
+            .map((chunk) => chunk.bytes),
+        ]),
+      ),
+    );
+    expect(validateCustomPng(result)).toEqual({ width: 64, height: 64 });
+    const { close } = browser(64, 64, false, original);
+    const prepared = await prepareCustomEmoji(
+      new File([original], "webkit.png", { type: "image/png" }),
+      "orange",
+    );
+    expect(customPngBytes(prepared.custom.png)).toEqual(result);
+    expect(close).toHaveBeenCalledOnce();
+    // Receiving an unsupported PNG never invokes upload-only normalization.
+    await expect(
+      validateCustomEmojiPixels({
+        ...prepared,
+        custom: { ...prepared.custom, png: webkitFixture.png },
+      }),
+    ).rejects.toThrow(/Unsupported/);
+    expect(Buffer.from(webkitFixture.png, "base64")).toEqual(original);
+  });
+  it("checks stripped chunk CRCs and rejects malformed core, animation, trailing bytes and oversize canvas data", () => {
+    const original = tinyPng(),
+      badExif = pngChunk("eXIf", new Uint8Array(68));
+    badExif[badExif.length - 1] ^= 1;
+    const withChunk = (chunk: Uint8Array) =>
+      Buffer.concat([original.subarray(0, 33), chunk, original.subarray(33)]);
+    const idatStart = 33,
+      idatEnd = idatStart + original.readUInt32BE(idatStart) + 12;
+    for (const bytes of [
+      withChunk(badExif),
+      withChunk(pngChunk("acTL", new Uint8Array(8))),
+      withChunk(pngChunk("ABCD", new Uint8Array())),
+      Buffer.concat([original, Buffer.of(0)]),
+      original.subarray(0, -1),
+      new Uint8Array(1024 * 1024 + 1),
+      Buffer.concat([
+        original.subarray(0, idatEnd),
+        pngChunk("eXIf", new Uint8Array(68)),
+        original.subarray(idatStart),
+      ]),
+      Buffer.concat([
+        original.subarray(0, 33),
+        pngChunk("IEND", new Uint8Array()),
+      ]),
+    ])
+      expect(() => stripCanvasPngMetadata(bytes)).toThrow();
+  });
   it("bounds PNG/JPEG/WebP headers before decoding and refuses animation and other formats", async () => {
     expect(emojiSourceDimensions(tinyPng(), "image/png")).toEqual({
       width: 1,

@@ -112,6 +112,83 @@ export function emojiSourceDimensions(bytes: Uint8Array, mime: string) {
   throw new Error("Choose a static PNG, JPEG, or WebP image.");
 }
 
+const canvasPngChunks = new Set([
+  "IHDR",
+  "PLTE",
+  "tRNS",
+  "IDAT",
+  "IEND",
+  "sRGB",
+  "gAMA",
+  "cHRM",
+  "pHYs",
+]);
+const pngCrcTable = Uint32Array.from({ length: 256 }, (_, value) => {
+  for (let bit = 0; bit < 8; bit++)
+    value = value & 1 ? 0xedb88320 ^ (value >>> 1) : value >>> 1;
+  return value >>> 0;
+});
+/** Only for our own sRGB canvas output, never received or imported PNG bytes. */
+export function stripCanvasPngMetadata(bytes: Uint8Array): Uint8Array {
+  const invalid = () => new Error("Could not normalize this image.");
+  if (
+    bytes.length < 45 ||
+    bytes.length > 1024 * 1024 ||
+    ![137, 80, 78, 71, 13, 10, 26, 10].every(
+      (value, index) => bytes[index] === value,
+    )
+  )
+    throw invalid();
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const parts: Uint8Array[] = [bytes.subarray(0, 8)];
+  let total = 8,
+    count = 0,
+    ended = false,
+    dataStarted = false,
+    dataEnded = false;
+  for (let at = 8; at < bytes.length; ) {
+    if (++count > 4096 || ended || at + 12 > bytes.length) throw invalid();
+    const length = view.getUint32(at),
+      end = at + 8 + length;
+    if (end + 4 > bytes.length) throw invalid();
+    const kind = String.fromCharCode(...bytes.subarray(at + 4, at + 8));
+    if (
+      !/^[A-Za-z]{4}$/.test(kind) ||
+      bytes[at + 6] & 32 ||
+      (count === 1 && kind !== "IHDR") ||
+      ["acTL", "fcTL", "fdAT"].includes(kind)
+    )
+      throw invalid();
+    let crc = 0xffffffff;
+    for (let index = at + 4; index < end; index++)
+      crc = pngCrcTable[(crc ^ bytes[index]) & 255] ^ (crc >>> 8);
+    if ((crc ^ 0xffffffff) >>> 0 !== view.getUint32(end)) throw invalid();
+    if (kind === "IDAT") {
+      if (dataEnded) throw invalid();
+      dataStarted = true;
+    } else if (dataStarted) dataEnded = true;
+    if (canvasPngChunks.has(kind)) {
+      parts.push(bytes.subarray(at, end + 4));
+      total += length + 12;
+    } else if (!(bytes[at + 4] & 32)) throw invalid(); // Unknown critical data must never be discarded.
+    if (kind === "IEND") {
+      if (length !== 0 || end + 4 !== bytes.length) throw invalid();
+      ended = true;
+    }
+    at = end + 4;
+  }
+  if (!ended) throw invalid();
+  const output = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) {
+    output.set(part, offset);
+    offset += part.length;
+  }
+  // Oversized valid canvas output is retried at a smaller size by the caller.
+  if (output.length <= CUSTOM_EMOJI_MAX_BYTES) validateCustomPng(output);
+  return output;
+}
+
 export async function prepareCustomEmoji(
   file: File,
   name: string,
@@ -138,7 +215,7 @@ export async function prepareCustomEmoji(
       const canvas = document.createElement("canvas");
       canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
       canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
-      const context = canvas.getContext("2d");
+      const context = canvas.getContext("2d", { colorSpace: "srgb" });
       if (!context)
         throw new Error("Image processing is unavailable in this browser.");
       context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
@@ -151,7 +228,9 @@ export async function prepareCustomEmoji(
           "image/png",
         ),
       );
-      const png = new Uint8Array(await blob.arrayBuffer());
+      const png = stripCanvasPngMetadata(
+        new Uint8Array(await blob.arrayBuffer()),
+      );
       if (png.length <= CUSTOM_EMOJI_MAX_BYTES) {
         validateCustomPng(png);
         return (await customReaction(name, png)) as CustomEmoji;
