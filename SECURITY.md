@@ -1,16 +1,16 @@
 # Security policy
 
-Porchday has deployed development builds and a private source repository. No stable supported release or maintenance window is designated in this policy. Fixes target current development; old commits and the package version `0.1.0` are not supported release lines. See the [changelog](CHANGELOG.md) and [verification record](docs/build-status.md).
+Porchday has deployed development builds. No stable supported release or maintenance window is designated in this policy. Fixes target current development; old commits and the package version `0.1.0` are not supported release lines. See the [changelog](CHANGELOG.md) and [verification record](docs/build-status.md).
 
 ## Report a vulnerability privately
 
-Do not put a suspected vulnerability in an ordinary issue, pull request, discussion or screenshot. Private-repository issues are still visible to other collaborators.
+Do not put a suspected vulnerability in an ordinary issue, pull request, discussion or screenshot. These are not confidential reporting channels, even when a repository is private.
 
-Porchday's chosen public reporting route is **GitHub private vulnerability reporting**. Once the repository is public and the feature is enabled, open [andyk/porchday](https://github.com/andyk/porchday), then **Security → Advisories → Report a vulnerability**. Reports go privately to repository maintainers through GitHub's advisory workflow; no separate email inbox is required.
+Porchday's chosen reporting route is **GitHub private vulnerability reporting**. Open [porchday/porchday](https://github.com/porchday/porchday), then **Security → Advisories → Report a vulnerability** when that control is available. Reports go privately to repository maintainers through GitHub's advisory workflow; no separate email inbox is required.
 
-**The repository is still private, and this public reporting route is not yet available.** At owner-authorized publication, an administrator must [enable private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository), verify the reporting control and maintainer notifications, and update this status. This document does not authorize a visibility or settings change.
+The reporting feature is a GitHub setting, not something this policy enables. At publication, an administrator must [enable private vulnerability reporting](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository) and verify the reporting control and maintainer notifications. Enablement and verification are tracked in [publication issue #16](https://github.com/porchday/porchday/issues/16). Do not assume that a public repository or this document alone establishes a working private channel.
 
-Until then, existing collaborators can use their established private project contact to confirm a restricted channel. Share only the affected component and likely impact until the recipient and channel are confirmed. If you lack an existing private contact, do not guess an address or disclose exploit details in an ordinary issue. No staffed response time is promised.
+If the reporting control is absent or unavailable, existing collaborators can use their established private project contact to confirm a restricted channel. Share only the affected component and likely impact until the recipient and channel are confirmed. If you lack an existing private contact, do not guess an address or disclose exploit details in an ordinary issue. No staffed response time is promised.
 
 ## What to include
 

@@ -1,6 +1,6 @@
 # Clean-destination archive acceptance
 
-This check exercises the deployed web export UI and the shipped web import UI in a fresh, disposable local installation. It complements the earlier same-account roundtrip in [hosted browser archive verification](hosted-browser-archive.md). It is not a claim that another product implements Porchday’s format, or that the private repository has been publicly released.
+This check exercises the deployed web export UI and the shipped web import UI in a fresh, disposable local installation. It complements the earlier same-account roundtrip in [hosted browser archive verification](hosted-browser-archive.md). It does not establish that another product implements Porchday’s format; source publication is separate from this verification.
 
 `scripts/hosted-archive-migration.ts --run --attempt=<eight lowercase hex characters>` requires the existing private synthetic staging fixture. It operates only on synthetic A. Synthetic B’s pending recovery case and deleted synthetic C remain untouched. Every run writes an exclusive, owner-only intent before effects; a failed attempt must be inspected before a new attempt. The optional `--local-only` rehearsal performs no staging requests.
 

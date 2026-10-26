@@ -12,4 +12,4 @@ There is no `minor_version` field in the current format, no automatic remote sch
 
 The original standalone ZIP without `archive_set` remains supported. The existing streaming multipart form is also v1; canonical exporters write unknown totals until the final completion part. A single-part export may still use `archive_set` with `index: 1`, `total: 1`, `complete: true`. Do not split, concatenate, or reassign an existing set's identities without deliberately creating a new complete set and revalidating references.
 
-The repository is private at this checkpoint. This policy and its sample are prepared for the design's future public portability documentation; committing them does not publish the repository or establish an external support promise.
+This policy and its sample are versioned with the source. Their availability does not establish an external support promise or guarantee compatibility with another platform.

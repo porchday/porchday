@@ -1,11 +1,11 @@
 # Porchday Social Network Design
 
-Status: Implementation reference; pilot admission remains closed  
-Updated: October 25, 2026  
-Working name: Porchday  
-Domain: porchday.com
+- Status: Implementation reference; broader pilot admission requires review
+- Updated: October 26, 2026
+- Working name: Porchday
+- Domain: porchday.org; porchday.com redirects public pages and retains existing-device access
 
-Porchday is a nonprofit social network for keeping up with people you know. It combines the personal walls and friends feed of early Facebook with the creative profile customization of MySpace. Members can share everyday updates, photos, comments, likes, and emojis without ads, influencer mechanics, or an engagement-ranked feed.
+Porchday is designed for nonprofit operation and keeping up with people you know. It combines the personal walls and friends feed of early Facebook with the creative profile customization of MySpace. Members can share everyday updates, photos, comments, likes, and emojis without ads, influencer mechanics, or an engagement-ranked feed. The nonprofit's legal formation remains separate from this design and the source license.
 
 The long-term ambition is a widely used social network in the United States operated for social good. Wikipedia and Mozilla are inspirations for public-interest stewardship, not proposed affiliations. The first release should prove that a small community can maintain meaningful connections on a service whose incentives are aligned with its members.
 
@@ -38,7 +38,7 @@ Family includes chosen family. Mutual confirmation is sufficient; do not collect
 
 The owner authorized up to $1,000 total spending while setting up the MVP on October 24, 2026. This is a setup spending ceiling, not a monthly budget or a target. Use economical pilot resources, track incurred costs and recurring commitments, and obtain further authorization before exceeding the setup ceiling. An ongoing operating budget remains to be established.
 
-The private repository is now [andyk/porchday](https://github.com/andyk/porchday), transferred from `bobbyhwilder/porchday` on October 26, 2026. Track bugs and planned work in its [GitHub Issues](https://github.com/andyk/porchday/issues). Keep it private during development; Apache-2.0 remains the intended license and public source release remains a later launch milestone. Do not advertise source availability before publication. Never commit credentials; the existing secrets file remains outside the repository.
+The source repository is [porchday/porchday](https://github.com/porchday/porchday), transferred through `bobbyhwilder/porchday` and `andyk/porchday` to the `porchday` GitHub organization on October 26, 2026. Track bugs and planned work in its [GitHub Issues](https://github.com/porchday/porchday/issues). Original source is licensed under Apache-2.0; source publication is separate from broader service admission and nonprofit formation. Publication checks are recorded in [open-source readiness](../docs/open-source-readiness.md). Never commit credentials; the existing secrets file remains outside the repository.
 
 Workers Paid, separate staging/production PlanetScale databases, six restricted Hyperdrive bindings, and private media/recovery-journal/backup buckets are provisioned. Both databases belong to the deployment-owned PlanetScale organization. Both databases have 46 migrations through `045_emoji_library.sql`, including friends-only authorization, member email invitations, and owner-only encrypted custom emoji collections. Exact deployed versions, migration checks, current CI and acceptance evidence are maintained in [build status](../docs/build-status.md), rather than inferred from provisioning. The jobs-only V3 health function exposes aggregate moderation/verified-recovery queue age; compatible V1/V2 functions remain available.
 
@@ -50,7 +50,7 @@ A $10 Cloudflare usage-budget alert is enabled for the account owner; its delive
 
 ## Scope and confirmed decisions
 
-The first release includes email/password sign-in, onboarding, profiles, customization, mutual connections, walls, the home feed, photo posts, comments, reactions, expiration, private named groups, notifications, blocking, reporting, moderation, portable exports/imports, scoped integrations, Apache-2.0-licensed source, and account deletion, delivered through an installable PWA and a simple native iOS app with end-to-end encrypted private content. The repository remains private during this build; public source publication is a separate owner-controlled release milestone.
+The first release includes email/password sign-in, onboarding, profiles, customization, mutual connections, walls, the home feed, photo posts, comments, reactions, expiration, private named groups, notifications, blocking, reporting, moderation, portable exports/imports, scoped integrations, Apache-2.0-licensed source, and account deletion, delivered through an installable PWA and a simple native iOS app with end-to-end encrypted private content. Publishing source does not waive the independent review and operating requirements for broader admission.
 
 Confirmed product decisions:
 
@@ -78,7 +78,7 @@ Other proposed defaults:
 
 - Start with an invitation-based pilot.
 - Include family, friends, and the member's own wall posts in Home. Group posts appear in Groups, with an optional Home filter later.
-- Use connections-only wall visibility; offer family-only and only-me audiences per post. No public posts in the first release.
+- Use connections-only wall visibility; offer friends-only, family-only and only-me audiences per post. No public posts in the first release.
 - Make groups private and invitation-only initially.
 - Offer optional donations without charging for friend slots, family connections, privacy, or reach.
 

@@ -37,7 +37,7 @@ The [native CI workflow](../../.github/workflows/ios.yml) selects an installed s
 
 ## Server selection and hosted tests
 
-New normal builds target **https://porchday.org**; the [domain migration guide](../../docs/domain-migration.md) and issue #17 record deployment readiness. Existing `.com` clients retain their compatibility API during the transition. There is no general localhost server selector; the client requires its configured HTTPS origin. Do not use an ordinary simulator launch to create synthetic accounts on production.
+New normal builds target **https://porchday.org**; the [domain migration guide](../../docs/domain-migration.md) and [issue #17](https://github.com/porchday/porchday/issues/17) record the cutover and remaining device checks. Existing `.com` clients retain their compatibility API during the transition. There is no general localhost server selector; the client requires its configured HTTPS origin. Do not use an ordinary simulator launch to create synthetic accounts on production.
 
 The DEBUG-only `--ui-testing` argument skips automatic session restoration for unauthenticated onboarding UI tests. It supplies no session and bypasses no server authorization. The standard CI workflow uses no production credentials.
 

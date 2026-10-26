@@ -2,6 +2,8 @@
 
 Cloudflare Access protects the staff console and API before the application verifies a signed staff assertion. Access admission alone does not grant a Porchday staff role.
 
+Following the October 26 [domain cutover](domain-migration.md#email-staff-and-monitoring), the production application protects `/staff` and `/api/staff` on both `porchday.org` and `porchday.com`, with its existing identity, audience, policies and MFA settings preserved. Staging remains on `staging.porchday.com`. The October 25 configuration snapshots below describe the earlier two-path production setup; current `--check` validation expects both production origins.
+
 The staff entry at `/staff` does not require a social member account or an unlocked encryption vault. It reads `/api/staff/identity`, which verifies the actual signed Access assertion and returns only that person's subject, email and current roles. A person without a role sees a pending-role notice and their non-secret account reference for operator authorization; this endpoint never grants a role or reveals a session token. Recovery reviewers can then use their authorized queue directly. Reading disclosed moderation evidence remains an explicit separate step at `/staff/moderation`, requiring a social member account and trusted-device vault. Local browser guards cover this separation, clearing case details on access loss, ignoring a late case response and navigating the document to Access logout. Hosted assertion/MFA and role checks remain separate evidence requirements.
 
 ## Provisioned configuration

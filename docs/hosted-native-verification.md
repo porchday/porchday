@@ -18,7 +18,7 @@ The test uses normal server authentication, invitations/email verification, devi
 
 ## Fixed origin and isolated storage
 
-Release builds always use `https://porchday.com`. Only a DEBUG build with the explicit runtime flag `PORCHDAY_HOSTED_STAGING_TEST=1` uses the fixed `https://staging.porchday.com` origin. The flag cannot supply an arbitrary URL. Both requests and redirects enforce the selected HTTPS origin, including port and absence of embedded credentials. Hosted debug tests use a separate Keychain service, `com.porchday.app.keys.hosted-staging-test`, to avoid reading or clearing production app credentials. The API's cache and cookie protections remain unchanged.
+Current release builds use `https://porchday.org`; the historical runs below predate the [domain migration](domain-migration.md), and existing `.com` clients retain their compatibility API. Only a DEBUG build with the explicit runtime flag `PORCHDAY_HOSTED_STAGING_TEST=1` uses the fixed `https://staging.porchday.com` origin. The flag cannot supply an arbitrary URL. Both requests and redirects enforce the selected HTTPS origin, including port and absence of embedded credentials. Hosted debug tests use a separate Keychain service, `com.porchday.app.keys.hosted-staging-test`, to avoid reading or clearing production app credentials. The API's cache and cookie protections remain unchanged.
 
 The normal simulator suite skips the opt-in hosted test. A skip does not count as hosted success. The dedicated runner checks the actual XCTest result tree for exactly one successful `testHostedInteroperability` method, no failed/skipped tests, and a test count of one.
 
@@ -26,7 +26,7 @@ The normal simulator suite skips the opt-in hosted test. A skip does not count a
 
 Do not run until the operator confirms staging is ready, the three delivered verification emails have been handled through the normal owner flow, and the synthetic social smoke has passed. The existing web runner's `interop-prepare --run` phase then writes `artifacts/private/hosted-smoke/native-interop.json` with mode `0600`. It contains a v1 synthetic marker, the staging origin, a run identifier, two-hour expiry, C's synthetic login/recovery secret, expected web post/photo IDs and contents/checksum, and preallocated native post/photo IDs. It contains no real member data. Do not print it, attach it to chat, or commit it.
 
-The operator supplies its exact UTF-8 JSON encoded as standard base64 to the dedicated, temporary GitHub Actions repository secret `PORCHDAY_IOS_HOSTED_FIXTURE_B64`. Base64 is transport encoding, not encryption. Use the GitHub CLI/API's protected stdin/structured input; never put the value in a shell argument, workflow input, command echo, or file tracked by Git. This grants the private GitHub runner access to these synthetic credentials only. Do not give this workflow deployment tokens, database credentials or any other account's recovery secret.
+The operator supplies its exact UTF-8 JSON encoded as standard base64 to the dedicated, temporary GitHub Actions repository secret `PORCHDAY_IOS_HOSTED_FIXTURE_B64`. Base64 is transport encoding, not encryption. Use the GitHub CLI/API's protected stdin/structured input; never put the value in a shell argument, workflow input, command echo, or file tracked by Git. This grants the ephemeral GitHub-hosted runner access to these synthetic credentials only. Repository visibility does not make workflow logs private. Do not give this workflow deployment tokens, database credentials or any other account's recovery secret.
 
 Dispatch `.github/workflows/ios-hosted.yml` on `main` with `confirm_staging_only=true`. The workflow has read-only repository permissions, a 35-minute limit, no automatic push trigger and no artifact upload step. The runner validates the fixture before any simulator/network work and again after the build. Expired or malformed fixtures fail closed. Run one approved fixture at a time; regenerating or retrying after partial native writes requires a fresh coordinated fixture or explicit cleanup, because native enrollment and publication are real operations.
 
@@ -50,7 +50,7 @@ The initial hosted attempt (40213370898) stopped at LOGIN; the bounded diagnosti
 
 ## Verified staging run — October 25, 2026
 
-The final hosted simulator run and independent JavaScript check both passed. The repository remains private; these links are private CI evidence, not a public app release.
+The final hosted simulator run and independent JavaScript check both passed. The repository was private at this checkpoint; these links record CI evidence, not a public app release.
 
 | Check | Revision / run | Result |
 | --- | --- | --- |

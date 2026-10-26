@@ -1,6 +1,6 @@
 # Porchday name and branding
 
-Porchday is the working project and service name; `porchday.com` is the selected service domain. The GitHub repository is administered by [@andyk](https://github.com/andyk). Repository administration and domain control do not establish trademark ownership, registration or nonprofit legal status.
+Porchday is the working project and service name; `porchday.org` is the primary service domain, with `porchday.com` retained for redirects and existing-device compatibility. The source repository is [porchday/porchday](https://github.com/porchday/porchday). Its GitHub organization, repository administration and domain control do not establish trademark ownership, registration or nonprofit legal status.
 
 ## Code license and names
 
@@ -14,4 +14,4 @@ The repository does not contain a verified record of the legal holder of project
 
 Before making official ownership, nonprofit or branding-permission claims, the project owner needs to identify the actual operator and any branding rights holder, verify asset provenance and necessary permissions, and provide an accurate contact. These are distinct from the Apache source license and the decision to publish source code. Do not invent an owner, registration symbol or approval address.
 
-Existing collaborators can raise branding questions through their established private project contact. The GitHub profile above identifies the administrator; it is not a private reporting or permission endpoint.
+Existing collaborators can raise branding questions through their established private project contact. The repository link above identifies the source project; it is not a private reporting or permission endpoint.

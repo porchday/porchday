@@ -1,6 +1,6 @@
 # Moving the primary website to porchday.org
 
-The public cutover to [porchday.org](https://porchday.org) completed on October 26, 2026. Both `.org` and `.com` apex domains and their `www` aliases are attached to the existing production Worker. Public `.com` navigation forwards to `.org`; existing-device account and API access on `.com` remains available. [Issue #17](https://github.com/andyk/porchday/issues/17) records the dated deployment evidence and device-acceptance follow-up. This is a completed public-address change, not retirement of the legacy origin.
+The public cutover to [porchday.org](https://porchday.org) completed on October 26, 2026. Both `.org` and `.com` apex domains and their `www` aliases are attached to the existing production Worker. Public `.com` navigation forwards to `.org`; existing-device account and API access on `.com` remains available. [Issue #17](https://github.com/porchday/porchday/issues/17) records the dated deployment evidence and device-acceptance follow-up. This is a completed public-address change, not retirement of the legacy origin.
 
 ## Domain behavior
 
@@ -36,7 +36,7 @@ The October 26 cutover used source `f37b9b6`, verified on staging before product
 
 Hosted desktop/mobile public-browser checks passed redirects, invitation-fragment retention, legacy account paths, service-worker installation on both origins, origin-isolated synthetic browser storage and the offline public shell. They made no hosted account writes and did not move a member's actual encryption keys. TLS validation remained enabled during a temporary public-DNS IPv4 override; the local resolver still returned unreachable IPv6 addresses during the normal-browser check. The override verifies the deployed service, not recovery of that machine’s DNS cache.
 
-Existing-member sign-in, recovery-secret unlock and re-enrollment on `.org`, installed-PWA notification permissions and physical iOS Universal Links remain separate device acceptance. Keep `.com` compatibility until those needs are resolved; physical native checks are tracked in [issue #7](https://github.com/andyk/porchday/issues/7). Cloudflare's injected analytics script was blocked by the existing CSP during browser checks, with no external response or beacon submission observed; provider-side removal remains [issue #18](https://github.com/andyk/porchday/issues/18). Neither follow-up is claimed complete by the public cutover.
+Existing-member sign-in, recovery-secret unlock and re-enrollment on `.org`, installed-PWA notification permissions and physical iOS Universal Links remain separate device acceptance. Keep `.com` compatibility until those needs are resolved; physical native checks are tracked in [issue #7](https://github.com/porchday/porchday/issues/7). Cloudflare's injected analytics script was blocked by the existing CSP during browser checks, with no external response or beacon submission observed; provider-side removal remains [issue #18](https://github.com/porchday/porchday/issues/18). Neither follow-up is claimed complete by the public cutover.
 
 ## Rollout procedure
 

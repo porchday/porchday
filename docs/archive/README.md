@@ -1,6 +1,6 @@
 # Porchday portable archive v1
 
-This directory specifies the format already produced by the web and native iOS clients. It contains the [JSON Schema](archive-v1.schema.json), [version policy](version-policy.md), [importer interfaces](importer.ts), [importer guide](importer-guide.md), and a [fully synthetic sample](sample/README.md). These are checked into the private repository. Public documentation, sample downloads, and source publication remain a release step; they are not currently public services or a published SDK.
+This directory specifies the format already produced by the web and native iOS clients. It contains the [JSON Schema](archive-v1.schema.json), [version policy](version-policy.md), [importer interfaces](importer.ts), [importer guide](importer-guide.md), and a [fully synthetic sample](sample/README.md). These versioned resources travel with the source; they do not provide a hosted service or a supported SDK.
 
 The manifest has `format: "porchday-archive"` and `version: 1`. The JSON Schema uses Draft 2020-12 and the identifier `urn:porchday:archive:v1`; the identifier is not a hosted schema URL. Validate formats as well as ordinary JSON types. The schema describes canonical producer output. Some current readers tolerate older or looser input, which does not expand this producer contract.
 

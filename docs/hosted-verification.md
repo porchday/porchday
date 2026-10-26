@@ -6,13 +6,13 @@ This checklist separates actual hosted evidence from local tests. The smoke runn
 
 Coordinate with the deployment operator. Do not run a write phase until the staging target is deployed and the operator enables its three invitations.
 
-- Use `https://staging.porchday.com` throughout: Worker `APP_URL`, invite link generation, email callbacks and the native test configuration. Production remains closed.
+- Use `https://staging.porchday.com` throughout: Worker `APP_URL`, invite link generation, email callbacks and the native test configuration. This procedure does not authorize production requests or signup-policy changes.
 - Confirm separate staging auth/social/jobs Hyperdrive bindings use their intended runtime roles and have query caching disabled. Successful public HTML does not establish database readiness.
 - Initialize the independent journal against the same database generation and private R2 bucket before protected requests. Verify migrations, least-privilege grants and journal/DB readiness through the protected operations endpoint.
 - Upload distinct staging auth, operations and VAPID secrets. Confirm private media/journal buckets, queue consumer/dead-letter queue, minute cleanup schedule, sender binding and sender DNS. Avoid application request logs, tracing or tails.
 - Check media backup configuration and the first completed paired snapshot. Protected readiness can be degraded while the baseline is missing even when `/health` succeeds; record the outstanding issue instead of claiming full readiness.
 - Configure Cloudflare Access for `/staff` and `/api/staff/*`, the origin issuer/audience and actual staff roles. A public-route denial proves neither reviewer enrollment nor two-person recovery.
-- Keep `SIGNUP_ENABLED=false` except the coordinated synthetic signup window. Invitations remain email-bound and single-use when that flag is true. Reclose it immediately after the three signup requests; email verification and existing-account login continue to work.
+- Preserve the operator-approved signup policy. The owner requested enabled invitation-only signup in both environments; do not disable it after a smoke run. Use only the explicitly prepared staging invitations for the test. Invitations remain email-bound and single-use, and any change to admission policy requires a separate operator decision.
 
 ## Staged API smoke
 

@@ -1,16 +1,16 @@
 # Contributing to Porchday
 
-Porchday is developed in the private [`andyk/porchday`](https://github.com/andyk/porchday) repository. These instructions apply to collaborators with access. Apache-2.0 is the source license; publishing the repository remains a separate owner decision.
+Porchday development is tracked in [`porchday/porchday`](https://github.com/porchday/porchday). Original source is licensed under Apache-2.0. This guide covers local development, contribution checks and project policies; contributing does not require access to the hosted service.
 
 Start with the [README](README.md), [product design](design/social-network-design.md) and [implementation record](docs/build-status.md). The design describes the intended product; the implementation record distinguishes delivered behavior, verification and remaining work. Nonprofit operation is the intended model, not a legal status established by this repository.
 
 ## Propose a change
 
-Search [open and closed issues](https://github.com/andyk/porchday/issues) before filing a bug or proposing a feature. For a bug, include the affected build and platform, expected and observed behavior, and a small reproduction using synthetic data. Follow the [issue-tracking workflow](AGENTS.md): delivered work awaiting acceptance stays marked `needs verification`, and deferred work does not become a release requirement without a scope decision.
+Search [open and closed issues](https://github.com/porchday/porchday/issues) before filing a bug or proposing a feature. For a bug, include the affected build and platform, expected and observed behavior, and a small reproduction using synthetic data. Follow the [issue-tracking workflow](AGENTS.md): delivered work awaiting acceptance stays marked `needs verification`, and deferred work does not become a release requirement without a scope decision.
 
 Discuss changes to encryption, access rules, data lifecycle or product scope with the maintainer before implementation. Preserve the chronological feed, 300-connection limit including family, no-ad model, human-operated accounts and data portability. Audience restrictions, inherited expiry and recovery safeguards must not be weakened to make a test pass. Suspected vulnerabilities belong in the private reporting process in [SECURITY.md](SECURITY.md), not an ordinary issue or pull request.
 
-Follow the [code of conduct](CODE_OF_CONDUCT.md). The repository owner, [@andyk](https://github.com/andyk), currently controls collaborator access and release decisions. That identifies repository administration, not a nonprofit entity or trademark owner.
+Follow the [code of conduct](CODE_OF_CONDUCT.md). Repository maintainers control collaborator access and release decisions. The GitHub organization and repository administration do not establish a nonprofit entity or trademark owner.
 
 ## Develop locally
 
@@ -20,7 +20,7 @@ Use Node 24 (the CI version), npm, Python 3 and Docker for disposable PostgreSQL
 npm ci
 ```
 
-Follow [operations](docs/operations.md) for local database creation, migrations, restricted runtime roles and local journal setup. Then run these in separate terminals:
+Follow the [web development setup](apps/web/README.md#local-setup) for disposable database creation, migrations, synthetic invitations and locally captured verification emails. Then run these in separate terminals:
 
 ```sh
 npm run dev:api
@@ -61,4 +61,4 @@ Original Porchday code uses [Apache License 2.0](LICENSE). Contributions intenti
 
 Dependencies retain their own licenses. Review upstream and transitive licensing when changing dependencies. Update [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md), [third-party-licenses](third-party-licenses) and app-visible notices with `python3 scripts/build-third-party-notices.py` where applicable. Follow the documented corresponding-source and replacement-build requirements before distributing clients; the root Apache license does not relicense dependencies.
 
-Names and branding are addressed in [TRADEMARKS.md](TRADEMARKS.md). Public source publication, opening community participation and broader service admission are separate decisions. Use the GitHub reporting routes described in [SECURITY.md](SECURITY.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). Private vulnerability reporting must be enabled and verified at publication; GitHub abuse reports cover GitHub policy violations, not a general private Porchday conduct process.
+Names and branding are addressed in [TRADEMARKS.md](TRADEMARKS.md). Source publication and broader service admission are separate decisions. Use the reporting routes and availability stated in [SECURITY.md](SECURITY.md) and [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md). GitHub abuse reports cover GitHub policy violations, not a general private Porchday conduct process.

@@ -1,6 +1,6 @@
-# Open-source preparation
+# Source publication review
 
-Reviewed October 26, 2026, starting from `b16577a4be6f27cd013ec2d4b92f2577f504189b`. The repository remains private. This review prepares the source for publication; it does not publish the repository, authorize a deployment, or establish an independent application/cryptography audit.
+Initial review: October 26, 2026, starting from `b16577a4be6f27cd013ec2d4b92f2577f504189b`. The owner subsequently authorized public source publication and transferred the repository to [porchday/porchday](https://github.com/porchday/porchday). [Publication issue #16](https://github.com/porchday/porchday/issues/16) records the final commit, checks and GitHub settings. This is a credential and publication-surface review, not an independent application or cryptography audit, and it does not authorize a production deployment.
 
 ## Credential review
 
@@ -34,12 +34,24 @@ The Apache-2.0 license remains in place. Dependencies retain their licenses and 
 
 ## Publication handoff
 
-The owner selected GitHub for reporting. At publication, a repository administrator needs to enable and verify **private vulnerability reporting**, including report access and notifications. This collaborator has push/triage access, not administrator access, and has not changed repository visibility or enabled that setting. [SECURITY.md](../SECURITY.md) records the intended route and current state. GitHub's [configuration instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository) apply to public repositories.
+The owner selected GitHub for reporting. At publication, a repository administrator needs to enable and verify **private vulnerability reporting**, including report access and notifications. The pre-publication checkpoint used a collaborator with push/triage access; it could not perform the visibility or reporting-setting changes. Those final actions and their verification belong in publication issue #16, rather than being inferred from this document. [SECURITY.md](../SECURITY.md) records the intended route and current state. GitHub's [configuration instructions](https://docs.github.com/en/code-security/how-tos/report-and-fix-vulnerabilities/configure-vulnerability-reporting/configure-for-a-repository) apply to public repositories.
 
 Conduct reports use GitHub's abuse-reporting process as described in [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md). It is a route to GitHub Support for violations of GitHub's rules, not a private Porchday inbox or a general reporting process for conduct outside GitHub.
 
-Before changing visibility, verify that the final source checks pass and review changes or CI artifacts created after this dated inventory. Keep any new secrets or private member data out of source, issues, attachments and logs. Making the source public remains an explicit owner action; production signup, runtime configuration and deployed code are unchanged by this preparation.
+Before changing visibility, verify that the final source checks pass and review changes or CI artifacts created after this dated inventory. Keep any new secrets or private member data out of source, issues, attachments and logs. The owner has explicitly authorized making the source public. Production signup, runtime configuration and deployed code are unchanged by the repository visibility change.
 
 ## Final verification
 
-The retained-output review is complete with no confirmed live credentials. Seven Python guard/formatting tests, first-party formatting and whitespace checks pass. The final pushed revision and its CI outcomes are recorded in [publication issue #16](https://github.com/andyk/porchday/issues/16); the detailed raw audit evidence stays private.
+The retained-output review is complete with no confirmed live credentials. Seven Python guard/formatting tests, first-party formatting and whitespace checks pass. The final pushed revision and its CI outcomes are recorded in [publication issue #16](https://github.com/porchday/porchday/issues/16); the detailed raw audit evidence stays private.
+
+## Follow-up review before publication
+
+The repository transfer preserved its immutable GitHub identity and existing issues/history. A fresh source checkpoint at `a279c80` covered 12 refs, 202 commits, 1,331 complete blobs (about 19.7 MB), commit/tag/path/ref metadata, and 501 current files. All four configured Gitleaks scans returned zero findings. Independent private comparisons against configured credentials and authorized disposable test-password files also found no matches. Default-rule findings were independently classified as public identifiers or exact synthetic fixtures; the existing narrow exceptions were unchanged, and five negative controls passed. A historical PostgreSQL-shaped string detected by the raw-byte supplement was a literal synthetic connection-validation fixture, not a hosted credential.
+
+The corresponding GitHub delta covered nine new completed Actions logs, one native artifact and current repository/issue/comment metadata: 369 expanded files, about 37.8 MB. No configured credential or test-password matches were found. General-scanner matches were exact synthetic crypto fixtures and a previously verified Swift Testing binary. The provider-generated temporary clone credential in an authenticated repository API response was audit-only data, removed from the retained sanitized inventory; it was not in Git, an issue, an Actions log or an artifact. Raw evidence is never committed or attached to issues.
+
+At that checkpoint there were 18 issues and five comments, no pull requests or releases, no commit comments, and no enabled wiki or discussions. Changed issues and comments contained public project/status material, not member data or account-action links. The published-advisory endpoint was unavailable to the collaborator; an administrator must check it, rather than interpreting that result as an empty inventory. Three regenerable Actions caches were enumerated but not content-audited; their final disposition is recorded in issue #16.
+
+Contributor-facing links now use `porchday/porchday`, while dated historical CI evidence retains its original URLs. The documentation no longer assumes repository privacy, includes current `.org` and legacy-device behavior, and preserves enabled signup in smoke/deployment guidance. The notice source and generated web/native copies use visibility-neutral license wording; dependency licenses and attribution are unchanged. Those generated notices need a new client build to appear in distributed clients; changing GitHub visibility does not redeploy an application.
+
+The final documentation commit, its complete-source rescan, and any CI outputs generated after this checkpoint must pass the final delta review. Their exact results are recorded in publication issue #16 so this dated report does not imply coverage of future commits. GitHub visibility, private reporting and maintainer notification checks remain explicit settings checks, separate from a clean credential scan.

@@ -5,7 +5,7 @@ body:
     attributes:
       value: |
         Search existing issues first and use synthetic examples. Do not include private member information or credentials.
-        For suspected vulnerabilities, follow [SECURITY.md](https://github.com/andyk/porchday/security/policy) instead of opening an issue.
+        For suspected vulnerabilities, follow [SECURITY.md](https://github.com/porchday/porchday/security/policy) instead of opening an issue.
   - type: textarea
     id: problem
     attributes:

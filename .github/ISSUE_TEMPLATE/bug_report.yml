@@ -6,7 +6,7 @@ body:
       value: |
         Search existing issues first. Use synthetic examples and remove private data from screenshots or errors.
         Do not include credentials, recovery keys, invitation/reset links, or member content.
-        For suspected vulnerabilities, follow [SECURITY.md](https://github.com/andyk/porchday/security/policy) instead of opening an issue.
+        For suspected vulnerabilities, follow [SECURITY.md](https://github.com/porchday/porchday/security/policy) instead of opening an issue.
   - type: textarea
     id: behavior
     attributes:

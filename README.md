@@ -2,7 +2,7 @@
 
 A simple social network for people who know each other: no ads, no influencer mechanics, and a chronological feed. The intended operator is a philanthropy-funded nonprofit. Establishing that organization and completing independent security review remain launch prerequisites.
 
-Porchday is an actively developed, invitation-only adult pilot. The repository is currently private; preparing it for open source does not change its visibility. Original application source is [Apache-2.0 licensed](LICENSE), with separate [dependency notices](THIRD_PARTY_NOTICES.md).
+Porchday is an actively developed, invitation-only adult pilot. Original application source is [Apache-2.0 licensed](LICENSE), with separate [dependency notices](THIRD_PARTY_NOTICES.md). Source publication and broader service admission are separate decisions.
 
 ## What is implemented
 
@@ -19,10 +19,10 @@ Google/GitHub sign-in, Datadog and technical proof of humanity are deferred. The
 
 ## Start developing
 
-Use **Node 24**, npm, and Python 3. From a clone you are authorized to access:
+Use **Node 24**, npm, and Python 3:
 
 ```sh
-git clone https://github.com/andyk/porchday.git
+git clone https://github.com/porchday/porchday.git
 cd porchday
 npm ci
 npm run typecheck
@@ -30,7 +30,9 @@ npm run build
 npm test
 ```
 
-These commands need no Cloudflare, PlanetScale or Apple credentials. Without database environment variables, `npm test` skips the PostgreSQL integration suites. To run those suites, or to sign in to a local app, follow the [web development setup](apps/web/README.md), which uses disposable PostgreSQL 17 containers. `npm run dev` starts only the frontend; it does not provision an API or database.
+These commands need no Cloudflare, PlanetScale or Apple credentials. For public-site work, run `npm run dev` and open [localhost:5173](http://localhost:5173). This starts only the frontend; it does not provision an API or database.
+
+Without database environment variables, `npm test` skips the PostgreSQL integration suites. To run those suites, or to sign in to a local app, follow the [web development setup](apps/web/README.md), which uses disposable PostgreSQL 17 containers.
 
 For native builds and interoperability tests, see the [iOS instructions](apps/ios/README.md). Full Xcode and an installed iOS Simulator runtime are required for simulator tests; Command Line Tools alone are insufficient.
 
@@ -52,7 +54,7 @@ The [portable archive contract](docs/archive/README.md) supplies the schema, sam
 
 ## Contributing and licensing
 
-Start with the [contribution guide](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [security policy](SECURITY.md), [changelog](CHANGELOG.md) and [branding policy](TRADEMARKS.md). Track work in [andyk/porchday issues](https://github.com/andyk/porchday/issues); the [issue workflow](AGENTS.md) defines priorities and verification status. The security policy uses GitHub private vulnerability reporting, which the repository owner must enable and verify when publishing. Conduct reports use GitHub’s abuse-reporting process, with the limits described in the code of conduct. The [open-source readiness checklist](docs/open-source-readiness.md) tracks publication requirements separately from repository visibility.
+Start with the [contribution guide](CONTRIBUTING.md), [code of conduct](CODE_OF_CONDUCT.md), [security policy](SECURITY.md), [changelog](CHANGELOG.md) and [branding policy](TRADEMARKS.md). Track work in [porchday/porchday issues](https://github.com/porchday/porchday/issues); the [issue workflow](AGENTS.md) defines priorities and verification status. Consult the security policy for the verified availability of GitHub private vulnerability reporting. Conduct reports use GitHub’s abuse-reporting process, with the limits described in the code of conduct. The [open-source readiness checklist](docs/open-source-readiness.md) records publication checks separately from service readiness.
 
 After changing dependencies or bundled data, review their licenses and regenerate the client notices:
 
@@ -65,7 +67,7 @@ To produce the tracked client source/rebuild archive locally, run `python3 scrip
 
 ## Production domains
 
-[porchday.org](https://porchday.org) became the primary production address on October 26, 2026. Public `.com` pages forward to `.org`; [porchday.com/app](https://porchday.com/app) remains available for existing devices because their saved encryption keys belong to that origin. Use the same account at `.org` and your encryption recovery secret to unlock its history. Keep the old browser data and installed app until that succeeds. See the [migration guide](docs/domain-migration.md) and [issue #17](https://github.com/andyk/porchday/issues/17) for verification and remaining device checks.
+[porchday.org](https://porchday.org) became the primary production address on October 26, 2026. Public `.com` pages forward to `.org`; [porchday.com/app](https://porchday.com/app) remains available for existing devices because their saved encryption keys belong to that origin. Use the same account at `.org` and your encryption recovery secret to unlock its history. Keep the old browser data and installed app until that succeeds. See the [migration guide](docs/domain-migration.md) and [issue #17](https://github.com/porchday/porchday/issues/17) for verification and remaining device checks.
 
 ## Secrets
 
@@ -79,7 +81,7 @@ Use the [operations guide](docs/operations.md) for deployment and admission proc
 | Staging | [staging.porchday.com](https://staging.porchday.com); invitation-only signup is enabled. |
 | Status | [Production](https://status.porchday.com) and [staging](https://staging-status.porchday.com); monitors share Cloudflare's platform. |
 | Staff recovery | `/staff` on the corresponding hostname; personal Access login, MFA and an assigned role are required. |
-| Native verification | [iOS CI](https://github.com/andyk/porchday/actions/workflows/ios.yml); dated outcomes are recorded in build status. |
+| Native verification | [iOS CI](https://github.com/porchday/porchday/actions/workflows/ios.yml); dated outcomes are recorded in build status. |
 
 The October 26, 2026 verification record includes delivered-email acceptance for signup, ordinary password reset, stolen-account recovery, two-address email change, and member-invitation delivery through recipient signup, verification and login. See [email and invitation evidence](docs/operations.md#email-and-monitoring) and [recipient acceptance](docs/member-invitations-and-sharing.md). These checks used authorized test accounts and human inbox participation; they are not evidence for every mail provider or for bounce handling.
 

@@ -1,13 +1,14 @@
 # Changelog
 
-This file records notable development changes, not a list of supported releases. The package version `0.1.0` is development metadata. The repository remains private; source publication and broader service admission are separate decisions.
+This file records notable development changes, not a list of supported releases. The package version `0.1.0` is development metadata. Source publication and broader service admission are separate decisions.
 
 ## Unreleased
 
 ### Development update — 2026-10-26
 
-- Prepared the move to `porchday.org`, retaining strict same-origin `.com` account/API compatibility for existing browsers and native clients, safe public-navigation redirects, and a public PWA shell that stays available on the old origin. DNS and deployed cutover are tracked separately in issue #17.
-- Prepared source publication with a history/CI-output credential review, a pinned full-history secret-scan workflow, stronger local credential checks, contributor setup verification and GitHub reporting policies. The repository remains private.
+- Made `porchday.org` the primary site, retaining strict same-origin `.com` account/API compatibility for existing browsers and native clients, safe public-navigation redirects, and a public PWA shell that stays available on the old origin. Deployment evidence and remaining device checks are recorded in the [migration guide](docs/domain-migration.md) and issue #17.
+- Simplified the public footer to show “By invitation only.” below the logo, without copyright/date text.
+- Prepared source publication with a history/CI-output credential review, a pinned full-history secret-scan workflow, stronger local credential checks, contributor setup verification and GitHub reporting policies. Publication checks are recorded separately in the [readiness record](docs/open-source-readiness.md).
 - Added a searchable, bundled Unicode 17 emoji catalog, including skin tones and joined sequences, to web/PWA and native post/comment reactions. Existing reaction identities remain compatible; members can use multiple distinct reactions.
 - Added static custom-image reactions and an owner-only encrypted collection of up to 48 saved images. Included the collection in archive export/import and added the explicit `emoji:read` integration scope. Existing grants do not gain access automatically. Migration `045_emoji_library.sql` is required. Existing reactions and archives without the new collection field remain readable.
 - Fixed Safari custom-image uploads by removing metadata from newly encoded canvas PNGs before validation. Received reaction bytes and their identities remain unchanged.
@@ -17,6 +18,7 @@ This file records notable development changes, not a list of supported releases.
 - Improved privacy-journal completion across interrupted HTTP requests and reconciliation of proven durable receipts. Missing or invalid proof still blocks access, and existing quarantine still requires the documented recovery procedure. Bound original-primary operational recovery to an explicitly selected environment without changing account data or revoking legitimate sessions.
 - Recorded deployment, browser, database and native simulator verification with their limits in [build status](docs/build-status.md). Local/intercepted browser checks are distinguished from real hosted acceptance and physical-device testing.
 - Transferred repository administration to [`andyk/porchday`](https://github.com/andyk/porchday) and documented issue tracking, contribution checks and publication prerequisites. Selected GitHub private vulnerability reporting for publication and GitHub Support abuse reports for GitHub conduct, with their availability and coverage limits stated. Legal operator/branding details remain unconfirmed.
+- Subsequently moved the repository and issue tracking to the [`porchday/porchday`](https://github.com/porchday/porchday) GitHub organization. Historical CI/evidence links retain their original addresses; organization ownership does not establish nonprofit legal status.
 
 ### Initial development — 2026-10-25
 

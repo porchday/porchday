@@ -1,5 +1,5 @@
 <!-- Keep credentials, recovery material, member content and private evidence out of this PR.
-For suspected vulnerabilities, use https://github.com/andyk/porchday/security/policy. -->
+For suspected vulnerabilities, use https://github.com/porchday/porchday/security/policy. -->
 
 ## Change
 

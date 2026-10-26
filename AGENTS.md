@@ -1,6 +1,6 @@
 # Porchday issue tracking
 
-Maintain follow-up work in [andyk/porchday GitHub Issues](https://github.com/andyk/porchday/issues), as requested by the owner. The repository is private.
+Maintain follow-up work in [porchday/porchday GitHub Issues](https://github.com/porchday/porchday/issues), as requested by the owner.
 
 - Search existing open and closed issues before creating one; update the matching issue instead of duplicating it.
 - Record actionable bugs, reliability work, validation gaps and requested future features with context and clear acceptance criteria. Distinguish confirmed defects from investigations and unverified behavior.
