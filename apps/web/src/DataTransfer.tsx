@@ -544,7 +544,7 @@ export function DataTransfer() {
           if (entry.expires_at && Date.parse(entry.expires_at) <= Date.now())
             continue;
           setProgress(
-            `Importing your memories (${importedCount + batch.length + 1}/${plan.entries.length})…`,
+            `Importing your data (${importedCount + batch.length + 1}/${plan.entries.length})…`,
           );
           const id = crypto.randomUUID();
           const media = [];
@@ -642,7 +642,7 @@ export function DataTransfer() {
       setProgress(
         `Imported ${importedCount} new private entries. Previously imported entries were skipped. No connections or group memberships were created.`,
       );
-    }, "Your memories were re-encrypted for this account before upload.");
+    }, "Your data was re-encrypted for this account before upload.");
   }
   return (
     <>
@@ -650,7 +650,7 @@ export function DataTransfer() {
         <span className="feature-icon sage">
           <Icon name="download" size={28} />
         </span>
-        <h2>Your memories. Your choice.</h2>
+        <h2>Export your data</h2>
         <p>
           Export your own posts, comments, reactions, photos, profile, and
           minimal connection/group references. Other people’s private content is
@@ -738,7 +738,7 @@ export function DataTransfer() {
       </section>
       {!["restricted", "suspended"].includes(vault.member.status || "") && (
         <section className="panel form-stack">
-          <h2>Bring your memories with you</h2>
+          <h2>Import your data</h2>
           <p>
             Import an archive from Porchday. Choose all parts together. Photos
             and checksums are checked before your preview; content is
@@ -796,7 +796,7 @@ export function DataTransfer() {
                 agreement.
               </p>
               <Button variant="primary" busy={action.busy} onClick={importData}>
-                Import my memories privately
+                Import my data privately
               </Button>
             </div>
           )}

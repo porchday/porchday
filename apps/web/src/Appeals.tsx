@@ -15,7 +15,7 @@ export function Appeals({ onLogout }: { onLogout: () => Promise<void> }) {
     <>
       <PublicHeader />
       <main id="main-content" className="narrow-page">
-        <span className="eyebrow">A HUMAN SECOND LOOK</span>
+        <span className="eyebrow">ACCOUNT APPEAL</span>
         <h1>Ask for a review.</h1>
         <p>
           If your account was restricted, you can ask an independent moderator

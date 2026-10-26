@@ -15,11 +15,11 @@ const actor = (who: string | null, fn: (db: TransactionSql) => Promise<unknown>)
 async function member() { const id = randomUUID(); await admin `insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`; await admin `insert into app.profiles(member_id,handle) values(${id},${'u_' + id.replaceAll('-', '').slice(0, 20)})`; return id; }
 async function device(m: string) { const id = randomUUID(); await admin `insert into app.device_keys(id,member_id,public_key,fingerprint,authorization_proof) values(${id},${m},${'public'.repeat(30)},${randomUUID().replaceAll('-', '') + 'abcdefff'},'{}')`; return id; }
 async function connect(a: string, b: string, kind = 'friend') { const [r] = await admin `insert into app.connections(member_a,member_b,kind) values(${[a, b].sort()[0]},${[a, b].sort()[1]},${kind}) returning id`; return r.id; }
-async function post(a: string, recipient: string, expiry: string | null = null, group: string | null = null) { const id = randomUUID(); const d = await device(recipient); await admin `insert into app.posts(id,author_id,group_id,audience,envelope,epoch,expires_at) values(${id},${a},${group},${group ? 'group' : 'connections'},'{}',1,${expiry})`; await admin `insert into app.post_recipients(post_id,device_id,member_id) values(${id},${d},${recipient})`; return id; }
+async function post(a: string, recipient: string, expiry: string | null = null, group: string | null = null, audience = 'connections') { const id = randomUUID(); const d = await device(recipient); await admin `insert into app.posts(id,author_id,group_id,audience,envelope,epoch,expires_at) values(${id},${a},${group},${group ? 'group' : audience},'{}',1,${expiry})`; await admin `insert into app.post_recipients(post_id,device_id,member_id) values(${id},${d},${recipient})`; return id; }
 async function comment(a: string, p: string, parent: string | null = null, expiry: string | null = null) { const id = randomUUID(); await admin `insert into app.comments(id,post_id,parent_id,author_id,envelope,expires_at) values(${id},${p},${parent},${a},'{}',${expiry})`; return id; }
 suite('PostgreSQL invariants under actual non-owner runtime role', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
-        throw Error('Test database name must contain test'); admin = postgres(url, { max: 8, prepare: false, onnotice: () => { } }); await admin `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql','016_group_signatures.sql'])
+        throw Error('Test database name must contain test'); admin = postgres(url, { max: 8, prepare: false, onnotice: () => { } }); await admin `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql','016_group_signatures.sql','021_social_history.sql','043_friends_audience.sql'])
         await admin.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); }, 30000);
     afterAll(async () => { if (admin)
         await admin.end(); });
@@ -158,6 +158,51 @@ suite('PostgreSQL invariants under actual non-owner runtime role', () => {
         expect(await actor(b, db => db `select * from app.posts where id=${p}`)).toHaveLength(0);
         await actor(a, db => db `delete from app.posts where id=${p}`);
         await expect(admin `insert into app.posts(id,author_id,audience,envelope,epoch) values(${p},${a},'only_me','{}',1)`).rejects.toThrow('CONTENT_DELETED');
+    });
+    it('friends snapshots exclude family, blocked and held members while reporting only eligible missing keys', async () => {
+        const a = await member(), friend = await member(), relative = await member(), pending = await member(), held = await member(), blocked = await member();
+        for (const peer of [friend, pending, held, blocked]) await connect(a, peer);
+        await connect(a, relative, 'family');
+        for (const peer of [a, friend, relative, held, blocked]) await device(peer);
+        await admin`update app.members set status='hold' where id=${held}`;
+        await actor(a, db => db`select app.set_block(${blocked},true)`);
+        const devices: any = await actor(a, db => db`select * from app.audience_devices('friends')`);
+        expect(devices.map((d: any) => d.member_id).sort()).toEqual([a, friend].sort());
+        const missing: any = await actor(a, db => db`select * from app.pending_audience_members('friends')`);
+        expect(missing.map((d: any) => d.member_id)).toEqual([pending]);
+        const all: any = await actor(a, db => db`select * from app.audience_devices('connections')`);
+        expect(all.map((d: any) => d.member_id).sort()).toEqual([a, friend, relative].sort());
+        const family: any = await actor(a, db => db`select * from app.audience_devices('family')`);
+        expect(family.map((d: any) => d.member_id).sort()).toEqual([a, relative].sort());
+    });
+    it('revokes narrow historical posts and descendants in both relabel directions without narrowing connections posts', async () => {
+        const a = await member(), b = await member(), later = await member();
+        await device(a);
+        const relationship = await connect(a, b), narrow = await post(a, b, null, null, 'friends'), broad = await post(a, b);
+        const reply = await comment(b, narrow), media = randomUUID();
+        await admin`insert into app.media_assets(id,owner_id,post_id,object_key,envelope,byte_size,state) values(${media},${a},${narrow},${media},'{}',10,'attached')`;
+        await actor(b, db => db`insert into app.post_reactions(post_id,member_id,reaction_tag,envelope) values(${narrow},${b},'abcdefghijklmnop','{}')`);
+        const accessible = () => actor(b, async db => ({ posts: await db`select id from app.posts where id=${narrow}`, comments: await db`select id from app.comments where id=${reply}`, media: await db`select id from app.media_assets where id=${media}`, reactions: await db`select reaction_tag from app.post_reactions where post_id=${narrow}` }));
+        expect(await accessible()).toMatchObject({posts: [{id: narrow}], comments: [{id: reply}], media: [{id: media}], reactions: [{reaction_tag: 'abcdefghijklmnop'}]});
+        await connect(a, later); await device(later);
+        const historical: any = await actor(a, db => db`select * from app.audience_devices('friends',null,${narrow})`);
+        expect(historical.some((d: any) => d.member_id === later)).toBe(false);
+        const relabel = async (kind: string) => {
+            await actor(a, db => db`select app.change_connection(${relationship},${kind},false)`);
+            await actor(b, db => db`select app.change_connection(${relationship},${kind},false)`);
+        };
+        await relabel('family');
+        expect(await accessible()).toEqual({posts: [], comments: [], media: [], reactions: []});
+        expect(await actor(b, db => db`select id from app.posts where id=${broad}`)).toHaveLength(1);
+        const family = await post(a, b, null, null, 'family');
+        await relabel('friend');
+        expect(await accessible()).toEqual({posts: [], comments: [], media: [], reactions: []});
+        expect(await actor(b, db => db`select id from app.posts where id=${family}`)).toHaveLength(0);
+        const fresh = await post(a, b, null, null, 'friends');
+        expect(await actor(b, db => db`select id from app.posts where id=${fresh}`)).toHaveLength(1);
+        await relabel('family');
+        expect(await actor(b, db => db`select id from app.posts where id in(${family},${fresh},${narrow})`)).toHaveLength(0);
+        expect(await actor(b, db => db`select id from app.posts where id=${broad}`)).toHaveLength(1);
     });
     it('cannot leave an accessible orphan comment during concurrent parent deletion', async () => {
         const a = await member(), b = await member();

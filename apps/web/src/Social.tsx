@@ -295,7 +295,7 @@ export function Composer({
       setPhotos([]);
       setTimer("");
       onPosted();
-    }, "Your moment is shared.");
+    }, "Post shared.");
   }
   if (vault.member.status === "restricted") return null;
   return (
@@ -315,7 +315,7 @@ export function Composer({
           maxLength={5000}
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="What’s happening in your little corner?"
+          placeholder="Write a post…"
         />
       </div>
       {photos.length > 0 && (
@@ -395,11 +395,13 @@ export function Composer({
               onChange={(e) => setAudience(e.target.value as Audience)}
             >
               <option value="connections">Friends & family</option>
+              <option value="friends">Friends only</option>
               <option value="family">Family only</option>
               <option value="only_me">Only me</option>
             </select>
           </label>
         )}
+        {audience === "friends" && <span>Excludes family connections</span>}
         {timer && <span>· disappears {localDate(deadline(timer)!)}</span>}
         <span className="character-count">{text.length}/5,000</span>
       </div>
@@ -486,10 +488,10 @@ export function Feed({
       <div className="feed-heading">
         <span>
           {groupId
-            ? "THE GROUP WALL"
+            ? "Group posts"
             : singleId
-              ? "A MOMENT TOGETHER"
-              : "FROM YOUR PEOPLE"}
+              ? "Post"
+              : "Posts"}
         </span>
         <button className="text-button" onClick={() => load()}>
           <Icon name="clock" size={14} />
@@ -515,11 +517,11 @@ export function Feed({
       {loaded && !rows.filter(unexpired).length && (
         <div className="panel">
           <Empty
-            icon="sun"
+            icon=""
             title={
               singleId
-                ? "This moment isn’t here."
-                : "A quiet start. A little room to grow."
+                ? "Post unavailable"
+                : "No posts yet"
             }
             action={
               !groupId && !singleId ? (
@@ -531,7 +533,7 @@ export function Feed({
           >
             {singleId
               ? "It may have expired, been removed, or no longer be shared with you."
-              : "Your people’s moments will show up right here. No strangers, no suggested posts. Just the people you choose."}
+              : "Posts from your connections appear here in chronological order."}
           </Empty>
         </div>
       )}
@@ -541,14 +543,14 @@ export function Feed({
           busy={action.busy}
           onClick={() => load(true)}
         >
-          Load more moments
+          Load more posts
         </Button>
       )}
       {loaded && rows.length > 0 && !cursor && (
         <div className="caught-up">
           <Icon name="check" size={20} />
           <p>
-            You’re all caught up.<span>There’s a whole day out there.</span>
+            No more posts.
           </p>
         </div>
       )}
@@ -657,7 +659,7 @@ export function PostCard({
   if (unavailable)
     return (
       <div className="panel">
-        <Alert>This moment is no longer available.</Alert>
+        <Alert>This post is no longer available.</Alert>
       </div>
     );
   return (
@@ -671,7 +673,7 @@ export function PostCard({
                 ? `@${vault.member.handle}`
                 : row.author_handle
                   ? `@${row.author_handle}`
-                  : "A person in your circle"}
+                  : "A connection"}
             </strong>
             <span>
               <time dateTime={row.created_at} title={localDate(row.created_at)}>
@@ -684,7 +686,9 @@ export function PostCard({
                   ? "Group"
                   : row.audience === "family"
                     ? "Family"
-                    : "Friends & family"}
+                    : row.audience === "friends"
+                      ? "Friends only"
+                      : "Friends & family"}
             </span>
           </div>
         </a>
@@ -760,7 +764,7 @@ export function PostCard({
           <p>{error}</p>
         </div>
       ) : !content ? (
-        <Loading text="Opening your moment…" />
+        <Loading text="Loading post…" />
       ) : edit ? (
         <div className="form-stack">
           <label className="field">
@@ -1292,7 +1296,7 @@ function Comment({
                   ? `@${vault.member.handle}`
                   : row.author_handle
                     ? `@${row.author_handle}`
-                    : "Circle member"}
+                    : "Member"}
               </strong>
               <time title={localDate(row.created_at)}>
                 {relativeDate(row.created_at)}
@@ -1448,7 +1452,7 @@ function CommentComposer({
           maxLength={5000}
           rows={2}
           placeholder={
-            reply ? "Leave a thoughtful reply…" : "Leave a little something…"
+            reply ? "Write a reply…" : "Write a comment…"
           }
           required
         />
@@ -1715,7 +1719,7 @@ function ReshareDialog({
       <form className="form-stack" onSubmit={share}>
         <p>
           This creates a new post for your selected current audience, including
-          eligible people who joined your circle later. Only your own text and
+          eligible people who connected with you later. Only your own text and
           photos are copied. The original comments and reactions stay with the
           original post.
         </p>
@@ -1744,6 +1748,7 @@ function ReshareDialog({
             }}
           >
             <option value="connections">My current friends & family</option>
+            <option value="friends">Friends only</option>
             <option value="family">My current family connections</option>
             <option value="only_me">Only me</option>
             {source.group_id && (
@@ -1793,7 +1798,7 @@ function ReshareDialog({
             busy={action.busy}
             disabled={!reviewed || (!text.trim() && !content.media?.length)}
           >
-            Share as a new moment
+            Share as a new post
           </Button>
           <Button type="button" variant="quiet" onClick={onClose}>
             Cancel

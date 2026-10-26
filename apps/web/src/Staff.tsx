@@ -202,7 +202,7 @@ export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: Staf
     <>
       <div className="page-heading">
         <span className="eyebrow">AUTHORIZED HUMAN REVIEW</span>
-        <h1>Care for the circle.</h1>
+        <h1>Staff review</h1>
         <p>
           Staff access is role-limited and audited. Being staff never grants
           access to private walls.

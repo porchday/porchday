@@ -24,6 +24,7 @@ const pausedRoutes: [keyof Env, string, string, string][] = [
   ['MEDIA_UPLOADS_PAUSED', 'POST', '/media', 'UPLOADS_PAUSED'],
   ['MEDIA_UPLOADS_PAUSED', 'PUT', '/media/11111111-1111-4111-8111-111111111111/bytes', 'UPLOADS_PAUSED'],
   ['SOCIAL_INVITATIONS_PAUSED', 'POST', '/connections/requests', 'INVITATIONS_PAUSED'],
+  ['SOCIAL_INVITATIONS_PAUSED', 'POST', '/platform-invitations', 'INVITATIONS_PAUSED'],
   ['SOCIAL_INVITATIONS_PAUSED', 'POST', '/connections/requests/request/accept', 'INVITATIONS_PAUSED'],
   ['SOCIAL_INVITATIONS_PAUSED', 'POST', '/groups/group/invitations', 'INVITATIONS_PAUSED'],
   ['SOCIAL_INVITATIONS_PAUSED', 'POST', '/group-invitations/invitation/accept', 'INVITATIONS_PAUSED'],

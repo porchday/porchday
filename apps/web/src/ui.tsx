@@ -246,16 +246,16 @@ export function Empty({
 }) {
   return (
     <div className="empty">
-      <span className="empty-icon">
+      {icon && <span className="empty-icon">
         <Icon name={icon} size={30} />
-      </span>
+      </span>}
       <h3>{title}</h3>
       <p>{children}</p>
       {action}
     </div>
   );
 }
-export function Loading({ text = "Making a little room…" }: { text?: string }) {
+export function Loading({ text = "Loading…" }: { text?: string }) {
   return (
     <div className="loading" role="status">
       <span className="spinner" />

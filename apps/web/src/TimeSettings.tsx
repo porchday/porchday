@@ -12,7 +12,7 @@ export function TimeSettings() {
   const zones = Array.from(new Set(["UTC", device, ...supported])).sort();
   return (
     <section className="panel form-stack">
-      <h2>Time in your corner</h2>
+      <h2>Time zone</h2>
       <p>
         Dates and expiration warnings use this display timezone on this browser.
         Deadlines are the same instant for everyone.

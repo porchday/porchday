@@ -27,7 +27,7 @@ struct ProfileEditor: View {
         Form {
             Section("The person behind the handle") {
                 TextField("Display name",text:$name)
-                TextField("A little status",text:$status)
+                TextField("Status",text:$status)
                 TextField("About me",text:$bio,axis:.vertical)
                 TextField("Interests, separated by commas",text:$interests)
             }
@@ -59,18 +59,18 @@ struct ProfileEditor: View {
                 }
                 Text("Location metadata is removed before photos are encrypted.").font(.footnote)
             }
-            Section("Make this corner yours") {
+            Section("Personalization") {
                 Picker("Tiled wallpaper", selection: Binding(get: { wallpaper }, set: { wallpaper = $0; wallpaperChanged = true })) {
                     ForEach(ProfileWallpaper.allCases) { choice in Text(choice.label).tag(choice) }
                 }
                 if wallpaper != .none { WallpaperBackground(wallpaper: wallpaper).frame(height: 120).clipShape(RoundedRectangle(cornerRadius: 8)).accessibilityLabel(wallpaper.label + " preview") }
-                Picker("Theme",selection:$theme) { Text("Sunday garden").tag("sage");Text("Golden hour").tag("apricot");Text("After the rain").tag("lavender");Text("Library afternoon").tag("ink") }
-                Picker("Heading style",selection:$font) { Text("Bookish serif").tag("serif");Text("Simple sans serif").tag("sans") }
+                Picker("Theme",selection:$theme) { Text("Sage").tag("sage");Text("Apricot").tag("apricot");Text("Lavender").tag("lavender");Text("Ink").tag("ink") }
+                Picker("Heading style",selection:$font) { Text("Serif").tag("serif");Text("Sans serif").tag("sans") }
                 Picker("Section order",selection:$order) { Text("About, then interests").tag("about-first");Text("Interests, then about").tag("interests-first") }
                 Text("These details are encrypted for your current connections. Share your profile again after accepting new connections.").font(.footnote)
                 Button(busy ? "Encrypting your profile…":"Save and share profile") { Task { await save() } }.disabled(busy || name.count>80 || bio.count>1000 || status.count>100 || interests.count>300)
             }
-        }.disabled(busy || !model.canWriteSocial).navigationTitle("Your personal space").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
+        }.disabled(busy || !model.canWriteSocial).navigationTitle("Edit profile").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
             .task { name=profile["displayName"].string ?? "";bio=profile["bio"].string ?? "";interests=profile["interests"].string ?? "";status=profile["status"].string ?? "";theme=profile["theme"].string ?? "sage";font=profile["font"].string ?? "serif";order=profile["sectionOrder"].string ?? "about-first";wallpaper=ProfileWallpaper.displayed(profile["wallpaper"]) }
             .onChange(of:selection) { _,item in let targetSlot=slot;Task { await model.perform { if let data=try await item?.loadTransferable(type:Data.self) { assets[targetSlot]=try PhotoPipeline.prepare(data);removedAssets.remove(targetSlot) } } } }
     }

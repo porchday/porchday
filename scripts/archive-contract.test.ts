@@ -32,6 +32,21 @@ describe("portable archive contract and fictional examples", () => {
     expect(() => validateSet([single.archive])).not.toThrow();
   });
 
+  it("accepts friends-only exports and preserves their source audience through import preview", () => {
+    const friends = structuredClone(single.archive);
+    friends.posts[0].audience = "friends";
+    friends.comments[0].audience = "friends";
+    friends.reactions[0].audience = "friends";
+    expect(validate(friends), JSON.stringify(validate.errors)).toBe(true);
+    const parsed = unpackArchive(packArchive(friends, single.files)).archive;
+    expect(() => validateSet([parsed])).not.toThrow();
+    const entries = eligibleEntries([parsed], Date.parse("2026-01-01T12:00:00.000Z"));
+    expect(entries.map(entry => entry.journal_kind)).toEqual(["post", "comment", "reaction"]);
+    expect(entries.map(entry => entry.audience)).toEqual(["friends", "friends", "friends"]);
+    expect(entries[1].expires_at).toBe(friends.comments[0].expires_at);
+    expect(entries[0].payload.media).toEqual(friends.posts[0].payload.media);
+  });
+
   it("rejects unsupported versions, incomplete metadata, malformed UTC dates and unsafe photo paths", () => {
     const mutations: ((a: PortableArchive) => void)[] = [
       a => { a.version = 2 as never; },

@@ -39,9 +39,51 @@ async function seal(a: Person, payload: unknown, override: Partial<ContentContex
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('keeps friends-only posts, replies, reactions and photos from family while retaining eligible non-mutual commenters', async () => {
+        const owner = await person(), friend = await person(), peer = await person(), relative = await person();
+        await connection(owner, friend); await connection(owner, peer); await connection(owner, relative, 'family');
+        const snapshot = await request(owner.id, '/audiences?audience=friends');
+        expect(snapshot.data.devices.map((d: any) => d.member_id).sort()).toEqual([owner.id, friend.id, peer.id].sort());
+        const postId = randomUUID(), mediaId = randomUUID(), secret = createReactionSecret();
+        const photo = await seal(owner, {mime: 'image/jpeg', bytes: 'c2FtcGxl', alt: 'Friends fixture'}, {id: mediaId, kind: 'media', audience: 'friends', parentId: postId});
+        const bytes = new TextEncoder().encode(JSON.stringify(photo));
+        expect((await request(owner.id, '/media', 'POST', {id: mediaId, envelope: photo, byte_size: bytes.length})).status).toBe(201);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {method: 'PUT', headers: {'x-test-member': owner.id, 'content-type': 'application/octet-stream'}, body: bytes}, env)).status).toBe(200);
+        const post = await seal(owner, {text: 'Friends, excluding family', reactionSecret: secret, media: [{id: mediaId}]}, {id: postId, audience: 'friends'});
+        expect((await request(owner.id, '/posts', 'POST', {envelope: post, media_ids: [mediaId]})).status).toBe(201);
+        const reply = await seal(peer, {text: 'A fellow friend replied'}, {kind: 'comment', audience: 'friends', parentId: postId}, postId);
+        expect((await request(peer.id, '/posts/' + postId + '/comments', 'POST', {envelope: reply, parent_expires_at: null})).status).toBe(201);
+        const nested = await seal(friend, {text: 'Nested reply'}, {kind: 'comment', audience: 'friends', parentId: reply.context.id}, postId);
+        expect((await request(friend.id, '/posts/' + postId + '/comments', 'POST', {envelope: nested, parent_expires_at: null})).status).toBe(201);
+        for (const [kind, target] of [['posts', postId], ['comments', reply.context.id]]) {
+            const tag = await reactionTag({secret, targetId: target, memberId: friend.id, emoji: 'like'});
+            const reaction = await seal(friend, {emoji: 'like'}, {id: tag, kind: 'reaction', audience: 'friends', parentId: target}, postId);
+            expect((await request(friend.id, `/${kind}/${target}/reactions/${tag}`, 'PUT', {envelope: reaction})).status).toBe(200);
+        }
+        const detail = await request(friend.id, '/posts/' + postId);
+        expect(detail.status).toBe(200); expect(detail.data.comments).toHaveLength(2);
+        expect(detail.data.reactions).toHaveLength(1); expect(detail.data.comment_reactions).toHaveLength(1);
+        expect(await decryptObject({envelope: reply, expectedContext: reply.context, privateKey: friend.key, authorPublicKey: peer.publicKey})).toEqual({text: 'A fellow friend replied'});
+        await expect(decryptObject({envelope: post, expectedContext: post.context, privateKey: relative.key, authorPublicKey: owner.publicKey})).rejects.toThrow('not a recipient');
+        expect((await request(relative.id, '/posts/' + postId)).status).toBe(404);
+        expect((await request(relative.id, '/audiences?audience=friends&post_id=' + postId)).status).toBe(404);
+        expect((await request(relative.id, '/feed')).data.items.some((p: any) => p.id === postId)).toBe(false);
+        expect((await request(relative.id, '/walls/' + owner.id)).data.items.some((p: any) => p.id === postId)).toBe(false);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {headers: {'x-test-member': relative.id}}, env)).status).toBe(404);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {headers: {'x-test-member': friend.id}}, env)).status).toBe(200);
+        const profile = await seal(owner, {displayName: 'Narrow profile is not supported'}, {id: owner.id, kind: 'profile', audience: 'friends'});
+        expect((await request(owner.id, '/profiles/me', 'PUT', {envelope: profile})).data.error.code).toBe('ENVELOPE_CONTEXT');
+        const stale = await seal(owner, {text: 'Snapshot before friend becomes family'}, {audience: 'friends'});
+        const [edge] = await sql`select id from app.connections where ${owner.id} in(member_a,member_b) and ${friend.id} in(member_a,member_b)`;
+        for (const member of [owner, friend]) expect((await request(member.id, '/connections/' + edge.id + '/kind', 'PUT', {kind: 'family'})).status).toBe(200);
+        expect((await request(owner.id, '/posts', 'POST', {envelope: stale})).data.error.code).toBe('AUDIENCE_CHANGED');
+        expect((await request(friend.id, '/posts/' + postId)).status).toBe(404);
+        expect((await app.request('https://porchday.test/media/' + mediaId + '/bytes', {headers: {'x-test-member': friend.id}}, env)).status).toBe(404);
+        expect((await request(peer.id, '/posts/' + postId)).status).toBe(200);
+    }, 60000);
     it('imports private posts and photos through the restricted role without RETURNING visibility, and retries without duplicate rows or attachments', async () => {
         const owner = await person(), stranger = await person();
         const postId = randomUUID(), mediaId = randomUUID(), source = 'archive:' + randomUUID();

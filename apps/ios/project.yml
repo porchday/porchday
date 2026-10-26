@@ -25,8 +25,8 @@ settings:
     INFOPLIST_KEY_CFBundleDisplayName: Porchday
     INFOPLIST_KEY_UILaunchScreen_Generation: 'YES'
     INFOPLIST_KEY_UIApplicationSceneManifest_Generation: 'YES'
-    INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Choose photos to encrypt and share with your people.
-    INFOPLIST_KEY_NSCameraUsageDescription: Take a photo to encrypt and share with your people.
+    INFOPLIST_KEY_NSPhotoLibraryUsageDescription: Choose photos to encrypt and share.
+    INFOPLIST_KEY_NSCameraUsageDescription: Take a photo to encrypt and share.
     INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: 'YES'
     TARGETED_DEVICE_FAMILY: '1,2'
 packages:

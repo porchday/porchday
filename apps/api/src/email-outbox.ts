@@ -47,23 +47,33 @@ export async function processAccountEmails(env:Env){
  try{
   await pool.query(`DELETE FROM public.auth_email_outbox o WHERE expires_at<=now() OR delivered_at<now()-interval '1 hour' OR failed_at<now()-interval '1 hour'
    OR (member_id IS NOT NULL AND app.auth_member_status(member_id::uuid) IN ('hold','deleting','deleted'))
+   OR (purpose='platform_invitation' AND NOT public.platform_invitation_deliverable(invitation_token_hash))
    OR EXISTS(SELECT 1 FROM public.recovery_cases c WHERE c.id=o.recovery_case_id AND
     (c.retention_until<=now() OR (o.purpose='case_contact' AND(c.contact_token_expires_at<=now() OR c.state='restored'))
      OR (o.purpose='case_restore' AND(c.restore_token_expires_at IS NULL OR c.restore_token_expires_at<=now() OR c.state<>'hold'))))`);
   const lease=crypto.randomUUID();
   const {rows}=await pool.query(`UPDATE public.auth_email_outbox SET leased_until=now()+interval '2 minutes',lease_id=$1,attempts=attempts+1
-   WHERE id IN (SELECT id FROM public.auth_email_outbox WHERE delivered_at IS NULL AND failed_at IS NULL AND expires_at>now() AND next_attempt_at<=now() AND (leased_until IS NULL OR leased_until<now()) ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 10)
-   RETURNING id,encrypted_payload,attempts`,[lease]);
+   WHERE id IN (SELECT id FROM public.auth_email_outbox WHERE delivered_at IS NULL AND failed_at IS NULL AND expires_at>now() AND next_attempt_at<=now() AND (leased_until IS NULL OR leased_until<now())
+    AND (purpose<>'platform_invitation' OR $2::boolean)
+    ORDER BY (purpose='platform_invitation'),created_at FOR UPDATE SKIP LOCKED LIMIT 10)
+   RETURNING id,encrypted_payload,attempts,purpose,invitation_token_hash`,[lease,env.SIGNUP_ENABLED==='true'&&env.SOCIAL_INVITATIONS_PAUSED!=='true']);
   for(const row of rows){
    try{
+    // Recheck just before delivery, after leasing and without an open SQL
+    // transaction. Removed/used/expired invitations must not produce new mail.
+    if(row.purpose==='platform_invitation'){
+     const eligibility=await pool.query('SELECT public.platform_invitation_deliverable($1) AS allowed',[row.invitation_token_hash]);
+     if(!eligibility.rows[0]?.allowed){await pool.query('DELETE FROM public.auth_email_outbox WHERE id=$1 AND lease_id=$2',[row.id,lease]);continue;}
+    }
     const message=await decryptAccountEmail(env,row.encrypted_payload);
     await sendAccountEmail(env,message.to,message.subject,message.text);
     await pool.query('UPDATE public.auth_email_outbox SET delivered_at=now(),leased_until=NULL,lease_id=NULL WHERE id=$1 AND lease_id=$2',[row.id,lease]);
     sent++;
    }catch{
     await pool.query(`UPDATE public.auth_email_outbox SET leased_until=NULL,lease_id=NULL,
-     next_attempt_at=now()+make_interval(secs=>least(900,15*power(2,least(attempts,6)))::int),
-     failed_at=CASE WHEN attempts>=8 THEN now() ELSE NULL END WHERE id=$1 AND lease_id=$2`,[row.id,lease]);
+     next_attempt_at=now()+make_interval(secs=>CASE WHEN purpose='platform_invitation'
+      THEN least(21600,15*power(2,least(attempts,11)))::int ELSE least(900,15*power(2,least(attempts,6)))::int END),
+     failed_at=CASE WHEN attempts>=8 AND purpose<>'platform_invitation' THEN now() ELSE NULL END WHERE id=$1 AND lease_id=$2`,[row.id,lease]);
     retried++;
    }
   }

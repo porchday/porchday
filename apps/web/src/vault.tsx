@@ -418,21 +418,21 @@ export function VaultProvider({
         <LockedAccount member={member} />
       </div>
     );
-  if (!devices) return <Loading text="Checking your private space…" />;
+  if (!devices) return <Loading text="Checking encryption keys…" />;
   if (!active)
     return (
       <main id="main-content" className="vault-page">
         <span className="feature-icon sage">
           <Icon name="lock" size={30} />
         </span>
-        <span className="eyebrow">ONLY YOU HOLD THE KEY</span>
+        <span className="eyebrow">ENCRYPTION</span>
         <h1>
           {devices.length
-            ? "Welcome back to your private space."
-            : "A little privacy, by design."}
+            ? "Unlock your account"
+            : "Set up encryption"}
         </h1>
         <p>
-          Your posts, photos, and conversations are encrypted for your people.
+          Your posts, photos, and comments are encrypted for their recipients.
           Porchday cannot read them. Your recovery secret is separate from your
           login password.
         </p>
@@ -468,12 +468,12 @@ export function VaultProvider({
                 </span>
               </label>
               <Button variant="primary" busy={action.busy}>
-                Unlock my circle <Icon name="lock" size={17} />
+                Unlock <Icon name="lock" size={17} />
               </Button>
             </form>
           ) : generated ? (
             <>
-              <h2>Keep this somewhere safe.</h2>
+              <h2>Save your recovery secret</h2>
               <p>
                 This secret can restore your encryption keys. Save it in your
                 password manager or store a printed copy somewhere private. We
@@ -527,7 +527,7 @@ export function VaultProvider({
                 disabled={!saved}
                 onClick={finish}
               >
-                My secret is safe. Let’s go.
+                Continue
               </Button>
             </>
           ) : ["restricted", "suspended"].includes(member.status || "") ? (
@@ -541,7 +541,7 @@ export function VaultProvider({
             </>
           ) : (
             <>
-              <h2>Make this space yours.</h2>
+              <h2>Create encryption keys</h2>
               <p>
                 We’ll create your keys right here on your device. You’ll save a
                 recovery secret before continuing. It never goes to Porchday.

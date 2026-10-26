@@ -28,6 +28,7 @@ import { AssetPicker, useAssetUpload, type PendingAsset } from "./Media";
 import { Fingerprint } from "./vault";
 import { planSurfacePhotos } from "./surface-media";
 import { wallpaperId } from "./wallpaper";
+import { PlatformInvitation } from "./PlatformInvitation";
 export function Connections() {
   const vault = useVault();
   const [data, setData] = useState<Json | null>(null);
@@ -81,7 +82,7 @@ export function Connections() {
   const handles = new Map<string, string>(
     (data?.handles || []).map((p: Json) => [p.id || p.member_id, p.handle]),
   );
-  const label = (id: string) => handles.get(id) || "circle member";
+  const label = (id: string) => handles.get(id) || "member";
   const incoming = requests.filter(
     (r: Json) => r.recipient === vault.member.id,
   );
@@ -95,18 +96,14 @@ export function Connections() {
       });
       setHandle("");
       await refresh();
-    }, "Your invitation to connect is on its way.");
+    }, "Connection request sent.");
   }
   return (
     <>
       <div className="page-heading">
-        <span className="eyebrow">PEOPLE, NOT AN AUDIENCE</span>
-        <h1>
-          Your circle<span className="coral">.</span>
-        </h1>
+        <h1>Connections</h1>
         <p>
-          Friendship goes both ways. There’s room for up to 300 people,
-          including family.
+          Up to 300 mutual connections, including family.
         </p>
       </div>
       <section className="panel">
@@ -147,9 +144,10 @@ export function Connections() {
         <Alert>{action.error}</Alert>
         <Alert success>{action.notice}</Alert>
       </section>
+      <PlatformInvitation canInvite={vault.member.status === "active"} />
       {incoming.length > 0 && (
         <section className="panel">
-          <h2>A hello, waiting for you</h2>
+          <h2>Connection requests</h2>
           <p>
             Accepting connects you for future eligible posts. Existing encrypted
             history stays private unless its author explicitly shares it. Save
@@ -197,7 +195,7 @@ export function Connections() {
       )}
       <section className="panel">
         <div className="section-title">
-          <h2 ref={peopleHeading} tabIndex={-1}>Your people</h2>
+          <h2 ref={peopleHeading} tabIndex={-1}>Your connections</h2>
           <span className="count-badge">{list.length} / 300</span>
         </div>
         <div className="tabs" role="group" aria-label="Connection filter">
@@ -215,7 +213,7 @@ export function Connections() {
         {!data ? (
           <Loading />
         ) : !list.length ? (
-          <Empty icon="people" title="Every circle starts with a hello.">
+          <Empty icon="people" title="No connections yet">
             Find a friend by their exact handle. We don’t upload contact books
             or recommend strangers.
           </Empty>
@@ -347,7 +345,7 @@ export function Connections() {
               <Avatar name={label(r.recipient)} />
               <div className="member-info">
                 <strong>@{label(r.recipient)}</strong>
-                <small>Waiting for a hello back</small>
+                <small>Request pending</small>
               </div>
               <Button
                 variant="quiet compact"
@@ -436,11 +434,8 @@ export function Groups() {
   return (
     <>
       <div className="page-heading">
-        <span className="eyebrow">A FEW PEOPLE. A SHARED THING.</span>
         <div className="section-title">
-          <h1>
-            Your groups<span className="coral">.</span>
-          </h1>
+          <h1>Groups</h1>
           <Button
             variant="primary compact"
             disabled={vault.member.status === "restricted"}
@@ -450,9 +445,6 @@ export function Groups() {
             New group
           </Button>
         </div>
-        <p>
-          The book club. The cousins. The people who always say yes to a walk.
-        </p>
       </div>
       <Alert>{action.error}</Alert>
       {invites.length > 0 && (
@@ -493,18 +485,18 @@ export function Groups() {
         <section className="panel">
           <Empty
             icon="group"
-            title="Good things happen in small groups."
+            title="No groups yet"
             action={
               <Button
                 variant="outline"
                 disabled={vault.member.status === "restricted"}
                 onClick={() => setCreate(true)}
               >
-                Start your first group
+                Create group
               </Button>
             }
           >
-            A private room for a shared interest. Invite people by handle; group
+            Invite existing members by handle. Group
             membership doesn’t use a friend slot.
           </Empty>
         </section>
@@ -524,17 +516,17 @@ export function Groups() {
               </span>
               <h2>{g.content.name}</h2>
               <p>
-                {g.content.description || "A little space to come together."}
+                {g.content.description || "Private group"}
               </p>
               <span className="text-link">
-                Step inside <Icon name="arrow" size={17} />
+                Open group <Icon name="arrow" size={17} />
               </span>
             </a>
           ))}
         </div>
       )}
       {create && (
-        <Modal title="Make a little gathering" onClose={() => setCreate(false)}>
+        <Modal title="Create group" onClose={() => setCreate(false)}>
           <form onSubmit={submit} className="form-stack">
             <p>
               Groups are private and invitation-only. Names and descriptions are
@@ -548,7 +540,7 @@ export function Groups() {
               maxLength={80}
             />
             <label className="field">
-              <span>What brings you together?</span>
+              <span>Description</span>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -641,9 +633,9 @@ export function GroupDetail({ id }: { id: string }) {
           </div>
         )}
         <Icon name="group" size={44} />
-        <span className="eyebrow">YOUR PRIVATE GATHERING</span>
+        <span className="eyebrow">PRIVATE GROUP</span>
         <h1>{content?.name || "Your group"}</h1>
-        <p>{content?.description || "Opening this little corner…"}</p>
+        <p>{content?.description || "Loading group…"}</p>
         <div>
           <span>
             <Icon name="lock" size={14} />
@@ -841,23 +833,23 @@ export function GroupDetail({ id }: { id: string }) {
 export const THEMES = [
   {
     id: "sage",
-    label: "Sunday garden",
-    description: "Soft greens & slow mornings",
+    label: "Green",
+    description: "Green and cream",
   },
   {
     id: "apricot",
-    label: "Golden hour",
-    description: "Warm peach & good company",
+    label: "Peach",
+    description: "Peach and cream",
   },
   {
     id: "lavender",
-    label: "After the rain",
-    description: "Lilac & a little daydreaming",
+    label: "Purple",
+    description: "Purple and cream",
   },
   {
     id: "ink",
-    label: "Library afternoon",
-    description: "Quiet blues & well-loved books",
+    label: "Blue",
+    description: "Blue and cream",
   },
 ];
 export function Wall({ id }: { id?: string }) {
@@ -897,8 +889,7 @@ export function Wall({ id }: { id?: string }) {
               <EncryptedPhoto media={profile.cover as MediaPayload} />
             </div>
           )}
-          <span>{profile?.status || "ordinary days. good company."}</span>
-          <span aria-hidden="true">✳</span>
+          {profile?.status && <span>{profile.status}</span>}
         </div>
         <div className="wall-profile">
           {profile?.avatar ? (
@@ -913,16 +904,13 @@ export function Wall({ id }: { id?: string }) {
             />
           )}
           <div>
-            <span className="eyebrow">
-              {own ? "YOUR LITTLE CORNER" : "A FRIEND’S LITTLE CORNER"}
-            </span>
-            <h1>{profile?.displayName || `@${handle || "Circle member"}`}</h1>
+            <h1>{profile?.displayName || `@${handle || "Member"}`}</h1>
             <p>@{handle || "private"}</p>
           </div>
           {own ? (
             <a href="/app/settings/profile" className="button outline compact">
               <Icon name="edit" size={16} />
-              Make it yours
+              Edit profile
             </a>
           ) : (
             <button
@@ -966,29 +954,25 @@ export function Notifications() {
     action.run(refresh);
   }, []);
   const title: Record<string, string> = {
-    connection_request: "Someone wants to connect",
-    connection_accepted: "A connection was accepted",
-    comment: "There’s a new comment",
-    reaction: "Someone left a reaction",
-    group_invitation: "You’re invited to a group",
-    post: "A new moment from your circle",
-    security: "An account security update",
+    connection_request: "Connection request",
+    connection_accepted: "Connection accepted",
+    comment: "New comment",
+    reaction: "New reaction",
+    group_invitation: "Group invitation",
+    post: "New post",
+    security: "Account security update",
   };
   return (
     <>
       <div className="page-heading">
-        <span className="eyebrow">LITTLE HELLOS</span>
-        <h1>
-          Your updates<span className="coral">.</span>
-        </h1>
-        <p>No pressure to keep up. They’ll be here when you are.</p>
+        <h1>Notifications</h1>
       </div>
       <section className="panel">
         <Alert>{action.error}</Alert>
         {rows === null ? (
           <Loading />
         ) : !rows.length ? (
-          <Empty icon="bell" title="All quiet on the porch.">
+          <Empty icon="bell" title="No notifications">
             When someone connects or joins a conversation, you’ll see an update
             here.
           </Empty>

@@ -1,9 +1,9 @@
 /** Local, curated artwork only. Never use profile values as URLs or CSS. */
 export const WALLPAPERS = [
-  { id: 'porch-stars', label: 'Stars & arrows', description: 'A noisy little orange night sky' },
-  { id: 'orange-checker', label: 'Kitchen table', description: 'Warm checks and tiny diamonds' },
-  { id: 'sunny-daisies', label: 'Daisy chain', description: 'Orange flowers on sunny paper' },
-  { id: 'midnight-diamonds', label: 'Midnight diamonds', description: 'Cream gems on deep chocolate' },
+  { id: 'porch-stars', label: 'Stars & arrows', description: 'Orange stars and arrows' },
+  { id: 'orange-checker', label: 'Checkerboard', description: 'Orange checks and diamonds' },
+  { id: 'sunny-daisies', label: 'Daisies', description: 'Orange flowers on cream' },
+  { id: 'midnight-diamonds', label: 'Diamonds', description: 'Cream diamonds on dark brown' },
 ] as const;
 export type WallpaperId = typeof WALLPAPERS[number]['id'];
 export function wallpaperId(value: unknown): WallpaperId | 'none' {

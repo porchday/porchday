@@ -17,14 +17,13 @@ struct ResharePostView: View {
             }
             if item.context["groupId"] == .null {
                 Picker("Share with", selection: $audience) {
-                    Text("Friends & family").tag("connections")
-                    Text("Family only").tag("family")
-                    Text("Only me").tag("only_me")
+                    ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) }
                 }
-            } else { Text("The fresh copy will be shared with current members of this group.") }
-            Button(busy ? "Encrypting a fresh copy…" : "Share this post again") { Task { await share() } }.disabled(!model.canWriteSocial || busy || item.payload == nil || !item.active)
+                if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) }
+            } else { Text("The copy will be shared with current group members.") }
+            Button(busy ? "Encrypting…" : "Share this post again") { Task { await share() } }.disabled(!model.canWriteSocial || busy || item.payload == nil || !item.active)
         }
-        .navigationTitle("Share with your people")
+        .navigationTitle("Reshare post")
         .toolbar { Button("Cancel") { dismiss() } }
         .task { audience = item.context["audience"].string ?? "connections" }
     }

@@ -37,7 +37,7 @@ struct Device: Identifiable, Sendable { let id: String; let memberID: String; le
 struct SocialItem: Identifiable, Sendable { let id: String; let raw: JSON; let envelope: JSON; let payload: JSON?; let error: String?
     var context: JSON { envelope["context"] }
     var authorID: String { raw["author_id"].string ?? context["authorId"].string ?? "" }
-    var authorHandle: String { raw["author_handle"].string.map { "@" + $0 } ?? "A person in your circle" }
+    var authorHandle: String { raw["author_handle"].string.map { "@" + $0 } ?? "Member" }
     var expiry: Date? { let values = [raw["effective_expires_at"].string, raw["expires_at"].string, context["expiresAt"].string].compactMap { $0 }.compactMap(PorchDate.parse); return values.min() }
     var active: Bool { expiry.map { $0 > Date() } ?? true }
     var text: String { payload?["text"].string ?? "" }

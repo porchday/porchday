@@ -21,7 +21,7 @@ struct GroupEditor: View {
 
     var body: some View {
         Form {
-            Section("Your shared space") {
+            Section("Group details") {
                 TextField("Group name", text: $name)
                 TextField("Description", text: $description, axis: .vertical)
                 PhotosPicker(selection: $selection, matching: .images) { Label("Choose a group image", systemImage: "photo") }

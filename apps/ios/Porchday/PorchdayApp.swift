@@ -20,7 +20,7 @@ struct RootView: View {
     @EnvironmentObject var vault: CryptoVault
     var body: some View {
         Group {
-            if model.loading { ProgressView("Opening your porch…") }
+            if model.loading { ProgressView("Loading…") }
             else if model.needsTwoFactor { TwoFactorLoginView() }
             else if let member = model.member {
                 if vault.unlocked || (member.access.restoresKeysLocally && vault.devices.isEmpty) { if !member.access.readsSocial || !vault.unlocked { NavigationStack { SettingsView() } } else { MainTabs(member: member) } } else { UnlockView(member: member) }
@@ -35,7 +35,7 @@ struct MainTabs: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         TabView {
-            NavigationStack { FeedView(title: "Your porch", endpoint: "/feed", showComposer: true) }.tabItem { Label("Home", systemImage: "house") }
+            NavigationStack { FeedView(title: "Feed", endpoint: "/feed", showComposer: true) }.tabItem { Label("Home", systemImage: "house") }
             NavigationStack { ConnectionsView() }.tabItem { Label("Connections", systemImage: "person.2") }
             NavigationStack { GroupsView() }.tabItem { Label("Groups", systemImage: "person.3") }
             NavigationStack { ProfileView(memberID: member.id, handle: member.handle) }.tabItem { Label("My wall", systemImage: "person.crop.rectangle") }
@@ -61,7 +61,7 @@ struct LoginView: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section { VStack(alignment: .leading, spacing: 12) { Image("PorchdayMark").resizable().frame(width: 64, height: 64).accessibilityHidden(true); Text("Porchday").font(.largeTitle.bold()); Text("a simple social network").font(.title3); Text("No ads. No influencers. No algorithm.").font(.headline); Text("A quieter place for your people. Your private content is end-to-end encrypted.") }.padding(.vertical) }
+                Section { VStack(alignment: .leading, spacing: 12) { Image("PorchdayMark").resizable().frame(width: 64, height: 64).accessibilityHidden(true); Text("Porchday").font(.largeTitle.bold()); Text("a simple social network").font(.title3); Text("No ads. No influencers. No algorithm.").font(.headline); Text("Your private content is end-to-end encrypted.") }.padding(.vertical) }
                 Section(joining ? "Join by invitation" : "Welcome back") {
                     TextField("Email address", text: $email).textContentType(.emailAddress).keyboardType(.emailAddress).textInputAutocapitalization(.never).autocorrectionDisabled()
                     SecureField("Password", text: $password).textContentType(joining ? .newPassword : .password)
@@ -71,7 +71,7 @@ struct LoginView: View {
                 }
                 Section { Button(joining ? "I already have an account" : "I have an invitation") { joining.toggle() }.accessibilityIdentifier("toggle-signup"); Button("Forgot password?") { Task { await model.perform { _ = try await model.api.auth("request-password-reset", body: .object(["email": .string(email), "redirectTo": .string(ServerConfiguration.passwordResetRedirect().absoluteString)])); info = "If this account exists, a password reset email is on its way. Encryption recovery is separate." } } }.disabled(email.isEmpty); Button("My account was stolen") { recovery = true }.accessibilityIdentifier("report-stolen-account") }
                 Section { Link("Privacy and encryption limits", destination: URL(string: "https://porchday.com/privacy")!); Text("Invitation-only adult pilot. Human members only; technical proof-of-humanity is future work.").font(.footnote) }
-            }.navigationTitle("A little more connection").navigationBarTitleDisplayMode(.inline)
+            }.navigationTitle("Porchday").navigationBarTitleDisplayMode(.inline)
                 .sheet(isPresented: $recovery) { NavigationStack { StolenAccountView() } }
         }
     }
@@ -86,13 +86,13 @@ struct UnlockView: View {
     @State private var busy = false
     var body: some View {
         NavigationStack { Form {
-            Section { Label("Only you hold the key", systemImage: "lock.shield").font(.title2); Text("Your encryption recovery secret is separate from your login password. Support cannot restore encrypted history without it.") }
+            Section { Label("Encryption keys", systemImage: "lock.shield").font(.title2); Text("Your encryption recovery secret is separate from your login password. Support cannot restore encrypted history without it.") }
             if vault.devices.isEmpty {
                 if vault.recoveryNote.isEmpty { Section { Button("Create my private keys") { Task { await model.perform { try vault.prepareInitial(member: member) } } } } }
-                else { Section("Save this recovery secret somewhere safe") { Text(vault.recoveryNote).font(.system(.body, design: .monospaced)).textSelection(.enabled).privacySensitive(); Text("Save it in a password manager or a private printed note. Do not send it to support."); Toggle("I saved my secret and understand it cannot be replaced", isOn: $saved); Button("My secret is safe. Continue") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.finishInitial(member: member) } } }.disabled(!saved || busy) } }
-            } else { Section(member.access.restoresKeysLocally ? "Restore your saved keys on this iPhone" : "Restore and authorize this device") { if member.access.restoresKeysLocally { Text("This restores existing keys locally for reading and export. It does not enroll a device or restore social permissions.") }; SecureField("Recovery secret", text: $secret).textContentType(.none).autocorrectionDisabled(); Button("Unlock my porch") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.unlock(member: member, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines)); secret = "" } } }.disabled(secret.isEmpty || busy) } }
+                else { Section("Save this recovery secret somewhere safe") { Text(vault.recoveryNote).font(.system(.body, design: .monospaced)).textSelection(.enabled).privacySensitive(); Text("Save it in a password manager or a private printed note. Do not send it to support."); Toggle("I saved my secret and understand it cannot be replaced", isOn: $saved); Button("Continue") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.finishInitial(member: member) } } }.disabled(!saved || busy) } }
+            } else { Section(member.access.restoresKeysLocally ? "Restore your saved keys on this iPhone" : "Restore and authorize this device") { if member.access.restoresKeysLocally { Text("This restores existing keys locally for reading and export. It does not enroll a device or restore social permissions.") }; SecureField("Recovery secret", text: $secret).textContentType(.none).autocorrectionDisabled(); Button("Unlock") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.unlock(member: member, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines)); secret = "" } } }.disabled(secret.isEmpty || busy) } }
             Section { Button("Account, deletion and appeals without unlocking") { accountControls = true }; Text("This app stores your device keys in device-only iOS Keychain. Signing out clears local keys. Keep the recovery secret to restore after reinstalling or losing this device.").font(.footnote); Button("Sign out", role: .destructive) { Task { await model.signOut() } } }
-        }.navigationTitle("Your private space")
+        }.navigationTitle("Encryption")
             .sheet(isPresented: $accountControls) { NavigationStack { SettingsView(dataOnly: true).toolbar { Button("Done") { accountControls = false } } } }
         }
     }
@@ -111,5 +111,5 @@ struct TwoFactorLoginView:View {
     @State private var code=""
     @State private var backup=false
     @State private var busy=false
-    var body:some View { NavigationStack { Form { Section { Label("One more check",systemImage:"lock.shield");Text("Enter your authenticator code or a single-use backup code.") };Toggle("Use a backup code",isOn:$backup);SecureField(backup ? "Backup code":"Six-digit authenticator code",text:$code).textContentType(.oneTimeCode).keyboardType(backup ? .default:.numberPad);Button("Verify and log in") { Task { busy=true;defer{busy=false};await model.perform { try await model.verifySecondFactor(code:code.trimmingCharacters(in:.whitespacesAndNewlines),backup:backup);code="" } } }.disabled(code.isEmpty || busy);Button("Cancel") { Task { await model.signOut() } } }.navigationTitle("Verify your login") } }
+    var body:some View { NavigationStack { Form { Section { Label("Two-factor authentication",systemImage:"lock.shield");Text("Enter your authenticator code or a single-use backup code.") };Toggle("Use a backup code",isOn:$backup);SecureField(backup ? "Backup code":"Six-digit authenticator code",text:$code).textContentType(.oneTimeCode).keyboardType(backup ? .default:.numberPad);Button("Verify and log in") { Task { busy=true;defer{busy=false};await model.perform { try await model.verifySecondFactor(code:code.trimmingCharacters(in:.whitespacesAndNewlines),backup:backup);code="" } } }.disabled(code.isEmpty || busy);Button("Cancel") { Task { await model.signOut() } } }.navigationTitle("Verify your login") } }
 }

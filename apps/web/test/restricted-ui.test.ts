@@ -28,8 +28,9 @@ describe("restricted member controls", () => {
   });
   it("disables connection and group creation but preserves their views", () => {
     const connections = renderToStaticMarkup(createElement(Connections));
-    expect(connections).toContain("Your circle");
+    expect(connections).toContain("Connections");
     expect(connections).toMatch(/<button[^>]*disabled=""[^>]*>Send request/);
+    expect(connections).toMatch(/<button[^>]*disabled=""[^>]*>Send invitation/);
     const groups = renderToStaticMarkup(createElement(Groups));
     expect(groups).toMatch(/<button[^>]*disabled=""[^>]*>.*?New group/s);
   });

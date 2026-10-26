@@ -1952,3 +1952,90 @@ body
 .policy > .logo .logo-dot {
   color: #974013;
 }
+.auth-layout.auth-simple {
+  display: block;
+  max-width: 560px;
+}
+
+/* Keep the interface plain; profile themes and wallpapers remain member-controlled. */
+.homemade-sign,
+.sidebar > .logo,
+.classic-welcome {
+  transform: none;
+  box-shadow: none;
+}
+
+.classic-welcome::before,
+.classic-welcome::after {
+  display: none;
+}
+
+:root {
+  background: #f3efe7;
+}
+.page-heading {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #d2c5b3;
+  box-shadow: none;
+  padding: 0 0 12px;
+}
+.page-heading h1 {
+  font-family: Arial, Helvetica, sans-serif;
+}
+.panel,
+.sidebar nav,
+.rail-card,
+.classic-box,
+.auth-card,
+.public-footer {
+  border: 1px solid #d2c5b3;
+  box-shadow: none;
+}
+.homemade-sign,
+.sidebar > .logo {
+  background: transparent;
+  border: 0;
+}
+.homemade-sign .logo {
+  text-shadow: none;
+}
+.sidebar-account,
+.sidebar-footer {
+  background: transparent;
+  border: 0;
+}
+.nav-item {
+  border-bottom: 1px solid #e4dbce;
+}
+.nav-item.active {
+  background: #f2dfc3;
+}
+.rail-date {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #d2c5b3;
+}
+.feed-heading {
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #d2c5b3;
+  padding: 8px 0;
+}
+.feed-heading > span {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.app-mobile-header {
+  background: #fffaf0;
+  border: 0;
+  border-bottom: 1px solid #d2c5b3;
+}
+.button,
+.button.primary,
+.button.outline {
+  box-shadow: none;
+}
+.empty {
+  padding: 24px;
+}

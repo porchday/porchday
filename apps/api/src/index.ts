@@ -21,6 +21,7 @@ import {processNativePush} from './social-native-push';
 import {privacyReadGuard,privacyMutationMiddleware,withPrivacyJournal} from './privacy-journal';
 import {requireOperations,readOperationalHealth,recordCleanupSuccess} from './operations-health';
 import {incidentControls} from './incident-controls';
+import {createPlatformInvitationRoutes} from './platform-invitations';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
 app.use('*',secureHeaders({
@@ -86,6 +87,7 @@ app.delete('/api/v1/account',async c=>{
  try {await pool.query('DELETE FROM public.auth_user WHERE id=$1',[c.get('memberId')]);return c.json({ok:true});}
  finally{c.executionCtx.waitUntil(pool.end());}
 });
+app.route('/api/v1',createPlatformInvitationRoutes());
 app.route('/api/v1',createSocialRoutes());
 app.route('/api/v1',createIntegrationConsentRoutes());
 app.all('/api/*',c=>c.json({error:{code:'NOT_FOUND'}},404));

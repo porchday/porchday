@@ -130,7 +130,7 @@ function App() {
     document.title =
       path === "/"
         ? "Porchday — a simple social network"
-        : `${path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Your circle" : path.includes("wall") ? "Your wall" : path.includes("app") ? "Home" : "Welcome"} · Porchday`;
+        : `${path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Connections" : path.includes("wall") ? "My wall" : path.includes("app") ? "Home" : "Porchday"} · Porchday`;
   }, [path]);
   async function signOut() {
     try {
@@ -247,7 +247,7 @@ function OfflineScreen({ onRetry }: { onRetry: () => Promise<void> }) {
       <Logo />
       <Empty
         icon="sun"
-        title="You’re offline. Your circle can wait."
+        title="You’re offline"
         action={
           <Button
             variant="primary"
@@ -312,13 +312,7 @@ function AppShell({
   else if (path === "/app" || path === "/app/")
     content = (
       <>
-        <div className="page-heading">
-          <span className="eyebrow">YOUR PEOPLE, IN ORDER</span>
-          <h1>
-            A good day to catch up<span className="coral">.</span>
-          </h1>
-          <p>Little moments. Familiar faces. You’re right where you belong.</p>
-        </div>
+        <h1 className="sr-only">Home</h1>
         <Feed />
       </>
     );
@@ -340,14 +334,14 @@ function AppShell({
   else
     content = (
       <Empty
-        title="A little off the path."
+        title="Page not found"
         action={
           <a className="button primary" href="/app">
             Go Home
           </a>
         }
       >
-        This page isn’t part of your circle.
+        This page is unavailable.
       </Empty>
     );
   return (
@@ -396,19 +390,11 @@ function AppShell({
             },
           )}
         </nav>
-        <div className="sidebar-note">
-          <Icon name="sun" size={28} />
-          <p>
-            More catching up.
-            <br />
-            <em>Less keeping up.</em>
-          </p>
-        </div>
         <div className="sidebar-account">
           <Avatar name={vault.member.handle} />
           <a href="/app/wall">
             <strong>@{vault.member.handle}</strong>
-            <small>Your little corner</small>
+            <small>My profile</small>
           </a>
           <button
             className="icon-button"
@@ -422,7 +408,7 @@ function AppShell({
           <a href="/privacy">Privacy</a>
           <a href="/community">Rules</a>
           <a href="/help">Help</a>
-          <span>Porchday · private pilot</span>
+          <span>Porchday · By invitation only</span>
         </div>
       </aside>
       <main id="main-content" tabIndex={-1} className="app-main">
@@ -437,7 +423,6 @@ function AppShell({
       </main>
       <aside className="right-rail">
         <div className="rail-date">
-          <Icon name="sun" size={30} />
           <span>
             {new Intl.DateTimeFormat(undefined, { weekday: "long" }).format(
               new Date(),
@@ -449,44 +434,14 @@ function AppShell({
               day: "numeric",
             }).format(new Date())}
           </strong>
-          <p>A day for the little things.</p>
         </div>
         <section className="rail-card">
-          <span className="eyebrow">YOUR CIRCLE</span>
-          <div className="circle-count">
-            <span>{count ?? "–"}</span>
-            <small>
-              of 300
-              <br />
-              people
-            </small>
-          </div>
-          <div className="circle-meter">
-            <span style={{ width: `${Math.max(2, (count || 0) / 3)}%` }} />
-          </div>
-          <p>
-            Friends and family.
-            <br />
-            The people who feel like home.
-          </p>
+          <h2>Connections</h2>
+          <p>{count ?? "–"} of 300, including family</p>
           <a className="text-link" href="/app/connections">
-            Make a connection <Icon name="arrow" size={15} />
+            Manage connections <Icon name="arrow" size={15} />
           </a>
         </section>
-        <section className="rail-card privacy-note">
-          <Icon name="lock" size={23} />
-          <h3>A private little place.</h3>
-          <p>
-            Your social content is encrypted for the people you share it with.
-            Even we can’t read along.
-          </p>
-          <a href="/privacy">How privacy works ↗</a>
-        </section>
-        <div className="rail-footer">
-          No ads. No influencers.
-          <br />
-          No algorithm.<span>Just a little more connection.</span>
-        </div>
       </aside>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {(vault.member.status === "suspended"
@@ -504,7 +459,7 @@ function AppShell({
             aria-current={(href === "/app" ? path === "/app" : path.startsWith(href)) ? "page" : undefined}
           >
             <Icon name={icon} size={21} />
-            <span>{name === "Connections" ? "Circle" : name}</span>
+            <span>{name}</span>
           </a>
         ))}
       </nav>

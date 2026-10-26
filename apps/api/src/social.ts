@@ -63,6 +63,10 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
         fail('ENVELOPE_CONTEXT');
     if (e.authorId !== member || e.kind !== kind)
         fail('ENVELOPE_CONTEXT');
+    // Profiles currently support the whole connection circle or the owner only.
+    // Narrow post audiences must not inherit the broader profile read policy.
+    if (kind === 'profile' && !['connections', 'only_me'].includes(e.audience))
+        fail('ENVELOPE_CONTEXT');
     if (Date.parse(e.createdAt) > Date.now() + 300000 || (!options.allowPast && Date.parse(e.createdAt) < Date.now() - 600000))
         fail('INVALID_CREATION_TIME');
     if (e.expiresAt && (Date.parse(e.expiresAt) <= Date.now() || Date.parse(e.expiresAt) <= Date.parse(e.createdAt)))
@@ -146,7 +150,7 @@ export function createSocialRoutes() {
             return {ok: true};
         }));
     });
-    app.get('/audiences', async (c) => { return c.json(await tx(c, db => snapshot(db, z.enum(['only_me', 'connections', 'family', 'group', 'moderators']).parse(c.req.query('audience') ?? 'connections'), c.req.query('group_id') ? id(c.req.query('group_id')) : null, c.req.query('post_id') ? id(c.req.query('post_id')) : null))); });
+    app.get('/audiences', async (c) => { return c.json(await tx(c, db => snapshot(db, z.enum(['only_me', 'connections', 'friends', 'family', 'group', 'moderators']).parse(c.req.query('audience') ?? 'connections'), c.req.query('group_id') ? id(c.req.query('group_id')) : null, c.req.query('post_id') ? id(c.req.query('post_id')) : null))); });
     app.get('/devices', async (c) => c.json({ items: await tx(c, db => db `select id,member_id,public_key,fingerprint,created_at,revoked_at from app.device_keys order by created_at`) }));
     app.get('/devices/:id', async (c) => c.json(await tx(c, async (db) => { const [d] = await db `select * from app.author_key(${id(c.req.param('id'))})`; if (!d)
         fail('NOT_FOUND', 404); return d; })));

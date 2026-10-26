@@ -239,7 +239,7 @@ func validateContext(raw json.RawMessage) (*context, error) {
 	if c.ParentID != nil && !idPattern.MatchString(*c.ParentID) || c.GroupID != nil && !idPattern.MatchString(*c.GroupID) {
 		return nil, errors.New("invalid context parent")
 	}
-	if !strings.Contains("|post|comment|reaction|profile|group|media|report|export|", "|"+c.Kind+"|") || !strings.Contains("|connections|family|only_me|group|moderators|", "|"+c.Audience+"|") {
+	if !strings.Contains("|post|comment|reaction|profile|group|media|report|export|", "|"+c.Kind+"|") || !strings.Contains("|connections|friends|family|only_me|group|moderators|", "|"+c.Audience+"|") {
 		return nil, errors.New("invalid context kind or audience")
 	}
 	created, err := time.Parse("2006-01-02T15:04:05.000Z", c.CreatedAt)

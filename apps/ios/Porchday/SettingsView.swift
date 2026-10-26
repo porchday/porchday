@@ -30,7 +30,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             if let notice = model.member?.access.notice { Section { Text(notice) } }
-            Section("Your private space") { Text("@" + (model.member?.handle ?? "")); if let device = vault.device { Text("Device fingerprint").font(.caption); Text(device.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }; Text("Compare fingerprints through a channel you trust. The service can see account and delivery metadata, but does not hold your content keys.").font(.footnote) }
+            Section("Account") { Text("@" + (model.member?.handle ?? "")); if let device = vault.device { Text("Device fingerprint").font(.caption); Text(device.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }; Text("Compare fingerprints through a channel you trust. The service can see account and delivery metadata, but does not hold your content keys.").font(.footnote) }
             Section("Your data belongs to you") {
                 Text("Export your own posts, comments, reactions, photos and profile. References to connections and groups are included; other people's private contributions are excluded.")
                 Toggle("Export readable, unencrypted ZIP files", isOn: $plaintext)
@@ -81,7 +81,7 @@ struct SettingsView: View {
             }
             if !socialSettingsAvailable { Section { Link("Appeal a moderation decision", destination: URL(string: "https://porchday.com/appeals")!); NavigationLink("Report a stolen account") { StolenAccountView() } } }
             Section { Button("Sign out and clear this device's keys",role:.destructive) { Task { await model.signOut() } }; Button("Delete my account",role:.destructive) { deleting = true }.disabled(busy || !ownedGroups.isEmpty) }
-        }.navigationTitle("Your settings").task { await refresh() }
+        }.navigationTitle("Settings").task { await refresh() }
             .confirmationDialog("Delete this owned group and all its content?", isPresented: Binding(get: { deletingGroup != nil }, set: { if !$0 { deletingGroup = nil } }), titleVisibility: .visible) {
                 Button("Delete group permanently", role: .destructive) { if let id = deletingGroup { Task { await deleteGroup(id) } } }
                 Button("Cancel", role: .cancel) { deletingGroup = nil }

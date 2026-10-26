@@ -50,7 +50,7 @@ try {
   await page.keyboard.press('Enter');
   await focused(page.locator('#main-content'));
   await activate(page, page.getByRole('link', {name: 'create account', exact: true}));
-  await focused(page.getByRole('heading', {name: 'Pull up a chair.'}));
+  await focused(page.getByRole('heading', {name: 'Create account'}));
   await activate(page, page.getByRole('button', {name: 'Create my account'}));
   await focused(page.getByRole('textbox', {name: 'Email address', exact: true}));
   await page.keyboard.type('keyboard@example.test');
@@ -86,6 +86,10 @@ try {
   let posts: any[] = [], reports: any[] = [], deletions = 0, session = true;
   let deferMember = false, releaseMember = () => {}, memberStarted = () => {};
   let memberGate = Promise.resolve();
+  const invitationRequests: {email: string}[] = [];
+  let invitationStarted!: () => void, releaseInvitation!: () => void;
+  const invitationGate = new Promise<void>(resolve => { releaseInvitation = resolve; });
+  const invitationPending = new Promise<void>(resolve => { invitationStarted = resolve; });
   const mutations: string[] = [];
   const memberContext = await browser.newContext({serviceWorkers: 'block'});
   const memberPage = await memberContext.newPage();
@@ -103,6 +107,12 @@ try {
     if (path === '/audiences') return reply({epoch: 1, devices: [device]});
     if (path === `/profiles/member/${memberId}`) return reply({id: memberId, member_id: memberId, handle: 'keyboard_member', envelope: profile});
     if (path === '/connections') return reply({items: [], requests, handles: [{id: friendId, handle: 'incoming_friend'}, {id: outgoingMemberId, handle: 'outgoing_friend'}, {id: delayedMemberId, handle: 'delayed_friend'}]});
+    if (path === '/platform-invitations' && method === 'POST') {
+      invitationRequests.push(route.request().postDataJSON());
+      if (invitationRequests.length === 1) { invitationStarted(); await invitationGate; return reply({accepted: true}, 202); }
+      if (invitationRequests.length === 2) return reply({error:{code:'INVITATION_LIMIT'}},429);
+      return reply({}); // A malformed success response cannot acknowledge an invitation.
+    }
     if (path === `/connections/requests/${delayedId}/accept` && method === 'POST') { connectionStarted(); await connectionGate; requests = requests.filter(r => r.id !== delayedId); return reply({ok: true}); }
     if (path === `/connections/requests/${incomingId}/accept` && method === 'POST') { requests = requests.filter(r => r.id !== incomingId); return reply({ok: true}); }
     if (path === `/connections/requests/${outgoingId}/decline` && method === 'POST') { requests = requests.filter(r => r.id !== outgoingId); return reply({ok: true}); }
@@ -138,7 +148,7 @@ try {
   async function delayedLogin(cancelFocus: boolean) {
     await memberPage.goto(target.origin);
     await activate(memberPage, memberPage.getByRole('navigation', {name: 'Main navigation'}).getByRole('link', {name: 'Log in'}));
-    await focused(memberPage.getByRole('heading', {name: 'Welcome back.', exact: true}));
+    await focused(memberPage.getByRole('heading', {name: 'Log in', exact: true}));
     await memberPage.getByRole('textbox', {name: 'Email address', exact: true}).fill('keyboard@example.test');
     await memberPage.getByLabel('Password', {exact: true}).fill('Synthetic local phrase 42!');
     memberGate = new Promise<void>(resolve => { releaseMember = resolve; });
@@ -160,7 +170,7 @@ try {
   await memberPage.goto(target.origin + '/app/connections');
   await memberPage.getByRole('button', {name: 'Accept connection request from @incoming_friend', exact: true}).waitFor();
   await activate(memberPage, memberPage.getByRole('button', {name: 'Accept connection request from @incoming_friend', exact: true}));
-  await focused(memberPage.getByRole('heading', {name: 'Your people', exact: true}));
+  await focused(memberPage.getByRole('heading', {name: 'Your connections', exact: true}));
   await memberPage.getByRole('status').filter({hasText: 'Connected with @incoming_friend.'}).waitFor();
   const connectionPending = new Promise<void>(resolve => { connectionStarted = resolve; });
   await activate(memberPage, memberPage.getByRole('button', {name: 'Accept connection request from @delayed_friend', exact: true}));
@@ -173,21 +183,45 @@ try {
   await focused(searchField);
   assert.equal(await searchField.inputValue(), 'draft_handle');
   await activate(memberPage, memberPage.getByRole('button', {name: 'Cancel connection request to @outgoing_friend', exact: true}));
-  await focused(memberPage.getByRole('heading', {name: 'Your people', exact: true}));
+  await focused(memberPage.getByRole('heading', {name: 'Your connections', exact: true}));
   await memberPage.getByRole('status').filter({hasText: 'Canceled the request to @outgoing_friend.'}).waitFor();
+  const invitationEmail = memberPage.getByRole('textbox', {name: 'Their email address', exact: true});
+  const invitationButton = memberPage.getByRole('button', {name: 'Send invitation', exact: true});
+  await reach(memberPage, invitationEmail);
+  await memberPage.keyboard.type('invitee@example.test');
+  await activate(memberPage, invitationButton);
+  await invitationPending;
+  assert.equal(await invitationEmail.isDisabled(), true);
+  await invitationEmail.evaluate(element => (element.closest('form') as HTMLFormElement).requestSubmit());
+  await memberPage.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => resolve())));
+  assert.equal(invitationRequests.length, 1);
+  releaseInvitation();
+  await memberPage.getByRole('status').filter({hasText:'Invitation requested.'}).waitFor();
+  assert.equal(await invitationEmail.inputValue(), '');
+  assert.deepEqual(invitationRequests[0], {email:'invitee@example.test'});
+  await invitationEmail.fill('limited@example.test');
+  await activate(memberPage, invitationButton);
+  await memberPage.getByRole('alert').filter({hasText:'limit of 10 invitations'}).waitFor();
+  assert.equal(await invitationEmail.inputValue(), 'limited@example.test');
+  await invitationEmail.fill('unconfirmed@example.test');
+  await activate(memberPage, invitationButton);
+  await memberPage.getByRole('alert').filter({hasText:'could not confirm the request'}).waitFor();
+  assert.equal(await invitationEmail.inputValue(), 'unconfirmed@example.test');
+  assert.equal(invitationRequests.length, 3);
   await activate(memberPage, memberPage.locator('.sidebar').getByRole('link', {name: 'Home', exact: true}));
   await focused(memberPage.locator('#main-content h1'));
   await reach(memberPage, memberPage.getByRole('textbox', {name: 'Write a post'}));
   await memberPage.keyboard.type('A synthetic keyboard post.');
   await reach(memberPage, memberPage.getByRole('combobox', {name: 'Post audience'}));
-  await memberPage.keyboard.press('o');
+  assert.deepEqual(await memberPage.getByRole('combobox', {name: 'Post audience'}).locator('option').allTextContents(), ['Friends & family','Friends only','Family only','Only me']);
+  await memberPage.getByRole('combobox', {name: 'Post audience'}).selectOption('friends');
   await memberPage.keyboard.press('Tab');
-  assert.equal(await memberPage.getByRole('combobox', {name: 'Post audience'}).inputValue(), 'only_me');
+  assert.equal(await memberPage.getByRole('combobox', {name: 'Post audience'}).inputValue(), 'friends');
   await activate(memberPage, memberPage.getByRole('button', {name: 'Share', exact: true}));
-  await memberPage.getByRole('status').filter({hasText: 'Your moment is shared.'}).waitFor();
+  await memberPage.getByRole('status').filter({hasText: 'Post shared.'}).waitFor();
   await memberPage.getByText('A synthetic keyboard post.', {exact: true}).waitFor();
   const plaintext = await decryptObject<any>({envelope: posts[0].envelope, expectedContext: posts[0].envelope.context, privateKey: key, authorPublicKey: keys.publicKey});
-  assert.equal(plaintext.text, 'A synthetic keyboard post.'); assert.equal(posts[0].audience, 'only_me');
+  assert.equal(plaintext.text, 'A synthetic keyboard post.'); assert.equal(posts[0].audience, 'friends');
   const options = memberPage.getByRole('button', {name: 'Post options', exact: true});
   await activate(memberPage, options);
   await activate(memberPage, memberPage.getByRole('button', {name: 'Report a concern', exact: true}));
@@ -220,9 +254,9 @@ try {
   await memberPage.waitForURL(target.origin + '/');
   await focused(memberPage.locator('#main-content h1'));
   assert.equal(deletions, 2); assert.deepEqual(unexpected, []);
-  assert.equal(mutations.length, 10);
+  assert.equal(mutations.length, 13);
   await memberContext.close();
-  console.log(JSON.stringify({local_accessibility: 'passed', synthetic_api_only: true, keyboard_signup_errors_and_success: true, described_help: true, targeted_connections: true, pending_connection_preserves_typing_focus: true, encrypted_keyboard_post: true, reporting_focus_and_consent: true, guarded_deletion: true, route_and_skip_focus: true, delayed_navigation_focus_and_cancellation: true, real_screen_reader_test: false}));
+  console.log(JSON.stringify({local_accessibility: 'passed', synthetic_api_only: true, keyboard_signup_errors_and_success: true, described_help: true, targeted_connections: true, pending_connection_preserves_typing_focus: true, invitation_pending_duplicate_guard: true, invitation_accepted_limit_and_unknown_responses: true, encrypted_friends_only_keyboard_post: true, reporting_focus_and_consent: true, guarded_deletion: true, route_and_skip_focus: true, delayed_navigation_focus_and_cancellation: true, real_screen_reader_test: false}));
 } finally {
   await browser.close();
 }

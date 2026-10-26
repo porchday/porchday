@@ -35,7 +35,7 @@ export function IntegrationConsent() {
   return (
     <>
       <div className="page-heading">
-        <span className="eyebrow">YOUR DATA. YOUR CHOICE.</span>
+        <span className="eyebrow">DATA ACCESS</span>
         <h1>Connect a tool?</h1>
         <p>You decide exactly what an integration may access.</p>
       </div>

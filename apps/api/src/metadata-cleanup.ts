@@ -9,6 +9,7 @@ export async function cleanupAuthenticationMetadata(env:Env){
   await pool.query('DELETE FROM public.auth_verification WHERE id IN(SELECT id FROM public.auth_verification WHERE "expiresAt"<now() LIMIT 1000)');
   await pool.query('DELETE FROM public.auth_session WHERE id IN(SELECT id FROM public.auth_session WHERE "expiresAt"<now() LIMIT 1000)');
   await pool.query('DELETE FROM public.pilot_invitations WHERE token_hash IN(SELECT token_hash FROM public.pilot_invitations WHERE expires_at<now() LIMIT 1000)');
+  await pool.query("DELETE FROM public.platform_invitation_requests WHERE id IN(SELECT id FROM public.platform_invitation_requests WHERE created_at<now()-interval '7 days' LIMIT 1000)");
   await pool.query('DELETE FROM public.recovery_cases WHERE id IN(SELECT id FROM public.recovery_cases WHERE retention_until<now() LIMIT 100)');
   await pool.query('DELETE FROM public.security_contact_history WHERE id IN(SELECT id FROM public.security_contact_history WHERE retention_until<now() LIMIT 1000)');
  }finally{await pool.end();}

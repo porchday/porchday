@@ -13,9 +13,9 @@ enum ProfileWallpaper: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .none: "No pattern"
         case .porchStars: "Stars & arrows"
-        case .orangeChecker: "Kitchen table"
-        case .sunnyDaisies: "Daisy chain"
-        case .midnightDiamonds: "Midnight diamonds"
+        case .orangeChecker: "Checkerboard"
+        case .sunnyDaisies: "Daisies"
+        case .midnightDiamonds: "Diamonds"
         }
     }
     static func displayed(_ value: JSON, standardTheme: Bool = false) -> ProfileWallpaper {

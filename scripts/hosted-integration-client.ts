@@ -172,7 +172,7 @@ try {
   await page.getByRole('heading', { name: 'Unlock this device', exact: true }).waitFor();
   await page.getByLabel('Encryption recovery secret', { exact: true }).fill(a.device.keys.recoverySecret);
   await page.getByRole('checkbox', { name: /Remember this private device/ }).check();
-  await page.getByRole('button', { name: 'Unlock my circle', exact: true }).click();
+  await page.getByRole('button', { name: 'Unlock', exact: true }).click();
   await page.getByText('FROM YOUR PEOPLE', { exact: true }).waitFor({ timeout: 90000 });
   ensure(baselineDevices === digest(devices(await memberAPI('/api/v1/devices'))), 'DEVICE_SET_CHANGED');
   progress('register-ui'); await page.goto(stagingOrigin + '/app/settings/data');

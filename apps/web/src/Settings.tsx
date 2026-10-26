@@ -47,11 +47,7 @@ export function Settings({
   return (
     <>
       <div className="page-heading">
-        <span className="eyebrow">MAKE YOURSELF AT HOME</span>
-        <h1>
-          Your settings<span className="coral">.</span>
-        </h1>
-        <p>A little control goes a long way.</p>
+        <h1>Settings</h1>
       </div>
       <nav className="settings-tabs" aria-label="Settings">
         {[
@@ -172,7 +168,7 @@ function ProfileSettings() {
             slot: asset.slot,
           }),
         });
-    }, "Your corner feels a little more you.");
+    }, "Profile saved.");
   }
   if (vault.member.status === "restricted")
     return (
@@ -214,8 +210,8 @@ function ProfileSettings() {
           maxLength={80}
         />
         <Field
-          label="A little status"
-          placeholder="Probably in the garden"
+          label="Status"
+          placeholder="Add a status"
           value={String(profile.status || "")}
           onChange={(e) => update("status", e.target.value)}
           maxLength={100}
@@ -272,9 +268,9 @@ function ProfileSettings() {
         </div>
       </section>
       <section className="panel form-stack">
-        <h2>Pick a little atmosphere</h2>
+        <h2>Theme</h2>
         <p>
-          Your wall should feel like you. Curated themes keep text readable and
+          Curated themes keep text readable and
           don’t run scripts or load outside trackers.
         </p>
         <h3>Tiled wallpaper</h3>
@@ -308,7 +304,7 @@ function ProfileSettings() {
               onClick={() => update("theme", theme.id)}
             >
               <span className="theme-swatch">
-                <span>hello, you.</span>
+                <span>Profile preview</span>
                 <Icon name={theme.id === "sage" ? "leaf" : "sun"} />
               </span>
               <strong>{theme.label}</strong>
@@ -401,10 +397,10 @@ function PrivacySettings() {
   return (
     <>
       <section className="panel form-stack">
-        <h2>A little peace and quiet</h2>
+        <h2>Privacy and notifications</h2>
         <p>
-          Your wall is connections-only. Posts can be shared with family only or
-          just yourself. Your email and connection list are private.
+          Share posts with friends and family, friends only, family only, or
+          only yourself. Your email and connection list are private.
         </p>
         <label className="check-field">
           <input
@@ -424,7 +420,7 @@ function PrivacySettings() {
           <Icon name="bell" size={17} />
           {prefs.push
             ? "Enable push on this browser"
-            : "Enable gentle push notifications"}
+            : "Enable push notifications"}
         </Button>
         {prefs.push && (
           <Button variant="quiet" busy={action.busy} onClick={disablePush}>

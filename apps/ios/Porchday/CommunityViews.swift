@@ -8,15 +8,16 @@ struct ConnectionsView: View {
     @State private var searched: JSON?
     var body: some View { List {
         Section { Text("\(data["items"].array.count) of 300 friends, including family").font(.headline); TextField("Find an exact @handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled(); Picker("Connection", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }; Button("Send connection request") { Task { await model.perform { _ = try await model.api.social("/connections/requests", method: "POST", body: .object(["handle": .string(handle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "")), "kind": .string(kind)])); handle = ""; await refresh() } } }.disabled(handle.isEmpty || !model.canWriteSocial); Text("A new connection sees future posts. Historical encrypted content needs an explicit share from its author.").font(.caption).foregroundStyle(.secondary) }
+        PlatformInvitationSection()
         Section("Pending requests") { ForEach(Array(data["requests"].array.enumerated()), id: \.offset) { _, request in VStack(alignment: .leading) { Text("@" + name(request["sender"].string == model.member?.id ? request["recipient"].string : request["sender"].string)); HStack { if request["recipient"].string == model.member?.id { Button("Accept \(request["kind"].string ?? "friend")") { Task { await action("/connections/requests/\(request["id"].string ?? "")/accept") } }.disabled(!model.canWriteSocial) }; Button(request["sender"].string == model.member?.id ? "Cancel" : "Decline", role: .destructive) { Task { await action("/connections/requests/\(request["id"].string ?? "")/decline") } }.disabled(!model.canWriteSocial) } } } }
-        Section("Your people") { ForEach(Array(data["items"].array.enumerated()), id: \.offset) { _, connection in
+        Section("Connections") { ForEach(Array(data["items"].array.enumerated()), id: \.offset) { _, connection in
             let person = connection["member_a"].string == model.member?.id ? connection["member_b"].string ?? "" : connection["member_a"].string ?? ""
             NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { Label("@\(name(person)) · \(connection["kind"].string ?? "friend")", systemImage: connection["kind"].string == "family" ? "house" : "person") }
                 .swipeActions { Button("Remove", role: .destructive) { Task { await action("/connections/\(connection["id"].string ?? "")", method: "DELETE") } }.disabled(!model.canWriteSocial); Button("Mute") { Task { await action("/mutes/" + person, method: "PUT") } } }
                 .contextMenu { Button("Propose family label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("family")])) } }.disabled(!model.canWriteSocial); Button("Propose friend label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("friend")])) } }.disabled(!model.canWriteSocial); Button("Block", role: .destructive) { Task { await action("/blocks/" + person, method: "PUT") } } }
         } }
-    }.navigationTitle("Your people").task { await refresh() }.refreshable { await refresh() } }
-    private func name(_ id: String?) -> String { data["handles"].array.first { $0["member_id"].string == id || $0["id"].string == id }?["handle"].string ?? "circle member" }
+    }.navigationTitle("Connections").task { await refresh() }.refreshable { await refresh() } }
+    private func name(_ id: String?) -> String { data["handles"].array.first { $0["member_id"].string == id || $0["id"].string == id }?["handle"].string ?? "member" }
     private func refresh() async { await model.perform { data = try await model.api.social("/connections") } }
     private func action(_ path: String, method: String = "POST", body: JSON = .object([:])) async { await model.perform { _ = try await model.api.social(path, method: method, body: method == "DELETE" ? nil : body); await refresh() } }
 }
@@ -74,7 +75,7 @@ private struct ProfileHeader: View {
             Toggle("Use standard theme", isOn: $standardTheme).font(.callout)
             Text("This display preference stays on this device and does not change anyone’s profile.").font(.caption).foregroundStyle(.secondary)
             if isOwner {
-                HStack { Button("Make this space yours", action: edit); Spacer(); Button("Post to my wall", action: compose) }.font(.callout)
+                HStack { Button("Edit profile", action: edit); Spacer(); Button("Post to my wall", action: compose) }.font(.callout)
             }
         }
         .padding(12)
@@ -103,11 +104,11 @@ struct GroupsView: View {
     @State private var name = ""
     @State private var description = ""
     var body: some View { List {
-        Section { Text("Private spaces for shared interests. Group membership is separate from your 300 connections.").font(.footnote); Button("Create a named group") { create = true }.disabled(!model.canWriteSocial) }
+        Section { Text("Group membership is separate from your 300 connections.").font(.footnote); Button("Create a named group") { create = true }.disabled(!model.canWriteSocial) }
         Section("Your groups") { ForEach(groups, id: \.id) { group in NavigationLink(group.name) { GroupView(id: group.id, title: group.name) } } }
         Section("Invitations") { ForEach(Array(invitations.enumerated()), id: \.offset) { _, invitation in Button("Accept private group invitation") { Task { await model.perform { _ = try await model.api.social("/group-invitations/\(invitation["id"].string ?? "")/accept", method: "POST", body: .object([:])); await refresh() } } }.disabled(!model.canWriteSocial) } }
     }.navigationTitle("Groups").task { await refresh() }.refreshable { await refresh() }
-        .sheet(isPresented: $create) { NavigationStack { Form { TextField("Group name", text: $name); TextField("Description", text: $description, axis: .vertical); Button("Create private group") { Task { await model.perform { guard let member = model.member else { return }; let envelope = try await vault.seal(.object(["name": .string(name), "description": .string(description)]), member: member, kind: "group", audience: "only_me"); _ = try await model.api.social("/groups", method: "POST", body: .object(["envelope": envelope])); create = false; name = ""; description = ""; await refresh() } } }.disabled(name.isEmpty || !model.canWriteSocial) }.navigationTitle("Make a space").toolbar { Button("Cancel") { create = false } } } }
+        .sheet(isPresented: $create) { NavigationStack { Form { TextField("Group name", text: $name); TextField("Description", text: $description, axis: .vertical); Button("Create private group") { Task { await model.perform { guard let member = model.member else { return }; let envelope = try await vault.seal(.object(["name": .string(name), "description": .string(description)]), member: member, kind: "group", audience: "only_me"); _ = try await model.api.social("/groups", method: "POST", body: .object(["envelope": envelope])); create = false; name = ""; description = ""; await refresh() } } }.disabled(name.isEmpty || !model.canWriteSocial) }.navigationTitle("Create group").toolbar { Button("Cancel") { create = false } } } }
     }
     private func refresh() async { await model.perform { let data = try await model.api.social("/groups"); invitations = data["invitations"].array; var rows: [(String,String)] = []; for group in data["items"].array { let payload = try? await vault.open(group); rows.append((group["id"].string ?? "", payload?["name"].string ?? "Private group — awaiting shared keys")) }; groups = rows } }
 }

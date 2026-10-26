@@ -88,7 +88,9 @@ func TestNativeToJavaScript(t *testing.T) {
 		t.Fatal(e)
 	}
 	s := session(t, key)
-	c := context{ID: "native-object", Kind: "post", AuthorID: "native-author", AuthorDeviceID: "native-phone", Audience: "connections", Epoch: 2, CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), Revision: 1}
+	// The existing JavaScript fixture covers connections; this reverse direction
+	// verifies that the new signed friends audience interoperates unchanged.
+	c := context{ID: "native-object", Kind: "post", AuthorID: "native-author", AuthorDeviceID: "native-phone", Audience: "friends", Epoch: 2, CreatedAt: time.Now().UTC().Format("2006-01-02T15:04:05.000Z"), Revision: 1}
 	ctx, _ := json.Marshal(c)
 	recipients, _ := json.Marshal([]recipient{{"native-author", "native-phone", key.PublicKey}, {"fixture-bob", "fixture-bob-phone", f.Bob.PublicKey}})
 	payload := `{"text":"Native porch says hello 🌻","photo":"AAECA/7/"}`

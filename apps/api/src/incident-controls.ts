@@ -10,8 +10,9 @@ const controls: { flag: PauseFlag; code: string; message: string; routes: [strin
   },
   {
     flag: 'SOCIAL_INVITATIONS_PAUSED', code: 'INVITATIONS_PAUSED',
-    message: 'Friend and group invitations are temporarily paused. Please try again later.',
+    message: 'Invitations are temporarily paused. Please try again later.',
     routes: [
+      ['POST', /^\/api\/v1\/platform-invitations$/],
       ['POST', /^\/api\/v1\/connections\/requests(?:\/[^/]+\/accept)?$/],
       ['POST', /^\/api\/v1\/groups\/[^/]+\/invitations$/],
       ['POST', /^\/api\/v1\/group-invitations\/[^/]+\/accept$/],

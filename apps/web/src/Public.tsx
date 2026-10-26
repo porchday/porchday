@@ -33,10 +33,6 @@ export function PublicFooter() {
         <a href="/help">Help & contact</a>
         <a href="/third-party-notices.txt">Open-source notices</a>
       </nav>
-      <div className="footer-note">
-        <Icon name="sun" size={22} />
-        <p>Built for the public good.</p>
-      </div>
     </footer>
   );
 }
@@ -67,21 +63,6 @@ export function Landing() {
                 <a href="/help">Help & contact</a>
               </nav>
             </section>
-            <section className="classic-box classic-note">
-              <h2>Personalize your page</h2>
-              <div className="classic-box-body">
-                <p>
-                  Choose your colors and background. Share photos and posts
-                  with your connections.
-                </p>
-                <p>No follower counts.</p>
-              </div>
-            </section>
-            <div className="classic-badges" aria-label="Our commitments">
-              <span>NO ADS</span>
-              <span>NO AI AGENTS</span>
-              <span>DATA CONTROL</span>
-            </div>
           </aside>
           <div className="classic-content">
             <section className="classic-welcome classic-box">
@@ -332,48 +313,29 @@ export function AuthPage({
   return (
     <>
       <PublicHeader />
-      <main id="main-content" tabIndex={-1} className="auth-layout wrap">
-        <aside className="auth-aside">
-          <span className="eyebrow">WELCOME TO YOUR LITTLE CORNER</span>
-          <h2>
-            Good to see you<span className="coral">.</span>
-          </h2>
-          <p>
-            A place for everyday moments,
-            <br />
-            and the people who make them matter.
-          </p>
-          <div className="auth-decoration" aria-hidden="true">
-            <Icon name="sun" size={100} />
-            <span>come as you are.</span>
-          </div>
-        </aside>
+      <main id="main-content" tabIndex={-1} className="auth-layout wrap auth-simple">
         <section className="auth-card">
-          <div className="card-eyebrow">
-            <Icon name={join ? "people" : "lock"} size={20} />{" "}
-            {join ? "A small beginning" : "YOUR PRIVATE SPACE"}
-          </div>
           <h1>
             {join
-              ? "Pull up a chair."
+              ? "Create account"
               : forgot
-                ? "A fresh start."
+                ? "Reset password"
                 : reset
-                  ? "Choose a new password."
+                  ? "Choose a new password"
                   : verify
-                    ? "Check your inbox."
-                    : "Welcome back."}
+                    ? "Verify your email"
+                    : "Log in"}
           </h1>
           <p>
             {join
-              ? "Porchday is an invitation-only pilot for adults. Have an invitation? You’re in the right place."
+              ? "An invitation is required. You must be 18 or older to join."
               : forgot
                 ? "We’ll email a reset link if there’s an eligible account. Your encryption recovery secret is separate."
                 : reset
                   ? "Resetting your password won’t unlock your encrypted history or restore lost encryption keys."
                   : verify
-                    ? "Verify your email before entering your circle."
-                    : "Log in to catch up with your people."}
+                    ? "Open the verification link in your email to continue."
+                    : "Enter your email and password."}
           </p>
           {done ? (
             <div className="form-success">
@@ -459,7 +421,7 @@ export function AuthPage({
                 <>
                   <Field
                     label="Your handle"
-                    help="An exact, public name so your people can find you. 3–24 letters, numbers, or underscores."
+                    help="Your public username. Use 3–24 letters, numbers, or underscores."
                     value={handle}
                     onChange={(e) => setHandle(e.target.value.toLowerCase())}
                     pattern="[a-z0-9_]{3,24}"
@@ -552,7 +514,7 @@ export function AuthPage({
           <div className="auth-bottom">
             {join ? (
               <span>
-                Already have a spot? <a href="/login">Log in</a>
+                Already have an account? <a href="/login">Log in</a>
               </span>
             ) : (
               <span>
@@ -678,16 +640,16 @@ const policyContent: Record<
   { title: string; intro: string; sections: [string, string][] }
 > = {
   about: {
-    title: "A place worth gathering.",
+    title: "About Porchday",
     intro:
-      "The internet can be a good neighbor. Porchday is our attempt to make a small part of it feel that way again.",
+      "Porchday is a social network built for the public good.",
     sections: [
       [
         "For the public good",
         "Our intention is nonprofit stewardship, funded by philanthropy. We want decisions to serve members, with published governance and financial reporting. The legal entity, nonprofit status, board, and donation arrangements are still being established. This private pilot makes no tax-deductibility claims.",
       ],
       [
-        "Familiar, with a little more care",
+        "How Porchday works",
         "A personal wall. A feed of your friends, newest first. Photos, comments, groups, and profiles that feel like you. No ads, no recommendations engineered for engagement, and no sale of reach.",
       ],
       [
@@ -701,8 +663,8 @@ const policyContent: Record<
     ],
   },
   principles: {
-    title: "A few good promises.",
-    intro: "Simple ideas, built into how this place works.",
+    title: "Our principles",
+    intro: "The principles behind Porchday.",
     sections: [
       [
         "No ads",
@@ -727,9 +689,9 @@ const policyContent: Record<
     ],
   },
   privacy: {
-    title: "Your life stays yours.",
+    title: "Privacy",
     intro:
-      "Private social content is encrypted on your device. It is not an invitation for us to read along.",
+      "Private social content is encrypted on your device. Porchday cannot read it.",
     sections: [
       [
         "What is encrypted",
@@ -762,11 +724,11 @@ const policyContent: Record<
     ],
   },
   community: {
-    title: "Be a good neighbor.",
-    intro: "A small circle works when people feel safe being themselves.",
+    title: "Community rules",
+    intro: "These rules apply to every account.",
     sections: [
       [
-        "Keep it human",
+        "Personal accounts",
         "You must be 18 or older and personally operate your account. No AI personas, autonomous accounts, bot posting, or automated connection building. Accessibility tools and ordinary editing aids are welcome.",
       ],
       [
@@ -774,7 +736,7 @@ const policyContent: Record<
         "No harassment, hate, threats, impersonation, scams, exploitation, or non-consensual intimate content. Respect people’s boundaries and privacy. Do not share another person’s private content without permission.",
       ],
       [
-        "Leave the promotion outside",
+        "No unsolicited promotion",
         "No purchased reach, unsolicited commercial promotion, mass invitations, or engagement manipulation. Friendship is not an audience acquisition tool.",
       ],
       [
@@ -788,9 +750,9 @@ const policyContent: Record<
     ],
   },
   accessibility: {
-    title: "A place for everyone to belong.",
+    title: "Accessibility",
     intro:
-      "Accessibility is part of a welcoming community, not an extra setting.",
+      "Our accessibility goals and available features.",
     sections: [
       [
         "Our target",
@@ -807,7 +769,7 @@ const policyContent: Record<
     ],
   },
   help: {
-    title: "A little help, close by.",
+    title: "Help and contact",
     intro: "The essentials for finding your way around Porchday.",
     sections: [
       [
@@ -823,11 +785,11 @@ const policyContent: Record<
         "Use Report on the relevant content or use Settings → Safety. Choose the evidence to disclose. For account compromise, use the dedicated stolen-account flow. Human support staffing and response targets must be established before opening the real pilot.",
       ],
       [
-        "Bringing your memories with you",
+        "Exporting and importing your data",
         "Settings → Your data provides exports and the Porchday archive importer. Imports are private until you deliberately review their audiences. Connections always require fresh mutual consent.",
       ],
       [
-        "A quiet feed",
+        "Chronological feed",
         "Home shows your posts and your accepted connections’ eligible posts, newest first. Groups have their own walls. Check mutes and filters if you think something is missing.",
       ],
     ],
@@ -839,7 +801,7 @@ export function Policy({ page }: { page: string }) {
     <>
       <PublicHeader />
       <main id="main-content" tabIndex={-1} className="narrow-page policy">
-        <span className="eyebrow">THE PORCHDAY WAY</span>
+        <span className="eyebrow">PORCHDAY</span>
         <h1>{p.title}</h1>
         <p className="policy-intro">{p.intro}</p>
         {p.sections.map(([heading, body]) => (

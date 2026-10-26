@@ -109,7 +109,7 @@ export function Recovery() {
     <>
       <PublicHeader />
       <main id="main-content" className="narrow-page">
-        <span className="eyebrow">A SAFE WAY BACK</span>
+        <span className="eyebrow">ACCOUNT RECOVERY</span>
         <h1>
           Your account
           <br />

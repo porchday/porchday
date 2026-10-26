@@ -25,11 +25,22 @@ test('signed encrypted content is readable by each intended recipient, never an 
 
 test('an attacker cannot relabel object, author, audience, parent, epoch or expiration', async () => {
   const c = context(), envelope = await encryptObject({ context: c, payload: 'private', signingKey: aliceKey, recipients: recipients() });
-  const changes: Partial<ContentContext>[] = [{ id: 'different-post' }, { authorId: 'eve' }, { audience: 'only_me' }, { parentId: 'unrelated-parent' }, { epoch: 6 }, { expiresAt: new Date(Date.now() + 60_000).toISOString() }, { revision: 2 }];
+  const changes: Partial<ContentContext>[] = [{ id: 'different-post' }, { authorId: 'eve' }, { audience: 'only_me' }, { audience: 'friends' }, { parentId: 'unrelated-parent' }, { epoch: 6 }, { expiresAt: new Date(Date.now() + 60_000).toISOString() }, { revision: 2 }];
   for (const change of changes) {
     const changed = { ...envelope, context: { ...c, ...change } };
     await assert.rejects(decryptObject({ envelope: changed, expectedContext: c, privateKey: bobKey, authorPublicKey: alice.publicKey }), /context mismatch/);
     await assert.rejects(decryptObject({ envelope: changed, expectedContext: changed.context, privateKey: bobKey, authorPublicKey: alice.publicKey }), /binding mismatch|Author key/);
+  }
+});
+
+test('friends-only remains signed and encrypted to its exact recipient set', async () => {
+  const c: ContentContext = { ...context(), audience: 'friends' };
+  const envelope = await encryptObject({ context: c, payload: { text: 'Friends only' }, signingKey: aliceKey, recipients: recipients() });
+  assert.deepEqual(await decryptObject({ envelope, expectedContext: c, privateKey: bobKey, authorPublicKey: alice.publicKey }), { text: 'Friends only' });
+  await assert.rejects(decryptObject({ envelope, expectedContext: c, privateKey: outsiderKey, authorPublicKey: alice.publicKey }), /not a recipient/);
+  for (const audience of ['connections', 'family'] as const) {
+    const changed = { ...envelope, context: { ...c, audience } };
+    await assert.rejects(decryptObject({ envelope: changed, expectedContext: changed.context, privateKey: bobKey, authorPublicKey: alice.publicKey }), /binding mismatch/);
   }
 });
 

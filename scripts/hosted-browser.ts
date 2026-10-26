@@ -63,7 +63,7 @@ try {
   await page.getByRole('heading', { name: 'Unlock this device', exact: true }).waitFor();
   await page.getByLabel('Encryption recovery secret', { exact: true }).fill(a.device.keys.recoverySecret);
   await page.getByRole('checkbox', { name: /Remember this private device/ }).check();
-  await page.getByRole('button', { name: 'Unlock my circle' }).click();
+  await page.getByRole('button', { name: 'Unlock' }).click();
   await page.getByText('FROM YOUR PEOPLE', { exact: true }).waitFor({ timeout: 90_000 });
   await page.getByRole('button', { name: 'Newest first', exact: true }).waitFor();
   observed.defaultHome = new URL(page.url()).pathname === '/app';
@@ -116,7 +116,7 @@ try {
   observed.cache = cache;
   await context.setOffline(true);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('heading', { name: 'You’re offline. Your circle can wait.', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'You’re offline', exact: true }).waitFor();
   check(await page.getByText('FROM YOUR PEOPLE', { exact: true }).count() === 0, 'OFFLINE_PRIVATE_FEED_VISIBLE');
   observed.authenticatedColdOfflinePrivateContentAbsent = true;
   await context.setOffline(false);
@@ -149,7 +149,7 @@ try {
   check(await page.getByText('FROM YOUR PEOPLE', { exact: true }).count() === 0, 'SIGNOUT_PRIVATE_FEED_VISIBLE');
   await context.setOffline(true);
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.getByRole('heading', { name: 'You’re offline. Your circle can wait.', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'You’re offline', exact: true }).waitFor();
   observed.signout = { rememberedKeys: remaining, savedSessionRevoked: true, onlineLoginRequired: true, coldOfflinePrivateContentAbsent: true };
   await context.setOffline(false);
   await page.goto(stagingOrigin + '/login');

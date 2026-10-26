@@ -135,7 +135,7 @@ try{
  baselineProfile=digest(JSON.stringify((await api('/api/v1/me')).envelope));
  await page.getByRole('heading',{name:'Unlock this device',exact:true}).waitFor();
  await page.getByLabel('Encryption recovery secret',{exact:true}).fill(a.device.keys.recoverySecret);
- await page.getByRole('checkbox',{name:/Remember this private device/}).check();await page.getByRole('button',{name:'Unlock my circle'}).click();
+ await page.getByRole('checkbox',{name:/Remember this private device/}).check();await page.getByRole('button',{name:'Unlock'}).click();
  await page.getByText('FROM YOUR PEOPLE',{exact:true}).waitFor({timeout:90000});
  check(baselineDevices===digest(JSON.stringify(list(await api('/api/v1/devices')).map(d=>[d.id,d.fingerprint,d.revoked_at]).sort())),'ARCHIVE_ENROLLED_EXTRA_DEVICE');
  progress('original-photo');await page.goto(stagingOrigin+'/app/post/'+state.interop.webPostId);
@@ -143,7 +143,7 @@ try{
  if(photoOnly){complete=true;await receipt('photo-result',{v:1,checkedAt:new Date().toISOString(),originalPhotoDecoded:true,referenceJPEGHashVerified:true,pixelsVerified:true,photoStatuses});progress('photo-only-passed');}
  else{
  progress('protected-export');await page.goto(stagingOrigin+'/app/settings/data');
- await page.getByRole('heading',{name:'Your memories. Your choice.',exact:true}).waitFor();
+ await page.getByRole('heading',{name:'Export your data',exact:true}).waitFor();
  check(!await page.getByRole('checkbox',{name:/Download readable, unencrypted ZIP/}).isChecked(),'DEFAULT_EXPORT_NOT_PROTECTED');
  page.on('download',d=>{const task=saveDownload(d).catch(()=>{observerFailure=true;});downloadTasks.push(task);});
  const firstDownload=page.waitForEvent('download',{timeout:120000}).catch(()=>null);
@@ -205,7 +205,7 @@ try{
  const replace=page.getByRole('checkbox',{name:/Replace my profile with the archived profile/});if(await replace.count())await replace.uncheck();
  check(await replace.count()===0||!await replace.isChecked(),'ARCHIVE_PROFILE_REPLACEMENT_NOT_DISABLED');
  armed=true;await receipt('confirm-import',{member:a.id,replaceProfile:false,sameAccount:true,sourceCount:entries.length});
- progress('private-import');await page.getByRole('button',{name:'Import my memories privately',exact:true}).click();
+ progress('private-import');await page.getByRole('button',{name:'Import my data privately',exact:true}).click();
  await page.locator('.transfer-progress').filter({hasText:/Imported \d+ new private entries/}).waitFor({timeout:180000});
  await Promise.all([...downloadTasks,...mutations]);check(!observerFailure&&imported.size>0,'ARCHIVE_IMPORT_NOT_CONFIRMED');armed=false;
  let importedKnown:string|undefined;

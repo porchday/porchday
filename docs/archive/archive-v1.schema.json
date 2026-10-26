@@ -42,7 +42,7 @@
       }],
       "additionalProperties": true
     },
-    "audience": { "enum": ["connections", "family", "only_me", "group", "moderators"] },
+    "audience": { "enum": ["connections", "friends", "family", "only_me", "group", "moderators"] },
     "photoReference": {
       "type": "object",
       "required": ["id"],

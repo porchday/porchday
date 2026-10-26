@@ -22,16 +22,15 @@ struct FeedView: View {
             List {
                 if let notice = model.member?.access.notice { Section { Text(notice) } }
                 if let profileHeader { Section { profileHeader } }
-                if showComposer && model.canWriteSocial { Section { Button { compose = true } label: { Label("Share a little of your day", systemImage: "square.and.pencil").padding(.vertical, 8) } } }
+                if showComposer && model.canWriteSocial { Section { Button { compose = true } label: { Label("New post", systemImage: "square.and.pencil").padding(.vertical, 8) } } }
                 Section {
-                    if loaded && rows.filter(\.active).isEmpty { ContentUnavailableView("A quiet start", systemImage: "sun.max", description: Text("Connect with your people. Their moments will appear here, with no suggested posts or ads.")) }
+                    if loaded && rows.filter(\.active).isEmpty { ContentUnavailableView("No posts yet", systemImage: "sun.max", description: Text("Posts shared with you appear here.")) }
                     ForEach(rows.filter(\.active)) { item in NavigationLink { PostDetailView(id: item.id) } label: { MomentCard(item: item) } }
-                    if cursor != nil { Button("Load more moments") { Task { await load(more: true) } }.disabled(busy) }
-                    else if loaded && !rows.isEmpty { Text("You’re all caught up. There’s a whole day out there.").font(.footnote).foregroundStyle(.secondary) }
+                    if cursor != nil { Button("Load more posts") { Task { await load(more: true) } }.disabled(busy) }
                     if busy { ProgressView() }
                 } header: {
-                    if wallpaper == .none { Text("Your people, newest first") }
-                    else { Text("Your people, newest first").foregroundStyle(.primary).padding(8).background(.background, in: RoundedRectangle(cornerRadius: 6)) }
+                    if wallpaper == .none { Text("Newest first") }
+                    else { Text("Newest first").foregroundStyle(.primary).padding(8).background(.background, in: RoundedRectangle(cornerRadius: 6)) }
                 }
             }
             .scrollContentBackground(wallpaper == .none ? .visible : .hidden)
@@ -90,9 +89,9 @@ struct PostDetailView: View {
                             HStack { Button("Reply") { reply = item }.disabled(!model.canWriteSocial); Button("Report") { report = item };if model.canWriteSocial && item.authorID == model.member?.id { Button("Edit") { edit = item } }; if model.canWriteSocial && (item.authorID == model.member?.id || post.authorID == model.member?.id || mayModerate) { Button("Delete", role: .destructive) { removing = item } } } }.padding(.leading, item.raw["parent_id"].string == nil ? 0 : 12) }
                     }
                     Section { Button("Report a concern") { report = post } }
-                } else { ContentUnavailableView("This moment isn’t here", systemImage: "clock", description: Text("It may have expired, been removed, or no longer be shared with you.")) }
+                } else { ContentUnavailableView("Post unavailable", systemImage: "clock", description: Text("It may have expired, been removed, or no longer be shared with you.")) }
             }
-        }.navigationTitle("A moment together").navigationBarTitleDisplayMode(.inline).task(id: id) { await refresh() }.refreshable { await refresh() }
+        }.navigationTitle("Post").navigationBarTitleDisplayMode(.inline).task(id: id) { await refresh() }.refreshable { await refresh() }
             .confirmationDialog("Delete this content and its replies?",isPresented:Binding(get:{removing != nil},set:{if !$0 { removing=nil }}),titleVisibility:.visible) {
                 Button("Delete permanently",role:.destructive) { guard let item=removing else{return};Task { await model.perform { _ = try await model.api.social("/"+(item.isComment ? "comments/":"posts/")+item.id,method:"DELETE");if item.isComment { await refresh() } else { deleted=true };removing=nil } } }
                 Button("Cancel",role:.cancel) { removing=nil }
@@ -169,7 +168,7 @@ struct ComposerView: View {
     private var timerChoice: ComposerTimerChoice { timer == -1 ? .custom(customExpiry) : timer == 0 ? .inherit : .after(timer) }
     var body: some View { Form {
         Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("\(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) }
-        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { Text("Friends & family").tag("connections"); Text("Family only").tag("family"); Text("Only me").tag("only_me") } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .images) { Label("Add photos", systemImage: "photo") }; if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = UIImage(data: photo.bytes) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Photo description (alt text)", text: $photo.alt) } } } }
+        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .images) { Label("Add photos", systemImage: "photo") }; if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = UIImage(data: photo.bytes) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Photo description (alt text)", text: $photo.alt) } } } }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
@@ -194,12 +193,12 @@ struct ComposerView: View {
                     if let error = deadlineContext.validationMessage(for: timerChoice, now: timeline.date) {
                         Text(error).foregroundStyle(.red).accessibilityIdentifier("composer-expiration-error")
                     }
-                    Button(busy ? "Encrypting and sharing…" : post == nil ? "Share moment" : "Comment") { Task { await submit() } }
+                    Button(busy ? "Encrypting and sharing…" : post == nil ? "Post" : "Comment") { Task { await submit() } }
                         .disabled(!model.canWriteSocial || busy || parentUnavailable || deadlineContext.validationMessage(for: timerChoice, now: timeline.date) != nil || text.count > 5000 || (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty))
                 }
             }
         }
-    }.disabled(!model.canWriteSocial).navigationTitle(post == nil ? "Share a little of your day" : "Leave a comment").navigationBarTitleDisplayMode(.inline).toolbar { Button("Cancel") { dismiss() } }
+    }.disabled(!model.canWriteSocial).navigationTitle(post == nil ? "New post" : "Leave a comment").navigationBarTitleDisplayMode(.inline).toolbar { Button("Cancel") { dismiss() } }
         .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
         .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { selected.append(try PhotoPipeline.prepare(bytes)) } }; photos = selected } } }
         .sheet(isPresented: $camera) { CameraView { image in Task { await model.perform { guard let data = image.jpegData(compressionQuality: 0.9) else { return }; photos.append(try PhotoPipeline.prepare(data)) } }; camera = false } }
@@ -256,5 +255,5 @@ struct EditContentView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var timer = 0
-    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle("Edit moment").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
+    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle(item.isComment ? "Edit comment" : "Edit post").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
 }
