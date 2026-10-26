@@ -2,7 +2,7 @@ import postgres from 'postgres';
 import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env, Variables} from './types.js';
-import {event} from './telemetry.js';
+import {event,type JournalFailureCode} from './telemetry.js';
 import {feedTiming,measureFeedPhase} from './feed-timing';
 
 export interface JournalStore {
@@ -166,7 +166,7 @@ export async function verifyJournalChain(store: JournalStore): Promise<{control:
   return {control,batches:batches.reverse()};
 }
 
-type RuntimeEnv=Pick<Env,'RECOVERY_JOURNAL'|'HYPERDRIVE_JOBS'|'ENVIRONMENT'>;
+type RuntimeEnv=Pick<Env,'RECOVERY_JOURNAL'|'HYPERDRIVE_JOBS'|'ENVIRONMENT'|'METRICS'>;
 function runtime(env:RuntimeEnv) {
   if(!env.RECOVERY_JOURNAL) {
     if(env.ENVIRONMENT==='development')return null;
@@ -224,16 +224,22 @@ export const privacyMutationMiddleware=createMiddleware<{Bindings:Env;Variables:
 export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>):Promise<T> {
   const resources=runtime(env);
   if(!resources)return work();
+  // Fixed phase names only. A phase identifies where the operation stopped;
+  // it does not prove rollback or authorize clearing an unresolved intent.
+  let failedPhase:JournalFailureCode='journal_begin_failed';
   try {
     await detectStalePrivacyIntents(resources.store);
     const intent=await beginPrivacyIntent(resources.store,resources.db);
     let value:T;
+    failedPhase='journal_work_failed';
     try {value=await work();}
-    catch(error){if(knownRollback(error))await completePrivacyIntent(resources.store,resources.db,intent);throw error;}
+    catch(error){if(knownRollback(error)){failedPhase='journal_completion_failed';await completePrivacyIntent(resources.store,resources.db,intent);failedPhase='journal_work_failed';}throw error;}
+    failedPhase='journal_completion_failed';
     try {await completePrivacyIntent(resources.store,resources.db,intent);}
     catch(error){if(error instanceof JournalError)throw error;throw new JournalError('PRIVACY_CHECKPOINT_REQUIRED');}
     return value;
-  } finally {await resources.close();}
+  } catch(error){event('error',{code:failedPhase},env);throw error;}
+  finally {try{await resources.close();}catch(error){event('error',{code:'journal_close_failed'},env);throw error;}}
 }
 export async function checkpointPrivacyJournal(env:RuntimeEnv) {
   const resources=runtime(env);if(!resources)return;

@@ -6,8 +6,12 @@ import type {Env} from './types';
 const names=new Set(['request','job','email','error','feed_phase']);
 export const FEED_PHASES=['journal_check','journal_close','auth_session','auth_status','social_connect_begin','social_actor','social_query','social_commit','social_close'] as const;
 export type FeedPhase=typeof FEED_PHASES[number];
+export const JOURNAL_FAILURE_CODES=['journal_begin_failed','journal_work_failed','journal_completion_failed','journal_close_failed'] as const;
+export const CLEANUP_FAILURE_CODES=['cleanup_journal_failed','cleanup_expiry_failed','cleanup_identity_failed','cleanup_auth_metadata_failed','cleanup_web_push_failed','cleanup_native_push_failed','cleanup_email_failed','cleanup_heartbeat_failed','cleanup_ack_failed'] as const;
+export type JournalFailureCode=typeof JOURNAL_FAILURE_CODES[number];
+export type CleanupFailureCode=typeof CLEANUP_FAILURE_CODES[number];
 const feedPhases=new Set<string>(FEED_PHASES);
-const codes=new Set(['accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry','outbox_retry','outbox_delivered','email_outbox_retry','recovery_email_retry','media_backup_retry','journal_not_initialized','restore_quarantined','database_rollback_detected','journal_not_configured','journal_unavailable','journal_store_read_failed','journal_control_invalid','journal_database_read_failed','journal_database_status_invalid']);
+const codes=new Set(['accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry','outbox_retry','outbox_delivered','email_outbox_retry','recovery_email_retry','media_backup_retry','journal_not_initialized','restore_quarantined','database_rollback_detected','journal_not_configured','journal_unavailable','journal_store_read_failed','journal_control_invalid','journal_database_read_failed','journal_database_status_invalid',...JOURNAL_FAILURE_CODES,...CLEANUP_FAILURE_CODES]);
 const methods=new Set(['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']);
 const environments=new Set(['development','staging','production']);
 const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/auth/*','/api/account-recovery/*','/api/*','/assets/*',

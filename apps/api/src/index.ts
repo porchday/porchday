@@ -10,7 +10,7 @@ import { createSocialRoutes } from './social';
 import {createIntegrationConsentRoutes,createIntegrationTokenRoutes} from './social-integrations';
 import { cleanupExpired, withMember } from './db';
 import { authPool } from './auth';
-import { event,normalizedRoute } from './telemetry';
+import { event,normalizedRoute,type CleanupFailureCode } from './telemetry';
 import type {Env,Variables} from './types';
 import {scheduleMediaBackup,processMediaBackup} from './media-backup';
 import {cleanupDeletedIdentities} from './identity-cleanup';
@@ -104,20 +104,32 @@ export default {
  },
  async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){
   const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start'].includes(m.body.kind));
-  if(cleanup.length)try {
+  if(cleanup.length){
+   let failedPhase:CleanupFailureCode='cleanup_journal_failed';
+   try {
    const results=await withPrivacyJournal(env,async()=>{
+    failedPhase='cleanup_expiry_failed';
     const expired=await cleanupExpired(env);
+    failedPhase='cleanup_identity_failed';
     await cleanupDeletedIdentities(env);
+    failedPhase='cleanup_auth_metadata_failed';
     await cleanupAuthenticationMetadata(env);
+    failedPhase='cleanup_journal_failed';
     return expired;
    });
+   failedPhase='cleanup_web_push_failed';
    await processWebPush(env);
+   failedPhase='cleanup_native_push_failed';
    await processNativePush(env);
+   failedPhase='cleanup_email_failed';
    await processAccountEmails(env);
+   failedPhase='cleanup_heartbeat_failed';
    await recordCleanupSuccess(env);
    event('job',{code:'cleanup_complete',count:results.deleted_objects},env);
+   failedPhase='cleanup_ack_failed';
    for(const message of cleanup)message.ack();
-  }catch{event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
+   }catch{event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
+  }
   for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
    try{if(message.body.kind==='media_backup_start'){await scheduleMediaBackup(env);message.ack();continue;}if(!message.body.id)throw Error('BACKUP_ID_REQUIRED');const result=await processMediaBackup(env,message.body.id);if(result==='busy')message.retry({delaySeconds:60});else message.ack();}
    catch{event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
