@@ -856,26 +856,33 @@ export function Wall({ id }: { id?: string }) {
   const vault = useVault();
   const own = !id || id === vault.member.id;
   const memberId = id || vault.member.id;
-  const [profile, setProfile] = useState<Content | null>(null);
-  const [handle, setHandle] = useState(own ? vault.member.handle : "");
+  const target = vault.member.id + ":" + vault.device.id + ":" + memberId;
+  const [loaded, setLoaded] = useState<{target:string;profile:Content|null;handle:string}>({target,profile:null,handle:own?vault.member.handle:""});
+  const profile = loaded.target === target ? loaded.profile : null;
+  const handle = loaded.target === target ? loaded.handle : own ? vault.member.handle : "";
   const [standard, setStandard] = useState(false);
   const [version, setVersion] = useState(0);
-  const action = useAction();
+  const [loadError, setLoadError] = useState("");
   useEffect(() => {
-    action.run(async () => {
+    let canceled = false;
+    const controller = new AbortController();
+    setLoadError("");
+    void (async () => {
       const r = own
-        ? await get("/me")
-        : await get(`/profiles/member/${memberId}`);
-      setHandle(r.handle || "");
+        ? await request("/me", {signal:controller.signal})
+        : await request(`/profiles/member/${memberId}`, {signal:controller.signal});
+      if (canceled) return;
+      let content: Content | null = null;
       if (r.envelope) {
         try {
-          setProfile(await vault.open({ envelope: r.envelope, id: memberId }));
-        } catch {
-          setProfile(null);
-        }
-      } else setProfile(null);
-    });
-  }, [memberId]);
+          content = await vault.open({ envelope: r.envelope, id: memberId });
+        } catch { /* Unavailable encrypted content remains hidden. */ }
+      }
+      if (!canceled) setLoaded({target,profile:content,handle:r.handle || ""});
+    })().catch(() => { if (!canceled) setLoadError("Could not load this profile. Please try again."); });
+    return () => { canceled = true; controller.abort(); };
+  }, [target, own ? vault.profileVersion : 0]);
+  useEffect(() => { setStandard(false); }, [target]);
   const theme = standard ? "sage" : String(profile?.theme || "sage");
   const wallpaper = standard ? "none" : wallpaperId(profile?.wallpaper);
   return (
@@ -938,7 +945,7 @@ export function Wall({ id }: { id?: string }) {
           </div>
         )}
       </section>
-      <Alert>{action.error}</Alert>
+      <Alert>{loadError}</Alert>
       {own && <Composer onPosted={() => setVersion((v) => v + 1)} />}
       <Feed key={version} wallId={memberId} />
     </div>

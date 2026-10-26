@@ -38,6 +38,7 @@ import { enableCurrentPush, disableAllPush } from "./push";
 import { PROFILE_SLOTS, planSurfacePhotos } from "./surface-media";
 import { WALLPAPERS, wallpaperId } from "./wallpaper";
 import { DeletionUnconfirmedError, requestAccountDeletion } from "./account-deletion";
+import { profileRefreshState } from "./profile-refresh";
 export function Settings({
   tab = "profile",
   onLogout,
@@ -81,17 +82,10 @@ export function Settings({
     </>
   );
 }
+const emptyProfile = (): Content => ({ displayName: "", bio: "", interests: "", status: "", theme: "sage", font: "serif", sectionOrder: "about-first" });
 function ProfileSettings() {
   const vault = useVault();
-  const [profile, setProfile] = useState<Content>({
-    displayName: "",
-    bio: "",
-    interests: "",
-    status: "",
-    theme: "sage",
-    font: "serif",
-    sectionOrder: "about-first",
-  });
+  const [profile, setProfile] = useState<Content>(emptyProfile);
   const [old, setOld] = useState<EncryptedEnvelope | null>(null);
   const [profileAudience, setProfileAudience] = useState<
     "connections" | "only_me"
@@ -106,26 +100,60 @@ function ProfileSettings() {
   );
   const uploadAsset = useAssetUpload();
   const action = useAction();
+  const owner = vault.member.id + ":" + vault.device.id;
+  const currentOwner = useRef(owner); currentOwner.current = owner;
+  const editorOwner = useRef(owner);
+  const refresh = useRef(profileRefreshState());
+  const baseline = useRef<EncryptedEnvelope | null>(null);
+  const saving = useRef(false);
+  const [loadedOwner, setLoadedOwner] = useState("");
+  const [profileChanged, setProfileChanged] = useState(false);
+  const [loadError, setLoadError] = useState("");
+  const [reload, setReload] = useState(0);
   useEffect(() => {
-    action.run(async () => {
-      const me = await get("/me");
-      if (me.envelope) {
-        setProfile(
-          await vault.open({ envelope: me.envelope, id: vault.member.id }),
-        );
-        setOld(me.envelope);
-        setProfileAudience(
-          me.envelope.context.audience === "only_me"
-            ? "only_me"
-            : "connections",
-        );
+    if (editorOwner.current !== owner) {
+      editorOwner.current = owner;
+      refresh.current = profileRefreshState(); baseline.current = null;
+      setProfile(emptyProfile()); setOld(null); setProfileAudience("connections");
+      setAssets({avatar:null,cover:null,background:null}); setRemovedAssets({});
+      setLoadedOwner(""); setProfileChanged(false);
+    }
+    const guard = refresh.current, token = guard.begin(), controller = new AbortController();
+    let canceled = false;
+    setLoadError("");
+    const decision = (envelope: EncryptedEnvelope | null) => canceled || currentOwner.current !== owner ? "stale" : guard.decide(token, baseline.current, envelope);
+    void (async () => {
+      const me = await request("/me", {signal:controller.signal});
+      const envelope = (me.envelope || null) as EncryptedEnvelope | null;
+      let choice = decision(envelope);
+      if (choice === "stale") return;
+      if (choice !== "replace") {
+        if (choice === "conflict") setProfileChanged(true);
+        setLoadedOwner(owner); return;
       }
-    });
-  }, []);
-  const update = (field: string, value: string) =>
-    setProfile((p) => ({ ...p, [field]: value }));
+      const content = envelope ? await vault.open({envelope,id:vault.member.id}) : emptyProfile();
+      choice = decision(envelope);
+      if (choice === "stale") return;
+      if (choice === "replace") {
+        setProfile(content); setOld(envelope); baseline.current = envelope;
+        setProfileAudience(envelope?.context.audience === "only_me" ? "only_me" : "connections");
+        setProfileChanged(false);
+      } else if (choice === "conflict") setProfileChanged(true);
+      setLoadedOwner(owner);
+    })().catch(() => { if (decision(baseline.current) !== "stale") setLoadError("Could not load your saved profile. Your draft is unchanged."); });
+    return () => { canceled = true; guard.invalidate(); controller.abort(); };
+  }, [owner, vault.profileVersion, reload]);
+  const edit = (change: () => void) => { if (!saving.current) { refresh.current.edit(); change(); } };
+  const update = (field: string, value: string) => edit(() => setProfile((p) => ({ ...p, [field]: value })));
+  function reloadSavedProfile() {
+    refresh.current.saved(); setLoadedOwner(""); setProfileChanged(false);
+    setAssets({avatar:null,cover:null,background:null}); setRemovedAssets({});
+    setReload(v => v + 1);
+  }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving.current || loadedOwner !== owner || profileChanged) return;
+    saving.current = true;
     await action.run(async () => {
       const plan = planSurfacePhotos(
         profile,
@@ -152,16 +180,21 @@ function ProfileSettings() {
         createdAt: old?.context.createdAt || new Date().toISOString(),
         revision: (old?.context.revision || 0) + 1,
       });
+      if (currentOwner.current !== owner) return;
       await request("/profiles/me", {
         method: "PUT",
         body: JSON.stringify({ envelope, remove_media: plan.remove_media }),
       });
       // The revised profile and removals have committed even if a later new-photo
       // attachment needs retrying. Keep the revision current for that retry.
+      if (currentOwner.current !== owner) return;
+      refresh.current.saved(); baseline.current = envelope;
       setOld(envelope);
       setProfile(next);
       setAssets({ avatar: null, cover: null, background: null });
       setRemovedAssets({});
+      setProfileChanged(false);
+      vault.notifyProfileChanged();
       for (const asset of uploaded)
         await request(`/media/${asset.id}/attachment`, {
           method: "PUT",
@@ -172,7 +205,9 @@ function ProfileSettings() {
           }),
         });
     }, "Profile saved.");
+    saving.current = false;
   }
+  if (editorOwner.current !== owner) return <Loading text="Loading profile…" />;
   if (vault.member.status === "restricted")
     return (
       <Alert>
@@ -182,6 +217,9 @@ function ProfileSettings() {
     );
   return (
     <form onSubmit={submit} className="form-stack">
+      {loadError && <Alert>{loadError} <button type="button" className="text-button" onClick={() => setReload(v => v + 1)}>Retry loading</button></Alert>}
+      {profileChanged && <Alert>Your saved profile changed. Your draft has been kept. <button type="button" className="text-button" onClick={reloadSavedProfile}>Discard draft and reload</button></Alert>}
+      <fieldset disabled={action.busy} className="form-stack" style={{border:0,padding:0,margin:0,minWidth:0}}>
       <section className="panel form-stack">
         <h2>Profile details</h2>
         <p>
@@ -194,7 +232,7 @@ function ProfileSettings() {
           <select
             value={profileAudience}
             onChange={(e) =>
-              setProfileAudience(e.target.value as "connections" | "only_me")
+              edit(() => setProfileAudience(e.target.value as "connections" | "only_me"))
             }
           >
             <option value="connections">My current friends & family</option>
@@ -260,12 +298,12 @@ function ProfileSettings() {
               removed={removedAssets[slot]}
               disabled={action.busy}
               onRemovalChange={(removed) =>
-                setRemovedAssets((p) => ({ ...p, [slot]: removed }))
+                edit(() => setRemovedAssets((p) => ({ ...p, [slot]: removed })))
               }
-              onChange={(asset) => {
+              onChange={(asset) => edit(() => {
                 setAssets((p) => ({ ...p, [slot]: asset }));
                 if (asset) setRemovedAssets((p) => ({ ...p, [slot]: false }));
-              }}
+              })}
             />
           ))}
         </div>
@@ -350,10 +388,11 @@ function ProfileSettings() {
           <Icon name="lock" size={14} />
           Encrypted before saving
         </p>
-        <Button variant="primary" busy={action.busy}>
+        <Button variant="primary" busy={action.busy} disabled={loadedOwner !== owner || profileChanged}>
           Save my profile <Icon name="check" size={17} />
         </Button>
       </div>
+      </fieldset>
     </form>
   );
 }

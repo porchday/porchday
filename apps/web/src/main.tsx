@@ -220,7 +220,7 @@ function App() {
       <>
         {!online && <OfflineScreen onRetry={retryConnection} />}
         <div hidden={!online}>
-          <VaultProvider member={member} onAccountDeleted={accountDeleted}>
+          <VaultProvider key={member.id} member={member} onAccountDeleted={accountDeleted}>
             <AppShell path={path} routeKey={route} onLogout={signOut} onAccountDeleted={accountDeleted} />
           </VaultProvider>
         </div>

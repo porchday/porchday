@@ -38,7 +38,7 @@ import {
 } from "./api";
 import { Alert, Button, Field, Icon, Loading, useAction } from "./ui";
 import { LockedAccount } from "./LockedAccount";
-import { initializeEmptyProfile } from "./initial-profile";
+import { startInitialProfileSetup,type InitialProfileState } from "./initial-profile-lifecycle";
 import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
 type BackupDevice = {
   id: string;
@@ -61,6 +61,8 @@ type VaultValue = {
   privateKey: UnlockedPrivateKey;
   keys: UnlockedPrivateKey[];
   devices: Device[];
+  profileVersion: number;
+  notifyProfileChanged: () => void;
   open: (
     row:
       | SocialObject
@@ -138,9 +140,25 @@ export function VaultProvider({
   const [saved, setSaved] = useState(false);
   const [secret, setSecret] = useState("");
   const [remember, setRemember] = useState(false);
-  const [profileReadyFor, setProfileReadyFor] = useState("");
-  const [profileSetupError, setProfileSetupError] = useState(false);
-  const [profileSetupAttempt, setProfileSetupAttempt] = useState(0);
+  const [profileSetup, setProfileSetup] = useState<{key:string;state:InitialProfileState}|null>(null);
+  const [dismissedProfileSetup, setDismissedProfileSetup] = useState("");
+  const [profileChange, setProfileChange] = useState({key:"",version:0});
+  const profileSetupTask = useRef<ReturnType<typeof startInitialProfileSetup>|null>(null);
+  const profileContext = JSON.stringify([
+    member.id, member.status || "active", active?.device.id || "locked",
+    active?.device.revoked_at || null,
+  ]);
+  const currentProfileContext = useRef(profileContext);
+  const profileContextMounted = useRef(true);
+  currentProfileContext.current = profileContext;
+  useEffect(() => {
+    profileContextMounted.current = true;
+    return () => { profileContextMounted.current = false; };
+  }, []);
+  function notifyProfileChanged(){
+    if(!profileContextMounted.current || currentProfileContext.current!==profileContext)return;
+    setProfileChange(previous=>({key:profileContext,version:previous.key===profileContext?previous.version+1:1}));
+  }
   const action = useAction();
   const authorKeys = useRef(new Map<string, Promise<Device>>());
   useEffect(() => {
@@ -191,40 +209,27 @@ export function VaultProvider({
     };
   }, [member.id, member.status]);
   useEffect(() => {
-    if (!active) return;
-    const readyKey = member.id + ":" + active.device.id;
-    if (["restricted", "suspended"].includes(member.status || "")) {
-      setProfileReadyFor(readyKey);
-      return;
-    }
-    const controller = new AbortController();
-    let canceled = false;
-    const timeout = setTimeout(() => {
-      controller.abort();
-      // Key operations may not observe AbortSignal. Cosmetic setup must still
-      // release the app; the aborted save cannot replace a later profile edit.
-      if (!canceled) {
-        setProfileSetupError(true);
-        setProfileReadyFor(readyKey);
-      }
-    }, 12000);
-    setProfileSetupError(false);
-    initializeEmptyProfile({
-      read: () => request("/me", {signal: controller.signal}),
-      seal: (profile) => seal(profile, {
+    if (!active || active.device.member_id!==member.id || active.device.revoked_at || ["restricted", "suspended"].includes(member.status || "")) return;
+    setDismissedProfileSetup("");
+    const task=startInitialProfileSetup({
+      read: signal => request("/me", {signal}),
+      seal: (profile,signal) => seal(profile, {
         id: member.id, kind: "profile", audience: "connections", revision: 1,
-      }, undefined, controller.signal),
+      }, undefined, signal),
       save: (envelope) => request("/profiles/me", {
-        method: "PUT", body: JSON.stringify({envelope}), signal: controller.signal,
+        method: "PUT", body: JSON.stringify({envelope}),
       }),
-    }).catch(() => {
-      if (!canceled) setProfileSetupError(true);
-    }).finally(() => {
-      clearTimeout(timeout);
-      if (!canceled) setProfileReadyFor(readyKey);
+      state: state=>{if(currentProfileContext.current===profileContext)setProfileSetup({key:profileContext,state});},
+      confirmed: notifyProfileChanged,
     });
-    return () => { canceled = true; clearTimeout(timeout); controller.abort(); };
-  }, [member.id, member.status, active?.device.id, profileSetupAttempt]);
+    profileSetupTask.current=task;
+    const recheck=()=>{void task.recheck();};
+    window.addEventListener("online",recheck);window.addEventListener("focus",recheck);
+    return ()=>{
+      task.dispose();if(profileSetupTask.current===task)profileSetupTask.current=null;
+      window.removeEventListener("online",recheck);window.removeEventListener("focus",recheck);
+    };
+  }, [member.id, member.status, active?.device.id, active?.device.revoked_at]);
   async function generate() {
     await action.run(async () => {
       const id = crypto.randomUUID();
@@ -668,8 +673,6 @@ export function VaultProvider({
       authorPublicKey: author.public_key,
     });
   }
-  if (profileReadyFor !== member.id + ":" + active.device.id)
-    return <Loading text="Getting your personal page ready…" />;
   return (
     <Vault.Provider
       value={{
@@ -678,6 +681,8 @@ export function VaultProvider({
         privateKey: active.key,
         keys: [active.key, ...active.history],
         devices,
+        profileVersion: profileChange.key===profileContext?profileChange.version:0,
+        notifyProfileChanged,
         open,
         seal,
         audience,
@@ -687,10 +692,11 @@ export function VaultProvider({
         },
       }}
     >
-      {profileSetupError && (
+      {profileSetup?.key===profileContext && profileSetup.state==='unconfirmed' && dismissedProfileSetup!==profileContext && (
         <div className="panel" role="status">
-          <p>We couldn’t check your starter background. Your account and keys are ready; you can keep using Porchday or try again.</p>
-          <Button variant="outline" onClick={() => setProfileSetupAttempt((v) => v + 1)}>Try background setup again</Button>
+          <p>Background setup hasn’t been confirmed. You can keep using Porchday.</p>
+          <Button variant="outline" onClick={() => {void profileSetupTask.current?.retry();}}>Retry setup</Button>{" "}
+          <Button variant="outline" onClick={() => setDismissedProfileSetup(profileContext)}>Dismiss</Button>
         </div>
       )}
       {children}
