@@ -3,7 +3,7 @@ import { z } from 'zod';
 import postgres from 'postgres';
 import type { Env, Variables } from './types.js';
 import { withMember } from './db.js';
-const scopes = z.array(z.enum(['profile:read', 'content:read', 'media:read', 'export:read'])).min(1).max(4);
+const scopes = z.array(z.enum(['profile:read', 'content:read', 'media:read', 'export:read', 'emoji:read'])).min(1).max(5);
 function randomToken() { const b = crypto.getRandomValues(new Uint8Array(32)); return btoa(String.fromCharCode(...b)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''); }
 async function hash(s: string) { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))), b => b.toString(16).padStart(2, '0')).join(''); }
 async function challenge(s: string) { return btoa(String.fromCharCode(...new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))))).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''); }
@@ -59,12 +59,12 @@ export function createIntegrationTokenRoutes() {
     finally {
         await sql.end({ timeout: 1 });
     } });
-    app.get('/own/:resource', async (c) => { const map: Record<string, string> = { profile: 'profile:read', content: 'content:read', media: 'media:read', exports: 'export:read' }; const scope = map[c.req.param('resource')]; const token = c.req.header('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if (!scope || !token)
+    app.get('/own/:resource', async (c) => { const map: Record<string, string> = { profile: 'profile:read', content: 'content:read', media: 'media:read', exports: 'export:read', emojis: 'emoji:read' }; const scope = map[c.req.param('resource')]; const token = c.req.header('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if (!scope || !token)
         throw Error('Invalid grant'); const sql = postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false }); try {
         const tokenHash=await hash(token),rate=await limited(sql,c,tokenHash,'read');if(rate)return rate;
         let afterId='';let snapshotAt=new Date().toISOString();
         if(c.req.query('cursor')){const cursor=z.object({id:z.string().max(256),at:z.string().datetime({offset:true})}).parse(JSON.parse(atob(c.req.query('cursor')!)));afterId=cursor.id;snapshotAt=cursor.at;}
-        const section=scope==='content:read'?z.enum(['posts','comments','post_reactions','comment_reactions']).parse(c.req.query('section')??'posts'):scope==='profile:read'?'profile':scope==='media:read'?'media':'jobs';
+        const section=scope==='content:read'?z.enum(['posts','comments','post_reactions','comment_reactions']).parse(c.req.query('section')??'posts'):scope==='emoji:read'?'emoji_library':scope==='profile:read'?'profile':scope==='media:read'?'media':'jobs';
         const [r]=await sql`select app.integration_page(${tokenHash},${scope},${section},${afterId},${snapshotAt}::timestamptz) as data`;
         const {next_id,snapshot_at,...data}=r.data;return c.json({...data,next_cursor:next_id?btoa(JSON.stringify({id:next_id,at:new Date(snapshot_at).toISOString()})):null,snapshot_at,...(scope==='content:read'?{sections:['posts','comments','post_reactions','comment_reactions']}:{})});
     }

@@ -4,6 +4,7 @@ Porchday's original source is licensed under Apache License 2.0. Dependencies ke
 
 | Component | Version | License | Source |
 | --- | --- | --- | --- |
+| Unicode Emoji data | 17.0 | Unicode-3.0 | https://www.unicode.org/Public/17.0.0/emoji/emoji-test.txt |
 | OpenPGP.js | 6.3.2 | LGPL-3.0-or-later | https://github.com/openpgpjs/openpgpjs/tree/v6.3.2 |
 | GopenPGP | 3.5.0 | MIT | https://github.com/ProtonMail/gopenpgp/tree/v3.5.0 |
 | ProtonMail go-crypto | 1.5.2 | BSD-3-Clause | https://github.com/ProtonMail/go-crypto/tree/v1.5.2 |

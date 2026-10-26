@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { get, post, localDate, type Json } from "./api";
 import { Alert, Button, Icon, Loading, useAction } from "./ui";
 export const scopeLabels: Record<string, string> = {
+  "emoji:read": "Your encrypted personal custom emoji collection",
   "profile:read": "Your encrypted profile and public handle",
   "content:read": "Your own encrypted posts, comments, and reactions",
   "media:read": "Your own encrypted photos and their routing metadata",

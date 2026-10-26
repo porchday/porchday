@@ -57,7 +57,7 @@ struct MomentCard: View {
     var body: some View { VStack(alignment: .leading, spacing: 10) {
         HStack(alignment: .top) { Image(systemName: "person.crop.circle.fill").font(.title).foregroundStyle(.secondary); VStack(alignment: .leading) { Text(item.authorID == model.member?.id ? "@\(model.member?.handle ?? "")" : item.authorHandle).font(.headline); if let date = item.created { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Image(systemName: "lock.fill").font(.caption).accessibilityLabel("End-to-end encrypted") }
         if let expiry = item.expiry { Label("Disappears \(expiry.formatted(date: .abbreviated, time: .shortened))", systemImage: "timer").font(.caption).foregroundStyle(.secondary) }
-        if let error = item.error { Label(error, systemImage: "lock.trianglebadge.exclamationmark").font(.callout).foregroundStyle(.secondary) } else { Text(item.text).font(.body).textSelection(.enabled); if let media = item.payload?["media"].array { ForEach(Array(media.enumerated()), id: \.offset) { _, photo in EncryptedPhotoView(photo: photo) } } }
+        if let error = item.error { Label(error, systemImage: "lock.trianglebadge.exclamationmark").font(.callout).foregroundStyle(.secondary) } else { Text(item.text).font(.body).textSelection(.enabled); if let payload = item.payload, payload["provenance"]["kind"].string == "reaction", let reaction = try? ReactionValue.parse(.object(payload.object.filter { ["emoji","unicode","custom"].contains($0.key) })) { ReactionGlyph(reaction:reaction) }; if let media = item.payload?["media"].array { ForEach(Array(media.enumerated()), id: \.offset) { _, photo in EncryptedPhotoView(photo: photo) } } }
     }.padding(.vertical, 10) }
 }
 struct PostDetailView: View {
@@ -111,35 +111,6 @@ struct PostDetailView: View {
         if let group = post?.context["groupId"].string, let details = try? await model.api.social("/groups/" + group) {
             mayModerate = details["members"].array.contains { $0["member_id"].string == model.member?.id && ["owner", "moderator"].contains($0["role"].string ?? "") }
         }
-    } }
-}
-struct ReactionBar: View {
-    let item: SocialItem
-    let reactions: [JSON]
-    let postID: String
-    let changed: () async -> Void
-    @EnvironmentObject var model: AppModel
-    @EnvironmentObject var vault: CryptoVault
-    @State private var decoded: [(member: String, emoji: String, tag: String)] = []
-    var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) { HStack {
-            ForEach(reactionCatalog, id: \.id) { entry in
-                let values = decoded.filter { $0.emoji == entry.id }, count = Set(values.map(\.member)).count, selected = values.contains { $0.member == model.member?.id }
-                Button { Task { await toggle(entry.id) } } label: { Text(entry.emoji + (count > 0 ? " \(count)" : "")).padding(8).background(selected ? Color.green.opacity(0.15) : Color.secondary.opacity(0.07), in: Capsule()) }
-                    .buttonStyle(.plain).accessibilityLabel("\(entry.label), \(count) people").accessibilityAddTraits(selected ? .isSelected : []).disabled(item.payload == nil || !model.canWriteSocial)
-            }
-        } }.task(id: try? JSON.array(reactions).serialized()) { await decode() }
-    }
-    private func decode() async {
-        guard let secret = item.payload?["reactionSecret"].string else { return }; var valid: [(String, String, String)] = [], seen = Set<String>()
-        for raw in reactions { do { let payload = try await vault.open(raw), member = raw["member_id"].string ?? raw["envelope"]["context"]["authorId"].string ?? "", emoji = payload["emoji"].string ?? "", tag = raw["reaction_tag"].string ?? ""; guard raw["envelope"]["context"]["authorId"].string == member, raw["envelope"]["context"]["parentId"].string == item.id, raw["envelope"]["context"]["id"].string == tag, reactionCatalog.contains(where: { $0.id == emoji }), try CryptoVault.tag(secret: secret, target: item.id, member: member, emoji: emoji) == tag, seen.insert(member + ":" + emoji).inserted else { continue }; valid.append((member, emoji, tag)) } catch { continue } }; decoded = valid
-    }
-    private func toggle(_ emoji: String) async { await model.perform {
-        guard let member = model.member, let secret = item.payload?["reactionSecret"].string else { return }; try member.access.requireSocialWrite(); let tag = try CryptoVault.tag(secret: secret, target: item.id, member: member.id, emoji: emoji)
-        let path = "/\(item.isComment ? "comments" : "posts")/\(item.id)/reactions/\(tag)"
-        if decoded.contains(where: { $0.member == member.id && $0.emoji == emoji }) { _ = try await model.api.social(path, method: "DELETE") }
-        else { let envelope = try await vault.seal(.object(["emoji": .string(emoji)]), member: member, kind: "reaction", audience: item.context["audience"].string ?? "connections", id: tag, group: item.context["groupId"].string, parent: item.id, post: postID, expiry: item.expiry); _ = try await model.api.social(path, method: "PUT", body: .object(["envelope": envelope])) }
-        await changed()
     } }
 }
 struct ComposerView: View {

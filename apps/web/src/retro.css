@@ -2208,6 +2208,102 @@ body
   flex-basis: 100%;
   color: #66503e;
 }
+/* Reactions use native emoji and bounded, locally decoded static images. */
+.emoji-picker-content {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.emoji-picker-content .field {
+  min-width: 0;
+}
+.emoji-picker-content input,
+.emoji-picker-content select {
+  max-width: 100%;
+  min-width: 0;
+}
+.emoji-filters {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(44px, 1fr));
+  gap: 4px;
+}
+.emoji-grid button {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px;
+  font-size: 26px;
+  border: 1px solid #d2c5b3;
+  background: #fffaf0;
+}
+.emoji-grid button:hover,
+.emoji-library-select:hover {
+  background: #f2dfc3;
+}
+.custom-emoji-image {
+  display: inline-block;
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  vertical-align: middle;
+}
+.custom-emoji-placeholder {
+  display: inline-block;
+  width: 28px;
+  text-align: center;
+}
+.reaction-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.reaction-save-image {
+  min-width: 32px;
+  min-height: 36px;
+  border: 1px solid #d2c5b3;
+  background: #fffaf0;
+  color: #633014;
+}
+.emoji-upload {
+  border-block: 1px solid #d2c5b3;
+  padding-block: 16px;
+}
+.emoji-library-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.emoji-library-list li,
+.emoji-save-offer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 0;
+  min-width: 0;
+}
+.emoji-library-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  text-align: left;
+  padding: 6px;
+  border: 1px solid #d2c5b3;
+  background: #fffaf0;
+}
+.emoji-library-select span,
+.emoji-save-offer span {
+  overflow-wrap: anywhere;
+}
 @media (max-width: 640px) {
   .public-footer {
     grid-template-columns: minmax(0, 1fr);

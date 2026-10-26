@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "license": "Apache-2.0",
-  "exports": { ".": "./src/index.ts", "./browser": "./src/browser.ts" },
+  "exports": { ".": "./src/index.ts", "./browser": "./src/browser.ts", "./reactions": "./src/reactions.ts" },
   "scripts": { "test": "node --test test/*.test.ts", "typecheck": "tsc --noEmit" },
   "dependencies": { "openpgp": "6.3.2" },
   "devDependencies": { "typescript": "5.9.3", "@types/node": "^24.0.0" }

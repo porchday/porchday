@@ -37,7 +37,10 @@ targets:
   Porchday:
     type: application
     platform: iOS
-    sources: [Porchday]
+    sources:
+      - Porchday
+      - path: ../../packages/crypto/data/emoji-17.0.json
+        buildPhase: resources
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.porchday.app
@@ -53,6 +56,8 @@ targets:
     sources:
       - PorchdayTests
       - path: ../../packages/crypto/test/fixtures/openpgp-v1.json
+        buildPhase: resources
+      - path: ../../packages/crypto/test/fixtures/reactions-v1.json
         buildPhase: resources
       - path: ../../docs/archive/sample/photos/77777777-7777-4777-8777-777777777777.jpg
         buildPhase: resources

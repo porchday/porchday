@@ -24,6 +24,21 @@ const parts = [1, 2].map(n => unpackArchive(fixture(`multipart/porchday-syntheti
 const cryptoInterface: ArchiveEncryption = { encryptArchive, decryptArchive };
 
 describe("portable archive contract and fictional examples", () => {
+  it("accepts real keyed reaction IDs and preserves Unicode/custom payloads and the personal collection", () => {
+    const vectors = JSON.parse(readFileSync(new URL("../packages/crypto/test/fixtures/reactions-v1.json", import.meta.url), "utf8")).vectors;
+    const unicode = vectors.find((v: any) => v.payload.unicode);
+    const custom = vectors.find((v: any) => v.payload.custom);
+    const archive = structuredClone(single.archive);
+    archive.reactions = [unicode, custom].map(v => ({ ...archive.reactions[0], id: v.tag, payload: v.payload }));
+    archive.emojiLibrary = { customEmojis: [custom.payload] };
+    expect(validate(archive), JSON.stringify(validate.errors)).toBe(true);
+    const copy = unpackArchive(packArchive(archive, single.files)).archive;
+    expect(copy.reactions).toEqual(archive.reactions);
+    expect(copy.emojiLibrary).toEqual(archive.emojiLibrary);
+    const wrong = structuredClone(archive);
+    wrong.posts[0].id = unicode.tag;
+    expect(validate(wrong)).toBe(false);
+  });
   it("validates standalone and both multipart manifests with Draft2020-12 formats enabled", () => {
     expect(ajv.validateSchema(schema), JSON.stringify(ajv.errors)).toBe(true);
     for (const part of [single, ...parts])

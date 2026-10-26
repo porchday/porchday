@@ -107,7 +107,7 @@ describe('Independent privacy checkpoint protocol',()=>{
   });
   it('matches actual privacy routes and excludes login, new content, reads and unknown paths',()=>{
     const id=randomUUID();
-    for(const [method,path] of [['DELETE',`/api/v1/posts/${id}`],['DELETE','/api/v1/account'],['PUT',`/api/v1/comments/${id}`],['PUT','/api/v1/profiles/me'],['PUT',`/api/v1/media/${id}/attachment`],['PUT',`/api/v1/blocks/${id}`],['PUT',`/api/v1/connections/${id}/kind`],['POST','/api/v1/imports'],['POST',`/api/staff/moderation/reports/${id}/actions`]])expect(isPrivacyMutation(method,path)).toBe(true);
+    for(const [method,path] of [['DELETE',`/api/v1/posts/${id}`],['DELETE','/api/v1/account'],['PUT',`/api/v1/comments/${id}`],['PUT','/api/v1/profiles/me'],['PUT','/api/v1/emoji-library'],['PUT',`/api/v1/media/${id}/attachment`],['PUT',`/api/v1/blocks/${id}`],['PUT',`/api/v1/connections/${id}/kind`],['POST','/api/v1/imports'],['POST',`/api/staff/moderation/reports/${id}/actions`]])expect(isPrivacyMutation(method,path)).toBe(true);
     for(const [method,path] of [['GET',`/api/v1/posts/${id}`],['POST','/api/auth/sign-in/email'],['POST','/api/v1/posts'],['POST',`/api/v1/posts/${id}/comments`],['DELETE','/api/nonexistent'],['POST','/api/staff/nonexistent'],['PUT',`/api/v1/media/${id}/bytes`]])expect(isPrivacyMutation(method,path)).toBe(false);
   });
   it('does not create intents for unauthenticated or unmatched requests',async()=>{

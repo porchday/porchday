@@ -463,7 +463,7 @@ func ReactionTag(secret, targetID, memberID, emoji string) (string, error) {
 	if err := checkSecret(secret); err != nil {
 		return "", err
 	}
-	if !idPattern.MatchString(targetID) || !idPattern.MatchString(memberID) || !regexp.MustCompile(`^[a-z0-9_-]{1,40}$`).MatchString(emoji) {
+	if !idPattern.MatchString(targetID) || !idPattern.MatchString(memberID) || !regexp.MustCompile(`^(?:[a-z0-9_-]{1,40}|[uc]1_[a-f0-9]{64})$`).MatchString(emoji) {
 		return "", errors.New("invalid reaction")
 	}
 	key, err := base64.RawURLEncoding.DecodeString(secret)

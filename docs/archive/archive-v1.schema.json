@@ -4,55 +4,265 @@
   "title": "Porchday portable archive manifest, version 1",
   "description": "The archive.json inside a locally decrypted ZIP part. This is not a server envelope, proof of authorship, or a key backup. Container, cross-part, ownership, checksum and expiry checks are also required; see README.md.",
   "type": "object",
-  "required": ["format", "version", "generated_at", "member_id", "handle", "profile", "posts", "comments", "reactions", "media", "connections", "groups"],
+  "required": [
+    "format",
+    "version",
+    "generated_at",
+    "member_id",
+    "handle",
+    "profile",
+    "posts",
+    "comments",
+    "reactions",
+    "media",
+    "connections",
+    "groups"
+  ],
   "properties": {
-    "format": { "const": "porchday-archive" },
-    "version": { "const": 1 },
-    "generated_at": { "$ref": "#/$defs/timestamp" },
-    "member_id": { "$ref": "#/$defs/id" },
-    "handle": { "type": "string" },
-    "archive_set": { "$ref": "#/$defs/archiveSet" },
-    "profile": { "anyOf": [{ "$ref": "#/$defs/profile" }, { "type": "null" }] },
-    "posts": { "type": "array", "items": { "$ref": "#/$defs/authoredEntry" } },
-    "comments": { "type": "array", "items": { "$ref": "#/$defs/authoredEntry" } },
-    "reactions": { "type": "array", "items": { "$ref": "#/$defs/authoredEntry" } },
-    "media": { "type": "array", "items": { "$ref": "#/$defs/photo" } },
-    "connections": { "type": "array", "items": { "$ref": "#/$defs/connection" } },
-    "groups": { "type": "array", "items": { "$ref": "#/$defs/groupMembership" } }
+    "format": {
+      "const": "porchday-archive"
+    },
+    "version": {
+      "const": 1
+    },
+    "generated_at": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "member_id": {
+      "$ref": "#/$defs/id"
+    },
+    "handle": {
+      "type": "string"
+    },
+    "archive_set": {
+      "$ref": "#/$defs/archiveSet"
+    },
+    "profile": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/profile"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "posts": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/authoredEntry"
+          },
+          {
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "comments": {
+      "type": "array",
+      "items": {
+        "allOf": [
+          {
+            "$ref": "#/$defs/authoredEntry"
+          },
+          {
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              }
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "reactions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/reactionEntry"
+      }
+    },
+    "media": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/photo"
+      }
+    },
+    "connections": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/connection"
+      }
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/groupMembership"
+      }
+    },
+    "emojiLibrary": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "customEmojis"
+          ],
+          "properties": {
+            "customEmojis": {
+              "type": "array",
+              "maxItems": 48,
+              "items": {
+                "$ref": "#/$defs/customReaction"
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Optional decrypted owner-only custom emoji collection. Validate PNG bytes/digest and merge by image identity before re-encrypting for the destination owner."
+    }
   },
   "additionalProperties": true,
   "$defs": {
-    "id": { "type": "string", "format": "uuid" },
-    "nullableId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
-    "timestamp": { "type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$" },
-    "deadline": { "anyOf": [{ "$ref": "#/$defs/timestamp" }, { "type": "null" }] },
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "nullableId": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/id"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{3}Z$"
+    },
+    "deadline": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/timestamp"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "archiveSet": {
       "type": "object",
-      "required": ["id", "index", "total"],
+      "required": [
+        "id",
+        "index",
+        "total"
+      ],
       "properties": {
-        "id": { "type": "string", "minLength": 1 },
-        "index": { "type": "integer", "minimum": 1 },
-        "total": { "anyOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
-        "complete": { "type": "boolean" }
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "index": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "total": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "complete": {
+          "type": "boolean"
+        }
       },
-      "allOf": [{
-        "if": { "required": ["complete"], "properties": { "complete": { "const": true } } },
-        "then": { "properties": { "total": { "type": "integer", "minimum": 1 } } },
-        "else": { "properties": { "total": { "type": "null" } } }
-      }],
+      "allOf": [
+        {
+          "if": {
+            "required": [
+              "complete"
+            ],
+            "properties": {
+              "complete": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "total": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "total": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ],
       "additionalProperties": true
     },
-    "audience": { "enum": ["connections", "friends", "family", "only_me", "group", "moderators"] },
+    "audience": {
+      "enum": [
+        "connections",
+        "friends",
+        "family",
+        "only_me",
+        "group",
+        "moderators"
+      ]
+    },
     "photoReference": {
       "type": "object",
-      "required": ["id"],
+      "required": [
+        "id"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "alt": { "type": "string" },
-        "mime": { "const": "image/jpeg" },
-        "name": { "type": "string" },
-        "width": { "type": "integer", "minimum": 1, "maximum": 2400 },
-        "height": { "type": "integer", "minimum": 1, "maximum": 2400 }
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "alt": {
+          "type": "string"
+        },
+        "mime": {
+          "const": "image/jpeg"
+        },
+        "name": {
+          "type": "string"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2400
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2400
+        }
       },
       "additionalProperties": true
     },
@@ -60,69 +270,301 @@
       "type": "object",
       "description": "Decrypted profile payload; theme, section order and future profile fields are retained. It is not wrapped in an authoredEntry.",
       "properties": {
-        "avatar": { "anyOf": [{ "$ref": "#/$defs/photoReference" }, { "type": "null" }] },
-        "cover": { "anyOf": [{ "$ref": "#/$defs/photoReference" }, { "type": "null" }] },
-        "background": { "anyOf": [{ "$ref": "#/$defs/photoReference" }, { "type": "null" }] }
+        "avatar": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/photoReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cover": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/photoReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "background": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/photoReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
       },
       "additionalProperties": true
     },
     "payload": {
       "type": "object",
       "properties": {
-        "text": { "type": "string", "maxLength": 5000 },
-        "media": { "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/photoReference" } },
-        "emoji": { "type": "string", "description": "Reaction catalog identifier, such as like; not a separate reaction count." },
-        "reactionSecret": { "type": "string", "description": "Optional content-local reaction-tag seed. Never an account recovery key. Destination clients generate a fresh seed." },
-        "provenance": { "anyOf": [{ "type": "object" }, { "type": "null" }] }
+        "text": {
+          "type": "string",
+          "maxLength": 5000
+        },
+        "media": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/photoReference"
+          }
+        },
+        "emoji": {
+          "type": "string",
+          "description": "Canonical reaction identity: legacy ID, u1_<SHA256(canonical Unicode UTF8)> or c1_<SHA256(sanitized PNG bytes)>."
+        },
+        "reactionSecret": {
+          "type": "string",
+          "description": "Optional content-local reaction-tag seed. Never an account recovery key. Destination clients generate a fresh seed."
+        },
+        "provenance": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "unicode": {
+          "type": "string",
+          "description": "Canonical fully-qualified Unicode emoji sequence for a u1 identity."
+        },
+        "custom": {
+          "type": "object",
+          "required": [
+            "name",
+            "png"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9_]{1,32}$"
+            },
+            "png": {
+              "type": "string",
+              "maxLength": 43692,
+              "contentEncoding": "base64",
+              "description": "Canonical static PNG, at most128x128 pixels and32768 bytes. Validate decode, chunk structure and SHA256 against emoji ID."
+            }
+          },
+          "additionalProperties": false
+        }
       },
       "additionalProperties": true
     },
     "authoredEntry": {
       "type": "object",
-      "required": ["id", "created_at", "expires_at", "audience", "parent_id", "group_id", "payload"],
+      "required": [
+        "id",
+        "created_at",
+        "expires_at",
+        "audience",
+        "parent_id",
+        "group_id",
+        "payload"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "created_at": { "$ref": "#/$defs/timestamp" },
-        "expires_at": { "$ref": "#/$defs/deadline" },
-        "audience": { "$ref": "#/$defs/audience" },
-        "parent_id": { "$ref": "#/$defs/nullableId" },
-        "group_id": { "$ref": "#/$defs/nullableId" },
-        "payload": { "$ref": "#/$defs/payload" }
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "description": "Posts/comments use UUIDs; reactions use43-character keyed tags."
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/deadline"
+        },
+        "audience": {
+          "$ref": "#/$defs/audience"
+        },
+        "parent_id": {
+          "$ref": "#/$defs/nullableId"
+        },
+        "group_id": {
+          "$ref": "#/$defs/nullableId"
+        },
+        "payload": {
+          "$ref": "#/$defs/payload"
+        }
       },
       "additionalProperties": true
     },
     "photo": {
       "type": "object",
-      "required": ["id", "path", "mime", "alt", "width", "height", "sha256", "post_id", "profile_id", "group_id", "slot", "created_at", "expires_at"],
+      "required": [
+        "id",
+        "path",
+        "mime",
+        "alt",
+        "width",
+        "height",
+        "sha256",
+        "post_id",
+        "profile_id",
+        "group_id",
+        "slot",
+        "created_at",
+        "expires_at"
+      ],
       "properties": {
-        "id": { "$ref": "#/$defs/id" },
-        "path": { "type": "string", "pattern": "^photos/[a-fA-F0-9-]{36}\\.jpg$" },
-        "mime": { "const": "image/jpeg" },
-        "alt": { "type": "string" },
-        "name": { "type": "string", "description": "Optional; currently emitted by web, not native iOS." },
-        "width": { "type": "integer", "minimum": 1, "maximum": 2400 },
-        "height": { "type": "integer", "minimum": 1, "maximum": 2400 },
-        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-        "post_id": { "$ref": "#/$defs/nullableId" },
-        "profile_id": { "$ref": "#/$defs/nullableId" },
-        "group_id": { "$ref": "#/$defs/nullableId" },
-        "slot": { "enum": ["avatar", "cover", "background", "image", null] },
-        "created_at": { "$ref": "#/$defs/timestamp" },
-        "expires_at": { "$ref": "#/$defs/deadline" }
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "path": {
+          "type": "string",
+          "pattern": "^photos/[a-fA-F0-9-]{36}\\.jpg$"
+        },
+        "mime": {
+          "const": "image/jpeg"
+        },
+        "alt": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "description": "Optional; currently emitted by web, not native iOS."
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2400
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2400
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "post_id": {
+          "$ref": "#/$defs/nullableId"
+        },
+        "profile_id": {
+          "$ref": "#/$defs/nullableId"
+        },
+        "group_id": {
+          "$ref": "#/$defs/nullableId"
+        },
+        "slot": {
+          "enum": [
+            "avatar",
+            "cover",
+            "background",
+            "image",
+            null
+          ]
+        },
+        "created_at": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/deadline"
+        }
       },
       "additionalProperties": true
     },
     "connection": {
       "type": "object",
-      "required": ["member_id", "kind"],
-      "properties": { "member_id": { "$ref": "#/$defs/id" }, "kind": { "enum": ["friend", "family"] } },
+      "required": [
+        "member_id",
+        "kind"
+      ],
+      "properties": {
+        "member_id": {
+          "$ref": "#/$defs/id"
+        },
+        "kind": {
+          "enum": [
+            "friend",
+            "family"
+          ]
+        }
+      },
       "additionalProperties": true
     },
     "groupMembership": {
       "type": "object",
-      "required": ["group_id", "role"],
-      "properties": { "group_id": { "$ref": "#/$defs/id" }, "role": { "enum": ["owner", "moderator", "member"] } },
+      "required": [
+        "group_id",
+        "role"
+      ],
+      "properties": {
+        "group_id": {
+          "$ref": "#/$defs/id"
+        },
+        "role": {
+          "enum": [
+            "owner",
+            "moderator",
+            "member"
+          ]
+        }
+      },
       "additionalProperties": true
+    },
+    "customReaction": {
+      "type": "object",
+      "required": [
+        "emoji",
+        "custom"
+      ],
+      "properties": {
+        "emoji": {
+          "type": "string",
+          "pattern": "^c1_[a-f0-9]{64}$"
+        },
+        "custom": {
+          "type": "object",
+          "required": [
+            "name",
+            "png"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9_]{1,32}$"
+            },
+            "png": {
+              "type": "string",
+              "maxLength": 43692,
+              "contentEncoding": "base64",
+              "description": "Canonical static PNG, at most128x128 pixels and32768 bytes. Validate decode, chunk structure and SHA256 against emoji ID."
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "reactionEntry": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/authoredEntry"
+        },
+        {
+          "properties": {
+            "id": {
+              "type": "string",
+              "pattern": "^(?:[A-Za-z0-9_-]{43}|[a-fA-F0-9-]{36})$"
+            }
+          },
+          "type": "object"
+        }
+      ]
     }
   }
 }

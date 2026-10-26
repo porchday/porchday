@@ -6,7 +6,7 @@ root=Path(__file__).resolve().parents[1]
 parser=argparse.ArgumentParser(description=__doc__)
 parser.add_argument('output',type=Path,help='Local output .tar.gz; no upload is performed')
 args=parser.parse_args()
-allowed=['apps/web','apps/ios','packages/crypto','third-party-licenses','THIRD_PARTY_NOTICES.md','LICENSE','package.json','package-lock.json','apps/api/package.json','tsconfig.base.json','scripts/build-third-party-notices.py']
+allowed=['apps/web','apps/ios','packages/crypto','third-party-licenses','THIRD_PARTY_NOTICES.md','LICENSE','package.json','package-lock.json','apps/api/package.json','tsconfig.base.json','scripts/build-third-party-notices.py','scripts/generate-unicode-emoji.py']
 paths=subprocess.check_output(['git','ls-files','-z','--',*allowed],cwd=root).decode().split('\0')
 readme=b'Porchday client source bundle. See THIRD_PARTY_NOTICES.md for pinned dependency source and rebuild instructions. This artifact is prepared locally; its creation does not publish any source. No service credentials are included.\n'
 buffer=io.BytesIO()

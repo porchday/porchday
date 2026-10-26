@@ -18,7 +18,7 @@ export interface ArchiveSetV1 {
   complete?: boolean;
 }
 export interface AuthoredEntryV1 {
-  id: UUID;
+  id: string; // UUID for posts/comments; keyed tag for reactions.
   created_at: Timestamp;
   expires_at: Deadline;
   audience: Audience;
@@ -50,6 +50,7 @@ export interface ArchiveManifestV1 {
   handle: string;
   archive_set?: ArchiveSetV1;
   profile: JsonObject | null;
+  emojiLibrary?: { customEmojis: JsonObject[] } | null;
   posts: AuthoredEntryV1[];
   comments: AuthoredEntryV1[];
   reactions: AuthoredEntryV1[];
@@ -99,7 +100,7 @@ export interface PorchdayImportTransport {
 /** Exact export revalidation body; these references are NOT archive.json fields. */
 export interface ExportValidationRequest {
   items: {
-    kind: "profile" | "post" | "comment" | "post_reaction" | "comment_reaction" | "media";
+    kind: "profile" | "emoji_library" | "post" | "comment" | "post_reaction" | "comment_reaction" | "media";
     id: string;
     revision: number;
     expires_at: Deadline;

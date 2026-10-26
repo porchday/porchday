@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   encryptArchive,
   decryptArchive,
@@ -33,8 +33,21 @@ import {
   type PortableArchive,
 } from "./archive";
 import { jpegDimensions, validatedPhoto } from "./photo-safety";
+import {
+  validateReactionPayload,
+  reactionDisplay,
+} from "@porchday/crypto/reactions";
+import {
+  emojiLibraryIO,
+  readEmojiLibrary,
+  updateEmojiLibrary,
+  validateEmojiLibrary,
+  type EmojiLibrary,
+} from "./emoji-library";
+import { validateCustomEmojiPixels } from "./emoji-images";
 const SECTIONS = [
   "profile",
+  "emoji_library",
   "posts",
   "comments",
   "post_reactions",
@@ -48,6 +61,7 @@ const canonicalDate = (value: unknown) =>
 type Reference = {
   kind:
     | "profile"
+    | "emoji_library"
     | "post"
     | "comment"
     | "post_reaction"
@@ -59,15 +73,28 @@ type Reference = {
 };
 type PlannedPart = { file: File; archive: PortableArchive };
 type ImportPlan = {
+  owner: string;
   parts: PlannedPart[];
   entries: Json[];
   media: Map<string, { part: number; record: Json }>;
   profile: Json | null;
+  emojiLibrary: EmojiLibrary | null;
   expired: number;
   expiredPhotos: number;
 };
 export function DataTransfer() {
   const vault = useVault();
+  const owner = vault.member.id + ":" + vault.device.id;
+  const latestOwner = useRef(owner);
+  latestOwner.current = owner;
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const current = () => mounted.current && latestOwner.current === owner;
   const [plain, setPlain] = useState(false);
   const [archiveKey, setArchiveKey] = useState("");
   const [importKey, setImportKey] = useState("");
@@ -81,6 +108,10 @@ export function DataTransfer() {
   const cancel = useRef(false);
   const action = useAction();
   function ensureContinue() {
+    if (!current())
+      throw new Error(
+        "Your account or unlocked device changed. Start a new transfer.",
+      );
     if (cancel.current)
       throw new Error(
         "Transfer canceled. Any files already saved remain yours.",
@@ -208,9 +239,9 @@ export function DataTransfer() {
             });
             const page: Json = await get(`/exports/${job.id}?${query}`);
             const rows =
-              section === "profile"
-                ? page.profile
-                  ? [page.profile]
+              section === "profile" || section === "emoji_library"
+                ? page[section]
+                  ? [page[section]]
                   : []
                 : page[section] || [];
             for (const row of rows) {
@@ -225,6 +256,23 @@ export function DataTransfer() {
                   await room(JSON.stringify(payload).length * 3 + 1024);
                   archive.profile = payload;
                   refs.push(reference("profile", row));
+                }
+              } else if (section === "emoji_library") {
+                if (row.envelope) {
+                  const library = await readEmojiLibrary({
+                    ...emojiLibraryIO(vault, current),
+                    read: async () => ({
+                      envelope: row.envelope,
+                      revision: row.envelope.context.revision,
+                    }),
+                  });
+                  for (const item of library.payload.customEmojis) {
+                    ensureContinue();
+                    await validateCustomEmojiPixels(item);
+                  }
+                  await room(JSON.stringify(library.payload).length * 3 + 1024);
+                  archive.emojiLibrary = library.payload;
+                  refs.push(reference("emoji_library", row));
                 }
               } else if (section === "connections" || section === "groups") {
                 await room(JSON.stringify(row).length * 3 + 512);
@@ -273,10 +321,19 @@ export function DataTransfer() {
                 });
                 refs.push(reference("media", { ...row, envelope }));
               } else {
-                const payload = await vault.open({
+                let payload = await vault.open({
                   envelope: row.envelope,
                   id: row.id,
                 });
+                if (section.endsWith("reactions")) {
+                  payload = await validateReactionPayload(payload);
+                  if ("custom" in payload)
+                    await validateCustomEmojiPixels(
+                      payload as Parameters<
+                        typeof validateCustomEmojiPixels
+                      >[0],
+                    );
+                }
                 const entry = {
                   id: row.id || row.envelope.context.id,
                   created_at: canonicalDate(
@@ -319,7 +376,7 @@ export function DataTransfer() {
           `Your archive is complete: ${saved.length} ${saved.length === 1 ? "part" : "parts"}. Keep every part together${plain ? "" : ", with the separate archive secret"}.`,
         );
       } finally {
-        await del(`/exports/${job.id}`).catch(() => {});
+        if (current()) await del(`/exports/${job.id}`).catch(() => {});
       }
     }, "Your archive was decrypted and prepared only on this device.");
   }
@@ -347,6 +404,7 @@ export function DataTransfer() {
       const parts: PlannedPart[] = [];
       const media = new Map<string, { part: number; record: Json }>();
       let profile: Json | null = null;
+      let emojiLibrary: EmojiLibrary | null = null;
       for (const file of Array.from(selected)) {
         ensureContinue();
         setProgress(`Checking ${file.name}…`);
@@ -366,6 +424,25 @@ export function DataTransfer() {
           if (profile) throw new Error("This archive repeats its profile.");
           profile = archive.profile;
         }
+        if (archive.emojiLibrary != null) {
+          if (emojiLibrary)
+            throw new Error("This archive repeats its emoji collection.");
+          emojiLibrary = await validateEmojiLibrary(archive.emojiLibrary);
+          for (const item of emojiLibrary.customEmojis) {
+            ensureContinue();
+            await validateCustomEmojiPixels(item);
+          }
+        }
+        for (const reaction of archive.reactions) {
+          if (
+            reaction.expires_at &&
+            Date.parse(reaction.expires_at) <= Date.now()
+          )
+            continue;
+          const payload = await validateReactionPayload(reaction.payload);
+          if ("custom" in payload) await validateCustomEmojiPixels(payload);
+          reaction.payload = payload;
+        }
         parts.push({ file, archive });
       }
       validateSet(parts.map((p) => p.archive));
@@ -379,12 +456,13 @@ export function DataTransfer() {
         return !photo.expires_at || Date.parse(photo.expires_at) > Date.now();
       };
       for (const entry of entries)
-        entry.payload = {
-          ...entry.payload,
-          media: (entry.payload.media || []).filter((photo: Json) =>
-            photoAvailable(photo.id),
-          ),
-        };
+        if (entry.journal_kind !== "reaction")
+          entry.payload = {
+            ...entry.payload,
+            media: (entry.payload.media || []).filter((photo: Json) =>
+              photoAvailable(photo.id),
+            ),
+          };
       if (profile) {
         profile = { ...profile };
         for (const slot of ["avatar", "cover", "background"])
@@ -450,10 +528,12 @@ export function DataTransfer() {
         0,
       );
       setPlan({
+        owner,
         parts,
         entries,
         media,
         profile,
+        emojiLibrary,
         expired: allCount - eligibleEntries(parts.map((p) => p.archive)).length,
         expiredPhotos: [...media.values()].filter(
           ({ record }) =>
@@ -469,6 +549,19 @@ export function DataTransfer() {
     if (!plan) return;
     cancel.current = false;
     await action.run(async () => {
+      ensureContinue();
+      if (plan.owner !== owner)
+        throw new Error(
+          "This import belongs to a different unlocked account. Choose the archive again.",
+        );
+      if (plan.emojiLibrary) {
+        setProgress("Merging saved images into your private emoji collection…");
+        await updateEmojiLibrary(
+          emojiLibraryIO(vault, () => current() && !cancel.current),
+          { add: plan.emojiLibrary.customEmojis },
+        );
+        ensureContinue();
+      }
       const source = plan.parts[0].archive.member_id;
       let cachedPart = -1;
       let cachedFiles: Record<string, Uint8Array> = {};
@@ -563,7 +656,7 @@ export function DataTransfer() {
             ...entry.payload,
             ...(entry.journal_kind === "reaction"
               ? {
-                  text: `Imported reaction: ${String(entry.payload.emoji || "reaction")}`,
+                  text: `Imported reaction: ${reactionDisplay(await validateReactionPayload(originalPayload)).name}`,
                 }
               : {}),
             media,
@@ -652,9 +745,9 @@ export function DataTransfer() {
         </span>
         <h2>Export your data</h2>
         <p>
-          Export your own posts, comments, reactions, photos, profile, and
-          minimal connection/group references. Other people’s private content is
-          not included.
+          Export your own posts, comments, reactions, saved emoji images,
+          photos, profile, and minimal connection/group references. Other
+          people’s private content is not included.
         </p>
         <label className="check-field">
           <input
@@ -790,6 +883,14 @@ export function DataTransfer() {
                   </span>
                 </label>
               )}
+              {plan.emojiLibrary && (
+                <p>
+                  {plan.emojiLibrary.customEmojis.length} saved emoji images
+                  will be merged into your private collection. Existing images
+                  and names are kept; imports that exceed the 48-image limit
+                  stop with an error.
+                </p>
+              )}
               <p>
                 No invitations are sent. Connections and memberships remain
                 reference data; reconnecting always requires fresh mutual
@@ -801,9 +902,9 @@ export function DataTransfer() {
             </div>
           )}
           <p className="small-copy">
-            JSON, HTML, JPEG photos, and checksums are portable files. Other
-            platforms decide which fields they can accept; no direct destination
-            adapter is promised.
+            JSON, HTML, JPEG photos, PNG emoji images, and checksums are
+            portable files. Other platforms decide which fields they can accept;
+            no direct destination adapter is promised.
           </p>
         </section>
       )}

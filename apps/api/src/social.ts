@@ -6,6 +6,7 @@ import {feedTiming} from './feed-timing';
 import { envelopeSchema } from './social-contract.js';
 import { registerMediaRoutes } from './social-media.js';
 import { registerExportRoutes } from './social-exports.js';
+import { registerEmojiRoutes } from './social-emoji.js';
 import { registerPushRoutes } from './social-push.js';
 import { registerNativePushRoutes } from './social-native-push.js';
 import type { Env, Variables } from './types.js';
@@ -116,7 +117,7 @@ export function createSocialRoutes() {
         const code = (err as {
             code?: string;
         }).code;
-        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED'];
+        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED','REACTION_LIMIT','REACTION_STORAGE_LIMIT'];
         if (known.includes(err.message))
             return c.json({ error: { code: err.message, message: err.message.toLowerCase().replaceAll('_', ' ') } }, 409);
         if (code === '23505')
@@ -133,6 +134,7 @@ export function createSocialRoutes() {
         if (!allowed)
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
+    registerEmojiRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     app.get('/me', async (c) => c.json(await tx(c, async (db) => { const [member] = await db `select m.id,m.status,m.notification_preferences,p.handle,p.envelope from app.members m join app.profiles p on p.member_id=m.id where m.id=${c.get('memberId')}`; const [{ count }] = await db `select count(*)::int count from app.connections`; return { ...member, connection_count: count, connection_limit: 300 }; })));
     app.patch('/me', async (c) => { const b = await body(c, z.object({ notification_preferences: z.object({ in_app: z.boolean(), push: z.boolean() }).strict() })); return c.json(await tx(c, async (db) => { await db `update app.members set notification_preferences=${db.json(b.notification_preferences)} where id=${c.get('memberId')}`; return { ok: true }; })); });
     app.get('/profiles/:handle', async (c) => c.json(await tx(c, async (db) => { const [lookup] = await db `select * from app.lookup_handle(${c.req.param('handle').toLowerCase()})`; if (!lookup)

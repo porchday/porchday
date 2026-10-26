@@ -1,5 +1,12 @@
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import type { Json } from "./api";
+import {
+  customPngBytes,
+  validateCustomPng,
+  unicodeMetadata,
+  LEGACY_REACTIONS,
+} from "@porchday/crypto/reactions";
+import type { EmojiLibrary } from "./emoji-library";
 export const PART_BUDGET = 20 * 1024 * 1024;
 export const PART_MAX = 30 * 1024 * 1024;
 export interface ArchiveSet {
@@ -16,6 +23,7 @@ export interface PortableArchive extends Json {
   handle: string;
   archive_set?: ArchiveSet;
   profile: Json | null;
+  emojiLibrary?: EmojiLibrary | null;
   posts: Json[];
   comments: Json[];
   reactions: Json[];
@@ -61,6 +69,27 @@ export async function checksum(bytes: Uint8Array) {
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
 }
+/** Render only local static PNG bytes or escaped text, never an authored URL. */
+export function archiveReactionHtml(payload: Json) {
+  if (typeof payload.emoji !== "string") return "";
+  if (/^c1_[a-f0-9]{64}$/.test(payload.emoji) && payload.custom) {
+    try {
+      if (!/^[a-z0-9_]{1,32}$/.test(payload.custom.name))
+        throw new Error("Invalid name");
+      const bytes = customPngBytes(payload.custom.png);
+      validateCustomPng(bytes);
+      return `<span><img width="32" height="32" src="data:image/png;base64,${payload.custom.png}" alt="${htmlEscape(payload.custom.name)}"> ${htmlEscape(payload.custom.name)}</span>`;
+    } catch {
+      return htmlEscape("Unavailable image reaction");
+    }
+  }
+  const legacy = LEGACY_REACTIONS.find((item) => item.id === payload.emoji);
+  const unicode =
+    typeof payload.unicode === "string"
+      ? unicodeMetadata(payload.unicode)
+      : null;
+  return htmlEscape(legacy?.unicode ?? unicode?.unicode ?? payload.emoji);
+}
 export function packArchive(
   archive: PortableArchive,
   photos: Record<string, Uint8Array> = {},
@@ -69,7 +98,7 @@ export function packArchive(
     ...photos,
     "archive.json": strToU8(JSON.stringify(archive, null, 2)),
     "index.html": strToU8(
-      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your Porchday archive</title><style>body{font:18px/1.6 system-ui;max-width:760px;margin:60px auto;padding:20px;color:#244e43;background:#f6f3ea}article{padding:25px 0;border-bottom:1px solid #bbb}img{max-width:100%}small{font-size:14px}p{white-space:pre-wrap}</style><h1>Your Porchday archive</h1><p>@${htmlEscape(archive.handle)} · ${htmlEscape(archive.generated_at)}</p><p>${archive.archive_set ? `Part ${archive.archive_set.index}${archive.archive_set.total ? " of " + archive.archive_set.total : ""}. Keep all files in this archive set. Extract all parts into one folder to view photos referenced by other parts.` : ""}</p><p>Your contributions only. Other members’ private content is not included. Saved copies are outside the service’s deletion control.</p>${[...archive.posts, ...archive.comments, ...archive.reactions].map((p) => `<article><small>${htmlEscape(p.created_at)} · ${htmlEscape(p.audience)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small><p>${htmlEscape(p.payload.text || p.payload.emoji || "")}</p>${(p.payload.media || []).map((m: Json) => `<figure><img src="photos/${htmlEscape(m.id)}.jpg" alt="${htmlEscape(m.alt)}"><figcaption>${htmlEscape(m.alt)}</figcaption></figure>`).join("")}</article>`).join("")}<p>See archive.json for profile, connection/group references, reactions, and provenance. Reference IDs do not reveal unavailable private context.</p></html>`,
+      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your Porchday archive</title><style>body{font:18px/1.6 system-ui;max-width:760px;margin:60px auto;padding:20px;color:#244e43;background:#f6f3ea}article{padding:25px 0;border-bottom:1px solid #bbb}img{max-width:100%}small{font-size:14px}p{white-space:pre-wrap}</style><h1>Your Porchday archive</h1><p>@${htmlEscape(archive.handle)} · ${htmlEscape(archive.generated_at)}</p><p>${archive.archive_set ? `Part ${archive.archive_set.index}${archive.archive_set.total ? " of " + archive.archive_set.total : ""}. Keep all files in this archive set. Extract all parts into one folder to view photos referenced by other parts.` : ""}</p><p>Your contributions only. Other members’ private content is not included. Saved copies are outside the service’s deletion control.</p>${[...archive.posts, ...archive.comments, ...archive.reactions].map((p) => `<article><small>${htmlEscape(p.created_at)} · ${htmlEscape(p.audience)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small><p>${htmlEscape(p.payload.text || "")}${p.payload.emoji ? archiveReactionHtml(p.payload) : ""}</p>${(p.payload.media || []).map((m: Json) => `<figure><img src="photos/${htmlEscape(m.id)}.jpg" alt="${htmlEscape(m.alt)}"><figcaption>${htmlEscape(m.alt)}</figcaption></figure>`).join("")}</article>`).join("")}${archive.emojiLibrary ? `<section><h2>My images</h2>${archive.emojiLibrary.customEmojis.map((item) => `<p>${archiveReactionHtml(item)}</p>`).join("")}</section>` : ""}<p>See archive.json for profile, saved emoji images, connection/group references, reactions, and provenance. Reference IDs do not reveal unavailable private context.</p></html>`,
     ),
   };
   if (archive.archive_set) {

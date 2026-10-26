@@ -137,6 +137,7 @@ All routes below use the v1 base address and require `Authorization: Bearer <acc
 | Scope | GET route | Returned field and meaning |
 | --- | --- | --- |
 | `profile:read` | `/own/profile` | `profile`: the member's profile row, or `null` |
+| `emoji:read` | `/own/emojis` | `emoji_library`: the owner-only encrypted collection row, or `null`; decrypt locally with the owner's keys |
 | `content:read` | `/own/content?section=posts` | `posts`: authored posts; this is the default section |
 | `content:read` | `/own/content?section=comments` | `comments`: authored comments/replies |
 | `content:read` | `/own/content?section=post_reactions` | `post_reactions`: the member's reactions to posts |

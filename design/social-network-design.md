@@ -62,7 +62,7 @@ Confirmed product decisions:
 - Members control their data: export, integrations, migration, and deletion are core capabilities, not paid extras. The application will be open source under the Apache License 2.0 (`Apache-2.0`).
 - No AI agents may participate as members or operate member accounts. The technical solution for proof of human participation is deferred to future work and is not a launch prerequisite.
 
-- Reactions work like Slack: each member can add multiple distinct emoji reactions to each post or comment. All comments offer the same reaction options as posts.
+- Reactions work like Slack: each member can add multiple distinct emoji reactions to each post or comment. All comments offer the same reaction options as posts. The picker supports the bundled Unicode emoji set (including skin tones, flags, and joined sequences) and uploaded custom images. Saved custom emojis live in a separate owner-only encrypted collection, not a shared profile or public catalog; using one embeds an encrypted copy in the reaction so authorized viewers can reuse it. Initial custom uploads are static PNG/JPEG/WebP, normalized to transparent-capable PNG at most 128×128 pixels and 32 KiB. Each collection supports 48 images; each person can add 20 different reactions per post/comment. A whole thread has a 16 MiB encrypted-reaction budget. Collection export/import, revision conflicts, account deletion, parent deadlines, and restore-safe removals are required.
 
 - Support email/password sign-in only for the MVP. Google and GitHub OAuth are deferred; no social sign-in or email magic-link login is enabled at launch.
 

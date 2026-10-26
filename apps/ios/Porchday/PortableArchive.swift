@@ -12,7 +12,11 @@ struct PortableArchive {
         let archive = try Archive(accessMode: .create)
         var entries = files
         entries["archive.json"] = try JSONEncoder().encode(manifest)
-        let texts = (manifest["posts"].array + manifest["comments"].array).map { "<article><p>" + Self.escape($0["payload"]["text"].string ?? "") + "</p><small>" + Self.escape($0["created_at"].string ?? "") + "</small></article>" }.joined()
+        let texts = (manifest["posts"].array + manifest["comments"].array).map { "<article><p>" + Self.escape($0["payload"]["text"].string ?? "") + "</p><small>" + Self.escape($0["created_at"].string ?? "") + "</small></article>" }.joined() + manifest["reactions"].array.map { row in
+            guard let reaction = try? ReactionValue.parse(row["payload"]) else { return "<article><p>Reaction data is preserved in archive.json.</p></article>" }
+            let image = reaction.png.map { "<img width=32 height=32 alt=\"" + Self.escape(reaction.label) + "\" src=\"data:image/png;base64," + $0.base64EncodedString() + "\">" } ?? Self.escape(reaction.unicode ?? reaction.label)
+            return "<article><p>Reaction: " + image + "</p></article>"
+        }.joined()
         entries["index.html"] = Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>This is one part of a member-owned archive. Keep every part. Saved copies are outside service deletion control.</p>" + texts + "<p>Full structured data is in archive.json. Photos may be in another archive part.</p>").utf8)
         if let index = manifest["archive_set"]["index"].integer {
             let suffix=String(format:"%03d",index)
@@ -41,6 +45,7 @@ struct PortableArchive {
         guard let manifestBytes = files.removeValue(forKey: "archive.json") else { throw PorchError.message("Missing archive.json.") }
         let manifest = try JSONDecoder().decode(JSON.self, from: manifestBytes)
         guard manifest["format"].string == "porchday-archive", manifest["version"].integer == 1, let source = manifest["member_id"].string, UUID(uuidString: source) != nil else { throw PorchError.message("Unsupported archive schema.") }
+        if manifest["emojiLibrary"] != .null { _ = try EmojiLibraryPayload.parse(manifest["emojiLibrary"]) }
         for photo in manifest["media"].array { guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID).jpg", let bytes = files[path], photo["mime"].string == "image/jpeg", digest(bytes) == photo["sha256"].string, photo["expires_at"] == .null || photo["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("A photo is missing or failed its checksum.") } }
         return PortableArchive(manifest: manifest, files: files)
     }
@@ -68,7 +73,7 @@ struct PortableArchive {
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-import-"+UUID().uuidString,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         try FileManager.default.setAttributes([.protectionKey:FileProtectionType.complete],ofItemAtPath:directory.path)
         var loaded=false;defer { if !loaded { try? FileManager.default.removeItem(at:directory) } }
-        var staged:[(Int,URL)]=[],setID:String?,memberID:String?,total:Int?,completions=0,entryCount=0,profileCount=0,photoParts:[String:Int]=[:],recordIDs=Set<String>(),references=Set<String>()
+        var staged:[(Int,URL)]=[],setID:String?,memberID:String?,total:Int?,completions=0,entryCount=0,profileCount=0,libraryCount=0,photoParts:[String:Int]=[:],recordIDs=Set<String>(),references=Set<String>()
         for url in urls {
             let scoped=url.startAccessingSecurityScopedResource();defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             let archive=try read(url:url,secret:secret),set=archive.manifest["archive_set"],index=set["index"].integer ?? 1
@@ -85,9 +90,10 @@ struct PortableArchive {
                 profileCount += 1
                 for slot in ["avatar","cover","background"] { if let id=archive.manifest["profile"][slot]["id"].string { references.insert(id) } }
             }
+            if archive.manifest["emojiLibrary"] != .null { libraryCount += 1 }
             for photo in archive.manifest["media"].array { guard let id=photo["id"].string,photoParts[id]==nil else { throw PorchError.message("Duplicate photo across archive parts.") };photoParts[id]=index-1 }
         }
-        guard profileCount<=1,completions==1,total==urls.count,Set(staged.map(\.0))==Set(1...urls.count),references.isSubset(of:Set(photoParts.keys)) else { throw PorchError.message("The archive is incomplete. Select every part, including its final completion part.") }
+        guard profileCount<=1,libraryCount<=1,completions==1,total==urls.count,Set(staged.map(\.0))==Set(1...urls.count),references.isSubset(of:Set(photoParts.keys)) else { throw PorchError.message("The archive is incomplete. Select every part, including its final completion part.") }
         loaded=true
         return ArchiveSelection(urls:staged.sorted{$0.0<$1.0}.map(\.1),secret:secret,memberID:memberID ?? "",entryCount:entryCount,photoCount:photoParts.count,photos:photoParts,orphanPhotoIDs:Array(Set(photoParts.keys).subtracting(references)))
     }
@@ -100,7 +106,7 @@ struct PortableArchive {
         let secret=plaintext ? nil:try CryptoVault.randomSecret(),setID=UUID().uuidString.lowercased(),date=PorchDate.string()
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-export-"+setID,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         var urls:[URL]=[],partNumber=1,files:[String:Data]=[:],refs:[JSON]=[],allRefs:[JSON]=[],size=0
-        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([])]
+        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"emojiLibrary":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([])]
         var manifest=base
         func flush(final:Bool) async throws {
             if !final && size==0 { return }
@@ -115,24 +121,29 @@ struct PortableArchive {
             let added=try JSONEncoder().encode(value).count*3+(photo?.1.count ?? 0)+1024
             if size+added>PortableArchive.partBudget { try await flush(final:false) }
             guard added<=PortableArchive.partBudget else { throw PorchError.message("A single archive record exceeds the 20 MB part limit.") }
-            if section=="profile" { manifest[section]=value } else { manifest[section] = .array((manifest[section]?.array ?? [])+[value]) }
+            if section=="profile" || section=="emojiLibrary" { manifest[section]=value } else { manifest[section] = .array((manifest[section]?.array ?? [])+[value]) }
             if let reference { refs.append(reference);allRefs.append(reference) };if let photo { files[photo.0]=photo.1 };size += added
         }
         do {
-            for section in ["profile","posts","comments","post_reactions","comment_reactions","media","connections","groups"] {
+            for section in ["profile","emoji_library","posts","comments","post_reactions","comment_reactions","media","connections","groups"] {
                 var cursor:String?=nil
                 repeat {
                     try Task.checkCancellation();progress("Preparing \(section.replacingOccurrences(of:"_",with:" "))…")
                     var query=URLComponents();query.queryItems=[URLQueryItem(name:"section",value:section)]+(cursor.map{[URLQueryItem(name:"cursor",value:$0)]} ?? [])
                     let page=try await api.social("/exports/"+jobID+"?"+(query.percentEncodedQuery ?? ""))
-                    let rows=section=="profile" ? (page["profile"] == .null ? []:[page["profile"]]) : page[section].array
+                    let rows=["profile","emoji_library"].contains(section) ? (page[section] == .null ? []:[page[section]]) : page[section].array
                     for row in rows {
                         if section=="connections" || section=="groups" { try await append(row,section:section);continue }
                         let context=row["envelope"]["context"],deadline=PorchDate.minimum([row["effective_expires_at"],row["expires_at"],context["expiresAt"]])
                         if deadline.map({$0<=Date()})==true { continue }
                         guard context["authorId"].string==member.id || (section=="profile" && row["envelope"] == .null) else { throw PorchError.message("Export contained another person's contribution.") }
                         let kind=section=="post_reactions" ? "post_reaction":section=="comment_reactions" ? "comment_reaction":section=="posts" ? "post":section=="comments" ? "comment":section
-                        let reference:JSON = .object(["kind":.string(kind),"id":row["export_id"],"revision":context["revision"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null])
+                        let reference:JSON = .object(["kind":.string(kind),"id":section=="emoji_library" ? .string(member.id):row["export_id"],"revision":context["revision"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null])
+                        if section=="emoji_library" {
+                            guard context["kind"].string=="profile",context["id"].string==member.id,context["audience"].string=="only_me",context["parentId"] == .null,context["groupId"] == .null,context["expiresAt"] == .null,
+                                  row["envelope"]["recipients"].array.allSatisfy({$0["memberId"].string==member.id}) else { throw PorchError.message("Invalid private emoji collection.") }
+                            let payload=try await vault.open(row);_ = try EmojiLibraryPayload.parse(payload);try await append(payload,section:"emojiLibrary",reference:reference);continue
+                        }
                         if section=="profile" { if row["envelope"] != .null { let payload=try await vault.open(row);try await append(payload,section:"profile",reference:reference) };continue }
                         if section=="media" {
                             guard let id=row["id"].string else { throw PorchError.message("Invalid photo identifier.") }
@@ -160,7 +171,7 @@ struct PortableArchive {
     }
     func importOwned(_ selection: ArchiveSelection) async throws -> Int {
         guard let member else { throw PorchError.message("Sign in first.") }
-        let sourceID=selection.memberID,jobID=UUID().uuidString.lowercased()
+        let sourceID=selection.memberID,jobID=UUID().uuidString.lowercased(),librarySession=try ReactionSession(self)
         var imported=0
         func importEntry(_ kind:String,_ row:JSON) async throws {
             try Task.checkCancellation()
@@ -168,7 +179,7 @@ struct PortableArchive {
             guard let oldID=row["id"].string,let created=row["created_at"].string.flatMap(PorchDate.parse),created<=Date() else { throw PorchError.message("Invalid archive timestamp or identity.") }
             let newID=UUID().uuidString.lowercased();var payload=row["payload"],media:[JSON]=[]
             for photo in payload["media"].array { guard let id=photo["id"].string else { throw PorchError.message("Invalid photo reference.") };let (metadata,_)=try selection.photo(id);if try PortableArchive.photoDeadline(metadata,parent:expiry).map({$0<=Date()})==true { continue };media.append(try await importPhoto(selection,id:id,parent:newID,expiry:expiry)) }
-            if kind=="reaction" { payload=payload.replacing("text",with:.string("Imported reaction: "+(payload["emoji"].string ?? "unknown"))) }
+            if kind=="reaction" { let reaction=try ReactionValue.parse(payload);payload=payload.replacing("text",with:.string("Imported reaction: "+(reaction.unicode ?? reaction.label))) }
             let provenance:JSON = .object(["kind":.string(kind),"member_id":.string(sourceID),"source_id":.string(oldID),"parent_id":row["parent_id"],"original_audience":row["audience"],"original_group_id":row["group_id"],"prior_provenance":payload["provenance"]])
             payload=payload.replacing("media",with:.array(media)).replacing("reactionSecret",with:.string(try CryptoVault.randomSecret())).replacing("provenance",with:provenance)
             let original:JSON = .object(["id":.string(newID),"kind":.string("post"),"createdAt":.string(PorchDate.string(created)),"revision":.number(1)])
@@ -178,6 +189,7 @@ struct PortableArchive {
         }
         for partIndex in selection.urls.indices {
             let archive=try selection.part(partIndex)
+            if archive.manifest["emojiLibrary"] != .null { _ = try await mergeEmojiLibrary(EmojiLibraryPayload.parse(archive.manifest["emojiLibrary"]),session:librarySession) }
             for (kind,section) in [("post","posts"),("comment","comments"),("reaction","reactions")] { for row in archive.manifest[section].array { try await importEntry(kind,row) } }
             if archive.manifest["profile"] != .null {
                 var profile=archive.manifest["profile"];var attachments:[(String,String)]=[]

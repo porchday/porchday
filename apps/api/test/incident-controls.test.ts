@@ -29,6 +29,7 @@ const pausedRoutes: [keyof Env, string, string, string][] = [
   ['SOCIAL_INVITATIONS_PAUSED', 'POST', '/groups/group/invitations', 'INVITATIONS_PAUSED'],
   ['SOCIAL_INVITATIONS_PAUSED', 'POST', '/group-invitations/invitation/accept', 'INVITATIONS_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'PUT', '/profiles/me', 'POSTING_PAUSED'],
+  ['CONTENT_WRITES_PAUSED', 'PUT', '/emoji-library', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'POST', '/posts', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'POST', '/posts/post/comments', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'POST', '/posts/post/reshare', 'POSTING_PAUSED'],

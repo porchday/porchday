@@ -251,7 +251,7 @@ export async function verifyDeviceAuthorization(signed: SignedStatement<DeviceAu
 /** A secret HMAC tag leaks repeated use for this member/target only, never the emoji value. */
 export async function reactionTag({ secret, targetId, memberId, emoji }: { secret: string; targetId: string; memberId: string; emoji: string }): Promise<string> {
   checkSecret(secret); checkId(targetId, 'reaction target'); checkId(memberId, 'reaction member');
-  if (!/^[a-z0-9_-]{1,40}$/.test(emoji)) throw new Error('Use a canonical emoji catalog ID');
+  if (!/^(?:[a-z0-9_-]{1,40}|[uc]1_[a-f0-9]{64})$/.test(emoji)) throw new Error('Use a canonical reaction ID');
   const key = await crypto.subtle.importKey('raw', base64ToBytes(secret.replace(/-/g, '+').replace(/_/g, '/') + '='), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const data = ENCODER.encode(canonicalJson({ purpose: 'porchday-reaction-v1', targetId, memberId, emoji }));
   return bytesToBase64(new Uint8Array(await crypto.subtle.sign('HMAC', key, data))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

@@ -42,14 +42,15 @@ import { useVault } from "./vault";
 import { reshareDeadline, resharePayload } from "./reshare";
 import { jpegDimensions, validatedPhoto } from "./photo-safety";
 import { preservedPhotoDeadline } from "./archive";
-const CATALOG = [
-  ["like", "👍", "Like"],
-  ["love", "❤️", "Love"],
-  ["laugh", "😄", "Laugh"],
-  ["celebrate", "🎉", "Celebrate"],
-  ["care", "🤗", "Care"],
-  ["sunshine", "☀️", "Sunshine"],
-] as const;
+import {
+  validateReactionPayload,
+  reactionDisplay,
+  type ReactionPayload,
+} from "@porchday/crypto/reactions";
+import { EmojiGlyph, EmojiPicker } from "./EmojiPicker";
+import { decodeReactions, type DecodedReaction } from "./reaction-read";
+import { validateCustomEmojiPixels } from "./emoji-images";
+import type { CustomEmoji } from "./emoji-library";
 export function TimerSelect({
   value,
   onChange,
@@ -951,73 +952,78 @@ export function Reactions({
   reactions: Json[];
   reload: () => Promise<void>;
 }) {
-  const vault = useVault();
-  const [picker, setPicker] = useState(false);
-  const [decoded, setDecoded] = useState<
-    { id: string; emoji: string; memberId: string; tag: string }[]
-  >([]);
+  const vault = useVault(),
+    owner = vault.member.id + ":" + vault.device.id;
+  const identity = owner + ":" + target.id;
+  const current = useRef(identity);
+  current.current = identity;
+  const mounted = useRef(true),
+    changing = useRef(false);
+  const addButton = useRef<HTMLButtonElement>(null);
+  const [picker, setPicker] = useState(false),
+    [suggested, setSuggested] = useState<CustomEmoji | null>(null);
+  const [opened, setOpened] = useState<{
+    identity: string;
+    entries: DecodedReaction[];
+  }>({ identity, entries: [] });
+  const decoded = opened.identity === identity ? opened.entries : [];
   const action = useAction();
   useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  useEffect(() => {
     let alive = true;
-    Promise.all(
-      reactions.map(async (r) => {
-        try {
-          const c = await vault.open({ envelope: r.envelope });
-          const memberId = r.member_id || r.envelope.context.authorId;
-          if (
-            typeof payload?.reactionSecret !== "string" ||
-            !CATALOG.some(([id]) => id === c.emoji)
-          )
-            return null;
-          const expected = await reactionTag({
-            secret: payload.reactionSecret,
-            targetId: target.id,
-            memberId,
-            emoji: String(c.emoji),
-          });
-          if (
-            expected !== r.reaction_tag ||
-            r.envelope.context.id !== expected ||
-            r.envelope.context.parentId !== target.id
-          )
-            return null;
-          return {
-            id: r.envelope.context.id,
-            emoji: String(c.emoji),
-            memberId,
-            tag: r.reaction_tag,
-          };
-        } catch {
-          return null;
-        }
-      }),
-    ).then((rs) => {
-      if (alive) setDecoded(rs.filter(Boolean) as typeof decoded);
-    });
+    const secret = payload?.reactionSecret;
+    setOpened({ identity, entries: [] });
+    if (typeof secret === "string")
+      void decodeReactions(reactions, target.id, secret, {
+        open: (row) => vault.open(row),
+        image: validateCustomEmojiPixels,
+        current: () => alive && mounted.current && current.current === identity,
+      }).then((entries) => {
+        if (alive && current.current === identity)
+          setOpened({ identity, entries });
+      });
     return () => {
       alive = false;
     };
-  }, [JSON.stringify(reactions), payload?.reactionSecret]);
+  }, [JSON.stringify(reactions), payload?.reactionSecret, identity]);
   const isComment = target.envelope.context.kind === "comment";
   const base = isComment
     ? `/comments/${target.id}/reactions`
     : `/posts/${target.id}/reactions`;
-  async function toggle(emoji: string) {
-    if (!payload || typeof payload.reactionSecret !== "string") return;
+  async function toggle(value: ReactionPayload) {
+    if (
+      !payload ||
+      typeof payload.reactionSecret !== "string" ||
+      changing.current ||
+      vault.member.status === "restricted"
+    )
+      return;
+    changing.current = true;
     await action.run(async () => {
+      const chosen = await validateReactionPayload(value);
+      if (!mounted.current || current.current !== identity) return;
       const mine = decoded.find(
-        (r) => r.emoji === emoji && r.memberId === vault.member.id,
+        (entry) =>
+          entry.payload.emoji === chosen.emoji &&
+          entry.memberId === vault.member.id,
       );
       if (mine) await del(`${base}/${encodeURIComponent(mine.tag)}`);
       else {
+        if ("custom" in chosen) await validateCustomEmojiPixels(chosen);
         const tag = await reactionTag({
           secret: payload.reactionSecret as string,
           targetId: target.id,
           memberId: vault.member.id,
-          emoji,
+          emoji: chosen.emoji,
         });
+        if (!mounted.current || current.current !== identity) return;
         const envelope = await vault.seal(
-          { emoji },
+          chosen,
           {
             id: tag,
             kind: "reaction",
@@ -1028,40 +1034,77 @@ export function Reactions({
           },
           isComment ? target.post_id : target.id,
         );
+        if (!mounted.current || current.current !== identity) return;
         await request(`${base}/${tag}`, {
           method: "PUT",
           body: JSON.stringify({ envelope }),
         });
       }
+      if (!mounted.current || current.current !== identity) return;
       await reload();
-      setPicker(false);
+      if (current.current === identity) {
+        setPicker(false);
+        setSuggested(null);
+      }
     });
+    changing.current = false;
   }
+  const choices = [
+    ...new Map(
+      decoded.map((entry) => [entry.payload.emoji, entry.payload]),
+    ).values(),
+  ];
   return (
     <div className="reaction-area">
       <div className="reaction-chips">
-        {CATALOG.map(([id, emoji, label]) => {
-          const values = decoded.filter((r) => r.emoji === id);
-          const count = new Set(values.map((r) => r.memberId)).size;
-          if (!count) return null;
-          const selected = values.some((r) => r.memberId === vault.member.id);
+        {choices.map((value) => {
+          const values = decoded.filter(
+              (entry) => entry.payload.emoji === value.emoji,
+            ),
+            count = new Set(values.map((entry) => entry.memberId)).size;
+          const selected = values.some(
+              (entry) => entry.memberId === vault.member.id,
+            ),
+            label = reactionDisplay(value).name;
           return (
-            <button
-              key={id}
-              className={`reaction-chip ${selected ? "selected" : ""}`}
-              aria-label={`${label}, ${count} ${count === 1 ? "person" : "people"}`}
-              aria-pressed={selected}
-              disabled={action.busy || vault.member.status === "restricted"}
-              onClick={() => toggle(id)}
-            >
-              <span aria-hidden="true">{emoji}</span>
-              {count}
-            </button>
+            <span className="reaction-choice" key={value.emoji}>
+              <button
+                type="button"
+                className={`reaction-chip ${selected ? "selected" : ""}`}
+                aria-label={`${label}, ${count} ${count === 1 ? "person" : "people"}`}
+                aria-pressed={selected}
+                disabled={action.busy || vault.member.status === "restricted"}
+                onClick={() => toggle(value)}
+              >
+                <EmojiGlyph value={value} />
+                {count}
+              </button>
+              {"custom" in value && (
+                <button
+                  type="button"
+                  className="reaction-save-image"
+                  disabled={action.busy || vault.member.status === "restricted"}
+                  aria-label={`Save ${value.custom.name} to my images`}
+                  title="Save to my images"
+                  onClick={() => {
+                    setSuggested(value);
+                    setPicker(true);
+                  }}
+                >
+                  ＋
+                </button>
+              )}
+            </span>
           );
         })}
         <button
+          type="button"
+          ref={addButton}
           className="reaction-add"
-          onClick={() => setPicker(!picker)}
+          onClick={() => {
+            setSuggested(null);
+            setPicker(true);
+          }}
           disabled={!payload || vault.member.status === "restricted"}
           aria-label="Add a reaction"
           aria-expanded={picker}
@@ -1071,25 +1114,20 @@ export function Reactions({
         </button>
       </div>
       {picker && (
-        <div
-          className="reaction-picker"
-          role="group"
-          aria-label="Reaction options"
-        >
-          {CATALOG.map(([id, emoji, label]) => (
-            <button
-              key={id}
-              title={label}
-              aria-label={label}
-              disabled={action.busy || vault.member.status === "restricted"}
-              onClick={() => toggle(id)}
-            >
-              {emoji}
-            </button>
-          ))}
-        </div>
+        <EmojiPicker
+          key={identity}
+          onSelect={toggle}
+          onClose={() => {
+            setPicker(false);
+            setSuggested(null);
+          }}
+          busy={action.busy}
+          error={action.error}
+          suggested={suggested}
+          returnFocusRef={addButton}
+        />
       )}
-      {action.error && <Alert>{action.error}</Alert>}
+      {!picker && action.error && <Alert>{action.error}</Alert>}
     </div>
   );
 }
@@ -1451,9 +1489,7 @@ function CommentComposer({
           onChange={(e) => setText(e.target.value)}
           maxLength={5000}
           rows={2}
-          placeholder={
-            reply ? "Write a reply…" : "Write a comment…"
-          }
+          placeholder={reply ? "Write a reply…" : "Write a comment…"}
           required
         />
       </div>
@@ -1515,7 +1551,11 @@ export function ReportDialog({
     });
   }
   return (
-    <Modal title="Tell us what’s wrong" onClose={onClose} returnFocusRef={returnFocusRef}>
+    <Modal
+      title="Tell us what’s wrong"
+      onClose={onClose}
+      returnFocusRef={returnFocusRef}
+    >
       {done ? (
         <>
           <Alert success>

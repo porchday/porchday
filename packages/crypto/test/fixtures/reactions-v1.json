@@ -1,0 +1,101 @@
+{
+  "v": 1,
+  "secret": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+  "targetId": "post-reaction-fixture",
+  "memberId": "fixture-alice",
+  "vectors": [
+    {
+      "name": "legacy-like",
+      "payload": {
+        "emoji": "like"
+      },
+      "tag": "znCWI3AR3hEnwwky8zXZSqLDTKExB-jY8D9K0hQN3pY"
+    },
+    {
+      "name": "legacy-love",
+      "payload": {
+        "emoji": "love"
+      },
+      "tag": "ExyKkmGhAGzcQ6xTJHAHbitv30qJMXdN8Jf-UNKjD68"
+    },
+    {
+      "name": "legacy-laugh",
+      "payload": {
+        "emoji": "laugh"
+      },
+      "tag": "-DcGR-D9HpQenBYrGYun09rEnxszhPrBhEaely7HsrU"
+    },
+    {
+      "name": "legacy-celebrate",
+      "payload": {
+        "emoji": "celebrate"
+      },
+      "tag": "lVNJqmV4gLNZoCFp7euF5Fb0m2yFjUpmS09IWd-n9Rc"
+    },
+    {
+      "name": "legacy-care",
+      "payload": {
+        "emoji": "care"
+      },
+      "tag": "2HsISZGBzXTTW8ZrTn4rT09ra-D2wb7CaRMRXLdnR18"
+    },
+    {
+      "name": "legacy-sunshine",
+      "payload": {
+        "emoji": "sunshine"
+      },
+      "tag": "h6SOgBbJGdQzAZ2607HFzJkynuBqs2h00XSHRabgAUA"
+    },
+    {
+      "name": "unicode-family",
+      "payload": {
+        "emoji": "u1_32b7d42dae221e37043eef14ee3525ad7c3c081364c26eb3652709873ee78f15",
+        "unicode": "👨‍👩‍👧‍👦"
+      },
+      "tag": "q0KGZCDzKou2InoSoCR22WE67kxaYQe9EBftZHMoHW8"
+    },
+    {
+      "name": "unicode-skin-tone",
+      "payload": {
+        "emoji": "u1_808e57d967d40de643fa9bdc9cd2ebefdaa7407d5721ba749326f5a06941eab7",
+        "unicode": "👌🏽"
+      },
+      "tag": "pcgBFbLFXu0KMzZw3Aq2uybGiOXr2sd45y5UMbAD2M8"
+    },
+    {
+      "name": "unicode-country-flag",
+      "payload": {
+        "emoji": "u1_c2a36180553b709503286972dd4c024fbf36279c8e145c8ef1fa057a2d250928",
+        "unicode": "🇺🇸"
+      },
+      "tag": "x0h_R6EUE07gKp78gcKA8v6qaw4RleF47JsyDXv93Uc"
+    },
+    {
+      "name": "unicode-keycap-alias",
+      "payload": {
+        "emoji": "u1_3a54154ed9521ac47fb973d028932325fa75f99fea9a0d50958bb32878f5cd0b",
+        "unicode": "1️⃣"
+      },
+      "tag": "DIMe44GF3KrHdnX8jGbdTrfmZQ1LR1PICLjYaaqdqJ0"
+    },
+    {
+      "name": "unicode-17-orca",
+      "payload": {
+        "emoji": "u1_4fb92bc27191896062bcec3c8cda319f6e6d5d91a59285e454514b6675660077",
+        "unicode": "🫍"
+      },
+      "tag": "S4DXsC2y1274YDW04A2fagO2k_lu-DthO3yo22Yv7QU"
+    },
+    {
+      "name": "custom-transparent-png",
+      "payload": {
+        "emoji": "c1_d874f9010a041051db2d1b816d54f05b4a2b8581f80712fb5ca86210792de539",
+        "custom": {
+          "name": "green_dot",
+          "png": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGOQWBBQDwADZAGIA+kpOAAAAABJRU5ErkJggg=="
+        }
+      },
+      "tag": "WjRuaZv1fC16dh4dq8KriUVceVdPoAsxIE2YrtL9hYY"
+    }
+  ]
+}

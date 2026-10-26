@@ -25,6 +25,7 @@ const controls: { flag: PauseFlag; code: string; message: string; routes: [strin
       ['POST', /^\/api\/v1\/(?:posts|groups|imports)$/],
       ['POST', /^\/api\/v1\/posts\/[^/]+\/(?:comments|reshare)$/],
       ['PUT', /^\/api\/v1\/profiles\/me$/],
+      ['PUT', /^\/api\/v1\/emoji-library$/],
       ['PUT', /^\/api\/v1\/(?:posts|comments|groups)\/[^/]+$/],
       ['PUT', /^\/api\/v1\/(?:posts|comments)\/[^/]+\/reactions\/[^/]+$/],
       ['PUT', /^\/api\/v1\/media\/[^/]+\/attachment$/],

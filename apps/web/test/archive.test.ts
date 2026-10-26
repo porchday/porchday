@@ -9,7 +9,11 @@ import {
   checksum,
   preservedPhotoDeadline,
   prepareValidatedExport,
+  archiveReactionHtml,
 } from "../src/archive";
+import { unicodeReaction } from "@porchday/crypto/reactions";
+import { validateEmojiLibrary } from "../src/emoji-library";
+import { custom } from "./emoji-fixtures";
 const member = "11111111-1111-4111-8111-111111111111";
 const entry = {
   id: "22222222-2222-4222-8222-222222222222",
@@ -21,6 +25,53 @@ const entry = {
   payload: { text: "A little memory", media: [] },
 };
 describe("portable archive privacy and integrity", () => {
+  it("round-trips an optional private emoji collection and readable Unicode/static-image reactions", async () => {
+    const image = await custom(),
+      unicode = await unicodeReaction("🦦");
+    const archive = emptyArchive(member, "friend");
+    archive.emojiLibrary = { customEmojis: [image] };
+    archive.reactions = [
+      { ...entry, id: "unicode", payload: unicode },
+      { ...entry, id: "image", payload: image },
+    ];
+    const packed = packArchive(archive),
+      unpacked = unpackArchive(packed);
+    expect(await validateEmojiLibrary(unpacked.archive.emojiLibrary)).toEqual(
+      archive.emojiLibrary,
+    );
+    expect(unpacked.archive.reactions.map((value) => value.payload)).toEqual([
+      unicode,
+      image,
+    ]);
+    const html = strFromU8(unpacked.files["index.html"]);
+    expect(html).toContain("🦦");
+    expect(html).toContain("<h2>My images</h2>");
+    expect(html).toContain("data:image/png;base64," + image.custom.png);
+    expect(
+      unpackArchive(packArchive(emptyArchive(member, "old"))).archive,
+    ).not.toHaveProperty("emojiLibrary");
+    const nativePart = emptyArchive(member, "native");
+    nativePart.emojiLibrary = null;
+    expect(unpackArchive(packArchive(nativePart)).archive.emojiLibrary).toBeNull();
+  });
+  it("never renders authored image URLs or malicious custom names in archive HTML", async () => {
+    const image = await custom();
+    for (const bad of [
+      { ...image, custom: { ...image.custom, name: 'x" onerror="alert(1)' } },
+      {
+        ...image,
+        custom: { ...image.custom, png: "https://example.test/image.svg" },
+      },
+      {
+        ...image,
+        custom: { ...image.custom, png: btoa('<svg onload="alert(1)"/>') },
+      },
+    ])
+      expect(archiveReactionHtml(bad)).toBe("Unavailable image reaction");
+    expect(archiveReactionHtml({ emoji: "<img src=x onerror=alert(1)>" })).toBe(
+      "&lt;img src=x onerror=alert(1)&gt;",
+    );
+  });
   it("round-trips profile fields and authored content without importing private account credentials", () => {
     const archive = emptyArchive(member, "gardenfriend");
     archive.profile = {

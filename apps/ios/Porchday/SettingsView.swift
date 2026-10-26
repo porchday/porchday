@@ -32,7 +32,7 @@ struct SettingsView: View {
             if let notice = model.member?.access.notice { Section { Text(notice) } }
             Section("Account") { Text("@" + (model.member?.handle ?? "")); if let device = vault.device { Text("Device fingerprint").font(.caption); Text(device.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }; Text("Compare fingerprints through a channel you trust. The service can see account and delivery metadata, but does not hold your content keys.").font(.footnote) }
             Section("Your data") {
-                Text("Export your own posts, comments, reactions, photos and profile. References to connections and groups are included; other people's private contributions are excluded.")
+                Text("Export your own posts, comments, reactions, custom emoji collection, photos and profile. References to connections and groups are included; other people's private contributions are excluded.")
                 Toggle("Export readable, unencrypted ZIP files", isOn: $plaintext)
                 if plaintext { Text("Anyone with these files can read them. Saved copies cannot be recalled after deletion or expiry.").foregroundStyle(.orange) }
                 Button(busy ? "Preparing archive…" : "Export my data") { Task { await export() } }.disabled(busy || !vault.unlocked)
@@ -47,6 +47,7 @@ struct SettingsView: View {
                 }
             }
             if socialSettingsAvailable {
+            Section("Custom emoji") { NavigationLink("Manage my custom emoji") { ReactionPicker() } }
             Section("Password and sessions") {
                 SecureField("Current password", text: $currentPassword).textContentType(.password)
                 SecureField("New password", text: $newPassword).textContentType(.newPassword)

@@ -84,3 +84,9 @@ Migration currently means the implemented Porchday web/iOS private importer or a
 - Contract tests: [archive-contract.test.ts](../../scripts/archive-contract.test.ts). Run `npx vitest run scripts/archive-contract.test.ts`; typecheck the interfaces with `npx tsc -p docs/archive/tsconfig.json`.
 
 These tests validate the schema and sample against the real web ZIP/crypto code. Existing native crypto interoperability and simulator tests are separate evidence; the documentation tests are not a new native end-to-end migration or a third-party compatibility certification.
+
+## Custom emoji collections and reactions
+
+Version 1 optionally includes `emojiLibrary: {customEmojis: [...]}` in one archive part. This is the decrypted personal collection, separate from the profile; absent/null means no exported collection. Each custom descriptor contains `emoji: "c1_<SHA256>"` and `custom: {name, png}`. The digest covers the exact normalized static PNG bytes, encoded with standard base64. Validate the digest, PNG structure and decoder result, 128×128 dimension/32 KiB bounds, lowercase ASCII name, and48-item collection cap before reuse. Import merges by canonical image identity and encrypts a new owner-only collection for the destination. Existing reactions keep their own image copy when a saved collection item is removed.
+
+Unicode descriptors use `emoji: "u1_<SHA256>"` plus `unicode`; the digest covers the canonical fully-qualified Unicode UTF-8 sequence. The original six IDs remain unchanged. Reaction entry IDs are43-character keyed tags, rather than post/comment UUIDs. Reaction images and labels remain inside the encrypted parent-audience envelope in the service; they are plaintext only after local archive decryption. Saved copies and copies reused by other authorized readers cannot be remotely recalled.
