@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -215,6 +215,87 @@ describe('bridge step', () => {
     expect(JSON.stringify(calls)).not.toContain(fakeSecrets.github_token);
     expect(calls.finish).toEqual([{ status: 'answered', reply: `${HELD_BACK}\n\nCommitted the change.`, commits: ['abc1234def56'], held_back: ['github_token'] }]);
   });
+  it.each(['x'.repeat(25_000), '界'.repeat(20_000), '\u0001'.repeat(20_000), '😀'.repeat(15_000)])('records oversized replies within both API limits (%#)', async text => {
+    const commits = Array.from({ length: 50 }, (_, i) => i.toString(16).padStart(40, '0'));
+    const { api, calls } = fakeApi();
+    const check = (reply: string, body: unknown) => {
+      expect(reply.length).toBeLessThanOrEqual(20_000);
+      expect(Buffer.byteLength(JSON.stringify(body))).toBeLessThan(65_536);
+      expect(reply).toContain('[Reply truncated to fit builder chat.]');
+      expect(reply.isWellFormed()).toBe(true);
+    };
+    const bridge = createBridge({ ...quiet, api: {
+      ...api,
+      progress: async (id, reply, progress) => { check(reply, { reply, progress }); return api.progress(id, reply, progress); },
+      finish: async (id, body) => { check(body.reply, body); return api.finish(id, body); },
+    }, turnCommits: () => commits, tryLock: () => () => {}, runTurn: async ({ onEvent }) => {
+      onEvent({ type: 'item.completed', item: { type: 'agent_message', text: text.slice(0, 10_000) } });
+      onEvent({ type: 'item.completed', item: { type: 'agent_message', text: text.slice(10_000) } });
+      await new Promise(r => setTimeout(r, 20));
+      onEvent({ type: 'turn.completed' });
+      return { exitCode: 0, timedOut: false };
+    } });
+    await bridge.step();
+    expect(calls.progress.length).toBeGreaterThan(0);
+    expect(calls.finish).toHaveLength(1);
+    expect(calls.finish[0]).toMatchObject({ status: 'answered', commits });
+  });
+
+  it('filters before truncation, keeps audit patterns, and preserves the timeout explanation', () => {
+    const state = new TurnState();
+    state.messages = ['x'.repeat(19_990) + fakeSecrets.github_token, 'y'.repeat(25_000), fakeSecrets.openai_key];
+    const reply = state.reply('Codex ran out of time on this request.');
+    expect(reply.text).not.toContain('ghp_');
+    expect(reply.text).not.toContain('sk-');
+    expect(reply.text).toContain(HELD_BACK);
+    expect(reply.matched).toEqual(['github_token', 'openai_key']);
+    expect(reply.text.endsWith('Codex ran out of time on this request.')).toBe(true);
+    expect(reply.text.length).toBeLessThanOrEqual(20_000);
+  });
+
+  it('keeps a silent turn online without queuing requests behind a slow heartbeat', async () => {
+    vi.useFakeTimers();
+    let endTurn!: () => void, resolveProgress!: () => void;
+    const gate = new Promise<void>(resolve => { endTurn = resolve; });
+    let pending = false, lastSeen = Date.now(), attempts = 0;
+    const { api, calls } = fakeApi({ progress: async () => {
+      attempts++;
+      expect(pending).toBe(false);
+      pending = true;
+      await new Promise<void>(resolve => { resolveProgress = resolve; });
+      lastSeen = Date.now();
+      pending = false;
+      return { continue: true };
+    } });
+    const bridge = createBridge({ ...quiet, api, progressIntervalMs: 1500, tryLock: () => () => {}, runTurn: async ({ onEvent }) => {
+      onEvent({ type: 'item.started', item: { type: 'command_execution', command: 'npm test' } });
+      await gate;
+      onEvent({ type: 'turn.completed' });
+      return { exitCode: 0, timedOut: false };
+    } });
+    try {
+      const step = bridge.step();
+      await vi.advanceTimersByTimeAsync(1500);
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(attempts).toBe(1); // No backlog, despite many timer ticks.
+      resolveProgress();
+      await vi.advanceTimersByTimeAsync(0);
+      for (let i = 0; i < 30; i++) {
+        await vi.advanceTimersByTimeAsync(1500);
+        resolveProgress();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(Date.now() - lastSeen).toBeLessThan(30_000);
+      }
+      expect(attempts).toBeGreaterThan(20);
+      endTurn();
+      await step;
+      const finishedAttempts = attempts;
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(attempts).toBe(finishedAttempts);
+      expect(calls.finish).toHaveLength(1);
+    } finally { vi.useRealTimers(); }
+  });
+
   it('reports a timeout, tells the next turn, and retries recording the result', async () => {
     let failures = 2;
     const { api, calls } = fakeApi({
@@ -243,6 +324,8 @@ describe('bridge step', () => {
     await bridge.step();
     expect(finishedTurn).toBe(true);
     expect(calls.progress).toHaveLength(1);
+    expect(calls.claim.slice(1).length).toBeGreaterThan(0);
+    expect(calls.claim.slice(1).every(take => take === false)).toBe(true);
     expect(calls.finish[0].commits).toEqual(['abc1234def56']);
   });
   it('marks the message failed when Codex cannot start, and releases the lock', async () => {

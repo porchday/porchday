@@ -26,6 +26,8 @@ Builder chat ships switched off. The code reaches production through the normal 
 
 The bridge sends each member message into the builder session as a new turn, using `codex exec resume <session>`. Each turn starts a short-lived Codex process that loads the session history, runs the turn, saves it and exits. Nick's requests from `~/nick-requests.txt` must go through the same session one at a time, so both use the shared lock file `~/.porchday-builder.lock`.
 
+This is a saved-session bridge, not a live connection to an open Codex desktop chat. Before enabling members, verify the chosen workflow with a harmless message and confirm that both the member reply and the resumed builder session contain the turn. Do not treat a successful `check` command as proof of desktop synchronization.
+
 Before you install, check which of these describes the builder session today:
 
 - **Codex runs each request as a separate turn** (for example, a script that runs `codex exec resume` for each new line in `~/nick-requests.txt`). This works with the bridge as it is. Wrap that script's Codex call in the lock as described in [Step 6](#step-6-add-the-lock-to-the-request-file-loop).
@@ -180,7 +182,8 @@ An operator with deployment access does this after the bridge reports `state pau
 1. The bridge takes the shared lock. If the request-file loop holds it, the bridge only tells the API it is still connected and tries again a few seconds later, so members see "Waiting for Codex" instead of "offline".
 2. The bridge claims the oldest queued message and records the current `HEAD` of the checkout.
 3. The bridge runs `codex exec resume <codex_args> --json <session> -` in the checkout, with the framed message on standard input. The frame names the member and the message ID and asks Codex to follow the "Builder chat turns" rules in `AGENTS.md`, including the `Builder-Chat-Message: <message ID>` commit trailer.
-4. While Codex works, the bridge sends Codex's written messages and a progress label to the API at most every 1.5 seconds. If the member loses access during the turn, the bridge stops sending, but Codex finishes the turn so the checkout is never left half edited.
+4. While Codex works, the bridge keeps its heartbeat alive even during commands that produce no events. Only one progress or heartbeat request can be in flight at a time. The bridge sends Codex's written messages and a progress label to the API at most every 1.5 seconds. If the member loses access during the turn, the bridge stops sending, but Codex finishes the turn so the checkout is never left half edited.
+   Replies are filtered for credentials before being shortened to fit the API character and encoded-byte limits. Shortened replies include an explicit truncation notice; completion status, timeout explanations and commit records are retained.
 5. After 10 minutes the bridge interrupts Codex, tells the member that Codex ran out of time, and tells Codex at the start of the next turn to check `git status` first.
 6. The bridge records the commits made during the turn. These are the commits with the message trailer, plus commits made with the checkout's own git identity, so commits pulled from other people during the turn aren't counted. Then it releases the lock.
 
