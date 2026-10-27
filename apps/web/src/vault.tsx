@@ -658,7 +658,7 @@ export function VaultProvider({
         // Reuse the authorized own-device roster, but fingerprint only keys
         // actually needed for content rather than every historical key at boot.
         (devices?.some(device => device.id === expected.authorDeviceId && device.member_id === member.id)
-          ? Promise.resolve(devices.find(device => device.id === expected.authorDeviceId)!)
+          ? Promise.resolve({device: devices.find(device => device.id === expected.authorDeviceId)!})
           : get(`/devices/${expected.authorDeviceId}`))
           .then(async (result) => {
             const author = (result.device || result) as Device;
