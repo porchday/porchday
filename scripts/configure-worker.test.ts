@@ -23,6 +23,8 @@ test('deployment renderer separates aggregate datasets and keeps request log/tra
    expect(config.observability).toEqual({enabled:false,logs:{enabled:false,invocation_logs:false},traces:{enabled:false}});
    expect(config.logpush).toBe(false);
    for(const flag of ['CONTENT_WRITES_PAUSED','MEDIA_UPLOADS_PAUSED','SOCIAL_INVITATIONS_PAUSED'])expect(config.vars[flag]).toBe('false');
+   // Builder chat is the one pause that defaults to on.
+   expect(config.vars.BUILDER_CHAT_PAUSED).toBe('true');
   }
   Object.assign(environments.production,{content_writes_paused:true,media_uploads_paused:true,social_invitations_paused:true});
   await writeFile(join(directory,'infra/resources.json'),JSON.stringify({account_id:'a'.repeat(32),environments}));
@@ -30,6 +32,17 @@ test('deployment renderer separates aggregate datasets and keeps request log/tra
   expect(paused.status,paused.stderr).toBe(0);
   const config=JSON.parse(await readFile(join(directory,'apps/api/wrangler.production.jsonc'),'utf8'));
   for(const flag of ['CONTENT_WRITES_PAUSED','MEDIA_UPLOADS_PAUSED','SOCIAL_INVITATIONS_PAUSED'])expect(config.vars[flag]).toBe('true');
+  Object.assign(environments.production,{builder_chat_paused:false});
+  await writeFile(join(directory,'infra/resources.json'),JSON.stringify({account_id:'a'.repeat(32),environments}));
+  expect(spawnSync('python3',[resolve('scripts/configure-worker.py'),'production'],{cwd:directory,encoding:'utf8'}).status).toBe(0);
+  expect(JSON.parse(await readFile(join(directory,'apps/api/wrangler.production.jsonc'),'utf8')).vars.BUILDER_CHAT_PAUSED).toBe('false');
+  for(const invalid of ['false',0]){
+   Object.assign(environments.production,{builder_chat_paused:invalid});
+   await writeFile(join(directory,'infra/resources.json'),JSON.stringify({account_id:'a'.repeat(32),environments}));
+   const rejected=spawnSync('python3',[resolve('scripts/configure-worker.py'),'production'],{cwd:directory,encoding:'utf8'});
+   expect(rejected.status).not.toBe(0);expect(rejected.stderr).toContain('builder_chat_paused must be a JSON boolean');
+  }
+  delete (environments.production as Record<string,unknown>).builder_chat_paused;
   for(const invalid of ['false',1,null]){
    Object.assign(environments.production,{content_writes_paused:invalid});
    await writeFile(join(directory,'infra/resources.json'),JSON.stringify({account_id:'a'.repeat(32),environments}));

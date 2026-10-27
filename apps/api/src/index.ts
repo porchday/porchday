@@ -24,6 +24,7 @@ import {requireOperations,readOperationalHealth,recordCleanupSuccess} from './op
 import {incidentControls} from './incident-controls';
 import {createPlatformInvitationRoutes} from './platform-invitations';
 import {applicationDomains} from './application-domains';
+import {createBuilderChatRoutes,createBuilderBridgeRoutes,createStaffBuilderChatRoutes} from './builder-chat';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
 app.use('*',requestTimingMiddleware);
@@ -47,7 +48,8 @@ app.use('/api/*',async(c,next)=>{
  return generalBodyLimit(c,next);
 });
 app.use('/api/*',async(c,next)=>{
- if(!['GET','HEAD','OPTIONS'].includes(c.req.method) && !['/api/integration/token','/api/integration/v1/token'].includes(c.req.path)){
+ // The builder bridge is a bearer-token program, not a browser.
+ if(!['GET','HEAD','OPTIONS'].includes(c.req.method) && !['/api/integration/token','/api/integration/v1/token'].includes(c.req.path) && !c.req.path.startsWith('/api/builder-bridge/')){
   const origin=c.req.header('Origin');
   if(origin!==c.env.APP_URL)return c.json({error:{code:'ORIGIN_DENIED',message:'This request could not be verified.'}},403);
  }
@@ -75,6 +77,10 @@ app.route('/api/staff/recovery',createStaffRecoveryRoutes());
 app.use('/api/staff/moderation/*',requireStaff('moderation'));
 app.use('/api/staff/moderation/*',privacyMutationMiddleware);
 app.route('/api/staff/moderation',createModerationRoutes());
+app.use('/api/staff/builder-chat',requireStaff('builder_chat'));
+app.use('/api/staff/builder-chat/*',requireStaff('builder_chat'));
+app.route('/api/staff/builder-chat',createStaffBuilderChatRoutes());
+app.route('/api/builder-bridge',createBuilderBridgeRoutes());
 app.use('/api/member-appeals/*',requireAppealMember);
 app.route('/api/member-appeals',createAppealRoutes());
 // Register the versioned surface before the legacy route's catch-all.
@@ -95,6 +101,7 @@ app.delete('/api/v1/account',async c=>{
 app.route('/api/v1',createPlatformInvitationRoutes());
 app.route('/api/v1',createSocialRoutes());
 app.route('/api/v1',createIntegrationConsentRoutes());
+app.route('/api/v1',createBuilderChatRoutes());
 app.all('/api/*',c=>c.json({error:{code:'NOT_FOUND'}},404));
 app.get('*',c=>c.env.ASSETS.fetch(c.req.raw));
 app.onError((_error,c)=>{event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});

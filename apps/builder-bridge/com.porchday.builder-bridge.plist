@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template for ~/Library/LaunchAgents/com.porchday.builder-bridge.plist.
+     Replace NODE_PATH, CHECKOUT and HOME_DIR as described in README.md. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.porchday.builder-bridge</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>NODE_PATH</string>
+    <string>CHECKOUT/apps/builder-bridge/src/main.ts</string>
+    <string>run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>CHECKOUT</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <!-- launchd starts with a minimal PATH; codex and git must be on it. -->
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+  <!-- A running Codex turn may take up to 10 minutes; let it finish on stop. -->
+  <key>ExitTimeOut</key>
+  <integer>660</integer>
+  <key>StandardOutPath</key>
+  <string>HOME_DIR/Library/Logs/porchday-builder-bridge.log</string>
+  <key>StandardErrorPath</key>
+  <string>HOME_DIR/Library/Logs/porchday-builder-bridge.log</string>
+</dict>
+</plist>

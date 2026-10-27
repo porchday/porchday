@@ -36,6 +36,7 @@ import { ColorSchemeControls } from "./ColorSchemeControls";
 import { LegacyDomainNotice } from "./DomainMigration";
 import { initSiteAppearance } from "./site-appearance";
 import { initColorScheme } from "./color-scheme";
+import { BuilderChat, builderChatAvailable } from "./BuilderChat";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import "./styles.css";
 import "./retro.css";
@@ -329,6 +330,7 @@ const links = [
   ["/app/notifications", "bell", "Notifications"],
   ["/app/settings/profile", "settings", "Settings"],
 ];
+const builderChatLink = ["/app/builder-chat", "comment", "Builder chat"];
 function AppShell({
   path,
   routeKey,
@@ -348,6 +350,12 @@ function AppShell({
     countedPath.current = path;
     get("/me").then(m => setCount(m.connection_count)).catch(() => {});
   }, [path]);
+  // Builder chat appears only for allowlisted members; see design/builder-chat.md.
+  const [builderChat, setBuilderChat] = useState(false);
+  useEffect(() => {
+    if (vault.member.status !== "suspended") builderChatAvailable().then(setBuilderChat);
+  }, []);
+  const sidebarLinks = vault.member.status === "suspended" ? [links[5]] : builderChat ? [...links.slice(0, 5), builderChatLink, links[5]] : links;
   async function logout() {
     if (hasPendingSaves()) return;
     await vault.clear();
@@ -384,6 +392,7 @@ function AppShell({
   else if (path.startsWith("/app/groups/"))
     content = <GroupDetail id={path.split("/")[3]} />;
   else if (path === "/app/notifications") content = <Notifications />;
+  else if (path === "/app/builder-chat") content = <BuilderChat />;
   else if (path === "/app/integrations/authorize")
     content = <IntegrationConsent />;
   else if (path.startsWith("/app/settings"))
@@ -411,6 +420,11 @@ function AppShell({
         <button className="icon-button" onClick={logout} aria-label="Sign out">
           <Icon name="logout" />
         </button>
+        {builderChat && (
+          <a href="/app/builder-chat" className="icon-button" aria-label="Builder chat">
+            <Icon name="comment" />
+          </a>
+        )}
         <a
           href="/app/notifications"
           className="icon-button"
@@ -429,7 +443,7 @@ function AppShell({
       <aside className="sidebar">
         <Logo href="/app" />
         <nav aria-label="Your Porchday">
-          {(vault.member.status === "suspended" ? [links[5]] : links).map(
+          {sidebarLinks.map(
             ([href, icon, name]) => {
               const active =
                 href === "/app"

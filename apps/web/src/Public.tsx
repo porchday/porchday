@@ -564,6 +564,10 @@ const policyContent: Record<
         "Settings provides local export, reviewed import, integrations, blocks, mutes, notifications, and deletion. The service uses necessary session cookies and protected device-key storage, with no advertising trackers. No decrypted social content is cached by the service worker.",
       ],
       [
+        "Builder chat",
+        "A small group of invited members can use builder chat to message Codex, the OpenAI coding agent that develops Porchday. Builder chat messages and replies are not end-to-end encrypted. They are processed by OpenAI and by a computer operated by a Porchday maintainer, and Porchday operators can read them. Messages are kept for 90 days, are deleted with your account, and can be downloaded from the builder chat page. Members who are not invited to builder chat are not affected.",
+      ],
+      [
         "Pilot privacy notice",
         "This is an early invitation-only pilot, not an invitation to upload sensitive real-world data. Legal operator details, final retention schedules, rights-contact information, and the independent security review are required launch work.",
       ],

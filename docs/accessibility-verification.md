@@ -1,6 +1,6 @@
 # Web accessibility verification
 
-This is bounded development evidence for the signup, connections, posting, reporting, and account-deletion journeys. It is not a WCAG conformance certificate or a real screen-reader test.
+This is bounded development evidence for the signup, connections, posting, reporting, builder chat, and account-deletion journeys. It is not a WCAG conformance certificate or a real screen-reader test.
 
 ## Local keyboard and semantic checks
 
@@ -22,6 +22,7 @@ The October 25, 2026 run passed:
 | Connections | Accept, decline, and cancel controls identify their target person. Accept/cancel completion announces the result and gives a stable focus target after the request row disappears. A delayed acceptance preserves focus and text when the person starts typing in the surviving search field. |
 | Posting | Keyboard navigation reaches the textarea, native audience selector, and Share button. The submitted envelope decrypts to the entered text and selected `only_me` audience; success is a status announcement. |
 | Reporting | Keyboard opens the report from post options. Native dialog focus stays inside with forward/backward Tab; Escape restores the persistent post-options button even though the menu item unmounted. Default submission discloses no encrypted evidence. Completion focuses Done, which returns focus to the post options. |
+| Builder chat (October 27, 2026) | The sidebar link focuses the page heading. Continue stays disabled until the member checks the disclosure checkbox with the keyboard. The message textbox has an exact name and is described by its character and daily limits. After sending, the reply is announced through a polite live region once the synthetic queued message is answered. |
 | Account deletion | Confirmation stays disabled until exact `DELETE`. Escape returns focus to the opening control. A synthetic reauthentication failure keeps the dialog and confirmation text, exposes an alert, and refocuses the confirmation input. A subsequent synthetic success follows normal sign-out and landing-page focus. |
 
 Relevant regression checks:

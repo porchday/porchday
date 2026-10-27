@@ -87,6 +87,8 @@ try {
   let deferMember = false, releaseMember = () => {}, memberStarted = () => {};
   let memberGate = Promise.resolve();
   const invitationRequests: {email: string}[] = [];
+  const builder = {paused: false, online: true, disclosure: {version: 1, accepted: false}, ahead: 0, sent_today: 0, limits: {message_length: 2000, daily_messages: 20}, messages: [] as any[]};
+  let builderPolls = 0;
   let invitationStarted!: () => void, releaseInvitation!: () => void;
   const invitationGate = new Promise<void>(resolve => { releaseInvitation = resolve; });
   const invitationPending = new Promise<void>(resolve => { invitationStarted = resolve; });
@@ -106,6 +108,8 @@ try {
     if (path === `/devices/${deviceId}`) return reply(device);
     if (path === '/audiences') return reply({epoch: 1, devices: [device]});
     if (path === `/profiles/member/${memberId}`) return reply({id: memberId, member_id: memberId, handle: 'keyboard_member', envelope: profile});
+    if (path.startsWith('/profiles/member/') && method === 'GET') return reply({}); // Other members have no readable profile photo.
+    if (path === '/platform-invitations' && method === 'GET') return reply({items: [], next_cursor: null});
     if (path === '/connections') return reply({items: [], requests, handles: [{id: friendId, handle: 'incoming_friend'}, {id: outgoingMemberId, handle: 'outgoing_friend'}, {id: delayedMemberId, handle: 'delayed_friend'}]});
     if (path === '/platform-invitations' && method === 'POST') {
       invitationRequests.push(route.request().postDataJSON());
@@ -131,8 +135,19 @@ try {
       session = false; return reply({ok: true});
     }
     if (path === '/api/auth/sign-out') { session = false; return reply({ok: true}); }
+    if (path === '/builder-chat') {
+      // The first poll after sending still shows the queued message; the next one carries the reply.
+      const pending = builder.messages.find(m => m.status === 'queued');
+      if (pending && builderPolls++ > 0) Object.assign(pending, {status: 'answered', reply: 'Synthetic reply from Codex.', completed_at: new Date().toISOString()});
+      return reply(builder);
+    }
+    if (path === '/builder-chat/disclosure' && method === 'POST') { assert.equal(route.request().postDataJSON().version, 1); builder.disclosure.accepted = true; return reply({ok: true}); }
+    if (path === '/builder-chat/messages' && method === 'POST') {
+      builder.messages.push({id: crypto.randomUUID(), body: route.request().postDataJSON().message, status: 'queued', progress: null, reply: '', commits: [], created_at: new Date().toISOString(), completed_at: null});
+      builder.sent_today++; return reply({ok: true});
+    }
     if (path === '/integrations') return reply({clients: [], grants: [{id: 'synthetic-grant', name: 'Photo archive', purpose: 'Save a local copy of my own photos', scopes: ['media:read', 'export:read'], last_used_at: '2026-10-25T12:00:00.000Z'}]});
-    if (['/notifications', '/mutes', '/owned-groups', '/push/subscriptions'].includes(path)) return reply({items: []});
+    if (['/notifications', '/mutes', '/owned-groups', '/push/subscriptions', '/posts/audience-refresh'].includes(path)) return reply({items: []});
     unexpected.push('UNEXPECTED_MEMBER_API:' + method + ' ' + path);
     return reply({error: {code: 'UNEXPECTED_TEST_API'}}, 400);
   });
@@ -235,6 +250,22 @@ try {
   await focused(memberPage.getByRole('button', {name: 'Done', exact: true}));
   assert.equal(reports.length, 1); assert.equal(reports[0].evidence_disclosed, false); assert.equal(reports[0].evidence_envelope, null);
   await memberPage.keyboard.press('Enter'); await focused(options);
+  // Builder chat: the disclosure gates the form, and the reply is announced in the polite live region.
+  await activate(memberPage, memberPage.locator('.sidebar').getByRole('link', {name: 'Builder chat', exact: true}));
+  await focused(memberPage.locator('#main-content h1'));
+  const builderContinue = memberPage.getByRole('button', {name: 'Continue', exact: true});
+  await builderContinue.waitFor(); assert.equal(await builderContinue.isDisabled(), true);
+  await reach(memberPage, memberPage.getByRole('checkbox', {name: 'I understand how builder chat works.', exact: true}));
+  await memberPage.keyboard.press('Space');
+  await activate(memberPage, builderContinue);
+  const builderMessage = memberPage.getByRole('textbox', {name: 'Message to Codex', exact: true});
+  await reach(memberPage, builderMessage);
+  assert.match(await builderMessage.getAttribute('aria-describedby') || '', /builder-message-help/);
+  await memberPage.keyboard.type('Synthetic builder chat question');
+  await activate(memberPage, memberPage.getByRole('button', {name: 'Send to Codex', exact: true}));
+  await memberPage.locator('.builder-announcement').filter({hasText: 'Codex replied: Synthetic reply from Codex.'}).waitFor({state: 'attached', timeout: 10000});
+  assert.equal(await memberPage.locator('.builder-announcement').getAttribute('aria-live'), 'polite');
+  assert.equal(builder.messages[0].body, 'Synthetic builder chat question');
   await activate(memberPage, memberPage.locator('.sidebar').getByRole('link', {name: 'Settings', exact: true}));
   await activate(memberPage, memberPage.getByRole('link', {name: 'My data', exact: true}));
   await memberPage.getByText('Save a local copy of my own photos', {exact: true}).waitFor();
@@ -261,9 +292,9 @@ try {
   await memberPage.reload();
   await memberPage.getByRole('heading', {name: 'No deletion confirmation', exact: true}).waitFor();
   assert.equal(deletions, 2); assert.deepEqual(unexpected, []);
-  assert.equal(mutations.length, 13);
+  assert.equal(mutations.length, 15);
   await memberContext.close();
-  console.log(JSON.stringify({local_accessibility: 'passed', synthetic_api_only: true, keyboard_signup_errors_and_success: true, described_help: true, targeted_connections: true, pending_connection_preserves_typing_focus: true, invitation_pending_duplicate_guard: true, invitation_accepted_limit_and_unknown_responses: true, encrypted_friends_only_keyboard_post: true, reporting_focus_and_consent: true, guarded_deletion: true, route_and_skip_focus: true, delayed_navigation_focus_and_cancellation: true, real_screen_reader_test: false}));
+  console.log(JSON.stringify({local_accessibility: 'passed', synthetic_api_only: true, keyboard_signup_errors_and_success: true, described_help: true, targeted_connections: true, pending_connection_preserves_typing_focus: true, invitation_pending_duplicate_guard: true, invitation_accepted_limit_and_unknown_responses: true, encrypted_friends_only_keyboard_post: true, reporting_focus_and_consent: true, guarded_deletion: true, route_and_skip_focus: true, delayed_navigation_focus_and_cancellation: true, builder_chat_disclosure_and_announced_reply: true, real_screen_reader_test: false}));
 } finally {
   await browser.close();
 }

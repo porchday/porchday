@@ -21,6 +21,7 @@
     "CONTENT_WRITES_PAUSED": "false",
     "MEDIA_UPLOADS_PAUSED": "false",
     "SOCIAL_INVITATIONS_PAUSED": "false",
+    "BUILDER_CHAT_PAUSED": "true",
     "EMAIL_FROM": "Porchday <accounts@porchday.com>"
   },
   "hyperdrive": [

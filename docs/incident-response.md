@@ -36,6 +36,28 @@ Deployment procedure:
 
 The API regression suite exercises every affected route through the actual application middleware and verifies that the mutation journal is not reached. Separate tests preserve safe action handlers and test renderer persistence. A live deployment/rollout exercise remains required before pilot admission. The generic health endpoint alone does not verify these controls; deliberately paused writes will also appear as503 outcomes in aggregate monitoring.
 
+## Builder chat
+
+Builder chat lets allowlisted members message the Codex session that builds Porchday ([design](../design/builder-chat.md), [bridge install guide](../apps/builder-bridge/README.md)). It has its own controls:
+
+| Control | How | Effect |
+| --- | --- | --- |
+| Pause | Set `builder_chat_paused` to `true` under the environment in `infra/resources.json`, then render and deploy as above. The setting defaults to `true`; only an explicit `false` opens builder chat. | Members see "Builder chat is paused" and cannot send. The bridge starts no new turn. A turn already running finishes, so the builder checkout is never left half edited. |
+| Stop the bridge now | On the Mac mini: `launchctl bootout gui/$(id -u)/com.porchday.builder-bridge` | No turn runs until the bridge is started again. Members see "Codex is offline". |
+| Remove a member | `node scripts/builder-chat-access.ts remove <handle>` with the environment's `DATABASE_MIGRATION_URL` | Access ends on the member's next request, and their queued message is cancelled. |
+| Revoke the bridge | `npx wrangler secret delete BUILDER_BRIDGE_TOKEN --config apps/api/wrangler.production.jsonc` through `with-secrets.py` | The bridge endpoints return 404 and the bridge cannot claim messages. |
+
+### Rolling back a builder chat change
+
+Codex deploys every hour, so a bad change from builder chat is undone rather than reviewed in advance. Each builder chat commit ends with `Builder-Chat-Message: <message ID>`, and the staff view and bridge log list each message's commits.
+
+1. If the live site is broken, return the Worker to the previous version first. `npx wrangler deployments list --config apps/api/wrangler.production.jsonc` (through `with-secrets.py`) shows recent versions. Run `npx wrangler rollback <version ID> --config apps/api/wrangler.production.jsonc` to return to the last good one within seconds.
+2. Pause builder chat if the same request could be repeated.
+3. In a clean, up-to-date checkout, run `node scripts/builder-chat-rollback.ts <message ID> --dry-run` to list the commits, then run it without `--dry-run` to revert them newest first. Add `--commit <hash>` for a commit that lacks the trailer. Run the tests, then push, or pass `--push`. The next hourly deploy ships the revert, so the broken change doesn't come back after the Worker rollback.
+4. Or ask Codex in builder chat, or through the request file, to undo the change for that message ID. `AGENTS.md` tells Codex to use the same command.
+
+A Worker rollback doesn't undo a database migration. `AGENTS.md` therefore forbids dropping or renaming columns or tables in a builder chat turn, so the previous Worker version keeps working with the current schema.
+
 ## Compromised credentials or signing keys
 
 Determine which capability is exposed before choosing containment. A deployment credential or malicious client release can compromise delivered encryption code; content encryption does not protect a member from a malicious client update. Selective posting pauses alone are insufficient for an authentication, authorization, code-integrity or storage-integrity compromise. Restrict affected traffic at the provider, use [restore quarantine](restore-safety.md) when data integrity is uncertain, and retain recovery/status paths only when they can be served safely.
