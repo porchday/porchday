@@ -1,6 +1,6 @@
 import type { BridgeApi, FinishBody } from './api.ts';
 import type { RunOptions, RunResult } from './codex.ts';
-import { frame, TurnState, type ClaimedMessage } from './turn.ts';
+import { frame, featureProposal, TurnState, type ClaimedMessage } from './turn.ts';
 
 export type Dependencies = {
   api: BridgeApi;
@@ -80,7 +80,11 @@ export function createBridge(deps: Dependencies) {
       : status === 'failed' ? 'Codex stopped before finishing this request.'
       : state.messages.length ? '' : 'Codex finished without a written reply.';
     const reply = state.reply(suffix);
-    await finish(message.id, { status, reply: reply.text, commits, held_back: reply.matched });
+    const proposal = status === 'answered' && message.share_plan && message.task_kind !== 'feature_build' && !commits.length && !reply.matched.length
+      ? featureProposal(state.messages.at(-1) || '') : null;
+    const finalReply = proposal ? 'Your feature plan is posted in Feature additions. It needs a net score of +3 before implementation.'
+      : message.task_kind === 'feature_plan' && status === 'answered' ? state.reply('No publishable plan was produced. Review the reply and submit a clarified feature request.').text : reply.text;
+    await finish(message.id, { status, reply: finalReply, commits, held_back: reply.matched, ...(proposal ? {proposal} : {}) });
     deps.log(`turn ${message.id} ${status} commits=${commits.join(',') || 'none'}${reply.matched.length ? ' held_back=' + reply.matched.join(',') : ''}`);
   }
 

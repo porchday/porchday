@@ -565,7 +565,7 @@ const policyContent: Record<
       ],
       [
         "Builder chat",
-        "A small group of invited members can use builder chat to message Codex, the OpenAI coding agent that develops Porchday. Builder chat messages and replies are not end-to-end encrypted. They are processed by OpenAI and by a computer operated by a Porchday maintainer, and Porchday operators can read them. Messages are kept for 90 days, are deleted with your account, and can be downloaded from the builder chat page. Members who are not invited to builder chat are not affected.",
+        "A small group of invited members can use builder chat to message Codex, the OpenAI coding agent that develops Porchday. Builder chat messages and replies are not end-to-end encrypted. They are processed by OpenAI and by a computer operated by a Porchday maintainer, and Porchday operators can read them. Messages are kept for 90 days, are deleted with your account, and can be downloaded from the builder chat page. New feature suggestions become plans shared with builder-chat participants under the updated disclosure, with the proposer’s handle and vote totals. Each participant has one changeable vote; net +3 queues implementation and closes voting. Feature plans and votes are deleted with the author’s account or after 90 days. Existing chat history stays private to its sender and operators. Members who are not invited to builder chat are not affected.",
       ],
       [
         "Pilot privacy notice",

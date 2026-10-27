@@ -208,3 +208,8 @@ Migration `051_builder_queue_status.sql` adds fixed activity labels to the membe
 ## Development
 
 Run the bridge tests with `npx vitest run apps/builder-bridge` from the repository root, and the type check with `npm run typecheck -w @porchday/builder-bridge`. For a local run against a development API, point `api_url` at `http://127.0.0.1:8787`, use a scratch checkout for `repo_dir`, and start a scratch session with `codex exec --json "Reply READY"` in that checkout. Never point a development bridge at the real builder session.
+
+
+### Feature voting rollout
+
+Feature additions requires migration 053 and the matching API deployment before restarting this bridge. Restart only after the active turn finishes. Feature protocol 1 claims carry server-controlled task phases: ordinary web requests plan enhancements, explicit feature submissions generate plans, and approved tasks implement the immutable voted plan. Old bridges heartbeat but do not claim work after the API upgrade. See [feature voting](../../design/builder-chat.md#feature-additions-and-web-feature-voting) for the sharing disclosure, vote rules, and failure behavior.
