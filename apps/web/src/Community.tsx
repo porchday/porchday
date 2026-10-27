@@ -162,7 +162,7 @@ export function Connections() {
           </p>
           <div className="member-list">
             {incoming.map((r: Json) => (
-              <div className="member-row" key={r.id}>
+              <div className="member-row connection-request-row" key={r.id}>
                 <Avatar name={label(r.sender)} />
                 <div className="member-info">
                   <strong>@{label(r.sender)}</strong>
@@ -170,8 +170,8 @@ export function Connections() {
                     Wants to connect as{" "}
                     {r.kind === "family" ? "family" : "a friend"}
                   </small>
-                  <HistoryChoice value={incomingHistory[r.id] || "full"} onChange={value => setIncomingHistory(previous => ({ ...previous, [r.id]: value }))} disabled={action.busy || vault.member.status === "restricted"} />
                 </div>
+                <HistoryChoice value={incomingHistory[r.id] || "full"} onChange={value => setIncomingHistory(previous => ({ ...previous, [r.id]: value }))} disabled={action.busy || vault.member.status === "restricted"} />
                 <div className="button-row">
                   <Button
                     variant="primary compact"
@@ -372,7 +372,8 @@ export function Connections() {
         </section>
       )}
       {sharingConnection && (
-        <Modal title={`Share your posts with @${sharingConnection.name}`} onClose={() => setSharingConnection(null)}>
+        <Modal title="Post sharing" onClose={() => setSharingConnection(null)}>
+          <p>Share your posts with <strong>@{sharingConnection.name}</strong>.</p>
           <HistoryChoice value={sharingConnection.history} onChange={history => setSharingConnection(previous => previous && ({ ...previous, history }))} disabled={action.busy} />
           <p>Full history includes your earlier posts and photos whose audience allows this connection. Only me posts, expired posts, and earlier comments and reactions stay excluded.</p>
           <p>Earlier posts are shared while your account is unlocked. Choosing only new posts does not take back posts already shared.</p>
