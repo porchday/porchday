@@ -1,0 +1,33 @@
+name: Measure synthetic staging latency
+on:
+  workflow_dispatch:
+    inputs:
+      phase:
+        description: Reviewed staging experiment phase
+        type: choice
+        required: true
+        options: [baseline, edge, placed, repeat]
+permissions:
+  contents: read
+concurrency:
+  group: synthetic-staging-latency
+  cancel-in-progress: false
+jobs:
+  measure:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Measure fixed staging reads without recording private responses
+        env:
+          PORCHDAY_STAGING_LATENCY_COOKIE: ${{ secrets.PORCHDAY_STAGING_LATENCY_COOKIE }}
+          PORCHDAY_LATENCY_LABEL: ${{ inputs.phase }}
+        run: node scripts/measure-staging-latency.mjs
+      # No artifacts, API bodies, credentials or operator tokens. The operator
+      # revokes the synthetic session and deletes the ephemeral repo secret.
