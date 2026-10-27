@@ -39,7 +39,7 @@ export function Connections() {
     for (const cancel of pendingFocus.current) cancel();
     pendingFocus.current.clear();
   }, []);
-  const [handle, setHandle] = useState(() => invitationHandle(new URLSearchParams(location.search).get("handle")) || "");
+  const [handle, setHandle] = useState(() => invitationHandle(new URLSearchParams(typeof location === "undefined" ? "" : location.search).get("handle")) || "");
   const [kind, setKind] = useState<"friend" | "family">("friend");
   const [history, setHistory] = useState<"full" | "future">("full");
   const [incomingHistory, setIncomingHistory] = useState<Record<string, "full" | "future">>({});
