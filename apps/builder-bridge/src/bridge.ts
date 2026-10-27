@@ -8,6 +8,7 @@ export type Dependencies = {
   head: () => string;
   turnCommits: (before: string, messageId: string) => string[];
   tryLock: () => (() => void) | null;
+  waitingOn?: () => 'request_file' | 'other_work';
   log: (line: string) => void;
   sleep: (ms: number) => Promise<void>;
   progressIntervalMs?: number;
@@ -85,7 +86,7 @@ export function createBridge(deps: Dependencies) {
 
   async function step(): Promise<StepResult> {
     const release = deps.tryLock();
-    if (!release) { await deps.api.claim(false); return 'locked'; }
+    if (!release) { await deps.api.claim(false, deps.waitingOn?.() ?? 'other_work'); return 'locked'; }
     try {
       const claimed = await deps.api.claim(true);
       if (claimed.paused) return 'paused';

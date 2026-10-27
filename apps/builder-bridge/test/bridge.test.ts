@@ -193,6 +193,13 @@ describe('bridge step', () => {
     expect(calls.claim).toEqual([false]);
     expect(ran).toBe(false);
   });
+  it('reports only the fixed request-file label while waiting for the shared lock', async () => {
+    const claim = vi.fn(async () => ({ paused: false, message: null, turn_seconds: 600 }));
+    const { api } = fakeApi({ claim });
+    const bridge = createBridge({ ...quiet, api, tryLock: () => null, waitingOn: () => 'request_file', runTurn: async () => { throw Error('Must not start while locked'); } });
+    expect(await bridge.step()).toBe('locked');
+    expect(claim).toHaveBeenCalledWith(false, 'request_file');
+  });
   it('runs a claimed message, streams filtered progress and records commits and held back patterns', async () => {
     const { api, calls } = fakeApi();
     let released = 0;

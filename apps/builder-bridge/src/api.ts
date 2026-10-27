@@ -3,7 +3,7 @@ import type { ClaimedMessage, Progress } from './turn.ts';
 export type FinishBody = { status: 'answered' | 'timed_out' | 'failed'; reply: string; commits: string[]; held_back: string[] };
 export interface BridgeApi {
   status(): Promise<{ paused: boolean; environment: string }>;
-  claim(take: boolean): Promise<{ paused: boolean; message: ClaimedMessage | null; turn_seconds: number }>;
+  claim(take: boolean, waitingOn?: 'request_file' | 'other_work'): Promise<{ paused: boolean; message: ClaimedMessage | null; turn_seconds: number }>;
   progress(id: string, reply: string, progress: Progress | null): Promise<{ continue: boolean }>;
   finish(id: string, body: FinishBody): Promise<{ recorded: boolean }>;
 }
@@ -32,7 +32,7 @@ export function createApi(baseUrl: string, token: string): BridgeApi {
   }
   return {
     status: () => call('GET', '/status'),
-    claim: take => call('POST', '/claim', { take }),
+    claim: (take, waitingOn = 'other_work') => call('POST', '/claim', { take, waiting_on: waitingOn }),
     progress: (id, reply, progress) => call('POST', `/messages/${id}/progress`, { reply, progress }),
     finish: (id, body) => call('POST', `/messages/${id}/finish`, body),
   };

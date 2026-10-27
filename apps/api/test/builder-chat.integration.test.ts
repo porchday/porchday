@@ -59,6 +59,26 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   }finally{await admin.end();}
  });
 
+ it('exposes fixed queue activity, clears stale labels, and never includes another member’s message',async()=>{
+  await clearQueue();
+  const first=await person(),second=await person();await allow(first);await allow(second);
+  await send(first,'Private first request');await send(second,'My queued request');
+  expect((await bridge('/claim',{take:false,waiting_on:'request_file'})).status).toBe(200);
+  let value=await (await member(second,'GET','')).json();
+  expect(value.activity).toBe('request_file');expect(value.ahead).toBe(1);
+  expect(JSON.stringify(value)).not.toContain('Private first request');
+  expect((await bridge('/claim',{take:false,waiting_on:'/private/lock-owner'})).status).toBe(400);
+  await owner.query("UPDATE app.builder_chat_bridge SET seen_at=now()-interval '1 minute'");
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('offline');
+  await claim();
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('chat');
+  await clearQueue();await claim();
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('idle');
+  // Old bridge payloads remain accepted during a rolling installation.
+  expect((await bridge('/claim',{take:false})).status).toBe(200);
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('other_work');
+ });
+
  it('hides builder chat from members who are not on the allowlist, even while paused',async()=>{
   const outsider=await person();
   for(const overrides of [{},{BUILDER_CHAT_PAUSED:'true'}]){

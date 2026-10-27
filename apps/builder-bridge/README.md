@@ -189,6 +189,10 @@ An operator with deployment access does this after the bridge reports `state pau
 
 If the bridge stops in the middle of a turn, the server marks the message as timed out 12 minutes after the turn started, so no member waits forever.
 
+## Queue status
+
+Migration `051_builder_queue_status.sql` adds fixed activity labels to the member status. The page shows whether the bridge is waiting for a request-file task, another builder task, or another chat message, plus the member’s own chat-queue position and elapsed waiting time. It does not expose other members’ messages or estimate completion times. Deploy migration 051 and the API before restarting an updated bridge. Older bridge payloads remain accepted and report a generic builder task while locked.
+
 ## Troubleshooting
 
 | What you see | What to do |
