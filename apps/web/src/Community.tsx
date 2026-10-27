@@ -1,3 +1,4 @@
+import { GroupInviteForm } from "./GroupInviteForm";
 import { invitationHandle, notificationPath } from "./invitation-notification";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
@@ -619,7 +620,6 @@ export function GroupDetail({ id }: { id: string }) {
     setInvitations(previous => more ? [...previous, ...result.items] : result.items);
     setInvitationCursor(result.next_cursor);
   }
-  const [handle, setHandle] = useState("");
   const [image, setImage] = useState<PendingAsset | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const uploadAsset = useAssetUpload();
@@ -711,29 +711,15 @@ export function GroupDetail({ id }: { id: string }) {
           <h2>Group members</h2>
           {["owner", "moderator"].includes(myRole) &&
             vault.member.status !== "restricted" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  action.run(async () => {
-                    await post(`/groups/${id}/invitations`, {
-                      handle: handle.replace(/^@/, ""),
-                    });
-                    setHandle("");
-                    await refresh();
-                  }, "Invitation sent. Share the group details again after they join.");
+              <GroupInviteForm
+                key={id}
+                memberId={vault.member.id}
+                members={data.members}
+                onInvite={async handle => {
+                  await post(`/groups/${id}/invitations`, { handle });
+                  await refresh();
                 }}
-                className="inline-form"
-              >
-                <Field
-                  label="Invite by exact handle"
-                  value={handle}
-                  onChange={(e) => setHandle(e.target.value)}
-                  required
-                />
-                <Button variant="primary compact" busy={action.busy}>
-                  Invite
-                </Button>
-              </form>
+              />
             )}
           {data.members.map((m: Json) => {
             const handle =
