@@ -140,10 +140,22 @@ function App() {
     };
   }, []);
   useEffect(() => {
-    document.title =
-      path === "/"
-        ? "Porchday — a simple social network"
-        : `${path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Connections" : path.includes("wall") ? "My wall" : path.includes("app") ? "Home" : "Porchday"} · Porchday`;
+    const appWindow = window.matchMedia(
+      "(display-mode: standalone), (display-mode: minimal-ui), (display-mode: window-controls-overlay)",
+    );
+    const pageTitle = path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Connections" : path.includes("wall") ? "My wall" : path.includes("app") ? "Home" : "Porchday";
+    const updateTitle = () => {
+      // Installed app windows already supply the app name in their chrome.
+      const standalone = appWindow.matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
+      document.title = standalone
+        ? pageTitle
+        : path === "/"
+          ? "Porchday — a simple social network"
+          : pageTitle === "Porchday" ? pageTitle : `${pageTitle} · Porchday`;
+    };
+    updateTitle();
+    appWindow.addEventListener("change", updateTitle);
+    return () => appWindow.removeEventListener("change", updateTitle);
   }, [path]);
   async function signOut() {
     authenticationGeneration.current++;
