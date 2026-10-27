@@ -52,7 +52,7 @@ test('deployment renderer separates aggregate datasets and keeps request log/tra
  }finally{await rm(directory,{recursive:true,force:true});}
 });
 
-test('deployment renderer reproduces retained staging placement without inheriting it into production',async()=>{
+test('deployment renderer renders explicit placement without inheriting local placement',async()=>{
  const directory=await mkdtemp(join(tmpdir(),'porchday-placement-config-'));
  try{
   await mkdir(join(directory,'infra'));await mkdir(join(directory,'apps/api'),{recursive:true});
@@ -66,8 +66,7 @@ test('deployment renderer reproduces retained staging placement without inheriti
    const result=spawnSync('python3',[resolve('scripts/configure-worker.py'),name],{cwd:directory,encoding:'utf8'});
    expect(result.status,result.stderr).toBe(0);
    const config=JSON.parse(await readFile(join(directory,'apps/api/wrangler.'+name+'.jsonc'),'utf8'));
-   if(name==='staging')expect(config.placement).toEqual({region:'aws:us-west-2'});
-   else expect(config).not.toHaveProperty('placement');
+   expect(config.placement).toEqual({region:'aws:us-west-2'});
    expect(config.vars.SIGNUP_ENABLED).toBe(resources.environments[name].signup_enabled===true?'true':'false');
    expect(config.workers_dev).toBe(false);expect(config.preview_urls).toBe(false);
   }
@@ -106,7 +105,14 @@ test('production domain rendering preserves legacy access, signup, sender and re
    expect(config.send_email).toEqual(local.send_email);
    expect(config.vars.VAPID_SUBJECT).toBe(name==='production'?'https://porchday.org/contact':'https://porchday.com/contact');
    expect(config.hyperdrive.map((binding:any)=>binding.id)).toEqual(['auth','social','jobs'].map(role=>resources.environments[name]['hyperdrive_'+role]));
-   expect(config.routes).toEqual((name==='production'?['porchday.org','www.porchday.org','porchday.com','www.porchday.com']:['staging.porchday.com']).map(pattern=>({pattern,custom_domain:true})));
+   expect(config.routes).toEqual([]);
+   const edge=spawnSync('python3',[resolve('scripts/configure-edge.py'),name],{cwd:directory,encoding:'utf8'});
+   expect(edge.status,edge.stderr).toBe(0);
+   const front=JSON.parse(await readFile(join(directory,'apps/api/wrangler.edge.'+name+'.jsonc'),'utf8'));
+   expect(front.routes).toEqual((name==='production'?['porchday.org','www.porchday.org','porchday.com','www.porchday.com']:['staging.porchday.com']).map(pattern=>({pattern,custom_domain:true})));
+   expect(front.placement).toEqual({mode:'off'});
+   expect(front.services).toEqual([{binding:'API_BACKEND',service:'porchday-'+name}]);
+   for(const privateBinding of ['hyperdrive','r2_buckets','queues','triggers'])expect(front).not.toHaveProperty(privateBinding);
    if(name==='production')expect(config.vars.LEGACY_APP_URL).toBe('https://porchday.com');
    else expect(config.vars).not.toHaveProperty('LEGACY_APP_URL');
   }

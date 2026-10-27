@@ -65,7 +65,10 @@ base['logpush']=False
 base['analytics_engine_datasets']=[{'binding':'METRICS','dataset':'porchday_'+name+'_operations_v1'}]
 hosts=[host,'www.'+host] if name=='production' else [host]
 if legacy is not None:hosts.extend([legacy.removeprefix('https://'),'www.'+legacy.removeprefix('https://')])
-base['routes']=[{'pattern':hostname,'custom_domain':True} for hostname in hosts]
+edge=env.get('edge_frontend',False)
+if type(edge) is not bool:raise SystemExit('edge_frontend must be a JSON boolean.')
+# The front end owns custom domains; backend uploads must not reclaim them.
+base['routes']=[] if edge else [{'pattern':hostname,'custom_domain':True} for hostname in hosts]
 for key in ['STAFF_ACCESS_ISSUER','STAFF_ACCESS_AUDIENCE']:
  if env.get(key.lower()):base['vars'][key]=env[key.lower()]
 path=Path('apps/api/wrangler.'+name+'.jsonc');path.write_text(json.dumps(base,indent=2)+'\n')
