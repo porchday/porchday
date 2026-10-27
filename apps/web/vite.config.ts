@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { createRequire } from "node:module";
 import { createHash } from "node:crypto";
 import { versionPwaIcons } from "./scripts/pwa-icons";
+import { buildDarkCss, SOURCES as DARK_SOURCES } from "./scripts/dark-css";
 const cryptoRequire = createRequire(
   resolve(import.meta.dirname, "../../packages/crypto/package.json"),
 );
@@ -16,6 +17,8 @@ const openpgpBytes = readFileSync(
 );
 const openpgpDirectory = `assets/openpgp-${createHash("sha256").update(openpgpBytes).digest("hex").slice(0, 16)}`;
 const openpgpFile = `${openpgpDirectory}/openpgp.min.mjs`;
+const sourceDirectory = resolve(import.meta.dirname, "src");
+const darkCssId = "\0virtual:dark.css";
 export default defineConfig({
   server: {
     port: 5173,
@@ -40,6 +43,25 @@ export default defineConfig({
   },
   esbuild: { legalComments: "none" },
   plugins: [
+    {
+      // Generated from the light stylesheets on every dev load and build.
+      name: "porchday-dark-css",
+      resolveId(id) {
+        if (id === "virtual:dark.css") return darkCssId;
+      },
+      load(id) {
+        if (id !== darkCssId) return;
+        for (const name of DARK_SOURCES)
+          this.addWatchFile(resolve(sourceDirectory, name));
+        return buildDarkCss(sourceDirectory);
+      },
+      handleHotUpdate({ file, server }) {
+        if (!DARK_SOURCES.some((name) => file === resolve(sourceDirectory, name)))
+          return;
+        const dark = server.moduleGraph.getModuleById(darkCssId);
+        if (dark) server.reloadModule(dark);
+      },
+    },
     {
       name: "porchday-private-safe-shell",
       generateBundle() {

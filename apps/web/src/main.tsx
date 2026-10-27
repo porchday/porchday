@@ -37,7 +37,7 @@ import { initColorScheme } from "./color-scheme";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import "./styles.css";
 import "./retro.css";
-import "./dark.css";
+import "virtual:dark.css";
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { failed: boolean }

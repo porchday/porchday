@@ -64,8 +64,11 @@ describe('Browser-local color scheme',()=>{
 
 describe('Dark stylesheet',()=>{
   const web=resolve(import.meta.dirname,'..');
-  it('is regenerated from the current light stylesheets',()=>{
-    expect(readFileSync(resolve(web,'src/dark.css'),'utf8')).toBe(buildDarkCss(resolve(web,'src')));
+  it('mirrors light colors under a zero-specificity dark scope',()=>{
+    const css=buildDarkCss(resolve(web,'src'));
+    expect(css).toMatch(/:where\(\[data-color-scheme="dark"\]\) \.background-controls \{\n  color: #[0-9a-f]{6};\n  background-color: #[0-9a-f]{6};/);
+    expect(css).toContain("background-image: var(--site-background-image, url('/porch-pattern.svg'));");
+    expect(css).not.toMatch(/shadow:/);
   });
   it('is applied before first paint by a same-origin script using the same key',()=>{
     expect(readFileSync(resolve(web,'public/color-scheme.js'),'utf8')).toContain(`'${COLOR_SCHEME_KEY}'`);

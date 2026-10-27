@@ -6,7 +6,7 @@ This file records notable development changes, not a list of supported releases.
 
 ### Development update — 2026-10-27
 
-- Added Light, Dark and System color controls beside the background controls. The choice is stored only in the browser, follows the operating system by default, syncs across open tabs, and is applied before first paint by a same-origin `/color-scheme.js` script. The dark stylesheet `apps/web/src/dark.css` is generated from the light stylesheets with `npm run dark-css -w @porchday/web`; a test fails when it is stale. Member-chosen backdrops and photos are not recolored.
+- Added Light, Dark and System color controls beside the background controls. The choice is stored only in the browser, follows the operating system by default, syncs across open tabs, and is applied before first paint by a same-origin `/color-scheme.js` script. The dark stylesheet is generated from the light stylesheets by the Vite dev server and build, so deployed assets always match them. Member-chosen backdrops and photos are not recolored.
 
 ### Development update — 2026-10-26
 
