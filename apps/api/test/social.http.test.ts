@@ -42,6 +42,20 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); for (const name of ['045_emoji_library.sql','046_connection_history.sql','047_independent_connection_labels.sql']) await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('bootstraps only the same authorized roster as devices, preserving the ordinary me shape', async () => {
+        const viewer = await person(), unrelated = await person();
+        const ordinary = await (await request(viewer.id, '/me')).json();
+        const bootstrap = await (await request(viewer.id, '/me?bootstrap=1')).json();
+        const devices = await (await request(viewer.id, '/devices')).json();
+        expect(bootstrap.startup_devices).toEqual(devices.items);
+        expect(bootstrap.startup_devices.some((d: any) => d.id === unrelated.deviceId)).toBe(false);
+        expect(bootstrap.startup_devices.some((d: any) => d.id === viewer.deviceId)).toBe(true);
+        expect(bootstrap.startup_devices.every((d: any) => !('encrypted_private_key' in d))).toBe(true);
+        const {startup_devices, ...account} = bootstrap;
+        expect(account).toEqual(ordinary);
+        expect(ordinary).not.toHaveProperty('startup_devices');
+        expect(account.connection_count).toBe(0);
+    });
     it('includes authorized author handles on walls, post details and group posts', async () => {
         const author = await person(), viewer = await person(), outsider = await person();
         await connection(author, viewer);

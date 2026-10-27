@@ -38,6 +38,23 @@ describe("pending saves", () => {
     await expect(writing).rejects.toThrow();
     expect(hasPendingSaves()).toBe(false);
   });
+  it("never labels GET reads as saving and distinguishes background writes without losing the unload guard", async () => {
+    const read = deferred();
+    vi.stubGlobal("fetch", vi.fn(() => read.promise));
+    const reading = get("/me?bootstrap=1");
+    expect(pendingSaves.getStatus()).toBe("");
+    read.resolve(Response.json({})); await reading;
+    const background = deferred(), user = deferred();
+    const backgroundWork = withPendingSave(() => background.promise, true);
+    expect(pendingSaves.getStatus()).toBe("background");
+    expect(hasPendingSaves()).toBe(true);
+    const userWork = withPendingSave(() => user.promise);
+    expect(pendingSaves.getStatus()).toBe("saving");
+    user.resolve(new Response()); await userWork;
+    expect(pendingSaves.getStatus()).toBe("background");
+    background.resolve(new Response()); await backgroundWork;
+    expect(pendingSaves.getStatus()).toBe("");
+  });
   it("clears the guard when encryption fails before a request exists", async () => {
     await expect(withPendingSave(async () => { throw new Error("encryption failed"); })).rejects.toThrow("encryption failed");
     expect(hasPendingSaves()).toBe(false);

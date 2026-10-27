@@ -327,8 +327,8 @@ export function Modal({
   );
 }
 export function PendingSaveStatus() {
-  const count = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getSnapshot, () => 0);
-  return count ? <div className="pending-save-status" role="status" aria-live="polite">Saving… Keep this page open until saving finishes.</div> : null;
+  const status = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getStatus, () => "");
+  return status ? <div className="pending-save-status" role="status" aria-live="polite">{status === "saving" ? "Saving… Keep this page open until saving finishes." : "Finishing background updates…"}</div> : null;
 }
 export function useAction() {
   const [busy, setBusy] = useState(false);

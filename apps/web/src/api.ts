@@ -18,6 +18,8 @@ export type Member = {
   envelope?: EncryptedEnvelope | null;
   profile?: { handle?: string; envelope?: EncryptedEnvelope | null };
   created_at?: string;
+  connection_count?: number;
+  startup_devices?: Device[];
 };
 export type SocialObject = {
   id: string;
@@ -122,15 +124,16 @@ export function accessLost(error: unknown): boolean {
 }
 export async function request<T = Json>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { backgroundSave?: boolean } = {},
 ): Promise<T> {
+  const { backgroundSave = false, ...fetchOptions } = options;
   const perform = async (): Promise<T> => {
     const response = await fetch(
       path.startsWith("/api/") ? path : `/api/v1${path}`,
       {
         credentials: "same-origin",
         cache: "no-store",
-        ...options,
+        ...fetchOptions,
         headers: {
           ...(options.body && !(options.body instanceof Blob)
             ? { "Content-Type": "application/json" }
@@ -144,7 +147,7 @@ export async function request<T = Json>(
     return data as T;
   };
   return ["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase())
-    ? perform() : withPendingSave(perform);
+    ? perform() : withPendingSave(perform, backgroundSave);
 }
 export const get = <T = Json>(path: string) => request<T>(path);
 export const post = <T = Json>(path: string, data: unknown = {}) =>

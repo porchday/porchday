@@ -96,7 +96,7 @@ function App() {
     setError("");
     setRestricted(false);
     try {
-      const m = await get<Member>("/me");
+      const m = await get<Member>("/me?bootstrap=1");
       setMember(m);
     } catch (e: any) {
       setMember(null);
@@ -341,13 +341,15 @@ function AppShell({
   onAccountDeleted: () => Promise<void>;
 }) {
   const vault = useVault();
-  const [count, setCount] = useState<number | null>(null);
+  const [count, setCount] = useState<number | null>(vault.member.connection_count ?? null);
+  const countedPath = useRef(path);
   useEffect(() => {
-    get("/me")
-      .then((m) => setCount(m.connection_count))
-      .catch(() => {});
+    if (countedPath.current === path) return;
+    countedPath.current = path;
+    get("/me").then(m => setCount(m.connection_count)).catch(() => {});
   }, [path]);
   async function logout() {
+    if (hasPendingSaves()) return;
     await vault.clear();
     await onLogout();
   }

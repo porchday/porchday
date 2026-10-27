@@ -240,3 +240,46 @@ JPEG (post uploads up to 2,400 px, profile/cover media 1,800 px, avatars 512 px)
 this change does not
 recompress stored content or weaken private API/media cache rules. Public assets
 already use the platform asset service and the app shell's service-worker cache.
+
+## Account/device bootstrap and duplicate startup reads (October 27, 2026)
+
+A real App/Vault/Avatar startup harness reproduced five `/me` calls, one
+`/devices` call and one own-author key lookup on the previous release. The web
+app now requests `/me?bootstrap=1`: the same member, RLS-filtered connection
+count and authorized device roster are returned with one SQL statement inside
+the existing authenticated member transaction. Ordinary `/me` also combines its
+member/count reads into one statement; its response shape remains unchanged.
+No session, member-status, privacy-journal or RLS check is removed or cached.
+
+The initial profile setup, own avatar and sidebar consume that initial account
+snapshot. Existing-profile confirmation no longer causes a redundant avatar
+refresh. Later navigation/rechecks still read fresh data. Own signing keys reuse
+the authorized startup roster after the normal fingerprint checks. Other authors
+still use the separately authorized key lookup. This removes a sequential device
+request and redundant reads; it does not batch the whole feed or other profiles.
+
+`node scripts/check-startup.mjs [source-root] [new-output.json]` bundles the actual
+App, Vault and Avatar components, with synthetic HTTP (150 ms delay), mocked
+cryptography and a mocked remembered key. With one own post, five fresh Chromium
+contexts had median observed first-post DOM readiness of **722 → 405 ms**;
+the WebKit check was **785 → 407 ms**. Account reads fell **5 → 1**, separate
+roster reads **1 → 0**, and own-author key reads **1 → 0**. Timing uses a browser
+MutationObserver, excluding Playwright polling delay. These are controlled UI
+results, not US hosted or Manila latency. GET-only startup made zero writes and
+showed no save banner in both versions. The reported GET-only banner is therefore
+not reproduced; actual automatic profile setup/audience-sharing writes now say
+“Finishing background updates…” instead of suggesting an explicit user save.
+Their pending-write navigation guard remains active. Explicit saves retain their
+Saving message and guard, including before the sign-out handler clears keys.
+
+The US Mac mini baseline used 15 sequential, body-consumed, unauthenticated reads
+per path at the LAX edge. Production p50/p95: `/api/v1/health` **269/819 ms**
+(401), `/health` **27/51 ms** (200), `/app-shell` **34/41 ms** (200).
+Same-code staging, already using Oregon placement, returned **232/313**,
+**69/338**, and **69/87 ms**, respectively. `/api/v1/health` is not a public
+health endpoint: it exercises privacy/authentication rejection. These are not
+signed-in feed measurements or a causal placement experiment. The public-path
+regression risk is material because `run_worker_first` includes static delivery.
+Keep production placement unchanged for this bounded code release. An API-only
+placement design and representative signed-in US East/West measurements are
+follow-up work; no regional replicas are introduced.

@@ -10,12 +10,20 @@ const Avatars = createContext<ReturnType<typeof createAvatarStore> | null>(null)
 export function MemberAvatarProvider({ children }: { children: React.ReactNode }) {
   const vault = useVault(), latest = useRef(vault); latest.current = vault;
   const identity = `${vault.member.id}:${vault.member.status}:${vault.device.id}:${vault.device.revoked_at || ""}`;
-  const store = useMemo(() => createAvatarStore((id, signal, previous) => readAvatarPhoto(id, signal, previous, {
+  const store = useMemo(() => {
+    let initialSelfRead = true;
+    return createAvatarStore((id, signal, previous) => readAvatarPhoto(id, signal, previous, {
     viewerId: vault.member.id,
-    read: (path, signal) => request(path, { signal }),
+    read: <T,>(path: string, signal: AbortSignal): Promise<T> => {
+      if (path === "/me" && initialSelfRead) {
+        initialSelfRead = false;
+        return Promise.resolve(vault.member as T);
+      }
+      return request<T>(path, { signal });
+    },
     open: row => latest.current.open(row),
     validate: async encoded => (await validatedPhoto(base64ToBytes(encoded))).blob,
-  })), [identity]);
+  })); }, [identity]);
   useEffect(() => {
     const recheck = () => { if (document.visibilityState !== "hidden") store.refresh(); };
     const connections = () => store.refresh(undefined, true);
