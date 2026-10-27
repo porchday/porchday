@@ -173,15 +173,6 @@ export function VaultProvider({
         const list = items<Device>(result);
         if (canceled) return;
         setDevices(list);
-        // These are the same authorized roster fields as GET /devices. Reuse
-        // them for signature verification after the normal fingerprint checks.
-        for (const device of list) if (device.member_id === member.id) {
-          const verified = checkDevice(device).then(() => device).catch(error => {
-            authorKeys.current.delete(device.id); throw error;
-          });
-          void verified.catch(() => {});
-          authorKeys.current.set(device.id, verified);
-        }
         const localRestore = ["restricted", "suspended"].includes(member.status || "");
         if (active) {
           try {
@@ -664,7 +655,11 @@ export function VaultProvider({
     if (!authorKeys.current.has(expected.authorDeviceId)) {
       authorKeys.current.set(
         expected.authorDeviceId,
-        get(`/devices/${expected.authorDeviceId}`)
+        // Reuse the authorized own-device roster, but fingerprint only keys
+        // actually needed for content rather than every historical key at boot.
+        (devices?.some(device => device.id === expected.authorDeviceId && device.member_id === member.id)
+          ? Promise.resolve(devices.find(device => device.id === expected.authorDeviceId)!)
+          : get(`/devices/${expected.authorDeviceId}`))
           .then(async (result) => {
             const author = (result.device || result) as Device;
             await checkDevice(author);
