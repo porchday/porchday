@@ -108,6 +108,8 @@ try {
     if (path === `/devices/${deviceId}`) return reply(device);
     if (path === '/audiences') return reply({epoch: 1, devices: [device]});
     if (path === `/profiles/member/${memberId}`) return reply({id: memberId, member_id: memberId, handle: 'keyboard_member', envelope: profile});
+    if (path.startsWith('/profiles/member/') && method === 'GET') return reply({}); // Other members have no readable profile photo.
+    if (path === '/platform-invitations' && method === 'GET') return reply({items: [], next_cursor: null});
     if (path === '/connections') return reply({items: [], requests, handles: [{id: friendId, handle: 'incoming_friend'}, {id: outgoingMemberId, handle: 'outgoing_friend'}, {id: delayedMemberId, handle: 'delayed_friend'}]});
     if (path === '/platform-invitations' && method === 'POST') {
       invitationRequests.push(route.request().postDataJSON());
