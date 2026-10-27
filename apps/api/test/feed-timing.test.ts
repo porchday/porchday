@@ -1,3 +1,4 @@
+import {requestTimingMiddleware} from '../src/request-timing';
 import {afterEach,beforeEach,expect,test,vi} from 'vitest';
 import {Hono} from 'hono';
 import {feedTiming,measureFeedPhase} from '../src/feed-timing';
@@ -40,14 +41,14 @@ vi.mock('../src/auth',()=>({
 beforeEach(()=>{fixture.trace=[];fixture.quarantined=false;fixture.verified=true;fixture.status='active';fixture.queryFailure=false;fixture.journalFailure=false;});
 afterEach(()=>vi.restoreAllMocks());
 
-function setup(overrides:Partial<Env>={}){
+function setup(overrides:Partial<Env>={}, path='/api/v1/feed'){
  const points:AnalyticsEngineDataPoint[]=[],pending:Promise<unknown>[]=[];
  const env={ENVIRONMENT:'staging',FEED_PHASE_TIMING:'true',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}},
   HYPERDRIVE_JOBS:{connectionString:'synthetic-jobs'},HYPERDRIVE_SOCIAL:{connectionString:'synthetic-social'},
   RECOVERY_JOURNAL:{get:async()=>{fixture.trace.push('journal_read');return {etag:'private-etag',text:async()=>JSON.stringify({v:1,generation:fixture.generation,mode:'active',sequence:'0',head:null,pending:[],reason:null})};}},...overrides} as unknown as Env;
  const app=new Hono<{Bindings:Env;Variables:Variables}>();
- app.use('/api/*',privacyReadGuard);app.use('/api/v1/*',requireMember);app.route('/api/v1',createSocialRoutes());
- const request=()=>app.request('https://staging.porchday.test/api/v1/feed?private-token=secret',{headers:{Cookie:'session=private-cookie'}},env,{waitUntil:(promise:Promise<unknown>)=>pending.push(promise),passThroughOnException(){}} as ExecutionContext);
+ app.use('*',requestTimingMiddleware);app.use('/api/*',privacyReadGuard);app.use('/api/v1/*',requireMember);app.route('/api/v1',createSocialRoutes());
+ const request=()=>app.request('https://staging.porchday.test'+path+'?private-token=secret',{headers:{Cookie:'session=private-cookie'}},env,{waitUntil:(promise:Promise<unknown>)=>pending.push(promise),passThroughOnException(){}} as ExecutionContext);
  return {env,points,pending,request};
 }
 
@@ -125,4 +126,22 @@ test('failed timing sinks preserve operation values, original failures, and actu
  const original=Error('original failure');await expect(measureFeedPhase(broken,'social_query',async()=>{throw original;})).rejects.toBe(original);
  const {request}=setup({METRICS:{writeDataPoint(){throw Error('private sink failure');}}});
  expect((await request()).status).toBe(200);expect(fixture.trace).toContain('commit');expect(fixture.trace).toContain('social_close');
+});
+
+
+test('authenticated me exposes only fixed numeric phases; denials expose none and repeat fresh checks',async()=>{
+ const {request,points}=setup({ENVIRONMENT:'production'},'/api/v1/me');
+ const response=await request();expect(response.status).toBe(200);
+ const header=response.headers.get('server-timing')!;
+ const names=header.split(', ').map(value=>{expect(value).toMatch(/^[a-z0-9_]+;dur=[0-9]+$/);return value.split(';')[0];});
+ expect(names).toEqual([...FEED_PHASES,'journal_r2','journal_db','worker']);
+ expect(header).not.toMatch(/private|secret|11111111|22222222|synthetic/);
+ expect(points).toHaveLength(0);
+ expect(response.headers.get('cache-control')).toBe('private, no-store');
+ expect(response.headers.has('timing-allow-origin')).toBe(false);
+ fixture.trace=[];fixture.verified=false;
+ const denied=await request();expect(denied.status).toBe(401);expect(denied.headers.has('server-timing')).toBe(false);
+ expect(fixture.trace).toContain('journal_read');expect(fixture.trace).toContain('auth_session');expect(fixture.trace).not.toContain('query');
+ fixture.verified=true;fixture.quarantined=true;
+ const quarantined=await request();expect(quarantined.status).toBe(503);expect(quarantined.headers.has('server-timing')).toBe(false);
 });

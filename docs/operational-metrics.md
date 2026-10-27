@@ -119,3 +119,43 @@ The primary agent also ran `scripts/probe-metrics-cloud.ts` against an isolated 
 All four actual query-helper SQL shapes were then executed read-only against that same isolated dataset, changing only the fixed dataset constant in a temporary copy of the helper. Cloudflare accepted the weighted percentile syntax and returned: summary three feed requests, zero server errors, mean/p95 both 12 ms; counters three error events with zero batch quantity; freshness six events with the expected latest timestamp; and 30-day usage six estimated events. Every helper exited successfully, and the temporary source copy was removed. No query implementation change was needed.
 
 The monitor’s SQL adds an observed-row `count()` alongside weighted estimates so one heavily sampled row cannot satisfy the minimum evidence requirement. Its fixed comparisons, boolean predicates, `IN`, `max`, `sum`, and weighted percentile are documented Analytics Engine SQL constructs. On 2026-10-25, the exact consumer query was also accepted by Cloudflare against the existing isolated verification dataset (dataset name substituted). The 15-minute window correctly returned no rows; a historical two-hour window returned three observed/weighted feed requests, zero errors and p95 12 ms, and the bounded parser accepted the real provider fields using that historical timestamp. No new points were emitted. These checks establish SQL/response compatibility, not hosted monitor deployment, current freshness, sufficient performance samples or alert delivery. [Aggregate functions](https://developers.cloudflare.com/analytics/analytics-engine/sql-reference/aggregate-functions/), [operators](https://developers.cloudflare.com/analytics/analytics-engine/sql-reference/operators/)
+
+## Request-local startup diagnostics (October 27, 2026)
+
+Successful `GET /health` and authenticated `GET /api/v1/me` (including
+`?bootstrap=1`) now return `Server-Timing`. This is separate from staging-only
+feed telemetry above: fixed phase names and rounded millisecond durations live
+only in the response, with no extra logs, storage, telemetry points, identifiers,
+SQL, private content, or cross-origin Timing-Allow-Origin permission. Other
+routes/methods and non-200/unauthenticated responses have no diagnostic header.
+Health is no-store; member responses retain private, no-store.
+
+`worker` covers the application middleware/handler interval. `/health` runs local
+headers, domain validation, request-ID generation, JSON serialization and optional
+non-awaited aggregate metrics emission. It does not query SQL/R2, validate a
+session, construct a Hyperdrive client, use KV/Durable Objects, or rate-limit.
+Network/edge routing, TLS, isolate startup and response transfer are outside the
+measured interval. A slow end-to-end health request does not prove a database
+round trip. Worker clocks can report zero for work without intervening I/O.
+
+`/me` reports `journal_check`, `journal_close`, `auth_session`, `auth_status`,
+`social_connect_begin`, `social_actor`, `social_query`, `social_commit`, and
+`social_close`. Nested `journal_r2` measures control-object fetch/body/validation;
+`journal_db` measures the safety-status SQL/validation. They run in parallel in
+normal operation. Their sum must not be added to `journal_check`; ordered retry
+reads, when needed, accumulate into these same fixed labels. Rare stale-receipt
+reconciliation is included in `journal_check` but not fully subdivided. Auth
+session includes the auth library's connection/query work and any session renewal;
+auth cleanup already runs in waitUntil, outside the response path. Social begin
+includes connection setup; the actor statement sets transaction-local identity;
+query includes RLS and result work. GET /me has no social write-rate-limit query.
+
+This release adds measurement, not a claimed latency fix. No safe redundant
+remote check was identified: journal freshness protects restore safety, and fresh
+session/status/RLS checks protect revocation and visibility. None are cached,
+skipped or moved after the response. Placement, database replicas, bindings and
+query behavior remain unchanged. Before-release per-step hosted values were not
+available. Compare the new header with DevTools waiting/total time from the same
+client, using a successful signed-in /me response. Do not share cookies, tokens,
+profile response bodies or private content. Authenticated geographic measurements
+and any resulting optimization remain tracked in issue #9.

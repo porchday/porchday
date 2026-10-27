@@ -1,10 +1,11 @@
+import {phaseTiming} from './request-timing';
 import { createMiddleware } from 'hono/factory';
 import { authPool,createAuth } from './auth';
 import type {Env,Variables} from './types';
-import {feedTiming,measureFeedPhase} from './feed-timing';
+import {measureFeedPhase} from './feed-timing';
 export const requireMember=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
  const pool=authPool(c.env);
- const timing=feedTiming(c.env,c.req.method,c.req.path);
+ const timing=phaseTiming(c);
  try {
   const session=await measureFeedPhase(timing,'auth_session',()=>createAuth(c.env,pool).api.getSession({headers:c.req.raw.headers}));
   if(!session?.user.emailVerified)return c.json({error:{code:'UNAUTHORIZED',message:'Sign in with a verified account.'}},401);
