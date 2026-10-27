@@ -272,7 +272,7 @@ export function createSocialRoutes() {
             order by p.created_at desc,p.id desc limit 31
         `)));
     });
-    app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select * from app.posts where author_id=${id(c.req.param('id'))} and group_id is null ${after ? db `and(created_at,id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by created_at desc,id desc limit 31`))); });
+    app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.author_id=${id(c.req.param('id'))} and p.group_id is null ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.post('/posts', async (c) => {
         const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]) }));
         return c.json(await tx(c, async (db) => {
@@ -371,12 +371,12 @@ export function createSocialRoutes() {
             return {id:e.id};
         }),201);
     });
-    app.get('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const post = await requirePost(db, id(c.req.param('id'))); const comments = await db `select c.*,h.handle as author_handle,app.comment_deadline(c.id) as effective_expires_at from app.comments c left join lateral app.member_handles(array[c.author_id]) h on true where post_id=${post.id} order by created_at,id`; const reactions = await db `select * from app.post_reactions where post_id=${post.id}`; const comment_reactions = await db `select r.* from app.comment_reactions r join app.comments c on c.id=r.comment_id where c.post_id=${post.id}`; const media = await db `select id,envelope,byte_size,display_order from app.media_assets where post_id=${post.id} order by display_order`; // Newly admitted readers are not recipients of other authors' older
+    app.get('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const post = await requirePost(db, id(c.req.param('id'))); const [author] = await db`select handle from app.member_handles(array[${post.author_id}]::uuid[])`; const comments = await db `select c.*,h.handle as author_handle,app.comment_deadline(c.id) as effective_expires_at from app.comments c left join lateral app.member_handles(array[c.author_id]) h on true where post_id=${post.id} order by created_at,id`; const reactions = await db `select * from app.post_reactions where post_id=${post.id}`; const comment_reactions = await db `select r.* from app.comment_reactions r join app.comments c on c.id=r.comment_id where c.post_id=${post.id}`; const media = await db `select id,envelope,byte_size,display_order from app.media_assets where post_id=${post.id} order by display_order`; // Newly admitted readers are not recipients of other authors' older
         // signed children. Never send undecryptable replies or orphan threads.
         const addressed=(row:any)=>row.envelope.recipients.some((r:any)=>r.memberId===c.get('memberId'));
         const visible=new Set<string>();let added=true;
         while(added){added=false;for(const comment of comments)if(!visible.has(comment.id)&&addressed(comment)&&(!comment.parent_id||visible.has(comment.parent_id))){visible.add(comment.id);added=true;}}
-        return { post: { ...post, media }, comments:comments.filter(row=>visible.has(row.id)), reactions:reactions.filter(addressed), comment_reactions:comment_reactions.filter(row=>visible.has(row.comment_id)&&addressed(row)) }; })));
+        return { post: { ...post, author_handle: author?.handle ?? null, media }, comments:comments.filter(row=>visible.has(row.id)), reactions:reactions.filter(addressed), comment_reactions:comment_reactions.filter(row=>visible.has(row.comment_id)&&addressed(row)) }; })));
     app.delete('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const rows = await db `delete from app.posts where id=${id(c.req.param('id'))} returning id`; if (!rows.length)
         fail('NOT_FOUND', 404); return { ok: true }; })));
     app.post('/posts/:id/comments', async (c) => {
@@ -476,7 +476,7 @@ export function createSocialRoutes() {
         fail('INITIAL_GROUP_AUDIENCE'); await checkEnvelope(db, c.get('memberId'), b.envelope, 'group'); await db `select app.create_group(${e.id},${db.json(b.envelope)})`; return { id: e.id }; }), 201); });
     app.get('/groups/:id', async (c) => c.json(await tx(c, async (db) => { const groupId = id(c.req.param('id')); const [group] = await db `select * from app.groups where id=${groupId}`; if (!group)
         fail('NOT_FOUND', 404); const members = await db `select * from app.group_memberships where group_id=${groupId}`; const handles = await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(members.map(m => m.member_id))}))::uuid[])`; return { group, members, handles }; })));
-    app.get('/groups/:id/posts', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select * from app.posts where group_id=${id(c.req.param('id'))} ${after ? db `and(created_at,id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by created_at desc,id desc limit 31`))); });
+    app.get('/groups/:id/posts', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.group_id=${id(c.req.param('id'))} ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.put('/groups/:id', async (c) => {
         const b = await body(c, envelopeBody.extend({remove_media: surfaceRemovals(['image'], 1)}));
         return c.json(await tx(c, async (db) => {

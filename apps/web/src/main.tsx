@@ -402,7 +402,7 @@ function AppShell({
     <MemberAvatarProvider>
     <div className="app-layout">
       <header className="app-mobile-header">
-        <Logo small />
+        <Logo small href="/app" />
         <button className="icon-button" onClick={logout} aria-label="Sign out">
           <Icon name="logout" />
         </button>
@@ -422,7 +422,7 @@ function AppShell({
         </a>
       </header>
       <aside className="sidebar">
-        <Logo />
+        <Logo href="/app" />
         <nav aria-label="Your Porchday">
           {(vault.member.status === "suspended" ? [links[5]] : links).map(
             ([href, icon, name]) => {
