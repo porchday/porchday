@@ -44,9 +44,9 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         await sql.end(); });
     it('bootstraps only the same authorized roster as devices, preserving the ordinary me shape', async () => {
         const viewer = await person(), unrelated = await person();
-        const ordinary = await (await request(viewer.id, '/me')).json();
-        const bootstrap = await (await request(viewer.id, '/me?bootstrap=1')).json();
-        const devices = await (await request(viewer.id, '/devices')).json();
+        const ordinary = (await request(viewer.id, '/me')).data;
+        const bootstrap = (await request(viewer.id, '/me?bootstrap=1')).data;
+        const devices = (await request(viewer.id, '/devices')).data;
         expect(bootstrap.startup_devices).toEqual(devices.items);
         expect(bootstrap.startup_devices.some((d: any) => d.id === unrelated.deviceId)).toBe(false);
         expect(bootstrap.startup_devices.some((d: any) => d.id === viewer.deviceId)).toBe(true);
