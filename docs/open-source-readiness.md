@@ -2,6 +2,18 @@
 
 Initial review: October 26, 2026, starting from `b16577a4be6f27cd013ec2d4b92f2577f504189b`. The owner subsequently authorized public source publication and transferred the repository to [porchday/porchday](https://github.com/porchday/porchday). [Publication issue #16](https://github.com/porchday/porchday/issues/16) records the final commit, checks and GitHub settings. This is a credential and publication-surface review, not an independent application or cryptography audit, and it does not authorize a production deployment.
 
+## October 27 completion checkpoint
+
+The final publication effort is tracked in [issue #16](https://github.com/porchday/porchday/issues/16). Administrator access is now verified; the earlier access-blocker statements below describe historical checkpoints. Repository visibility, private reporting and website deployment must be checked against the latest issue evidence, not inferred from a past scan.
+
+A fresh review starting at `ef652760ec7b1fccd2a3b564fc6b31d7762ab8f6` covered 52 local/fetched refs, 273 commits, 1,673 complete historical file blobs (25,643,771 bytes), and 594 current files. All 28 advertised remote refs were reachable in that scan. Historical tree inspection covered 597 unique paths with no credential filenames, symlinks or submodules. Four configured Gitleaks scans passed; default-rule findings remained the reviewed synthetic fixtures and non-authenticating provider identifiers. Private comparisons with configured credentials, authorized temporary test passwords and the active GitHub CLI credential found no matches. The historical raw-byte finding is unchanged from the previously reviewed synthetic SQL fixture.
+
+The retained-output delta covered 143 completed Actions runs and eight artifacts, expanding 2,344 files (268,905,379 bytes). No known credential matches were found. General-scanner findings comprised exact synthetic crypto fixtures and two Cloudflare deployment version IDs in an issue comment; read-only provider lookups verified those IDs. Private triage and final publication evidence remain outside Git. New outputs, refs or edits after this checkpoint require a final delta review.
+
+The clean checkout passed locked dependency installation, the full migration chain in a separate disposable PostgreSQL 17 instance, 746 application/script tests, the crypto suite, typechecks, web build, format/secret guard regressions, generated notices, emoji consistency and Go interoperability. No hosted credentials or member data were used for these development checks. The standard development port was already occupied and its instance was left untouched. Full Xcode is unavailable on this Mac; native simulator coverage must be taken from the applicable CI run, not claimed as a new local run.
+
+Public-site source/license links are prepared separately from publication. Production member-availability incident [#40](https://github.com/porchday/porchday/issues/40) remains a deployment gate until recovery is verified. Source publication does not imply that incident is resolved or that a website rollout has occurred.
+
 ## Credential review
 
 The review covered the fetched remote history and additional local checkpoint refs: 198 commits, 1,263 unique file blobs and approximately 18.75 MB of source history. The remote had one branch, no tags, no pull requests, no releases, and no enabled wiki or discussions at inventory time.
