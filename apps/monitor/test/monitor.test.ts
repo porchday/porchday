@@ -55,7 +55,7 @@ describe('Independent operational monitor',()=>{
     fetcher.mockImplementation(async()=>healthy());await f.tick(363);expect(f.mail).toHaveBeenCalledTimes(2);
     await f.tick(364);expect(f.mail).toHaveBeenCalledTimes(3);expect(f.mail.mock.calls[2][0].subject).toContain('recovered');
     const response=await worker.fetch(new Request('https://status.porchday.com/status'),f.env);
-    expect(await response.json()).toEqual({status:'operational',last_checked_at:new Date(start+364*60000).toISOString(),metrics_monitoring:'not_configured'});
+    expect(await response.json()).toMatchObject({status:'operational',last_checked_at:new Date(start+364*60000).toISOString(),metrics_monitoring:'not_configured',availability:{status:'collecting',failed_minutes:363,passed_minutes:2,unknown_minutes:0}});
     const exposed=JSON.stringify(f.mail.mock.calls);expect(exposed).not.toContain('secret error');expect(exposed).not.toContain(f.env.OPERATIONS_HEALTH_TOKEN);expect(exposed).not.toContain('/api/operations/health');
   });
   it('persists bounded retries before email I/O and never turns storage errors into application requests',async()=>{
@@ -89,7 +89,7 @@ describe('Independent operational monitor',()=>{
     expect(html).toContain('Service checks are passing');expect(html).toContain('<html lang="en">');expect(html).toContain('aria-labelledby="status-heading"');expect(html).toContain('datetime="'+new Date(start).toISOString()+'"');expect(html).not.toContain('private-member-email');
     const nonce=html.match(/<style nonce="([a-f0-9-]+)">/)?.[1];expect(nonce).toBeTruthy();expect(response.headers.get('content-security-policy')).toContain("style-src 'nonce-"+nonce+"'");expect(response.headers.get('content-security-policy')).toContain("script-src 'none'");expect(response.headers.get('content-security-policy')).toContain("frame-ancestors 'none'");expect(html).not.toMatch(/<script|<img|<iframe|https?:\/\//);
     vi.setSystemTime(start+180001);const stale=await worker.fetch(new Request('https://status.porchday.com/'),f.env);expect(await stale.text()).toContain('Status unavailable');
-    expect(await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json()).toEqual({status:'unknown',last_checked_at:new Date(start).toISOString(),metrics_monitoring:'not_configured'});
+    expect(await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json()).toMatchObject({status:'unknown',last_checked_at:new Date(start).toISOString(),metrics_monitoring:'not_configured'});
   });
   it('rejects HTML injection and private response fields before rendering, including malformed timestamps',async()=>{
     const response=renderStatusPage({status:'operational"><script>alert(1)</script>',last_checked_at:'"><img src=x onerror=alert(1)>',issues:['private-database-error'],snapshot:{member:'private-member'}});
@@ -109,7 +109,7 @@ describe('Independent operational monitor',()=>{
     expect(fetcher.mock.calls.filter(([url])=>String(url).endsWith('/api/operations/health'))).toHaveLength(11);
     expect(fetcher.mock.calls.filter(([url])=>String(url).endsWith('/sql'))).toHaveLength(3);
     expect(f.mail).toHaveBeenCalledTimes(1);expect(f.mail.mock.calls[0][0].subject).toContain('metrics monitoring need attention');
-    expect(await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json()).toEqual({status:'operational',last_checked_at:new Date(start+10*60000).toISOString(),metrics_monitoring:'unavailable'});
+    expect(await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json()).toMatchObject({status:'operational',last_checked_at:new Date(start+10*60000).toISOString(),metrics_monitoring:'unavailable'});
     queryFails=false;for(let i=11;i<=20;i++)await f.tick(i);
     expect(f.mail).toHaveBeenCalledTimes(2);expect(f.mail.mock.calls[1][0].subject).toContain('metrics monitoring recovered');
     expect(JSON.stringify([...f.storage.data])).not.toMatch(/private-|operator@example/);expect(JSON.stringify(f.mail.mock.calls)).not.toMatch(/private-|analytics_engine\/sql/);
@@ -142,7 +142,7 @@ describe('Independent operational monitor',()=>{
     });
     for(let minute=0;minute<=11;minute++)await f.tick(minute);
     expect(f.mail).toHaveBeenCalledTimes(2);expect(f.mail.mock.calls[0][0].subject).toContain('authentication failures');expect(f.mail.mock.calls[1][0].subject).toContain('account-recovery failures');
-    const status=await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json();expect(status).toEqual({status:'operational',last_checked_at:new Date(start+11*60000).toISOString(),metrics_monitoring:'ready'});
+    const status=await(await worker.fetch(new Request('https://status.porchday.com/status'),f.env)).json();expect(status).toMatchObject({status:'operational',last_checked_at:new Date(start+11*60000).toISOString(),metrics_monitoring:'ready'});
     mode='idle';for(let minute=12;minute<=20;minute++)await f.tick(minute);expect(f.mail).toHaveBeenCalledTimes(2);
     mode='good';for(let minute=21;minute<=31;minute++)await f.tick(minute);expect(f.mail).toHaveBeenCalledTimes(4);
     expect(f.mail.mock.calls[2][0].subject).toContain('authentication failures recovered');expect(f.mail.mock.calls[3][0].subject).toContain('account-recovery failures recovered');

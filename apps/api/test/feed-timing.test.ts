@@ -47,7 +47,7 @@ vi.mock('../src/auth',()=>({
  createAuth:()=>({api:{getSession:async()=>{fixture.trace.push('auth_session');return {user:{id:fixture.member,emailVerified:fixture.verified},session:{id:'private-session',createdAt:new Date()}};}}}),
 }));
 beforeEach(()=>{fixture.trace=[];fixture.quarantined=false;fixture.verified=true;fixture.status='active';fixture.queryFailure=false;fixture.journalFailure=false;});
-afterEach(()=>vi.restoreAllMocks());
+afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
 
 function setup(overrides:Partial<Env>={}, path='/api/v1/feed'){
  const points:AnalyticsEngineDataPoint[]=[],pending:Promise<unknown>[]=[];
@@ -85,16 +85,17 @@ test('every request repeats fresh privacy and member checks, and denial never ru
 });
 
 test('journal boundary failures emit only fixed source codes and never reach auth or the feed',async()=>{
+ vi.useFakeTimers();
  for(const kind of ['store','control','database']){
   fixture.trace=[];fixture.journalFailure=kind==='database';
   const overrides=kind==='database'?{}:{RECOVERY_JOURNAL:{get:async()=>{
    if(kind==='store')throw Error('private R2 endpoint token=hidden');
    return {etag:'private-etag',text:async()=>'{private-invalid-content'};
   }} as unknown as R2Bucket};
-  const {request,points}=setup(overrides);const response=await request();
+  const {request,points}=setup(overrides);const pending=request();await vi.runAllTimersAsync();const response=await pending;
   expect(response.status).toBe(503);
-  expect(await response.json()).toEqual({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'This action is temporarily unavailable while data safeguards are checked. Please try again later.'}});
-  expect(points.filter(p=>p.blobs?.[2]==='error').map(p=>p.blobs?.[5])).toEqual([kind==='store'?'journal_store_read_failed':kind==='control'?'journal_control_invalid':'journal_database_read_failed']);
+  expect(await response.json()).toEqual({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'Porchday could not complete a required safety check. Please try again shortly.'}});
+  expect(points.filter(p=>p.blobs?.[2]==='error').map(p=>p.blobs?.[5])).toEqual(kind==='store'?['journal_r2_read_retry','journal_r2_read_retry','journal_r2_read_retry','journal_io_exhausted','journal_store_read_failed']:[kind==='control'?'journal_control_invalid':'journal_database_read_failed']);
   expect(fixture.trace).not.toContain('auth_session');expect(fixture.trace).not.toContain('begin');expect(fixture.trace).toContain('journal_close');
   expect(JSON.stringify(points)).not.toMatch(/private|hidden|parameters|endpoint/);
  }
