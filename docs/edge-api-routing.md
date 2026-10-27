@@ -54,3 +54,34 @@ References:
 - https://developers.cloudflare.com/api/resources/workers/subresources/domains/methods/update/
 - https://developers.cloudflare.com/workers/static-assets/binding/
 - https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/
+
+## Member-based placement watch
+
+The October 27 operations-health rollback used ten requests per checkpoint;
+nearest-rank p95 with ten samples is the maximum, not a stable tail estimate.
+Operations-health performs fresh journal R2 and jobs-SQL reads, closes the journal
+SQL client, then opens a separate jobs client for the combined operational and
+backup snapshot and closes it. Placement does not add queries. Instrumented
+successful, capability-authorized health responses expose only numeric journal,
+snapshot, close and total Worker durations, allowing connection/storage time to
+be distinguished from client-to-Worker transport. No denial timings or bodies
+are logged and no fresh privacy/authentication check is cached or removed.
+
+`scripts/placement-watch-policy.mjs` evaluates at least 30 attempts for each of
+signed-in `/api/v1/me?bootstrap=1` and `/api/v1/feed?limit=10` from the same US
+probe, using a separately owned synthetic fixture. Latency comparison requires
+30 successful samples per route in both baseline and current windows. All
+attempts and failures remain recorded. Median or p95 degradation exceeding both
+15% and 20ms is a reason; three or more failed requests with an error-rate
+increase over two percentage points is independently a reason. Aggregate API
+5xx rates use the same error rule with at least 20 requests. Two consecutive
+checkpoints with the same reason trigger the guarded rollback. A changed
+release or domain set stops the watch rather than rolling back another release.
+Missing credentials, insufficient samples or unavailable aggregate errors must
+be reported as incomplete coverage, never silently treated as healthy.
+Operations-health remains a warning only, including latency and failed checks;
+it never supplies a rollback reason. Keep public bytes/caching and front-end
+health verification separate. Retain the prior backend and original domain
+records before any promotion; bound the watch to one hour and clean up its
+synthetic session afterward. A synthetic empty feed is not representative load
+or proof of Philippines latency; report that limitation with the measurements.
