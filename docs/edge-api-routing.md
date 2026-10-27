@@ -29,11 +29,11 @@ inactive version bytes/bindings, then activate and verify health, headers,
 navigation, redirects, legacy account/key-access paths and synthetic signed-in
 reads/writes. A front-end code test alone is not hosted service-binding evidence.
 `edge_frontend: true` in the resource manifest leaves backend routes empty;
-the edge renderer owns all custom domains. Staging selects Oregon API placement with the edge front end. Production
-returned to placement off and backend-owned domains after the October 27
-automatic watch rollback. The production front end remains unrouted. Do not
-re-enable production placement or transfer its domains without renewed
-verification; see issue #9. Future releases must update edge assets and backend together,
+the edge renderer owns all custom domains. Both environments select Oregon API placement with the edge front end. The
+renewed October 27 rollout follows the phase-attributed comparison in
+[the request 7 verification record](placement-watch7.md). Check issue #9 and
+the current deployment record for the bounded watch outcome before deployment.
+A later rollback takes precedence over these defaults. Future releases must update edge assets and backend together,
 or explicitly retire this topology. Do not serve mismatched web/API builds.
 
 Before promotion, save both active versions, provider settings and route set.
