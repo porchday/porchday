@@ -1,3 +1,4 @@
+import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import {
   get,
@@ -11,7 +12,6 @@ import {
 } from "./api";
 import {
   Alert,
-  Avatar,
   Button,
   Empty,
   Field,
@@ -159,7 +159,7 @@ export function Connections() {
           <div className="member-list">
             {incoming.map((r: Json) => (
               <div className="member-row connection-request-row" key={r.id}>
-                <Avatar name={label(r.sender)} />
+                <MemberAvatar memberId={r.sender} name={label(r.sender)} />
                 <div className="member-info">
                   <strong>@{label(r.sender)}</strong>
                   <small>Wants to connect</small>
@@ -229,7 +229,7 @@ export function Connections() {
                   r.member_a === vault.member.id ? r.member_b : r.member_a;
                 return (
                   <div className="member-row" key={r.id}>
-                    <Avatar name={label(other)} />
+                    <MemberAvatar memberId={other} name={label(other)} />
                     <a className="member-info" href={`/app/wall/${other}`}>
                       <strong>@{label(other)}</strong>
                       <small>
@@ -306,6 +306,7 @@ export function Connections() {
                             )
                               action.run(async () => {
                                 await del(`/connections/${r.id}`);
+                                window.dispatchEvent(new Event("porchday:connections-changed"));
                                 await refresh();
                               });
                           }}
@@ -323,6 +324,7 @@ export function Connections() {
                                 await request(`/blocks/${other}`, {
                                   method: "PUT",
                                 });
+                                window.dispatchEvent(new Event("porchday:connections-changed"));
                                 await refresh();
                               });
                           }}
@@ -342,7 +344,7 @@ export function Connections() {
           <h2>Sent requests</h2>
           {outgoing.map((r: Json) => (
             <div className="member-row" key={r.id}>
-              <Avatar name={label(r.recipient)} />
+              <MemberAvatar memberId={r.recipient} name={label(r.recipient)} />
               <div className="member-info">
                 <strong>@{label(r.recipient)}</strong>
                 <small>Request pending · Your label: {r.kind === "family" ? "Family" : "Friend"}</small>
@@ -715,7 +717,7 @@ export function GroupDetail({ id }: { id: string }) {
               )?.handle || "member";
             return (
               <div className="member-row" key={m.member_id}>
-                <Avatar name={handle} />
+                <MemberAvatar memberId={m.member_id} name={handle} />
                 <div className="member-info">
                   <strong>@{handle}</strong>
                   <small>{m.role}</small>
@@ -931,17 +933,8 @@ export function Wall({ id }: { id?: string }) {
           {profile?.status && <span>{profile.status}</span>}
         </div>
         <div className="wall-profile" style={{flexWrap:"wrap"}}>
-          {profile?.avatar ? (
-            <span className="avatar large profile-avatar-photo">
-              <EncryptedPhoto media={profile.avatar as MediaPayload} />
-            </span>
-          ) : (
-            <Avatar
-              name={String(profile?.displayName || handle || "?")}
-              size="large"
-              theme={theme}
-            />
-          )}
+          <MemberAvatar memberId={id || vault.member.id}
+            name={String(profile?.displayName || handle || "?")} size="large" theme={theme} />
           <div style={{flex:"1 1 12rem",minWidth:0,overflowWrap:"anywhere"}}>
             <h1>{profile?.displayName || `@${handle || "Member"}`}</h1>
             <p>@{handle || "private"}</p>
@@ -1035,11 +1028,9 @@ export function Notifications() {
                   })
                 }
               >
-                <span className="feature-icon sage">
-                  <Icon
-                    name={r.kind?.includes("connection") ? "people" : "bell"}
-                  />
-                </span>
+                {r.actor ? <MemberAvatar memberId={r.actor} /> : (
+                  <span className="feature-icon sage"><Icon name="bell" /></span>
+                )}
                 <span>
                   <strong>{title[r.kind] || "You have a new update"}</strong>
                   <small>

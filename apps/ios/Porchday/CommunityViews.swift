@@ -40,7 +40,8 @@ struct ConnectionsView: View {
             ForEach(Array(data["requests"].array.enumerated()), id: \.offset) { _, request in
                 let requestID = request["id"].string ?? ""
                 VStack(alignment: .leading) {
-                    Text("@" + name(request["sender"].string == model.member?.id ? request["recipient"].string : request["sender"].string))
+                    let person = (request["sender"].string == model.member?.id ? request["recipient"].string : request["sender"].string) ?? ""
+                    HStack { MemberAvatarView(memberID: person, name: name(person)); Text("@" + name(person)) }
                     if request["recipient"].string == model.member?.id {
                         ConnectionLabelPicker(selection: Binding(get: { acceptanceKind[requestID] ?? "friend" }, set: { acceptanceKind[requestID] = $0 }))
                         HistorySharingPicker(selection: Binding(get: { acceptanceHistory[requestID] ?? .newConnectionDefault }, set: { acceptanceHistory[requestID] = $0 }))
@@ -59,7 +60,7 @@ struct ConnectionsView: View {
             ForEach(Array(data["items"].array.enumerated()), id: \.offset) { _, connection in
                 let person = connection["member_a"].string == model.member?.id ? connection["member_b"].string ?? "" : connection["member_a"].string ?? ""
                 VStack(alignment: .leading, spacing: 12) {
-                    NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { Label("@\(name(person))", systemImage: connection["kind"].string == "family" ? "house" : "person") }
+                    NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { HStack { MemberAvatarView(memberID: person, name: name(person)); Text("@\(name(person))") } }
                     ConnectionLabelPicker(selection: Binding(get: { connection["kind"].string == "family" ? "family" : "friend" }, set: { label in
                         Task { changingKind = true; defer { changingKind = false }
                             await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string(label)]), shareHistory: true)
@@ -92,6 +93,7 @@ struct ConnectionsView: View {
         model.cancelHistoricalPostSharing()
         await model.perform {
             _ = try await model.api.social(path, method: method, body: method == "DELETE" ? nil : body)
+            model.vault.invalidateAvatars()
             await refresh()
             if shareHistory { await model.refreshHistoricalPosts(retry: true) }
         }
@@ -124,7 +126,7 @@ struct ProfileView: View {
     @AppStorage("porchday-standard-profile-theme") private var standardTheme = false
     var body: some View {
         FeedView(title: "@" + handle, endpoint: "/walls/" + memberID,
-                 profileHeader: AnyView(ProfileHeader(profile: profile, handle: handle, isOwner: memberID == model.member?.id && model.canWriteSocial, standardTheme: $standardTheme,
+                 profileHeader: AnyView(ProfileHeader(memberID: memberID, profile: profile, handle: handle, isOwner: memberID == model.member?.id && model.canWriteSocial, standardTheme: $standardTheme,
                                                       edit: { edit = true }, compose: { compose = true })),
                  wallpaper: ProfileWallpaper.displayed(profile["wallpaper"], standardTheme: standardTheme))
             .task(id: model.initialProfileVersion) {
@@ -137,6 +139,7 @@ struct ProfileView: View {
     private func refresh() async { do { let raw = try await model.api.social("/profiles/" + handle); if raw["envelope"] != .null { profile = try await vault.open(raw) } } catch { profile = .null } }
 }
 private struct ProfileHeader: View {
+    let memberID: String
     let profile: JSON
     let handle: String
     let isOwner: Bool
@@ -157,7 +160,7 @@ private struct ProfileHeader: View {
         VStack(alignment: .leading, spacing: 12) {
             if profile["cover"] != .null { EncryptedPhotoView(photo: profile["cover"]).frame(maxHeight: 160).clipped() }
             HStack(alignment: .center) {
-                if profile["avatar"] != .null { EncryptedPhotoView(photo: profile["avatar"]).frame(width: 72, height: 72).clipShape(Circle()) }
+                MemberAvatarView(memberID: memberID, name: handle, size: 72)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(profile["displayName"].string ?? "@" + handle).font(heading)
                     Text("@" + handle).font(.callout).foregroundStyle(.secondary)
@@ -226,7 +229,7 @@ struct GroupView: View {
                 }
             }
             Section { TextField("Invite an exact @handle", text: $handle).textInputAutocapitalization(.never); Button("Invite") { Task { await run("/groups/\(id)/invitations", body: .object(["handle": .string(handle)])) } }.disabled(handle.isEmpty || !model.canWriteSocial); Button("Share group details with current members") { Task { await model.perform { guard let member = model.member, groupPayload != .null else { throw PorchError.message("You need access to the group details to share them.") }; var shared = groupPayload;if shared["image"] != .null { shared=shared.replacing("image",with:try await model.reshareSurfacePhoto(shared["image"],audience:"group",parent:id,group:id)) };let envelope = try await vault.seal(shared, member: member, kind: "group", audience: "group", id: id, group: id, original:data["group"]["envelope"]["context"].replacing("revision",with:.number(Double((data["group"]["envelope"]["context"]["revision"].integer ?? 0)+1))).replacing("createdAt",with:.string(PorchDate.string()))); _ = try await model.api.social("/groups/" + id, method: "PUT", body: .object(["envelope": envelope]));if let image=shared["image"]["id"].string { _ = try await model.api.social("/media/"+image+"/attachment",method:"PUT",body:.object(["kind":.string("group"),"target_id":.string(id),"slot":.string("image")])) };await refresh() } } }.disabled(!model.canWriteSocial); Text("New members receive future posts. Group details and historical posts require an explicit share.").font(.footnote) }
-            Section("Members") { ForEach(Array(data["members"].array.enumerated()), id: \.offset) { _, entry in let person = entry["member_id"].string ?? ""; VStack(alignment: .leading) { Text("@\(data["handles"].array.first { $0["member_id"].string == person || $0["id"].string == person }?["handle"].string ?? "member") · \(entry["role"].string ?? "member")"); Menu("Manage membership") { Button("Make moderator") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("moderator")])) } }; Button("Make member") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("member")])) } }; Button("Transfer ownership") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("owner")])) } }; Button("Remove member", role: .destructive) { Task { await run("/groups/\(id)/members/\(person)", method: "DELETE") } } }.disabled(!model.canWriteSocial) } } }
+            Section("Members") { ForEach(Array(data["members"].array.enumerated()), id: \.offset) { _, entry in let person = entry["member_id"].string ?? ""; VStack(alignment: .leading) { MemberAvatarView(memberID: person, name: data["handles"].array.first { $0["member_id"].string == person || $0["id"].string == person }?["handle"].string ?? "?"); Text("@\(data["handles"].array.first { $0["member_id"].string == person || $0["id"].string == person }?["handle"].string ?? "member") · \(entry["role"].string ?? "member")"); Menu("Manage membership") { Button("Make moderator") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("moderator")])) } }; Button("Make member") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("member")])) } }; Button("Transfer ownership") { Task { await run("/groups/\(id)/members/\(person)", method: "PUT", body: .object(["role": .string("owner")])) } }; Button("Remove member", role: .destructive) { Task { await run("/groups/\(id)/members/\(person)", method: "DELETE") } } }.disabled(!model.canWriteSocial) } } }
             Section { Button("Leave group", role: .destructive) { Task { await run("/groups/\(id)/members/\(model.member?.id ?? "")", method: "DELETE"); manage = false } }.disabled(!model.canWriteSocial); Text("Owners must transfer ownership or delete the group before leaving.").font(.caption); Button("Delete group", role: .destructive) { Task { await run("/groups/" + id, method: "DELETE"); manage = false } } }
         }.navigationTitle("Group members").task { await refresh() }.toolbar { Button("Done") { manage = false } }
             .sheet(isPresented: $editing) { NavigationStack { GroupEditor(id: id, payload: groupPayload, context: data["group"]["envelope"]["context"]) { Task { await refresh() } } } }
@@ -238,7 +241,26 @@ struct GroupView: View {
 struct NotificationsView: View {
     @EnvironmentObject var model: AppModel
     @State private var rows: [JSON] = []
-    var body: some View { List { if rows.isEmpty { ContentUnavailableView("No notifications", systemImage: "bell") }; ForEach(Array(rows.enumerated()), id: \.offset) { _, row in VStack(alignment: .leading) { if let post = row["post_id"].string { NavigationLink("You have a new update") { PostDetailView(id: post) } } else { Text((row["kind"].string ?? "New update").replacingOccurrences(of: "_", with: " ")) }; if row["read_at"] == .null { Button("Mark read") { Task { await model.perform { _ = try await model.api.social("/notifications/\(row["id"].string ?? "")/read", method: "PUT", body: .object([:])); await refresh() } } }.font(.caption) } } } }.navigationTitle("Notifications").task { await refresh() }.refreshable { await refresh() } }
+    var body: some View {
+        List {
+            if rows.isEmpty { ContentUnavailableView("No notifications", systemImage: "bell") }
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top) {
+                    if let actor = row["actor"].string { MemberAvatarView(memberID: actor) }
+                    VStack(alignment: .leading) {
+                        if let post = row["post_id"].string { NavigationLink("You have a new update") { PostDetailView(id: post) } }
+                        else { Text((row["kind"].string ?? "New update").replacingOccurrences(of: "_", with: " ")) }
+                        if row["read_at"] == .null {
+                            Button("Mark read") { Task { await model.perform {
+                                _ = try await model.api.social("/notifications/\(row["id"].string ?? "")/read", method: "PUT", body: .object([:]))
+                                await refresh()
+                            } } }.font(.caption)
+                        }
+                    }
+                }
+            }
+        }.navigationTitle("Notifications").task { await refresh() }.refreshable { await refresh() }
+    }
     private func refresh() async { await model.perform { rows = try await model.api.social("/notifications")["items"].array } }
 }
 struct ReportView: View {

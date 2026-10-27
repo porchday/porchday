@@ -3,7 +3,12 @@ import Combine
 import Porchcrypto
 
 @MainActor final class CryptoVault: ObservableObject {
-    @Published var device: Device?
+    @Published var device: Device? {
+        didSet { if oldValue?.id != device?.id || oldValue?.revoked != device?.revoked { invalidateAvatars() } }
+    }
+    let avatars = ProfileAvatarCache()
+    @Published private(set) var avatarVersion = 0
+    func invalidateAvatars() { avatars.clear(); avatarVersion += 1 }
     @Published var devices: [Device] = []
     @Published var recoveryNote = ""
     private var access = MemberAccess(status: "unavailable")
@@ -115,7 +120,7 @@ import Porchcrypto
         let value: JSON = .object(["active": .string(active.id), "keys": .array(keys)])
         try writeStored(JSONEncoder().encode(value), "device:\(member.id)")
     }
-    func clear() { for session in sessions.values { session.close() }; sessions = [:]; device = nil; devices = []; recoveryNote = ""; pending = nil; access = MemberAccess(status: "unavailable") }
+    func clear() { invalidateAvatars(); for session in sessions.values { session.close() }; sessions = [:]; device = nil; devices = []; recoveryNote = ""; pending = nil; access = MemberAccess(status: "unavailable") }
     private func verify(_ device: Device) throws {
         var error: NSError?; let actual = PorchcryptoPublicFingerprint(device.publicKey, &error); if let error { throw error }
         guard actual == device.fingerprint else { throw PorchError.message("Device fingerprint mismatch. Sharing has stopped.") }

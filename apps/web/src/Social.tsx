@@ -1,3 +1,4 @@
+import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import {
   bytesToBase64,
@@ -29,7 +30,6 @@ import {
 } from "./api";
 import {
   Alert,
-  Avatar,
   Button,
   Empty,
   Field,
@@ -341,7 +341,7 @@ export function Composer({
       onSubmit={submit}
     >
       <div className="composer-start">
-        <Avatar name={vault.member.handle} />
+        <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
         <label className="sr-only" htmlFor="post-text">
           Write a post
         </label>
@@ -704,7 +704,7 @@ export function PostCard({
     <article className="post-card panel">
       <header className="post-heading">
         <a href={`/app/wall/${row.author_id}`} className="post-author">
-          <Avatar name={row.author_handle || row.author_id} />
+          <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} />
           <div>
             <strong>
               {row.author_id === vault.member.id
@@ -1326,7 +1326,7 @@ function Comment({
   }
   return (
     <div className="comment">
-      <Avatar name={row.author_handle || row.author_id} size="small" />
+      <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} size="small" />
       <div className="comment-main">
         {editing ? (
           <form className="form-stack" onSubmit={save}>
@@ -1516,7 +1516,7 @@ function CommentComposer({
         fromPost={reply && ack === postRow.expires_at}
       />
       <div className="comment-compose-row">
-        <Avatar name={vault.member.handle} size="small" />
+        <MemberAvatar memberId={vault.member.id} name={vault.member.handle} size="small" />
         <label className="sr-only" htmlFor={`comment-${parent.id}`}>
           {reply ? "Write a reply" : "Write a comment"}
         </label>

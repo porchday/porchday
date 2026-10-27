@@ -1,9 +1,9 @@
+import { MemberAvatar, MemberAvatarProvider } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { get, auth, type Member } from "./api";
 import {
   Alert,
-  Avatar,
   Button,
   Empty,
   Icon,
@@ -399,6 +399,7 @@ function AppShell({
       </Empty>
     );
   return (
+    <MemberAvatarProvider>
     <div className="app-layout">
       <header className="app-mobile-header">
         <Logo small />
@@ -445,7 +446,7 @@ function AppShell({
           )}
         </nav>
         <div className="sidebar-account">
-          <Avatar name={vault.member.handle} />
+          <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
           <a href="/app/wall">
             <strong>@{vault.member.handle}</strong>
             <small>My profile</small>
@@ -522,6 +523,7 @@ function AppShell({
         ))}
       </nav>
     </div>
+    </MemberAvatarProvider>
   );
 }
 initColorScheme();
