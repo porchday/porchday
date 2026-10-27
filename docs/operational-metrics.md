@@ -182,3 +182,27 @@ after pending work settles. No session, status, journal, device or RLS decision
 is cached. Compare successful authenticated bootstrap headers before/after,
 including worker and total time, at the same edge. Anonymous timings do not
 measure this optimization.
+
+
+### Warm bootstrap metadata and combined commit
+
+For `/me`, a successful auth-schema verdict is reused within the isolate only
+for the same Worker deployment ID, auth binding connection string and origin.
+No socket, pending promise, auth instance or session crosses request boundaries.
+Concurrent cold requests validate independently; any observed validation failure
+wins over success and blocks that key until a new deployment/isolate. Missing
+version metadata always validates. Roll a fresh deployment after auth schema
+migrations or binding changes; maintain backward compatibility while old
+isolates drain. This is a metadata optimization, never an authorization cache.
+
+`auth_schema_wait` separates waiting for schema readiness from `auth_session`,
+which now measures the actual fresh session operation. Previously these were
+combined. A normal joined session/user lookup already uses one query; renewal
+and expired-session cleanup can require another. Better Auth retains cookie,
+expiry, revocation and conditional renewal behavior without custom SQL.
+
+The bootstrap UUID-only SELECT and COMMIT now share a simple-protocol batch;
+`social_query` includes COMMIT and `social_commit` is absent for `/me`. The only
+interpolated request value is the same strictly validated UUID used for actor
+setup. All results are withheld until a confirmed COMMIT result; errors trigger
+rollback and connection destruction. The social path now has two exchanges.
