@@ -459,7 +459,6 @@ function AppShell({
           <a href="/privacy">Privacy</a>
           <a href="/community">Rules</a>
           <a href="/help">Help</a>
-          <a href="https://github.com/porchday/porchday">Source code</a>
           <span>Porchday · By invitation only</span>
         </div>
       </aside>
