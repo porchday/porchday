@@ -129,9 +129,21 @@ import Porchcrypto
         let devices = try (result["devices"].array.isEmpty ? result["items"].array : result["devices"].array).map(Device.init)
         for device in devices { try verify(device) }; guard let epoch = result["epoch"].integer else { throw PorchError.message("The sharing audience is unavailable.") }; return (epoch, devices)
     }
-    func seal(_ payload: JSON, member: Member, kind: String, audience: String, id: String = UUID().uuidString.lowercased(), group: String? = nil, parent: String? = nil, post: String? = nil, expiry: Date? = nil, original: JSON? = nil) async throws -> JSON {
+    func seal(_ payload: JSON, member: Member, kind: String, audience: String, id: String = UUID().uuidString.lowercased(), group: String? = nil, parent: String? = nil, post: String? = nil, expiry: Date? = nil, original: JSON? = nil, historySnapshot: JSON? = nil) async throws -> JSON {
         guard access.permitsSealing(kind: kind), member.access.permitsSealing(kind: kind), let device, !device.revoked, let session = sessions[device.fingerprint] else { throw PorchError.message("This key can read saved content but cannot publish or sign new evidence. You can report a concern without disclosing evidence.") }
-        let (epoch, recipients) = try await self.audience(audience, group: group, post: post)
+        let epoch: Int, recipients: [Device]
+        if let historySnapshot {
+            guard ["post", "media"].contains(kind), group == nil,
+                  ["connections", "friends", "family"].contains(audience),
+                  let value = historySnapshot["epoch"].integer, value >= 0,
+                  case .array(let pending) = historySnapshot["pending_members"], pending.isEmpty,
+                  case .array(let devices) = historySnapshot["devices"] else { throw PorchError.message("The history-sharing audience is unavailable.") }
+            epoch = value; recipients = try devices.map(Device.init)
+            guard !recipients.isEmpty, recipients.count <= 4000,
+                  recipients.contains(where: { $0.id == device.id && $0.memberID == member.id && !$0.revoked }),
+                  recipients.allSatisfy({ !$0.revoked }), Set(recipients.map(\.id)).count == recipients.count else { throw PorchError.message("The history-sharing audience is unavailable.") }
+            for recipient in recipients { try verify(recipient) }
+        } else { let resolved = try await self.audience(audience, group: group, post: post); epoch = resolved.0; recipients = resolved.1 }
         var context = original?.object ?? ["id": .string(id), "kind": .string(kind), "createdAt": .string(PorchDate.string()), "revision": .number(1)]
         context["authorId"] = .string(member.id); context["authorDeviceId"] = .string(device.id); context["audience"] = .string(audience)
         context["parentId"] = parent.map(JSON.string) ?? .null; context["groupId"] = group.map(JSON.string) ?? .null; context["epoch"] = .number(Double(epoch)); context["expiresAt"] = expiry.map { .string(PorchDate.string($0)) } ?? .null

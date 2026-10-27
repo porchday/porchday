@@ -18,7 +18,7 @@ export interface RouteDependencies {
 interface MediaDependencies extends RouteDependencies {
   body<T>(c:SocialContext,schema:z.ZodType<T>,maxBytes?:number):Promise<T>;
   writeAllowed(db:Db):Promise<void>;
-  checkEnvelope(db:Db,member:string,envelope:Pick<EncryptedEnvelope,'context'|'recipients'>,kind:string,options?:{postId?:string;allowPast?:boolean}):Promise<unknown>;
+  checkEnvelope(db:Db,member:string,envelope:Pick<EncryptedEnvelope,'context'|'recipients'>,kind:string,options?:{postId?:string;allowPast?:boolean;historyPostId?:string;historySourceRevision?:number}):Promise<unknown>;
 }
 export const MAX_MEDIA_BYTES=22_020_096;
 export const MEDIA_UPLOAD_TIMEOUT_MS=120_000;
@@ -58,11 +58,11 @@ export function limitedMediaBody(request:Request,maxBytes:number,fail:RouteDepen
     size+=chunk.byteLength;if(size>maxBytes)fail('PAYLOAD_TOO_LARGE',413);controller.enqueue(chunk);
   }}),{signal}));
 }
-const reservationSchema=z.object({id:z.string().uuid(),envelope:envelopeSchema,byte_size:z.number().int().min(1).max(MAX_MEDIA_BYTES)}).strict();
+const reservationSchema=z.object({id:z.string().uuid(),envelope:envelopeSchema,byte_size:z.number().int().min(1).max(MAX_MEDIA_BYTES),history_post_id:z.string().uuid().optional(),history_source_revision:z.number().int().positive().optional()}).strict().refine(b=>(b.history_post_id===undefined)===(b.history_source_revision===undefined),'History post and revision are required together');
 async function reservationBody(request:Request,fail:RouteDependencies['fail']) {
   const abort=new AbortController(),timer=setTimeout(()=>abort.abort(Error('MEDIA_UPLOAD_EXPIRED')),MEDIA_UPLOAD_TIMEOUT_MS);
   try{const b=reservationSchema.parse(await parseMediaJson(limitedMediaBody(request,25*1024*1024,fail,abort.signal).body,25*1024*1024,fail));
-    return {id:b.id,byte_size:b.byte_size,routing:mediaRouting(b.envelope),digest:await envelopeDigest(b.envelope)};
+    return {id:b.id,byte_size:b.byte_size,history_post_id:b.history_post_id,history_source_revision:b.history_source_revision,routing:mediaRouting(b.envelope),digest:await envelopeDigest(b.envelope)};
   }catch(error){if(abort.signal.aborted)fail('MEDIA_UPLOAD_EXPIRED',409);throw error;}
   finally{clearTimeout(timer);abort.abort();}
 }
@@ -109,7 +109,7 @@ export function registerMediaRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     return c.json(await tx(c,async db=>{
       await writeAllowed(db);
       if(b.id!==b.routing.context.id||b.routing.context.parentId===null)fail('ENVELOPE_CONTEXT');
-      await checkEnvelope(db,c.get('memberId'),b.routing,'media',{allowPast:b.routing.context.audience==='only_me'});
+      await checkEnvelope(db,c.get('memberId'),b.routing,'media',{allowPast:b.routing.context.audience==='only_me',historyPostId:b.history_post_id,historySourceRevision:b.history_source_revision});
       // Preserve directory-before-profile lock order while serializing quota reservations.
       await db`select member_id from app.profiles where member_id=${c.get('memberId')} for update`;
       const [quota]=await db`select coalesce(sum(byte_size),0)::bigint as bytes from app.media_assets where owner_id=${c.get('memberId')}`;

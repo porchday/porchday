@@ -33,6 +33,8 @@ const pausedRoutes: [keyof Env, string, string, string][] = [
   ['CONTENT_WRITES_PAUSED', 'POST', '/posts', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'POST', '/posts/post/comments', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'POST', '/posts/post/reshare', 'POSTING_PAUSED'],
+  ['CONTENT_WRITES_PAUSED', 'POST', '/posts/post/audience-refresh', 'POSTING_PAUSED'],
+  ['CONTENT_WRITES_PAUSED', 'PUT', '/connections/connection/history', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'PUT', '/posts/post', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'PUT', '/comments/comment', 'POSTING_PAUSED'],
   ['CONTENT_WRITES_PAUSED', 'PUT', '/posts/post/reactions/tag', 'POSTING_PAUSED'],

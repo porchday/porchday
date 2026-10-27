@@ -7,10 +7,13 @@ import SwiftUI
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(model).environmentObject(model.vault).tint(Color(red: 0.27, green: 0.39, blue: 0.29))
-                .task { await model.restore() }
+                .task { model.setSceneActive(scenePhase == .active); await model.restore(); await model.refreshHistoricalPosts() }
                 .onOpenURL { model.handleURL($0) }
                 .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }
-                .onChange(of: scenePhase) { _, phase in if phase == .active, model.member != nil { Task { await model.restore() } } }
+                .onChange(of: scenePhase) { _, phase in
+                    model.setSceneActive(phase == .active)
+                    if phase == .active, model.member != nil { Task { await model.restore(); await model.refreshHistoricalPosts() } }
+                }
                 .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(HStack(spacing: 12) { Image("PorchdayMark").resizable().frame(width: 48, height: 48).accessibilityHidden(true); Text("Porchday").font(.largeTitle) }) } }
         }
     }
@@ -42,7 +45,7 @@ struct MainTabs: View {
             NavigationStack { ProfileView(memberID: member.id, handle: member.handle) }.tabItem { Label("My wall", systemImage: "person.crop.rectangle") }
             NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "gearshape") }
         }
-        .task(id: member.id) { await model.initializeProfileWallpaper() }
+        .task(id: member.id) { await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
     }

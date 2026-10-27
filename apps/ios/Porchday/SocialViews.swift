@@ -37,6 +37,7 @@ struct FeedView: View {
             .background { if wallpaper != .none { WallpaperBackground(wallpaper: wallpaper).ignoresSafeArea(edges: .bottom) } }
         }
         .navigationTitle(title).refreshable { await load() }.task(id: endpoint) { await load() }
+        .onChange(of: model.historySharingVersion) { _, _ in Task { await load() } }
         .toolbar { NavigationLink { NotificationsView() } label: { Label("Notifications", systemImage: "bell") } }
         .sheet(isPresented: $compose) { NavigationStack { ComposerView(groupID: groupID) { Task { await load() } } } }
     }

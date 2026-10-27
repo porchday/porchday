@@ -5,24 +5,97 @@ struct ConnectionsView: View {
     @State private var data: JSON = .null
     @State private var handle = ""
     @State private var kind = "friend"
+    @State private var requestHistory = ConnectionHistory.newConnectionDefault
+    @State private var acceptanceHistory: [String: ConnectionHistory] = [:]
     @State private var verifiedRecipient: VerificationRecipient?
+    @State private var changingHistory = false
     var body: some View { List {
-        Section { Text("\(data["items"].array.count) of 300 friends, including family").font(.headline); TextField("Find an exact @handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled(); Picker("Connection", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }; Button("Send connection request") { Task { await model.perform { _ = try await model.api.social("/connections/requests", method: "POST", body: .object(["handle": .string(handle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "")), "kind": .string(kind)])); handle = ""; await refresh() } } }.disabled(handle.isEmpty || !model.canWriteSocial); Text("A new connection sees future posts. Historical encrypted content needs an explicit share from its author.").font(.caption).foregroundStyle(.secondary) }
+        Section {
+            Text("\(data["items"].array.count) of 300 friends, including family").font(.headline)
+            TextField("Find an exact @handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled()
+            Picker("Connection", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }
+            HistorySharingPicker(selection: $requestHistory)
+            Button("Send connection request") { Task { await model.perform {
+                _ = try await model.api.social("/connections/requests", method: "POST", body: .object([
+                    "handle": .string(handle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "")),
+                    "kind": .string(kind), "history": .string(requestHistory.rawValue)]))
+                handle = ""; requestHistory = .newConnectionDefault; await refresh()
+            } } }.disabled(handle.isEmpty || !model.canWriteSocial)
+            Text("This controls your posts. Each person chooses separately. Earlier posts are shared from an unlocked device, within their original audience and timers.").font(.caption).foregroundStyle(.secondary)
+        }
         PlatformInvitationSection()
-        Section("Pending requests") { ForEach(Array(data["requests"].array.enumerated()), id: \.offset) { _, request in VStack(alignment: .leading) { Text("@" + name(request["sender"].string == model.member?.id ? request["recipient"].string : request["sender"].string)); HStack { if request["recipient"].string == model.member?.id { Button("Accept \(request["kind"].string ?? "friend")") { Task { await action("/connections/requests/\(request["id"].string ?? "")/accept") } }.disabled(!model.canWriteSocial) }; Button(request["sender"].string == model.member?.id ? "Cancel" : "Decline", role: .destructive) { Task { await action("/connections/requests/\(request["id"].string ?? "")/decline") } }.disabled(!model.canWriteSocial) } } } }
-        Section("Connections") { ForEach(Array(data["items"].array.enumerated()), id: \.offset) { _, connection in
-            let person = connection["member_a"].string == model.member?.id ? connection["member_b"].string ?? "" : connection["member_a"].string ?? ""
-            NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { Label("@\(name(person)) · \(connection["kind"].string ?? "friend")", systemImage: connection["kind"].string == "family" ? "house" : "person") }
-                .swipeActions { Button("Remove", role: .destructive) { Task { await action("/connections/\(connection["id"].string ?? "")", method: "DELETE") } }.disabled(!model.canWriteSocial); Button("Mute") { Task { await action("/mutes/" + person, method: "PUT") } } }
-                .contextMenu { Button("Verify encryption keys") { verifiedRecipient = VerificationRecipient(id: person, handle: name(person)) }; Button("Propose family label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("family")])) } }.disabled(!model.canWriteSocial); Button("Propose friend label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("friend")])) } }.disabled(!model.canWriteSocial); Button("Block", role: .destructive) { Task { await action("/blocks/" + person, method: "PUT") } } }
-        } }
-    }.navigationTitle("Connections").task { await refresh() }.refreshable { await refresh() }
+        if model.historySharingBusy || model.historySharingNotice != nil {
+            Section("Sharing earlier posts") {
+                if model.historySharingBusy { ProgressView("Sharing earlier posts…") }
+                if let notice = model.historySharingNotice {
+                    Text(notice)
+                    Button("Check earlier posts") { Task { await model.refreshHistoricalPosts(retry: true) } }.disabled(model.historySharingBusy || !model.canWriteSocial)
+                }
+            }
+        }
+        Section("Pending requests") {
+            ForEach(Array(data["requests"].array.enumerated()), id: \.offset) { _, request in
+                let requestID = request["id"].string ?? ""
+                VStack(alignment: .leading) {
+                    Text("@" + name(request["sender"].string == model.member?.id ? request["recipient"].string : request["sender"].string))
+                    if request["recipient"].string == model.member?.id {
+                        HistorySharingPicker(selection: Binding(get: { acceptanceHistory[requestID] ?? .newConnectionDefault }, set: { acceptanceHistory[requestID] = $0 }))
+                        Button("Accept \(request["kind"].string ?? "friend")") { Task {
+                            await action("/connections/requests/\(requestID)/accept", body: .object(["history": .string((acceptanceHistory[requestID] ?? .newConnectionDefault).rawValue)]), shareHistory: true)
+                        } }.disabled(!model.canWriteSocial)
+                    } else {
+                        Text("Your posts: " + ConnectionHistory.persisted(request["history"]).title).font(.caption)
+                    }
+                    Button(request["sender"].string == model.member?.id ? "Cancel" : "Decline", role: .destructive) { Task { await action("/connections/requests/\(requestID)/decline") } }.disabled(!model.canWriteSocial)
+                }
+            }
+        }
+        Section("Connections") {
+            ForEach(Array(data["items"].array.enumerated()), id: \.offset) { _, connection in
+                let person = connection["member_a"].string == model.member?.id ? connection["member_b"].string ?? "" : connection["member_a"].string ?? ""
+                VStack(alignment: .leading, spacing: 12) {
+                    NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { Label("@\(name(person)) · \(connection["kind"].string ?? "friend")", systemImage: connection["kind"].string == "family" ? "house" : "person") }
+                    HistorySharingPicker(selection: Binding(get: { .persisted(connection["own_history"]) }, set: { history in
+                        Task { changingHistory = true; defer { changingHistory = false }
+                            await action("/connections/\(connection["id"].string ?? "")/history", method: "PUT", body: .object(["history": .string(history.rawValue)]), shareHistory: true)
+                        }
+                    })).disabled(changingHistory || !model.canWriteSocial)
+                }
+                .swipeActions {
+                    Button("Remove", role: .destructive) { Task { await action("/connections/\(connection["id"].string ?? "")", method: "DELETE") } }.disabled(!model.canWriteSocial)
+                    Button("Mute") { Task { await action("/mutes/" + person, method: "PUT") } }
+                }
+                .contextMenu {
+                    Button("Verify encryption keys") { verifiedRecipient = VerificationRecipient(id: person, handle: name(person)) }
+                    Button("Propose family label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("family")])) } }.disabled(!model.canWriteSocial)
+                    Button("Propose friend label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("friend")])) } }.disabled(!model.canWriteSocial)
+                    Button("Block", role: .destructive) { Task { await action("/blocks/" + person, method: "PUT") } }
+                }
+            }
+            Text("Only share new posts stops further history sharing. Posts already shared remain available until they expire or you delete them.").font(.caption).foregroundStyle(.secondary)
+        }
+    }.navigationTitle("Connections").task { await refresh(); await model.refreshHistoricalPosts() }.refreshable { await refresh(); await model.refreshHistoricalPosts(retry: true) }
         .sheet(item: $verifiedRecipient) { recipient in NavigationStack { RecipientKeyVerificationView(recipient: recipient) }.id(recipient.id) }
-        .onChange(of: model.member?.id) { _, _ in verifiedRecipient = nil }
+        .onChange(of: model.member?.id) { _, _ in verifiedRecipient = nil; acceptanceHistory = [:]; requestHistory = .newConnectionDefault }
     }
     private func name(_ id: String?) -> String { data["handles"].array.first { $0["member_id"].string == id || $0["id"].string == id }?["handle"].string ?? "member" }
     private func refresh() async { await model.perform { data = try await model.api.social("/connections") } }
-    private func action(_ path: String, method: String = "POST", body: JSON = .object([:])) async { await model.perform { _ = try await model.api.social(path, method: method, body: method == "DELETE" ? nil : body); await refresh() } }
+    private func action(_ path: String, method: String = "POST", body: JSON = .object([:]), shareHistory: Bool = false) async {
+        model.cancelHistoricalPostSharing()
+        await model.perform {
+            _ = try await model.api.social(path, method: method, body: method == "DELETE" ? nil : body)
+            await refresh()
+            if shareHistory { await model.refreshHistoricalPosts(retry: true) }
+        }
+    }
+}
+private struct HistorySharingPicker: View {
+    @Binding var selection: ConnectionHistory
+    var body: some View {
+        Picker("Your posts", selection: $selection) {
+            ForEach(ConnectionHistory.allCases, id: \.self) { choice in Text(choice.title).tag(choice) }
+        }
+    }
 }
 struct ProfileView: View {
     let memberID: String; let handle: String

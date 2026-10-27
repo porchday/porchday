@@ -23,9 +23,10 @@ const controls: { flag: PauseFlag; code: string; message: string; routes: [strin
     message: 'Posting and editing are temporarily paused. Keep your draft and try again later.',
     routes: [
       ['POST', /^\/api\/v1\/(?:posts|groups|imports)$/],
-      ['POST', /^\/api\/v1\/posts\/[^/]+\/(?:comments|reshare)$/],
+      ['POST', /^\/api\/v1\/posts\/[^/]+\/(?:comments|reshare|audience-refresh)$/],
       ['PUT', /^\/api\/v1\/profiles\/me$/],
       ['PUT', /^\/api\/v1\/emoji-library$/],
+      ['PUT', /^\/api\/v1\/connections\/[^/]+\/history$/],
       ['PUT', /^\/api\/v1\/(?:posts|comments|groups)\/[^/]+$/],
       ['PUT', /^\/api\/v1\/(?:posts|comments)\/[^/]+\/reactions\/[^/]+$/],
       ['PUT', /^\/api\/v1\/media\/[^/]+\/attachment$/],

@@ -264,8 +264,9 @@ function runtime(env:RuntimeEnv) {
 export function isPrivacyMutation(method:string,path:string):boolean {
   const uuid='[a-fA-F0-9-]{36}';
   if(method==='DELETE')return new RegExp(`^/api/v1/(?:account|(?:posts|comments)/${uuid}(?:/reactions/[A-Za-z0-9_-]{16,128})?|(?:devices|connections|blocks|media)/${uuid}|groups/${uuid}(?:/members/${uuid})?)$`).test(path);
-  if(['PUT','PATCH'].includes(method))return new RegExp(`^/api/v1/(?:(?:posts|comments|blocks)/${uuid}|profiles/me|emoji-library|groups/${uuid}(?:/members/${uuid})?|keys/backup|connections/${uuid}/kind|media/${uuid}/attachment)$`).test(path);
+  if(['PUT','PATCH'].includes(method))return new RegExp(`^/api/v1/(?:(?:posts|comments|blocks)/${uuid}|profiles/me|emoji-library|groups/${uuid}(?:/members/${uuid})?|keys/backup|connections/${uuid}/(?:kind|history)|media/${uuid}/attachment)$`).test(path);
   if(method!=='POST')return false;
+  if(new RegExp(`^/api/v1/posts/${uuid}/audience-refresh$`).test(path))return true;
   if(path==='/api/v1/imports')return true; // An import may replace private profile content.
   return new RegExp(`^/api/staff/(?:moderation/reports/${uuid}/actions|recovery/cases/${uuid}/review)$`).test(path);
 }

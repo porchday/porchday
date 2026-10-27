@@ -107,7 +107,7 @@ describe('Independent privacy checkpoint protocol',()=>{
   });
   it('matches actual privacy routes and excludes login, new content, reads and unknown paths',()=>{
     const id=randomUUID();
-    for(const [method,path] of [['DELETE',`/api/v1/posts/${id}`],['DELETE','/api/v1/account'],['PUT',`/api/v1/comments/${id}`],['PUT','/api/v1/profiles/me'],['PUT','/api/v1/emoji-library'],['PUT',`/api/v1/media/${id}/attachment`],['PUT',`/api/v1/blocks/${id}`],['PUT',`/api/v1/connections/${id}/kind`],['POST','/api/v1/imports'],['POST',`/api/staff/moderation/reports/${id}/actions`]])expect(isPrivacyMutation(method,path)).toBe(true);
+    for(const [method,path] of [['DELETE',`/api/v1/posts/${id}`],['DELETE','/api/v1/account'],['PUT',`/api/v1/comments/${id}`],['PUT','/api/v1/profiles/me'],['PUT','/api/v1/emoji-library'],['PUT',`/api/v1/media/${id}/attachment`],['PUT',`/api/v1/blocks/${id}`],['PUT',`/api/v1/connections/${id}/kind`],['PUT',`/api/v1/connections/${id}/history`],['POST',`/api/v1/posts/${id}/audience-refresh`],['POST','/api/v1/imports'],['POST',`/api/staff/moderation/reports/${id}/actions`]])expect(isPrivacyMutation(method,path)).toBe(true);
     for(const [method,path] of [['GET',`/api/v1/posts/${id}`],['POST','/api/auth/sign-in/email'],['POST','/api/v1/posts'],['POST',`/api/v1/posts/${id}/comments`],['DELETE','/api/nonexistent'],['POST','/api/staff/nonexistent'],['PUT',`/api/v1/media/${id}/bytes`]])expect(isPrivacyMutation(method,path)).toBe(false);
   });
   it('does not create intents for unauthenticated or unmatched requests',async()=>{
@@ -156,6 +156,26 @@ suite('PostgreSQL restore reconciliation',()=>{
       await tx`select set_config('app.restore_replay','on',true)`;
       await tx`update app.connections set kind='friend' where id=${edge.id}`;
       await tx`insert into app.post_recipients(post_id,device_id,member_id) values(${post},${device},${b})`;
+      await tx`update app.safety_journal_state set restore_quarantined=true`;
+      await tx`select app.replay_safety_batch(${tx.json(decisions)})`;
+      expect(await tx`select * from app.connections where id=${edge.id}`).toHaveLength(0);
+      expect(await tx`select * from app.post_recipients where post_id=${post}`).toHaveLength(0);
+      await tx`update app.safety_journal_state set restore_quarantined=false`;
+    });
+  });
+  it('replays a restrictive history choice so an old full preference cannot regenerate grants',async()=>{
+    const a=randomUUID(),b=randomUUID(),device=randomUUID(),post=randomUUID(),[low,high]=[a,b].sort();
+    for(const member of [a,b])await sql`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${member},now(),now())`;
+    await sql`insert into app.device_keys(id,member_id,public_key,fingerprint,authorization_proof) values(${device},${b},${'synthetic-public'.repeat(12)},${'c'.repeat(64)},'{}')`;
+    const [edge]=await sql`insert into app.connections(member_a,member_b,kind,history_a,history_b) values(${low},${high},'friend','full','full') returning id`;
+    await sql`insert into app.posts(id,author_id,audience,envelope,epoch) values(${post},${a},'connections','{}',1)`;
+    const [{sequence}]=await sql`select sequence from app.safety_journal_state`;
+    await sql`update app.connections set history_a='future' where id=${edge.id}`;
+    const decisions=await sql`select sequence,id,occurred_at,decision from app.safety_journal where sequence>${sequence} order by sequence`;
+    expect(decisions.some(r=>r.decision.action==='connection'&&r.decision.a===low&&r.decision.b===high)).toBe(true);
+    await sql.begin(async tx=>{
+      await tx`select set_config('app.restore_replay','on',true)`;
+      await tx`update app.connections set history_a='full' where id=${edge.id}`;
       await tx`update app.safety_journal_state set restore_quarantined=true`;
       await tx`select app.replay_safety_batch(${tx.json(decisions)})`;
       expect(await tx`select * from app.connections where id=${edge.id}`).toHaveLength(0);

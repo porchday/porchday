@@ -39,9 +39,122 @@ async function seal(a: Person, payload: unknown, override: Partial<ContentContex
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); await sql.unsafe(await readFile(new URL('../migrations/046_connection_history.sql',import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('keeps history consent directional, defaults old clients to future, and resets it on reconnect', async()=>{
+        const a=await person(),b=await person(),outsider=await person();
+        const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
+        const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend',history:'full'});
+        expect(pending.status).toBe(201);
+        expect((await request(b.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id).history).toBe('full');
+        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST');
+        expect(accepted.status).toBe(200);const edge=accepted.data.id;
+        const own=async(p:Person)=>(await request(p.id,'/connections')).data.items.find((r:any)=>r.id===edge);
+        expect(await own(a)).toMatchObject({own_history:'full',peer_history:'future'});
+        expect(await own(b)).toMatchObject({own_history:'future',peer_history:'full'});
+        // Acceptance retries cannot silently change either person's choice.
+        expect((await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{history:'full'})).status).toBe(200);
+        expect((await own(b)).own_history).toBe('future');
+        expect((await request(outsider.id,'/connections/'+edge+'/history','PUT',{history:'full'})).status).toBe(404);
+        expect((await request(b.id,'/connections/'+edge+'/history','PUT',{history:'full'})).status).toBe(200);
+        expect(await own(a)).toMatchObject({own_history:'full',peer_history:'full'});
+        expect((await request(a.id,'/connections/'+edge+'/history','PUT',{history:'future'})).status).toBe(200);
+        expect(await own(a)).toMatchObject({own_history:'future',peer_history:'full'});
+        expect((await sql`select decision from app.test_history_journal where decision->>'action'='connection' and decision->>'a'=${[a.id,b.id].sort()[0]} and decision->>'b'=${[a.id,b.id].sort()[1]}`)).toHaveLength(1);
+        expect((await request(a.id,'/connections/'+edge,'DELETE')).status).toBe(200);
+        await connection(a,b);
+        expect((await request(a.id,'/connections')).data.items[0]).toMatchObject({own_history:'future',peer_history:'future'});
+    },60000);
+    it('refreshes author-signed history and immutable photos only for consented audiences, retaining original dates and hiding old children',async()=>{
+        const owner=await person(),oldFriend=await person(),full=await person(),future=await person(),relative=await person(),outsider=await person();
+        await connection(owner,oldFriend);
+        const postId=randomUUID(),photoId=randomUUID(),deadline=new Date(Date.now()+3600000).toISOString(),photoDeadline=new Date(Date.now()+1800000).toISOString();
+        const photoPayload={mime:'image/jpeg',bytes:'c2FtcGxl',alt:'History photo'};
+        const photo=await seal(owner,photoPayload,{id:photoId,kind:'media',parentId:postId,audience:'friends',expiresAt:photoDeadline});
+        const upload=async(p:Person,envelope:any,history?:{history_post_id:string;history_source_revision:number})=>{
+            const bytes=new TextEncoder().encode(JSON.stringify(envelope));const reservation=await request(p.id,'/media','POST',{id:envelope.context.id,envelope,byte_size:bytes.length,...history});
+            expect(reservation.status,JSON.stringify(reservation.data)).toBe(201);expect((await app.request('https://porchday.test/media/'+envelope.context.id+'/bytes',{method:'PUT',headers:{'x-test-member':p.id,'content-type':'application/octet-stream'},body:bytes},env)).status).toBe(200);
+        };
+        await upload(owner,photo);
+        const payload={text:'Before friendship',media:[{id:photoId}],reactionSecret:createReactionSecret()};
+        const original=await seal(owner,payload,{id:postId,audience:'friends',expiresAt:deadline});
+        expect((await request(owner.id,'/posts','POST',{envelope:original,media_ids:[photoId]})).status).toBe(201);
+        const child=await seal(oldFriend,{text:'Old comment'},{kind:'comment',audience:'friends',parentId:postId,expiresAt:deadline},postId);
+        expect((await request(oldFriend.id,'/posts/'+postId+'/comments','POST',{envelope:child,parent_expires_at:deadline})).status).toBe(201);
+        const tag=await reactionTag({secret:payload.reactionSecret,targetId:postId,memberId:oldFriend.id,emoji:'love'});
+        const reaction=await seal(oldFriend,{emoji:'love'},{kind:'reaction',id:tag,audience:'friends',parentId:postId,expiresAt:deadline},postId);
+        expect((await request(oldFriend.id,'/posts/'+postId+'/reactions/'+tag,'PUT',{envelope:reaction})).status).toBe(200);
+        const relativePost=await seal(owner,{text:'Family only'},{audience:'family'}),privatePost=await seal(owner,{text:'Only me'},{audience:'only_me'});
+        for(const envelope of [relativePost,privatePost])expect((await request(owner.id,'/posts','POST',{envelope})).status).toBe(201);
+        for(const [peer,kind,history] of [[full,'friend','full'],[future,'friend','future'],[relative,'family','full']] as const){
+            const [profile]=await sql`select handle from app.profiles where member_id=${peer.id}`;
+            const invite=await request(owner.id,'/connections/requests','POST',{handle:profile.handle,kind,history});
+            expect((await request(peer.id,'/connections/requests/'+invite.data.id+'/accept','POST',{history:'future'})).status).toBe(200);
+        }
+        const candidates=await request(owner.id,'/posts/audience-refresh');
+        expect(candidates.status).toBe(200);expect(candidates.data.items.map((p:any)=>p.id)).toEqual(expect.arrayContaining([postId,relativePost.context.id]));
+        expect(candidates.data.items.some((p:any)=>p.id===privatePost.context.id)).toBe(false);
+        expect((await request(outsider.id,'/posts/'+postId+'/audience-refresh/audience')).status).toBe(404);
+        expect((await request(oldFriend.id,'/posts/'+postId+'/audience-refresh/audience')).status).toBe(403);
+        expect((await request(full.id,'/posts/'+postId)).status).toBe(404);
+        const snap=(await request(owner.id,'/posts/'+postId+'/audience-refresh/audience')).data;
+        expect(snap.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,oldFriend.id,full.id].sort());
+        const encrypt=async(context:ContentContext,value:unknown)=>encryptObject({context:{...context,epoch:snap.epoch},payload:value,signingKey:owner.key,recipients:snap.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+        const replacementId=randomUUID(),replacement=await encrypt({...photo.context,id:replacementId,createdAt:new Date().toISOString()},photoPayload);
+        // Ordinary upload cannot bypass the history-specific consent snapshot.
+        expect((await request(owner.id,'/media','POST',{id:replacementId,envelope:replacement,byte_size:new TextEncoder().encode(JSON.stringify(replacement)).length})).data.error.code).toBe('AUDIENCE_CHANGED');
+        await upload(owner,replacement,{history_post_id:postId,history_source_revision:1});
+        const envelope=await encrypt({...original.context,revision:2},{...payload,media:[{id:replacementId}]});
+        const lifecycle=await signStatement({purpose:'porchday-lifecycle',id:postId,revision:2,expiresAt:deadline},owner.key);
+        const refresh={envelope,lifecycle,source_revision:1,source_expires_at:deadline,source_media_ids:[photoId],media_ids:[replacementId]};
+        expect((await request(owner.id,'/posts/'+postId+'/audience-refresh','POST',{...refresh,source_media_ids:[]})).data.error.code).toBe('MEDIA_ATTACHMENT_CHANGED');
+        expect((await request(owner.id,'/posts/'+postId+'/audience-refresh','POST',{...refresh,lifecycle:await signStatement({purpose:'porchday-lifecycle',id:postId,revision:2,expiresAt:deadline},outsider.key)})).data.error.code).toBe('INVALID_PROOF');
+        expect((await request(owner.id,'/posts/'+postId+'/audience-refresh','POST',refresh)).status).toBe(200);
+        expect((await request(owner.id,'/posts/'+postId+'/audience-refresh','POST',refresh)).status).toBe(200);
+        const detail=await request(full.id,'/posts/'+postId);
+        expect(detail.status).toBe(200);expect(detail.data.post.envelope.context.createdAt).toBe(original.context.createdAt);expect(detail.data.post.edited_at).toBeNull();
+        expect(detail.data.comments).toEqual([]);expect(detail.data.reactions).toEqual([]);
+        expect((await request(oldFriend.id,'/posts/'+postId)).data.comments).toHaveLength(1);
+        expect(await decryptObject({envelope:detail.data.post.envelope,expectedContext:envelope.context,privateKey:full.key,authorPublicKey:owner.publicKey})).toMatchObject({text:'Before friendship',media:[{id:replacementId}]});
+        const bytes=await app.request('https://porchday.test/media/'+replacementId+'/bytes',{headers:{'x-test-member':full.id}},env);
+        expect(bytes.status).toBe(200);expect(await decryptObject({envelope:await bytes.json() as any,expectedContext:replacement.context,privateKey:full.key,authorPublicKey:owner.publicKey})).toEqual(photoPayload);
+        expect(await sql`select id from app.media_assets where id=${photoId}`).toHaveLength(0);
+        expect(await sql`select * from app.deletion_outbox where object_key=${'media/'+owner.id+'/'+photoId}`).toHaveLength(1);
+        for(const peer of [future,relative,outsider])expect((await request(peer.id,'/posts/'+postId)).status).toBe(404);
+        expect((await request(owner.id,'/posts/audience-refresh')).data.items.some((p:any)=>p.id===postId)).toBe(false);
+        const edge=(await request(owner.id,'/connections')).data.items.find((r:any)=>[r.member_a,r.member_b].includes(full.id));
+        expect((await request(owner.id,'/connections/'+edge.id+'/history','PUT',{history:'future'})).status).toBe(200);
+        // Going forward stops new backfill; it does not recall delivered posts.
+        expect((await request(full.id,'/posts/'+postId)).status).toBe(200);
+        expect((await request(owner.id,'/blocks/'+full.id,'PUT')).status).toBe(200);
+        expect((await request(full.id,'/posts/'+postId)).status).toBe(404);
+        expect((await request(owner.id,'/blocks/'+full.id,'DELETE')).status).toBe(200);
+        await connection(owner,full);
+        expect((await request(owner.id,'/posts/'+postId+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===full.id)).toBe(false);
+    },90000);
+    it('rejects stale history snapshots, source revisions and expired posts without changing their grants',async()=>{
+        const a=await person(),b=await person();
+        const post=await seal(a,{text:'Race fixture'}),timed=await seal(a,{text:'Expired fixture'},{expiresAt:new Date(Date.now()+60000).toISOString()});
+        for(const envelope of [post,timed])expect((await request(a.id,'/posts','POST',{envelope})).status).toBe(201);
+        await connection(a,b);const edge=(await request(a.id,'/connections')).data.items[0];
+        expect((await request(a.id,'/posts/audience-refresh')).data.items).toEqual([]);
+        await request(a.id,'/connections/'+edge.id+'/history','PUT',{history:'full'});
+        const snap=(await request(a.id,'/posts/'+post.context.id+'/audience-refresh/audience')).data;
+        const envelope=await encryptObject({context:{...post.context,epoch:snap.epoch,revision:2},payload:{text:'Race fixture'},signingKey:a.key,recipients:snap.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+        const lifecycle=await signStatement({purpose:'porchday-lifecycle',id:post.context.id,revision:2,expiresAt:null},a.key);
+        const refresh={envelope,lifecycle,source_revision:1,source_expires_at:null,source_media_ids:[],media_ids:[]};
+        await request(a.id,'/connections/'+edge.id+'/history','PUT',{history:'future'});
+        expect((await request(a.id,'/posts/'+post.context.id+'/audience-refresh','POST',refresh)).data.error.code).toBe('AUDIENCE_CHANGED');
+        expect((await request(b.id,'/posts/'+post.context.id)).status).toBe(404);
+        const edited=await seal(a,{text:'Concurrent edit'},{...post.context,revision:2},post.context.id);
+        expect((await request(a.id,'/posts/'+post.context.id,'PUT',{envelope:edited,lifecycle})).status).toBe(200);
+        expect((await request(a.id,'/posts/'+post.context.id+'/audience-refresh','POST',refresh)).data.error.code).toBe('REVISION_CHANGED');
+        await sql`update app.posts set expires_at=created_at+interval '1 millisecond' where id=${timed.context.id}`;
+        await request(a.id,'/connections/'+edge.id+'/history','PUT',{history:'full'});
+        expect((await request(a.id,'/posts/audience-refresh')).data.items.some((p:any)=>p.id===timed.context.id)).toBe(false);
+        expect((await request(a.id,'/posts/'+timed.context.id+'/audience-refresh/audience')).status).toBe(404);
+    },60000);
     it('keeps friends-only posts, replies, reactions and photos from family while retaining eligible non-mutual commenters', async () => {
         const owner = await person(), friend = await person(), peer = await person(), relative = await person();
         await connection(owner, friend); await connection(owner, peer); await connection(owner, relative, 'family');

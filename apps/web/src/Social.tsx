@@ -474,10 +474,12 @@ export function Feed({
     };
     document.addEventListener("visibilitychange", visible);
     window.addEventListener("online", visible);
+    window.addEventListener("porchday:posts-shared", visible);
     return () => {
       clearInterval(interval);
       document.removeEventListener("visibilitychange", visible);
       window.removeEventListener("online", visible);
+      window.removeEventListener("porchday:posts-shared", visible);
     };
   }, [endpoint]);
   const refresh = () => setVersion((v) => v + 1);

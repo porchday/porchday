@@ -40,6 +40,9 @@ export function Connections() {
   }, []);
   const [handle, setHandle] = useState("");
   const [kind, setKind] = useState("friend");
+  const [history, setHistory] = useState<"full" | "future">("full");
+  const [incomingHistory, setIncomingHistory] = useState<Record<string, "full" | "future">>({});
+  const [sharingConnection, setSharingConnection] = useState<{ id: string; name: string; history: "full" | "future" } | null>(null);
   const [filter, setFilter] = useState("all");
   const [mutes, setMutes] = useState<string[]>([]);
   const [verifiedKeys, setVerifiedKeys] = useState<{
@@ -68,8 +71,9 @@ export function Connections() {
       document.addEventListener("keydown", cancelFocus);
       document.addEventListener("pointerdown", cancelFocus);
       try {
-        await post(`/connections/requests/${id}/${decision}`);
+        await post(`/connections/requests/${id}/${decision}`, decision === "accept" ? { history: incomingHistory[id] || "full" } : {});
         await refresh();
+        if (decision === "accept") window.dispatchEvent(new Event("porchday:connections-changed"));
         await new Promise<void>((resolve) => requestAnimationFrame(() => {
           if (!interacted) peopleHeading.current?.focus();
           resolve();
@@ -93,6 +97,7 @@ export function Connections() {
       await post("/connections/requests", {
         handle: handle.replace(/^@/, "").toLowerCase(),
         kind,
+        history,
       });
       setHandle("");
       await refresh();
@@ -127,6 +132,7 @@ export function Connections() {
               <option value="family">Family</option>
             </select>
           </label>
+          <HistoryChoice value={history} onChange={setHistory} disabled={action.busy || vault.member.status === "restricted"} />
           <Button
             variant="primary"
             busy={action.busy}
@@ -149,8 +155,8 @@ export function Connections() {
         <section className="panel">
           <h2>Connection requests</h2>
           <p>
-            Accepting connects you for future eligible posts. Existing encrypted
-            history stays private unless its author explicitly shares it. Save
+            Choose whether to share your earlier posts with each person. Their
+            choice for their own posts is separate. Save
             your profile again to share its details and photos with new
             connections.
           </p>
@@ -164,6 +170,7 @@ export function Connections() {
                     Wants to connect as{" "}
                     {r.kind === "family" ? "family" : "a friend"}
                   </small>
+                  <HistoryChoice value={incomingHistory[r.id] || "full"} onChange={value => setIncomingHistory(previous => ({ ...previous, [r.id]: value }))} disabled={action.busy || vault.member.status === "restricted"} />
                 </div>
                 <div className="button-row">
                   <Button
@@ -242,6 +249,9 @@ export function Connections() {
                         <Icon name="more" />
                       </summary>
                       <div className="dropdown-menu">
+                        <button disabled={vault.member.status === "restricted"} onClick={() => setSharingConnection({ id: r.id, name: label(other), history: r.own_history === "full" ? "full" : "future" })}>
+                          Post sharing
+                        </button>
                         <button
                           onClick={() =>
                             action.run(async () => {
@@ -361,6 +371,19 @@ export function Connections() {
           ))}
         </section>
       )}
+      {sharingConnection && (
+        <Modal title={`Share your posts with @${sharingConnection.name}`} onClose={() => setSharingConnection(null)}>
+          <HistoryChoice value={sharingConnection.history} onChange={history => setSharingConnection(previous => previous && ({ ...previous, history }))} disabled={action.busy} />
+          <p>Full history includes your earlier posts and photos whose audience allows this connection. Only me posts, expired posts, and earlier comments and reactions stay excluded.</p>
+          <p>Earlier posts are shared while your account is unlocked. Choosing only new posts does not take back posts already shared.</p>
+          <Alert>{action.error}</Alert>
+          <Button variant="primary" busy={action.busy} disabled={vault.member.status === "restricted"} onClick={() => action.run(async () => {
+            await request(`/connections/${sharingConnection.id}/history`, { method: "PUT", body: JSON.stringify({ history: sharingConnection.history }) });
+            await refresh(); setSharingConnection(null);
+            window.dispatchEvent(new Event("porchday:connections-changed"));
+          }, "Post sharing updated.")}>Save</Button>
+        </Modal>
+      )}
       {verifiedKeys && (
         <Modal
           title={`Verify @${verifiedKeys.name}`}
@@ -383,6 +406,15 @@ export function Connections() {
       )}
     </>
   );
+}
+export function HistoryChoice({ value, onChange, disabled }: { value: "full" | "future"; onChange: (value: "full" | "future") => void; disabled?: boolean }) {
+  return <label className="field history-choice">
+    <span>Share your posts</span>
+    <select value={value} disabled={disabled} onChange={event => onChange(event.target.value as "full" | "future")}>
+      <option value="full">Share full history (recommended)</option>
+      <option value="future">Only share new posts</option>
+    </select>
+  </label>;
 }
 export function Groups() {
   const vault = useVault();

@@ -17,6 +17,8 @@ type C = Context<{
 const uuid = z.string().uuid();
 const date = z.string().datetime({ offset: true });
 const envelopeBody = z.object({ envelope: envelopeSchema });
+const historyMode = z.enum(['full', 'future']);
+const mediaIds = z.array(uuid).max(20).refine(ids => new Set(ids).size === ids.length, 'Duplicate photo IDs');
 const surfaceRemovals = (slots: [string, ...string[]], maximum: number) => z.array(z.object({id: uuid, slot: z.enum(slots)}).strict()).max(maximum)
     .refine(items => new Set(items.map(item => item.id)).size === items.length && new Set(items.map(item => item.slot)).size === items.length, 'Each photo and slot may be removed once').default([]);
 class SocialError extends Error {
@@ -39,14 +41,19 @@ catch {
     fail('INVALID_CURSOR');
 } }
 function page(rows: any[], limit = 30) { const hasMore = rows.length > limit; const items = rows.slice(0, limit); const last = items.at(-1); return { items, next_cursor: hasMore && last ? btoa(JSON.stringify({ at: iso(last.created_at), id: last.id })) : null }; }
-async function body<T>(c: C, schema: z.ZodType<T>, maxBytes = 2500000): Promise<T> { const declared = Number(c.req.header('content-length') ?? 0); if (declared > maxBytes)
+async function body<T>(c: C, schema: z.ZodType<T>, maxBytes = 2500000, allowEmpty = false): Promise<T> { const declared = Number(c.req.header('content-length') ?? 0); if (declared > maxBytes)
     fail('PAYLOAD_TOO_LARGE', 413); const raw = await c.req.text(); if (new TextEncoder().encode(raw).byteLength > maxBytes)
-    fail('PAYLOAD_TOO_LARGE', 413); return schema.parse(JSON.parse(raw)); }
+    fail('PAYLOAD_TOO_LARGE', 413); return schema.parse(allowEmpty && !raw ? {} : JSON.parse(raw)); }
 async function tx<T>(c: C, fn: (db: Db) => Promise<T>): Promise<T> { return withMember(c.env, c.get('memberId'), fn, feedTiming(c.env,c.req.method,c.req.path)); }
 async function writeAllowed(db: Db): Promise<void> { const [r] = await db `select app.may_write() as allowed`; if (!r?.allowed)
     fail('SOCIAL_RESTRICTED', 403); }
-async function snapshot(db: Db, audience: string, groupId: string | null = null, postId: string | null = null) { const [r] = await db `select app.lock_epoch() as epoch`; if (!r)
-    fail('FORBIDDEN', 403); if (audience === 'moderators') {
+async function snapshot(db: Db, audience: string, groupId: string | null = null, postId: string | null = null, historyPostId: string | null = null) { const [r] = await db `select app.lock_epoch() as epoch`; if (!r)
+    fail('FORBIDDEN', 403); if (historyPostId) {
+    const devices = await db`select * from app.history_audience_devices(${historyPostId})`;
+    const members = await db`select member_id from app.history_audience_members(${historyPostId})`;
+    const keyed=new Set(devices.map(device=>device.member_id));const pending=members.filter(member=>!keyed.has(member.member_id));
+    return {epoch:Number(r.epoch),devices,pending_members:pending.map(row=>row.member_id)};
+} if (audience === 'moderators') {
     const staff = await db `select * from app.moderator_devices()`;
     if (!staff.length)
         fail('MODERATION_NOT_CONFIGURED', 409);
@@ -58,6 +65,8 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
     postId?: string;
     skipEpoch?: boolean;
     allowPast?: boolean;
+    historyPostId?: string;
+    historySourceRevision?: number;
 } = {}) {
     const e = envelope.context;
     if ((kind === 'report') !== (e.audience === 'moderators'))
@@ -75,7 +84,12 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
     const [author] = await db `select id,fingerprint from app.device_keys where id=${e.authorDeviceId} and member_id=${member} and revoked_at is null`;
     if (!author)
         fail('DEVICE_NOT_TRUSTED', 403);
-    const s = await snapshot(db, e.audience, e.groupId, options.postId ?? null);
+    if (options.historyPostId) {
+        const source = await requirePost(db, options.historyPostId, true);
+        if (source.author_id !== member || source.group_id !== null || !['connections','friends','family'].includes(source.audience) || e.audience !== source.audience || e.groupId !== null || (kind === 'post' ? e.id !== source.id : kind !== 'media' || e.parentId !== source.id)) fail('ENVELOPE_CONTEXT');
+        if (options.historySourceRevision !== undefined && source.envelope.context.revision !== options.historySourceRevision) fail('REVISION_CHANGED',409);
+    }
+    const s = await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
     if (s.pending_members.length)
         fail('KEY_SETUP_REQUIRED', 409, { pending_members: s.pending_members });
     if (!options.skipEpoch && e.epoch !== s.epoch)
@@ -229,14 +243,15 @@ export function createSocialRoutes() {
         fail('NOT_FOUND', 404); return r; })); });
     app.put('/keys/backup', async (c) => { recent(c); const b = await body(c, z.object({ envelope: backupSchema })); await checkBackup(b.envelope); return c.json(await tx(c, async (db) => { const [recovery] = await db `select public_key from app.recovery_keys where member_id=${c.get('memberId')}`; if (!recovery || b.envelope.recovery.public_key !== recovery.public_key)
         fail('BACKUP_KEY_MISMATCH'); await db `update app.encrypted_key_backups set envelope=${db.json(b.envelope)},updated_at=now() where member_id=${c.get('memberId')}`; return { ok: true }; })); });
-    app.get('/connections', async (c) => c.json(await tx(c, async (db) => { const items = await db `select * from app.connections order by accepted_at desc`; const requests = await db `select * from app.connection_requests where state='pending' order by created_at desc`; const ids = [...new Set([...items.flatMap(r => [r.member_a, r.member_b]), ...requests.flatMap(r => [r.sender, r.recipient])])]; const handles = ids.length ? await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(ids)}))::uuid[])` : []; return { items, requests, handles, limit: 300 }; })));
-    app.post('/connections/requests', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), kind: z.enum(['friend', 'family']), id: uuid.optional() })); return c.json(await tx(c, async (db) => { await writeAllowed(db); const [target] = await db `select * from app.lookup_handle(${b.handle})`; if (!target || target.id === c.get('memberId'))
+    app.get('/connections', async (c) => c.json(await tx(c, async (db) => { const items = await db `select *,case when member_a=app.actor() then history_a else history_b end as own_history,case when member_a=app.actor() then history_b else history_a end as peer_history from app.connections order by accepted_at desc`; const requests = await db `select * from app.connection_requests where state='pending' order by created_at desc`; const ids = [...new Set([...items.flatMap(r => [r.member_a, r.member_b]), ...requests.flatMap(r => [r.sender, r.recipient])])]; const handles = ids.length ? await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(ids)}))::uuid[])` : []; return { items, requests, handles, limit: 300 }; })));
+    app.post('/connections/requests', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), kind: z.enum(['friend', 'family']), history: historyMode.default('future'), id: uuid.optional() })); return c.json(await tx(c, async (db) => { await writeAllowed(db); const [target] = await db `select * from app.lookup_handle(${b.handle})`; if (!target || target.id === c.get('memberId'))
         fail('NOT_FOUND', 404); const [{ count }] = await db `select count(*)::int count from app.connection_requests where sender=${c.get('memberId')} and created_at>now()-interval '1 day'`; if (count >= 30)
-        fail('REQUEST_LIMIT', 429); const requestId = b.id ?? crypto.randomUUID(); await db `insert into app.connection_requests(id,sender,recipient,kind) values(${requestId},${c.get('memberId')},${target.id},${b.kind})`; await db `select app.notify(${target.id},'connection_request',null,null,null,${'request:' + requestId})`; return { id: requestId }; }), 201); });
-    app.post('/connections/requests/:id/accept', async (c) => c.json(await tx(c, async (db) => { const [r] = await db `select app.accept_connection(${id(c.req.param('id'))}) as id`; return r; })));
+        fail('REQUEST_LIMIT', 429); const requestId = b.id ?? crypto.randomUUID(); await db `insert into app.connection_requests(id,sender,recipient,kind,history) values(${requestId},${c.get('memberId')},${target.id},${b.kind},${b.history})`; await db `select app.notify(${target.id},'connection_request',null,null,null,${'request:' + requestId})`; return { id: requestId }; }), 201); });
+    app.post('/connections/requests/:id/accept', async (c) => { const b=await body(c,z.object({history:historyMode.default('future')}).strict(),1024,true); return c.json(await tx(c,async db=>{const [r]=await db`select app.accept_connection_with_history(${id(c.req.param('id'))},${b.history}) as id`;return r;})); });
     app.post('/connections/requests/:id/decline', async (c) => c.json(await tx(c, async (db) => { await db `update app.connection_requests set state=case when sender=${c.get('memberId')} then 'cancelled' else 'declined' end where id=${id(c.req.param('id'))} and state='pending'`; return { ok: true }; })));
     app.delete('/connections/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.change_connection(${id(c.req.param('id'))},null,true)`; return { ok: true }; })));
     app.put('/connections/:id/kind', async (c) => { const b = await body(c, z.object({ kind: z.enum(['friend', 'family']) })); return c.json(await tx(c, async (db) => { await db `select app.change_connection(${id(c.req.param('id'))},${b.kind},false)`; return { ok: true }; })); });
+    app.put('/connections/:id/history', async c => {const b=await body(c,z.object({history:historyMode}).strict());return c.json(await tx(c,async db=>{await db`select app.set_connection_history(${id(c.req.param('id'))},${b.history})`;return {ok:true};}));});
     app.get('/blocks', async (c) => c.json({ items: await tx(c, db => db `select target,created_at from app.blocks order by created_at`) }));
     app.put('/blocks/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.set_block(${id(c.req.param('id'))},true)`; return { ok: true }; })));
     app.delete('/blocks/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.set_block(${id(c.req.param('id'))},false)`; return { ok: true }; })));
@@ -279,6 +294,64 @@ export function createSocialRoutes() {
             return { id: e.id };
         }), 201);
     });
+    // Only author-encrypted revisions may add historical access. The server
+    // supplies the consent-filtered directory; it never decrypts member content.
+    app.get('/posts/audience-refresh', async c => {
+        const after=cursor(c.req.query('cursor'));
+        return c.json(await tx(c,async db=>{
+            await db`select app.lock_epoch()`;
+            const rows=await db`select p.* from app.posts p where p.author_id=app.actor()
+                and p.group_id is null and p.audience in('connections','friends','family')
+                ${after?db`and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)`:db``}
+                and exists(select from app.history_audience_devices(p.id) d where
+                    not exists(select from app.post_recipients r where r.post_id=p.id and r.device_id=d.id and r.member_id=d.member_id)
+                    or not exists(select from jsonb_array_elements(p.envelope->'recipients') r where r->>'deviceId'=d.id::text and r->>'memberId'=d.member_id::text and r->>'fingerprint'=d.fingerprint))
+                order by p.created_at desc,p.id desc limit 11`;
+            return page(rows,10);
+        }));
+    });
+    app.get('/posts/:id/audience-refresh/audience',async c=>c.json(await tx(c,async db=>{
+        const source=await requirePost(db,id(c.req.param('id')),true);
+        if(source.author_id!==c.get('memberId'))fail('FORBIDDEN',403);
+        return snapshot(db,source.audience,source.group_id,null,source.id);
+    })));
+    app.post('/posts/:id/audience-refresh',async c=>{
+        const b=await body(c,envelopeBody.extend({lifecycle:z.any(),source_revision:z.number().int().positive(),source_expires_at:date.nullable(),source_media_ids:mediaIds,media_ids:mediaIds}).strict());
+        return c.json(await tx(c,async db=>{
+            await writeAllowed(db);
+            const source=await requirePost(db,id(c.req.param('id')),true),e=b.envelope.context,old=source.envelope.context;
+            if(source.author_id!==c.get('memberId'))fail('FORBIDDEN',403);
+            if(source.group_id!==null||!['connections','friends','family'].includes(source.audience)
+                ||e.id!==source.id||e.authorId!==old.authorId||e.createdAt!==old.createdAt
+                ||e.audience!==old.audience||e.groupId!==old.groupId||e.parentId!==old.parentId
+                ||e.revision!==b.source_revision+1)fail('ENVELOPE_CONTEXT');
+            const retry=canonicalJson(source.envelope)===canonicalJson(b.envelope);
+            if(!retry&&old.revision!==b.source_revision)fail('REVISION_CHANGED',409);
+            if(!retry&&iso(source.expires_at)!==iso(b.source_expires_at))fail('PARENT_DEADLINE_CHANGED',409,{expires_at:iso(source.expires_at)});
+            if(b.source_expires_at&&(!e.expiresAt||Date.parse(e.expiresAt)>Date.parse(b.source_expires_at)))fail('EXPIRY_CANNOT_EXTEND',409);
+            const [key]=await db`select public_key from app.device_keys where id=${e.authorDeviceId} and member_id=${c.get('memberId')} and revoked_at is null`;
+            if(!key)fail('DEVICE_NOT_TRUSTED',403);
+            try {const proof=await verifyStatement(b.lifecycle,key.public_key);if(canonicalJson(proof)!==canonicalJson({purpose:'porchday-lifecycle',id:e.id,revision:e.revision,expiresAt:e.expiresAt}))fail('INVALID_PROOF',403);}catch{fail('INVALID_PROOF',403);}
+            await checkEnvelope(db,c.get('memberId'),b.envelope,'post',{allowPast:true,historyPostId:source.id,skipEpoch:retry});
+            const attached=await db`select id,envelope from app.media_assets where post_id=${source.id} order by display_order for update`;
+            if(retry){if(canonicalJson(attached.map(r=>r.id))!==canonicalJson(b.media_ids))fail('MEDIA_ATTACHMENT_CHANGED',409);return {id:source.id,ok:true};}
+            if(canonicalJson(attached.map(r=>r.id).sort())!==canonicalJson([...b.source_media_ids].sort())||b.source_media_ids.length!==b.media_ids.length||b.media_ids.some(id=>b.source_media_ids.includes(id)))fail('MEDIA_ATTACHMENT_CHANGED',409);
+            if(b.media_ids.length){
+                const replacements=await db`select id,envelope from app.media_assets where id in ${db(b.media_ids)} and owner_id=${c.get('memberId')} and post_id is null and state='ready' for update`;
+                if(replacements.length!==b.media_ids.length)fail('MEDIA_NOT_READY',409);
+                for(let i=0;i<b.source_media_ids.length;i++){
+                    const deadline=attached.find(row=>row.id===b.source_media_ids[i])!.envelope.context.expiresAt;
+                    const next=replacements.find(row=>row.id===b.media_ids[i])!.envelope.context.expiresAt;
+                    if(deadline&&(!next||Date.parse(next)>Date.parse(deadline)))fail('EXPIRY_CANNOT_EXTEND',409);
+                }
+            }
+            await db`update app.posts set envelope=${db.json(b.envelope)},epoch=${e.epoch},expires_at=${e.expiresAt} where id=${source.id}`;
+            for(const recipient of b.envelope.recipients)await db`insert into app.post_recipients(post_id,device_id,member_id) values(${source.id},${recipient.deviceId},${recipient.memberId}) on conflict do nothing`;
+            await attachMedia(db,c.get('memberId'),source.id,b.media_ids);
+            if(b.source_media_ids.length)await db`delete from app.media_assets where post_id=${source.id} and id in ${db(b.source_media_ids)}`;
+            return {id:source.id,ok:true};
+        }));
+    });
     app.post('/posts/:id/reshare', async c => {
         const b = await body(c, envelopeBody.extend({source_expires_at:date.nullable(),media_ids:z.array(uuid).max(20).default([])}));
         return c.json(await tx(c, async db => {
@@ -298,7 +371,12 @@ export function createSocialRoutes() {
             return {id:e.id};
         }),201);
     });
-    app.get('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const post = await requirePost(db, id(c.req.param('id'))); const comments = await db `select c.*,h.handle as author_handle,app.comment_deadline(c.id) as effective_expires_at from app.comments c left join lateral app.member_handles(array[c.author_id]) h on true where post_id=${post.id} order by created_at,id`; const reactions = await db `select * from app.post_reactions where post_id=${post.id}`; const comment_reactions = await db `select r.* from app.comment_reactions r join app.comments c on c.id=r.comment_id where c.post_id=${post.id}`; const media = await db `select id,envelope,byte_size,display_order from app.media_assets where post_id=${post.id} order by display_order`; return { post: { ...post, media }, comments, reactions, comment_reactions }; })));
+    app.get('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const post = await requirePost(db, id(c.req.param('id'))); const comments = await db `select c.*,h.handle as author_handle,app.comment_deadline(c.id) as effective_expires_at from app.comments c left join lateral app.member_handles(array[c.author_id]) h on true where post_id=${post.id} order by created_at,id`; const reactions = await db `select * from app.post_reactions where post_id=${post.id}`; const comment_reactions = await db `select r.* from app.comment_reactions r join app.comments c on c.id=r.comment_id where c.post_id=${post.id}`; const media = await db `select id,envelope,byte_size,display_order from app.media_assets where post_id=${post.id} order by display_order`; // Newly admitted readers are not recipients of other authors' older
+        // signed children. Never send undecryptable replies or orphan threads.
+        const addressed=(row:any)=>row.envelope.recipients.some((r:any)=>r.memberId===c.get('memberId'));
+        const visible=new Set<string>();let added=true;
+        while(added){added=false;for(const comment of comments)if(!visible.has(comment.id)&&addressed(comment)&&(!comment.parent_id||visible.has(comment.parent_id))){visible.add(comment.id);added=true;}}
+        return { post: { ...post, media }, comments:comments.filter(row=>visible.has(row.id)), reactions:reactions.filter(addressed), comment_reactions:comment_reactions.filter(row=>visible.has(row.comment_id)&&addressed(row)) }; })));
     app.delete('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const rows = await db `delete from app.posts where id=${id(c.req.param('id'))} returning id`; if (!rows.length)
         fail('NOT_FOUND', 404); return { ok: true }; })));
     app.post('/posts/:id/comments', async (c) => {

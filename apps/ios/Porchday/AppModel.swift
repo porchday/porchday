@@ -13,6 +13,12 @@ import Combine
     private(set) var authenticationGeneration = 0
     @Published private(set) var initialProfileVersion = 0
     private var profileInitialization: (id: UUID, memberID: String, task: Task<Bool, Never>)?
+    @Published private(set) var historySharingBusy = false
+    @Published private(set) var historySharingNotice: String?
+    @Published private(set) var historySharingVersion = 0
+    private var historySharingNeedsRetry = false
+    private var sceneIsActive = false
+    private var historySharing: (id: UUID, task: Task<Void, Never>)?
     let vault = CryptoVault()
     let api = API.shared
     var canWriteSocial: Bool { member?.access.writesSocial == true }
@@ -21,21 +27,22 @@ import Combine
         if ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { loading = false; return }
         #endif
         loading = true; defer { loading = false }
-        do { let session = try await api.auth("get-session", method: "GET"); guard session["user"]["id"].string != nil else { member = nil; vault.clear(); return }; let member = try Member(try await api.social("/me")); if self.member?.id != member.id { acceptAuthenticatedMember(member) } else { self.member = member }; try await vault.load(member: member) }
-        catch { member = nil; vault.clear(); self.error = error.localizedDescription }
+        do { let session = try await api.auth("get-session", method: "GET"); guard session["user"]["id"].string != nil else { cancelHistoricalPostSharing(); member = nil; vault.clear(); return }; let member = try Member(try await api.social("/me")); if self.member?.id != member.id { acceptAuthenticatedMember(member) } else { self.member = member }; try await vault.load(member: member) }
+        catch { cancelHistoricalPostSharing(); member = nil; vault.clear(); self.error = error.localizedDescription }
     }
     func signIn(email: String, password: String) async throws {
         let result = try await api.auth("sign-in/email", body: .object(["email": .string(email), "password": .string(password)]))
         if result["twoFactorRedirect"].boolean { needsTwoFactor = true; return }
         try await finishSignIn()
     }
-    func acceptAuthenticatedMember(_ member: Member) { authenticationGeneration += 1; deletionPhase = .idle; self.member = member; needsTwoFactor = false }
+    func acceptAuthenticatedMember(_ member: Member) { cancelHistoricalPostSharing(); historySharingNeedsRetry = false; historySharingNotice = nil; authenticationGeneration += 1; deletionPhase = .idle; self.member = member; needsTwoFactor = false }
     func finishSignIn() async throws { let member = try Member(try await api.social("/me")); acceptAuthenticatedMember(member); try await vault.load(member: member) }
     func verifySecondFactor(code:String,backup:Bool) async throws { _ = try await api.auth(backup ? "two-factor/verify-backup-code":"two-factor/verify-totp",body:.object(["code":.string(code),"trustDevice":.bool(false)])); try await finishSignIn() }
     func signOut() async {
         authenticationGeneration += 1
         if deletionPhase != .accepted { deletionPhase = .idle }
         profileInitialization?.task.cancel(); profileInitialization = nil
+        cancelHistoricalPostSharing(); historySharingNotice = nil; historySharingNeedsRetry = false
         await NativeNotifications.shared.signOut(model: self)
         _ = try? await api.auth("sign-out", body: .object([:])); await api.clearSession(); vault.clear(); SecureStore.clear(); clearTemporaryArchives(); member = nil; needsTwoFactor = false
     }
@@ -67,6 +74,86 @@ import Combine
         let created = await task.value
         if profileInitialization?.id == initializationID { profileInitialization = nil }
         if created, self.member?.id == member.id { initialProfileVersion += 1 }
+    }
+    func cancelHistoricalPostSharing() {
+        historySharing?.task.cancel(); historySharing = nil; historySharingBusy = false
+    }
+    func setSceneActive(_ active: Bool) {
+        sceneIsActive = active
+        if !active { cancelHistoricalPostSharing() }
+    }
+    /// Sharing policy comes from the server's explicit per-connection choice.
+    /// Older connections are not upgraded by opening the app. Bound one pass
+    /// to twenty posts and stop mutations when the account or scene changes.
+    func refreshHistoricalPosts(retry: Bool = false) async {
+        guard sceneIsActive, let member, member.access.writesSocial, vault.unlocked, historySharing == nil,
+              retry || !historySharingNeedsRetry else { return }
+        let generation = authenticationGeneration, runID = UUID()
+        historySharingBusy = true; historySharingNotice = nil; historySharingNeedsRetry = false
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
+            @MainActor func check() throws {
+                try Task.checkCancellation()
+                guard self.member?.id == member.id, self.authenticationGeneration == generation,
+                      self.member?.access.writesSocial == true, self.vault.unlocked,
+                      self.sceneIsActive, self.deletionPhase == .idle else { throw CancellationError() }
+            }
+            do {
+                var cursor: String?, count = 0, pages = 0
+                var seen = Set<String>()
+                repeat {
+                    try check()
+                    var query = URLComponents()
+                    if let cursor { query.queryItems = [URLQueryItem(name: "cursor", value: cursor)] }
+                    let page = try await self.api.social("/posts/audience-refresh" + (query.percentEncodedQuery.map { "?" + $0 } ?? ""))
+                    try check()
+                    guard case .array(let candidates) = page["items"], candidates.count <= 10,
+                          page["next_cursor"] == .null || page["next_cursor"].string != nil else { throw PorchError.message("The history-sharing queue is unavailable.") }
+                    pages += 1
+                    for row in candidates {
+                        guard count < 20 else { break }
+                        guard let postID = row["id"].string, UUID(uuidString: postID) != nil,
+                              seen.insert(postID).inserted else { throw PorchError.message("The history-sharing queue is unavailable.") }
+                        try await HistoricalPostSharing.refresh(postID: postID, memberID: member.id, io: .init(
+                            readPost: { try check(); return try await self.api.social("/posts/" + $0) },
+                            readAudience: { try check(); return try await self.api.social("/posts/" + $0 + "/audience-refresh/audience") },
+                            readPhoto: { id in try check(); let bytes = try await self.api.bytes("/api/v1/media/" + id + "/bytes"); return try JSONDecoder().decode(JSON.self, from: bytes) },
+                            open: { try check(); return try await self.vault.open($0) },
+                            seal: { payload, context, snapshot in
+                                try check()
+                                guard let id = context["id"].string, let kind = context["kind"].string, let audience = context["audience"].string else { throw PorchError.message("The encrypted post context is unavailable.") }
+                                return try await self.vault.seal(payload, member: member, kind: kind, audience: audience, id: id,
+                                    parent: context["parentId"].string, expiry: context["expiresAt"].string.flatMap(PorchDate.parse),
+                                    original: context, historySnapshot: snapshot)
+                            },
+                            sign: { try check(); return try self.vault.sign($0) },
+                            reservePhoto: { try check(); return try await self.api.social("/media", method: "POST", body: $0) },
+                            uploadPhoto: { path, bytes in try check(); _ = try await self.api.bytes(path, method: "PUT", body: bytes) },
+                            publish: { id, body in try check(); return try await self.api.social("/posts/" + id + "/audience-refresh", method: "POST", body: body) },
+                            validatePhoto: { payload in
+                                guard payload["mime"].string == "image/jpeg", let encoded = payload["bytes"].string,
+                                      let bytes = Data(base64Encoded: encoded) else { throw PorchError.message("A photo could not be opened.") }
+                                _ = try PhotoPipeline.safelyDecode(bytes)
+                            }, check: { try check() }))
+                        try check(); count += 1; self.historySharingVersion += 1
+                    }
+                    cursor = page["next_cursor"].string
+                    if cursor != nil && (count >= 20 || pages >= 4) {
+                        self.historySharingNotice = "Earlier posts were shared. Continue to check for more."
+                        self.historySharingNeedsRetry = true
+                        break
+                    }
+                } while cursor != nil
+            } catch is CancellationError { /* Resume from a fresh source on a later foreground. */ }
+            catch {
+                guard !Task.isCancelled, self.member?.id == member.id, self.authenticationGeneration == generation else { return }
+                self.historySharingNotice = "Some earlier posts could not be shared yet. Your account remains available."
+                self.historySharingNeedsRetry = true
+            }
+            if self.historySharing?.id == runID { self.historySharing = nil; self.historySharingBusy = false }
+        }
+        historySharing = (runID, task)
+        await task.value
     }
     private func clearTemporaryArchives() {
         let root=FileManager.default.temporaryDirectory

@@ -10,7 +10,7 @@ An invitation has a single-use, email-bound code and a fragment link. It expires
 
 ## Friends-only audience
 
-Post sharing offers Friends & family, Friends only, Family only, and Only me in that order. Friends only excludes connections classified as family. The signed audience, exact recipient set and current relationship authorization apply to posts, photos, comments, replies and reactions. Changing a relationship classification removes historical grants for the classification being left; switching back does not revive them. New eligible connections receive future content unless the author explicitly reshares.
+Post sharing offers Friends & family, Friends only, Family only, and Only me in that order. Friends only excludes connections classified as family. The signed audience, exact recipient set and current relationship authorization apply to posts, photos, comments, replies and reactions. Changing a relationship classification removes historical grants for the classification being left; switching back does not revive them. The original release used future-only sharing for new connections. The [friend-history update](friend-history-sharing.md) adds an independent choice when sending/accepting requests, with **Share full history (recommended)** as the updated UI default and client-encrypted catch-up for earlier eligible posts. Future-only choices, existing connections without opt-in, and group history remain restricted.
 
 Both clients support the audience, shared JavaScript/Go crypto accepts it, and the archive schema retains its provenance. Imports continue to re-encrypt imported material privately for its destination account. Profile sharing remains Friends & family or Only me.
 

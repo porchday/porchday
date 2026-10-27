@@ -2245,6 +2245,16 @@ hr {
 .connection-search .field {
   font-size: 10px;
 }
+.connection-search .history-choice {
+  grid-column: 1 / -1;
+}
+.history-choice select {
+  min-width: 0;
+  max-width: 100%;
+}
+.member-info .history-choice {
+  margin-top: 8px;
+}
 .connection-search .field input,
 .connection-search .field select {
   font-size: 11px;
