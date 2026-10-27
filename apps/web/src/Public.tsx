@@ -25,7 +25,7 @@ export function PublicFooter() {
     <footer className="public-footer wrap">
       <div>
         <Logo small />
-        <small>By invitation only. ;)</small>
+        <small>By invitation only.</small>
       </div>
       <nav aria-label="Information">
         <a href="/about">Our mission</a>
@@ -33,6 +33,8 @@ export function PublicFooter() {
         <a href="/community">Community rules</a>
         <a href="/accessibility">Accessibility</a>
         <a href="/help">Help & contact</a>
+        <a href="https://github.com/porchday/porchday">Source code</a>
+        <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0 license</a>
         <a href="/third-party-notices.txt">Open-source notices</a>
       </nav>
       <ColorSchemeControls />
@@ -49,6 +51,7 @@ export function Landing() {
           <h1>a simple social network</h1>
           <div className="classic-box-body">
             <p className="classic-promise">No ads, algorithms, or influencers.</p>
+            <p><a href="https://github.com/porchday/porchday">Open source</a> under the <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0 license</a>.</p>
             <p>Already have an account?</p>
             <a className="button primary" href="/login">Member log in</a>
             <p className="invitation-line">Have an invitation? <a href="/join">create account</a></p>
@@ -500,11 +503,11 @@ const policyContent: Record<
       ],
       [
         "Starting small",
-        "The first pilot is invitation-only and for adults 18 and older. Encryption review, moderation staffing, recovery coverage, and legal policies must be ready before real members are admitted.",
+        "The pilot is invitation-only and for adults 18 and older. Independent encryption review, moderation staffing, recovery coverage, and legal policies remain requirements for a broader launch.",
       ],
       [
-        "Built in the open, soon",
-        "The code is licensed under Apache 2.0. The development repository is private while we build; a reviewed public source release is a launch milestone.",
+        "Open source",
+        "Porchday’s source code is public under the Apache 2.0 license. You can inspect it, contribute improvements, and build on it. Dependencies retain their own licenses. Source availability does not replace independent security review.",
       ],
     ],
   },
@@ -529,8 +532,8 @@ const policyContent: Record<
         "People operate their own accounts. Assistive technology, dictation, and translation are welcome when a person chooses and submits the action. Technical proof of humanity is future work; we do not claim verified human identity.",
       ],
       [
-        "No need to trust us",
-        "You own your data. Export it, move it, or delete your account. Porchday is being built around open-source code and an open protocol so you can inspect how it works and choose other tools and services. The code is licensed under Apache 2.0; public release of the source and protocol documentation is a launch milestone. Our open archive format already supports portable exports.",
+        "Open source and portable data",
+        "You control your data. Export it, move it, or delete your account. Porchday’s source code is public under Apache 2.0, and its documented archive format supports portable exports. An open federation protocol is a proposal for future work; independent servers do not connect yet.",
       ],
     ],
   },
@@ -660,6 +663,9 @@ export function Policy({ page }: { page: string }) {
             <p>{body}</p>
           </section>
         ))}
+        {(page === "about" || page === "principles") && (
+          <p><a href="https://github.com/porchday/porchday">View the source and contribute</a> · <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0 license</a></p>
+        )}
         {page === "help" && (
           <a href="/stolen-account" className="button outline">
             My account was stolen <Icon name="arrow" />

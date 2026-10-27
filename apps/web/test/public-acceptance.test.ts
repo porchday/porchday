@@ -69,7 +69,7 @@ describe("public pilot acceptance contract", () => {
     expect(html).toContain("Resume an existing recovery case");
     expect(html).not.toContain('type="password"');
   });
-  it("states the core promises without claiming established nonprofit or public source status", () => {
+  it("links the public Apache-licensed source without claiming established nonprofit status", () => {
     locationFor();
     const html = renderToStaticMarkup(createElement(Landing));
     expect(html).toContain("a simple social network");
@@ -90,7 +90,9 @@ describe("public pilot acceptance contract", () => {
       createElement(Policy, { page: "about" }),
     );
     expect(about).toContain("still being established");
-    expect(about).toContain("development repository is private");
+    expect(about).not.toContain("development repository is private");
+    expect(html).toContain('href="https://github.com/porchday/porchday"');
+    expect(about).toContain('href="https://github.com/porchday/porchday/blob/main/LICENSE"');
     expect(about).toContain("Apache 2.0");
   });
 });
