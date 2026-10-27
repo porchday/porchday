@@ -7,7 +7,7 @@ const accountPages = new Set([
 ]);
 const publicAssets = new Set([
   '/index.html', '/app-shell', '/app-shell.html', '/sw.js', '/manifest.webmanifest',
-  '/fonts.css', '/third-party-notices.txt', '/favicon.ico',
+  '/fonts.css', '/color-scheme.js', '/third-party-notices.txt', '/favicon.ico',
 ]);
 const rootAsset = /^\/(?:[^/]+\.(?:png|svg|ico|jpg|jpeg|webp|gif|woff2?|ttf|otf|wasm))$/i;
 const beneath = (path: string, root: string) => path === root || path.startsWith(root + '/');

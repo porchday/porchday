@@ -4,6 +4,10 @@ This file records notable development changes, not a list of supported releases.
 
 ## Unreleased
 
+### Development update — 2026-10-27
+
+- Added Light, Dark and System color controls beside the background controls. The choice is stored only in the browser, follows the operating system by default, syncs across open tabs, and is applied before first paint by a same-origin `/color-scheme.js` script. The dark stylesheet `apps/web/src/dark.css` is generated from the light stylesheets with `npm run dark-css -w @porchday/web`; a test fails when it is stale. Member-chosen backdrops and photos are not recolored.
+
 ### Development update — 2026-10-26
 
 - Added independent history-sharing choices when sending/accepting a connection, defaulting to “Share full history (recommended)” in updated clients. Existing connections retain their choice until explicitly changed. An unlocked author device shares eligible earlier posts/photos using signed revisions that preserve identity, dates and expiry; earlier comments/reactions keep their original recipients. Migration `046_connection_history.sql` is required. See the [sharing contract and verified release](docs/friend-history-sharing.md).

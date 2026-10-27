@@ -68,6 +68,7 @@ export default defineConfig({
           .map((name) => "/assets/" + name);
         const shell = [
           "/app-shell",
+          "/color-scheme.js",
           "/icon.svg",
           "/logo.svg",
           "/porch-pattern.svg",

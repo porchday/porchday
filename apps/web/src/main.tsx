@@ -30,11 +30,14 @@ import { StaffConsole, StaffEntry } from "./Staff";
 import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
 import { BackgroundControls } from "./BackgroundControls";
+import { ColorSchemeControls } from "./ColorSchemeControls";
 import { LegacyDomainNotice } from "./DomainMigration";
 import { initSiteAppearance } from "./site-appearance";
+import { initColorScheme } from "./color-scheme";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import "./styles.css";
 import "./retro.css";
+import "./dark.css";
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode },
   { failed: boolean }
@@ -472,6 +475,7 @@ function AppShell({
         )}
         <React.Fragment key={routeKey}>{content}</React.Fragment>
         <footer className="member-appearance-footer">
+          <ColorSchemeControls />
           <BackgroundControls />
         </footer>
       </main>
@@ -520,6 +524,7 @@ function AppShell({
     </div>
   );
 }
+initColorScheme();
 initSiteAppearance();
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>

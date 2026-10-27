@@ -108,7 +108,7 @@ try {
     const urls = (await Promise.all(names.map(async n => (await (await caches.open(n)).keys()).map(r => new URL(r.url))))).flat();
     const publicFiles = new Set(['/', '/index.html', '/manifest.webmanifest', '/icon.svg', '/logo.svg', '/icon-192.png',
       '/icon-512.png', '/apple-touch-icon.png', '/porch-pattern.svg', '/wallpaper-checker.svg',
-      '/wallpaper-daisies.svg', '/wallpaper-diamonds.svg', '/fonts.css', '/third-party-notices.txt']);
+      '/wallpaper-daisies.svg', '/wallpaper-diamonds.svg', '/fonts.css', '/color-scheme.js', '/third-party-notices.txt']);
     return { cacheCount: names.length, entryCount: urls.length, publicOnly: urls.length > 0 && urls.every(u =>
       u.origin === location.origin && !u.search && (publicFiles.has(u.pathname) || /^\/icon-(192|512)-[a-f0-9]{16}\.png$/.test(u.pathname) || u.pathname.startsWith('/assets/'))) };
   });

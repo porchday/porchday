@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { auth, post, localDate } from "./api";
 import { Logo, Icon, Button, Field, Alert, useAction, navigate } from "./ui";
 import { BackgroundControls } from "./BackgroundControls";
+import { ColorSchemeControls } from "./ColorSchemeControls";
 export function PublicHeader() {
   return (
     <header className="public-header wrap">
@@ -34,6 +35,7 @@ export function PublicFooter() {
         <a href="/help">Help & contact</a>
         <a href="/third-party-notices.txt">Open-source notices</a>
       </nav>
+      <ColorSchemeControls />
       <BackgroundControls />
     </footer>
   );

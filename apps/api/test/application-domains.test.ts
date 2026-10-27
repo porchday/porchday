@@ -59,7 +59,7 @@ describe('canonical domain transition through the actual Worker routes', () => {
     for (const path of ['/app', '/app/post/fixture', '/login', '/verify', '/forgot', '/reset',
       '/stolen-account', '/recovery', '/appeals', '/staff', '/staff/moderation', '/account-deletion',
       '/sw.js', '/manifest.webmanifest', '/app-shell', '/app-shell.html', '/index.html', '/assets/client.js',
-      '/assets/openpgp/openpgp.mjs', '/fonts.css', '/fonts/font.woff2', '/icon-192-hash.png',
+      '/assets/openpgp/openpgp.mjs', '/fonts.css', '/color-scheme.js', '/fonts/font.woff2', '/icon-192-hash.png',
       '/logo.svg', '/wallpaper-checker.svg', '/third-party-notices.txt', '/source/client.tar.gz',
       '/.well-known/example']) {
       const response = await request(legacy + path);
