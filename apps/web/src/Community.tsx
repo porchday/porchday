@@ -1,3 +1,4 @@
+import { invitationHandle, notificationPath } from "./invitation-notification";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -38,7 +39,7 @@ export function Connections() {
     for (const cancel of pendingFocus.current) cancel();
     pendingFocus.current.clear();
   }, []);
-  const [handle, setHandle] = useState("");
+  const [handle, setHandle] = useState(() => invitationHandle(new URLSearchParams(location.search).get("handle")) || "");
   const [kind, setKind] = useState<"friend" | "family">("friend");
   const [history, setHistory] = useState<"full" | "future">("full");
   const [incomingHistory, setIncomingHistory] = useState<Record<string, "full" | "future">>({});
@@ -1019,12 +1020,7 @@ export function Notifications() {
                     await request(`/notifications/${r.id}/read`, {
                       method: "PUT",
                     });
-                    const path = r.post_id
-                      ? `/app/post/${r.post_id}`
-                      : r.group_id
-                        ? `/app/groups/${r.group_id}`
-                        : "/app/connections";
-                    navigate(path);
+                    navigate(notificationPath(r));
                   })
                 }
               >
@@ -1032,10 +1028,12 @@ export function Notifications() {
                   <span className="feature-icon sage"><Icon name="bell" /></span>
                 )}
                 <span>
-                  <strong>{title[r.kind] || "You have a new update"}</strong>
+                  <strong>{r.kind === "invitation_joined"
+                    ? (invitationHandle(r.actor_handle) ? `@${r.actor_handle} joined Porchday` : "Someone you invited joined Porchday")
+                    : title[r.kind] || "You have a new update"}</strong>
                   <small>
-                    {relativeDate(r.created_at)} · Private details stay in the
-                    app
+                    {relativeDate(r.created_at)} · {r.kind === "invitation_joined"
+                      ? "Send a connection request" : "Private details stay in the app"}
                   </small>
                 </span>
                 <Icon name="arrow" size={17} />

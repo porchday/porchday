@@ -60,3 +60,26 @@ in `PlatformInvitationTests`.
 
 Rollout and remaining acceptance evidence are tracked in
 [issue #30](https://github.com/porchday/porchday/issues/30).
+
+## Notifications when an invitee joins
+
+After verified signup, the normal scheduled cleanup queues one
+`invitation_joined` notification for the actual inviter if the pair is not already
+connected (either Friend or Family). Recent retained Joined receipts are eligible
+once when this feature first runs. Suppressed sends to an existing account or
+another sender's invite never create this notification.
+
+The check respects blocks, the inviter's mute list, account availability and
+notification preferences. A processed receipt is marked even when notification
+was intentionally suppressed, so later unfriending or changing preferences does
+not replay signup. A connection accepted before delivery removes the obsolete
+notice and its push jobs. Visibility and both push transports also recheck current
+eligibility. Push previews remain generic; no address or handle is sent in them.
+
+In-app notifications identify the invited member by their current handle and open
+Connections with it filled in. The inviter still chooses Friend/Family and history
+sharing and explicitly sends a request. This discloses no encrypted profile data
+or posts and never creates a friendship automatically. The notification is stored
+in the existing recipient-owned notification table and uses its existing deletion
+and restore behavior. Migration 049 adds only processing state and notification
+rules; it does not extend invitation validity or receipt retention.

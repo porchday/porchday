@@ -9,6 +9,7 @@ export async function cleanupAuthenticationMetadata(env:Env){
   try{await client.query('BEGIN');await captureLegacyInvitations(client,env);await client.query('COMMIT');}
   catch(error){await client.query('ROLLBACK');throw error;}
   finally{client.release();}
+  await pool.query('SELECT app.process_invitation_joined_notices()');
   await pool.query('DELETE FROM public.auth_rate_limits WHERE key IN(SELECT key FROM public.auth_rate_limits WHERE expires_at<now() LIMIT 1000)');
   await pool.query('DELETE FROM public.used_email_links WHERE token_hash IN(SELECT token_hash FROM public.used_email_links WHERE expires_at<now() LIMIT 1000)');
   await pool.query('DELETE FROM public.auth_verification WHERE id IN(SELECT id FROM public.auth_verification WHERE "expiresAt"<now() LIMIT 1000)');

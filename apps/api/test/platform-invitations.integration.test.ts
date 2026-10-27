@@ -167,6 +167,90 @@ suite('member platform invitations through real auth sessions and restricted SQL
   await owner.query('DELETE FROM public.auth_session WHERE id=$1',[a.session]);expect((await history(a.cookie)).status).toBe(401);
   for(const role of ['porchday_social','porchday_jobs'])expect((await owner.query("SELECT has_table_privilege($1,'public.platform_invitation_history','SELECT') AS allowed",[role])).rows[0].allowed).toBe(false);
  });
+ async function joinedFixture(sender:Awaited<ReturnType<typeof person>>) {
+  const email=randomUUID()+'@example.test',id=randomUUID(),handle='joined_'+id.replaceAll('-','').slice(0,12);
+  await invite(sender.cookie,email);const invitation=await row(email);
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1,claimed_at=now() WHERE token_hash=$2',[id,invitation.token_hash]);
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$2,$3,false)',[id,handle,email]);
+  await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,handle]);
+  return {id,email,handle,verify:()=>owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id])};
+ }
+ async function asMember(id:string,query:string,parameters:unknown[]=[]) {
+  const client=await owner.connect();try{await client.query('BEGIN');await client.query('SET LOCAL ROLE porchday_social');await client.query("SELECT set_config('app.member_id',$1,true)",[id]);const result=await client.query(query,parameters);await client.query('COMMIT');return result.rows;}
+  catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+ }
+ const notices=(id:string)=>owner.query("SELECT * FROM app.notifications WHERE recipient=$1 AND kind='invitation_joined'",[id]);
+ it('notifies only the actual inviter after verified signup and exposes only that member’s connection handle',async()=>{
+  const sender=await person(),other=await person(),joined=await joinedFixture(sender);
+  await invite(other.cookie,joined.email);await cleanupAuthenticationMetadata(env);expect((await notices(sender.id)).rows).toHaveLength(0);
+  await joined.verify();await Promise.all([cleanupAuthenticationMetadata(env),cleanupAuthenticationMetadata(env)]);
+  expect((await notices(sender.id)).rows).toHaveLength(1);expect((await notices(other.id)).rows).toHaveLength(0);
+  expect(await asMember(sender.id,"SELECT n.kind,h.handle FROM app.notifications n LEFT JOIN LATERAL app.member_handles(array[n.actor]) h ON true WHERE kind='invitation_joined'")).toEqual([{kind:'invitation_joined',handle:joined.handle}]);
+  expect(await asMember(other.id,'SELECT * FROM app.member_handles($1::uuid[])',[[joined.id]])).toEqual([]);
+  expect(await asMember(sender.id,'SELECT * FROM app.profiles WHERE member_id=$1',[joined.id])).toEqual([]);
+  const n=(await notices(sender.id)).rows[0];await asMember(sender.id,'UPDATE app.notifications SET read_at=now() WHERE id=$1',[n.id]);
+  await cleanupAuthenticationMetadata(env);expect((await notices(sender.id)).rows).toHaveLength(1);
+  await owner.query('DELETE FROM app.notifications WHERE id=$1',[n.id]);await cleanupAuthenticationMetadata(env);expect((await notices(sender.id)).rows).toHaveLength(0);
+ });
+ it.each(['friend','family'])('skips existing %s connections permanently, including after a later unfriend',async kind=>{
+  const sender=await person(),joined=await joinedFixture(sender);
+  await owner.query('INSERT INTO app.connections(member_a,member_b,kind) VALUES(least($1::uuid,$2::uuid),greatest($1::uuid,$2::uuid),$3)',[sender.id,joined.id,kind]);
+  await joined.verify();await cleanupAuthenticationMetadata(env);expect((await notices(sender.id)).rows).toHaveLength(0);
+  await owner.query('DELETE FROM app.connections WHERE $1 IN(member_a,member_b)',[joined.id]);
+  await cleanupAuthenticationMetadata(env);expect((await notices(sender.id)).rows).toHaveLength(0);
+ });
+ it.each(['block','mute','disabled','sender-held','invitee-held'])('suppresses %s invitation notices without replaying them later',async condition=>{
+  const sender=await person(),joined=await joinedFixture(sender);await joined.verify();
+  if(condition==='block')await owner.query('INSERT INTO app.blocks(actor,target) VALUES($1,$2)',[joined.id,sender.id]);
+  if(condition==='mute')await owner.query('INSERT INTO app.mutes(actor,target) VALUES($1,$2)',[sender.id,joined.id]);
+  if(condition==='disabled')await owner.query(`UPDATE app.members SET notification_preferences='{"in_app":false,"push":false}' WHERE id=$1`,[sender.id]);
+  if(condition.endsWith('held'))await owner.query("UPDATE app.members SET status='hold' WHERE id=$1",[condition==='sender-held'?sender.id:joined.id]);
+  await cleanupAuthenticationMetadata(env);expect((await notices(sender.id)).rows).toHaveLength(0);
+  expect((await owner.query('SELECT notification_checked_at IS NOT NULL AS checked FROM public.platform_invitation_history WHERE sender_id=$1',[sender.id])).rows[0].checked).toBe(true);
+ });
+ it('serializes notification processing with connection acceptance and respects in-app opt-out',async()=>{
+  const sender=await person(),joined=await joinedFixture(sender);await joined.verify();
+  const connection=await owner.connect();await connection.query('BEGIN');
+  try{
+   await connection.query('SELECT app.lock_pair($1,$2)',[sender.id,joined.id]);
+   await connection.query("INSERT INTO app.connections(member_a,member_b,kind) VALUES(least($1::uuid,$2::uuid),greatest($1::uuid,$2::uuid),'friend')",[sender.id,joined.id]);
+   const runtime=new Pool({connectionString:env.HYPERDRIVE_AUTH.connectionString});
+   try{
+    let finished=false;const processing=runtime.query('SELECT app.process_invitation_joined_notices()').then(()=>{finished=true;});
+    await new Promise(resolve=>setTimeout(resolve,30));expect(finished).toBe(false);
+    await connection.query('COMMIT');await processing;
+   }finally{await runtime.end();}
+  }finally{await connection.query('ROLLBACK');connection.release();}
+  expect((await notices(sender.id)).rows).toHaveLength(0);
+  const pushOnly=await person(),another=await joinedFixture(pushOnly);
+  await owner.query(`UPDATE app.members SET notification_preferences='{"in_app":false,"push":true}' WHERE id=$1`,[pushOnly.id]);
+  await another.verify();await cleanupAuthenticationMetadata(env);
+  expect((await notices(pushOnly.id)).rows).toHaveLength(1);
+  expect(await asMember(pushOnly.id,"SELECT id FROM app.notifications WHERE kind='invitation_joined'")).toEqual([]);
+  expect(await asMember(pushOnly.id,'SELECT * FROM app.member_handles($1::uuid[])',[[another.id]])).toEqual([]);
+ });
+ it('cancels queued notices when the pair connects and rechecks mute/availability for in-app and both push paths',async()=>{
+  const sender=await person(),joined=await joinedFixture(sender);
+  await owner.query(`UPDATE app.members SET notification_preferences='{"in_app":true,"push":true}' WHERE id=$1`,[sender.id]);
+  await owner.query('INSERT INTO app.push_subscriptions(member_id,session_id,endpoint,p256dh,auth) VALUES($1,$2,$3,$4,$5)',[sender.id,sender.session,'https://fcm.googleapis.com/'+randomUUID(),'a'.repeat(87),'b'.repeat(22)]);
+  await owner.query("INSERT INTO app.native_push_subscriptions(member_id,session_id,token,environment) VALUES($1,$2,$3,'sandbox')",[sender.id,sender.session,'a'.repeat(64)]);
+  await joined.verify();await cleanupAuthenticationMetadata(env);const n=(await notices(sender.id)).rows[0];
+  const web=(await owner.query('SELECT * FROM app.claim_push(100)')).rows, native=(await owner.query('SELECT * FROM app.claim_native_push(100)')).rows;
+  expect(web).toHaveLength(1);expect(native).toHaveLength(1);
+  expect((await owner.query('SELECT app.prepare_push($1,$2) AS value',[web[0].id,web[0].lease])).rows[0].value).not.toBeNull();
+  expect((await owner.query('SELECT app.prepare_native_push($1,$2) AS value',[native[0].id,native[0].lease])).rows[0].value).not.toBeNull();
+  await owner.query('INSERT INTO app.mutes(actor,target) VALUES($1,$2)',[sender.id,joined.id]);
+  expect(await asMember(sender.id,'SELECT id FROM app.notifications WHERE id=$1',[n.id])).toEqual([]);
+  expect((await owner.query('SELECT app.prepare_push($1,$2) AS value',[web[0].id,web[0].lease])).rows[0].value).toBeNull();
+  expect((await owner.query('SELECT app.prepare_native_push($1,$2) AS value',[native[0].id,native[0].lease])).rows[0].value).toBeNull();
+  await owner.query('DELETE FROM app.mutes WHERE actor=$1',[sender.id]);
+  await owner.query("INSERT INTO app.connections(member_a,member_b,kind) VALUES(least($1::uuid,$2::uuid),greatest($1::uuid,$2::uuid),'friend')",[sender.id,joined.id]);
+  expect((await notices(sender.id)).rows).toHaveLength(0);
+  expect((await owner.query('SELECT id FROM app.push_outbox WHERE notification_id=$1',[n.id])).rows).toHaveLength(0);
+  expect((await owner.query('SELECT id FROM app.native_push_outbox WHERE notification_id=$1',[n.id])).rows).toHaveLength(0);
+  await owner.query('DELETE FROM app.connections WHERE $1 IN(member_a,member_b)',[joined.id]);await cleanupAuthenticationMetadata(env);expect((await notices(sender.id)).rows).toHaveLength(0);
+  for(const role of ['porchday_social','porchday_jobs'])expect((await owner.query("SELECT has_function_privilege($1,'app.process_invitation_joined_notices()','EXECUTE') AS allowed",[role])).rows[0].allowed).toBe(false);
+ });
  it('rolls back invitation and quota metadata when durable mail insertion fails',async()=>{
   const a=await person(),email=randomUUID()+'@example.test';
   await owner.query("CREATE FUNCTION public.synthetic_mail_failure() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'Synthetic failure'; END$$; CREATE TRIGGER synthetic_failure BEFORE INSERT ON public.auth_email_outbox FOR EACH ROW EXECUTE FUNCTION public.synthetic_mail_failure()");

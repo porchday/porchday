@@ -11,6 +11,7 @@ struct ConnectionsView: View {
     @State private var verifiedRecipient: VerificationRecipient?
     @State private var changingHistory = false
     @State private var changingKind = false
+    init(initialHandle: String = "") { _handle = State(initialValue: initialHandle) }
     var body: some View { List {
         Section {
             Text("\(data["items"].array.count) of 300 friends, including family").font(.headline)
@@ -249,6 +250,10 @@ struct NotificationsView: View {
                     if let actor = row["actor"].string { MemberAvatarView(memberID: actor) }
                     VStack(alignment: .leading) {
                         if let post = row["post_id"].string { NavigationLink("You have a new update") { PostDetailView(id: post) } }
+                        else if let handle = PlatformInvitation.joinedHandle(row) {
+                            Text("@" + handle + " joined Porchday")
+                            NavigationLink("Send a connection request") { ConnectionsView(initialHandle: handle) }
+                        } else if row["kind"].string == "invitation_joined" { Text("Someone you invited joined Porchday") }
                         else { Text((row["kind"].string ?? "New update").replacingOccurrences(of: "_", with: " ")) }
                         if row["read_at"] == .null {
                             Button("Mark read") { Task { await model.perform {

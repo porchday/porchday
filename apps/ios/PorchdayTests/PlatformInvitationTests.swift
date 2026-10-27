@@ -70,6 +70,14 @@ final class PlatformInvitationTests: XCTestCase {
             }
         }
     }
+    func testJoinedInvitationIdentifiesOnlyAValidHandle() {
+        let notice: JSON = .object(["kind": .string("invitation_joined"), "actor_handle": .string("new_member")])
+        XCTAssertEqual(PlatformInvitation.joinedHandle(notice), "new_member")
+        XCTAssertNil(PlatformInvitation.joinedHandle(notice.replacing("kind", with: .string("comment"))))
+        XCTAssertNil(PlatformInvitation.joinedHandle(notice.replacing("actor_handle", with: .string("../settings"))))
+        XCTAssertNil(PlatformInvitation.joinedHandle(.object(["kind": .string("invitation_joined")])))
+    }
+
     func testSentInvitationStatusesAndDates() throws {
         for (status, label) in [("pending", "Pending"), ("joined", "Joined"), ("expired", "Expired")] {
             let raw: JSON = .object(["id": .string(UUID().uuidString), "email": .string("person@example.test"),

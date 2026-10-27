@@ -496,7 +496,7 @@ export function createSocialRoutes() {
     app.delete('/groups/:id/members/:memberId', async (c) => c.json(await tx(c, async (db) => { await db `select app.change_group_member(${id(c.req.param('id'))},${id(c.req.param('memberId'))},'remove')`; return { ok: true }; })));
     app.get('/owned-groups',async c=>c.json({items:await tx(c,db=>db`select * from app.owned_groups_for_deletion()`)}));
     app.delete('/groups/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.delete_owned_group(${id(c.req.param('id'))})`; return { ok: true }; })));
-    app.get('/notifications', async (c) => c.json({ items: await tx(c, db => db `select * from app.notifications order by created_at desc limit 100`) }));
+    app.get('/notifications', async (c) => c.json({ items: await tx(c, db => db `select n.*,h.handle as actor_handle from app.notifications n left join lateral app.member_handles(array[n.actor]) h on true order by n.created_at desc limit 100`) }));
     app.put('/notifications/:id/read', async (c) => c.json(await tx(c, async (db) => { await db `update app.notifications set read_at=now() where id=${id(c.req.param('id'))}`; return { ok: true }; })));
     registerPushRoutes(app, {tx, body, fail, id});
     registerNativePushRoutes(app, {tx, body, fail, id});

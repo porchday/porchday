@@ -19,6 +19,12 @@ struct SentPlatformInvitation: Identifiable {
 }
 
 enum PlatformInvitation {
+    static func joinedHandle(_ notice: JSON) -> String? {
+        guard notice["kind"].string == "invitation_joined", let handle = notice["actor_handle"].string,
+              handle.range(of: #"^[a-z0-9_]{3,24}$"#, options: .regularExpression) != nil else { return nil }
+        return handle
+    }
+
     static let acceptedNotice = "Invitation requested. If eligible, they’ll receive an email. You can connect once they join."
     static let unconfirmedNotice = "The invitation request could not be confirmed. Check with the recipient before sending another."
 
