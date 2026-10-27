@@ -34,14 +34,63 @@ const memoryBucket={
 async function request(member: string, path: string, method = 'GET', value?: unknown) { const init: RequestInit = { method, headers: { 'x-test-member': member, ...(value ? { 'content-type': 'application/json' } : {}) }, ...(value ? { body: JSON.stringify(value) } : {}) }; const response = await app.request('https://porchday.test' + path, init, env); const data = await response.json(); if (response.status >= 500)
     throw Error(JSON.stringify({ path, status: response.status, data })); return { status: response.status, data }; }
 async function person() { const id = randomUUID(), deviceId = randomUUID(); await sql `insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`; await sql `insert into app.profiles(member_id,handle) values(${id},${'t_' + id.replaceAll('-', '').slice(0, 20)})`; const keys = await generateDeviceKeys(id, deviceId); const recovery = await generateDeviceKeys(id, 'recovery', keys.recoverySecret); const { status } = await request(id, '/devices', 'POST', { id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, authorization: { type: 'initial' }, recovery_public_key: recovery.publicKey, backup: { v: 1, devices: [{ id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, encrypted_private_key: keys.encryptedPrivateKey }], recovery: { public_key: recovery.publicKey, fingerprint: recovery.fingerprint, encrypted_private_key: recovery.encryptedPrivateKey } } }); expect(status).toBe(201); return { id, deviceId, key: await unlockPrivateKey(keys.encryptedPrivateKey, keys.recoverySecret), publicKey: keys.publicKey }; }
-async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST')).status).toBe(200); }
+async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST', {kind})).status).toBe(200); }
 async function seal(a: Person, payload: unknown, override: Partial<ContentContext> = {}, postId?: string) { const audience = override.audience ?? 'connections'; const snap = await request(a.id, `/audiences?audience=${audience}${override.groupId ? '&group_id=' + override.groupId : ''}${postId ? '&post_id=' + postId : ''}`); expect(snap.status).toBe(200); const context: ContentContext = { id: randomUUID(), kind: 'post', authorId: a.id, authorDeviceId: a.deviceId, audience, parentId: null, groupId: null, epoch: snap.data.epoch, createdAt: new Date().toISOString(), expiresAt: null, revision: 1, ...override, epoch: snap.data.epoch }; return encryptObject({ context, payload, signingKey: a.key, recipients: snap.data.devices.map((d: any) => ({ memberId: d.member_id, deviceId: d.id, publicKey: d.public_key })) }); }
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); await sql.unsafe(await readFile(new URL('../migrations/046_connection_history.sql',import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); for (const name of ['045_emoji_library.sql','046_connection_history.sql','047_independent_connection_labels.sql']) await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('keeps labels private and directional across requests, acceptance, audiences and immediate changes', async()=>{
+        const a=await person(),b=await person(),outsider=await person();
+        const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
+        const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'family',history:'full'});
+        expect(pending.status).toBe(201);
+        expect((await request(a.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id)).toMatchObject({kind:'family'});
+        expect((await request(b.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id)).toMatchObject({kind:null});
+        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST');
+        expect(accepted.status).toBe(200);const edge=accepted.data.id;
+        const own=async(p:Person)=>(await request(p.id,'/connections')).data.items.find((r:any)=>r.id===edge);
+        const aEdge=await own(a),bEdge=await own(b);
+        expect(aEdge).toMatchObject({kind:'family',own_history:'full',peer_history:'future'});
+        expect(bEdge).toMatchObject({kind:'friend',own_history:'future',peer_history:'full'});
+        for(const row of [aEdge,bEdge]) {
+            expect(Object.keys(row).sort()).toEqual(['id','member_a','member_b','accepted_at','kind','own_history','peer_history'].sort());
+        }
+        expect((await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'family',history:'full'})).status).toBe(200);
+        expect(await own(b)).toMatchObject({kind:'friend',own_history:'future'});
+        const family=await seal(a,{text:'A classifies B as family'},{audience:'family'});
+        expect((await request(a.id,'/posts','POST',{envelope:family})).status).toBe(201);
+        expect((await request(b.id,'/posts/'+family.context.id)).status).toBe(200);
+        const reverse=await seal(b,{text:'B classifies A as a friend'},{audience:'friends'});
+        expect((await request(b.id,'/posts','POST',{envelope:reverse})).status).toBe(201);
+        expect((await request(a.id,'/posts/'+reverse.context.id)).status).toBe(200);
+        const stale=await seal(b,{text:'Old friends snapshot'},{audience:'friends'});
+        expect((await request(b.id,'/connections/'+edge+'/kind','PUT',{kind:'family'})).status).toBe(200);
+        expect((await request(b.id,'/posts','POST',{envelope:stale})).status).toBe(409);
+        expect((await request(a.id,'/posts/'+reverse.context.id)).status).toBe(404);
+        expect((await request(b.id,'/posts/'+family.context.id)).status).toBe(200);
+        expect(await own(a)).toMatchObject({kind:'family'});
+        const reverseFamily=await seal(b,{text:'New family audience'},{audience:'family'});
+        expect((await request(b.id,'/posts','POST',{envelope:reverseFamily})).status).toBe(201);
+        expect((await request(a.id,'/connections/'+edge+'/kind','PUT',{kind:'friend'})).status).toBe(200);
+        expect((await request(b.id,'/posts/'+family.context.id)).status).toBe(404);
+        expect((await request(a.id,'/posts/'+reverseFamily.context.id)).status).toBe(200);
+        expect(await own(b)).toMatchObject({kind:'family'});
+        expect((await request(outsider.id,'/connections/'+edge+'/kind','PUT',{kind:'friend'})).status).toBe(404);
+        expect((await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'colleague'})).status).toBe(400);
+        expect((await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'friend',kind_a:'family'})).status).toBe(400);
+    },60000);
+    it('lets an accepting member choose Family independently of the sender’s Friend label',async()=>{
+        const a=await person(),b=await person();
+        const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
+        const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend'});
+        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'family',history:'full'});
+        expect(accepted.status).toBe(200);
+        expect((await request(a.id,'/connections')).data.items.find((r:any)=>r.id===accepted.data.id)).toMatchObject({kind:'friend',own_history:'future'});
+        expect((await request(b.id,'/connections')).data.items.find((r:any)=>r.id===accepted.data.id)).toMatchObject({kind:'family',own_history:'full'});
+    },60000);
     it('keeps history consent directional, defaults old clients to future, and resets it on reconnect', async()=>{
         const a=await person(),b=await person(),outsider=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;

@@ -32,7 +32,7 @@ The long-term ambition is a widely used social network in the United States oper
 
 “No algorithm” is the marketing promise of a chronological social feed without engagement-based ranking or recommendation systems. Ordinary software logic still handles ordering, permissions, search, and safety; it does not optimize what members see to maximize time spent.
 
-Family includes chosen family. Mutual confirmation is sufficient; do not collect legal relationship documents. Family is a relationship label for audience controls, not a separate allowance: every accepted connection counts once toward the same 300-person cap.
+Family includes chosen family. Each member decides who they label as family; the other person does not need to agree, and no legal relationship documents are collected. Family is a personal label for the member's own audience controls, not a separate allowance: every accepted connection counts once toward the same 300-person cap.
 
 ## Setup authorization and repository
 
@@ -141,9 +141,9 @@ An empty Home invites the member to connect with someone and write a first post.
 
 ### Connections
 
-A connection is mutual and has one accepted type: friend or family. Requests can be accepted, declined, canceled, or blocked. Pending requests do not count toward the 300-connection limit. Both endpoints must have capacity when any connection is accepted, including family. Each accepted pair consumes one slot for each person.
+A connection is mutual, while each person independently labels the other as friend or family. The sender chooses their own label when requesting a connection; the recipient chooses their own label when accepting, defaulting to Friend. Requests can be accepted, declined, canceled, or blocked. Pending requests do not count toward the 300-connection limit. Both endpoints must have capacity when any connection is accepted, including family. Each accepted pair consumes one slot for each person.
 
-Changing a connection's friend/family label requires both people's agreement and does not change either person's connection count. Relabeling is allowed at the cap because it creates no new connection. Either person can remove any connection without approval; do not publicly announce removal.
+Changing a friend/family label takes effect for the person making the choice without the other person's agreement, and does not change either person's connection count. Each author's labels determine their Friends only and Family only audiences; someone cannot gain access to another person's family posts by labeling that person as family. Relabeling is allowed at the cap because it creates no new connection. Either person can remove any connection without approval; do not publicly announce removal. See the [personal connection-label contract](../docs/connection-labels.md) for migration, revocation and history behavior.
 
 Show a member their own connection usage, such as “184 of 300 friends, including family.” Avoid public connection counts, ranked friends, or a “Top 8.” Make discovery limited to exact handles and invitation links during the pilot. Keep connection lists private by default.
 
@@ -558,7 +558,7 @@ Required acceptance scenarios:
 - A member cannot post to another member's wall through the interface or direct API calls, but can comment on an eligible post.
 - A person who does not confirm they are at least 18 cannot enroll in the pilot.
 - A member with 300 accepted connections cannot accept a 301st, whether friend or family. Concurrent acceptances from 299 result in at most 300; acceptance fails if either endpoint is already at the cap.
-- Friend/family relabeling requires mutual consent, preserves connection counts, and works at the cap. Removing a connection frees one slot for each person; pending requests consume none.
+- Friend/family labels are independent in each direction. Relabeling changes only the choosing member's audience classification, preserves connection counts, and works at the cap. Removing a connection frees one slot for each person; pending requests consume none.
 - Home opens after ordinary login and lists eligible posts chronologically across pagination without popularity ranking or duplicate posts.
 - A removed friend, blocked member, or former group member immediately loses the relevant access, including direct image requests and old notification links.
 - A post expires while cleanup is disabled: it and all comments, reactions, and media deny new reads immediately.
@@ -595,7 +595,7 @@ Load testing should cover the confirmed initial scale of up to 10,000 registered
 | Product and organization name | Use Porchday as the working product name and porchday.com as the domain; the legal organization name remains to be settled. |
 | Cloudflare authentication library | Better Auth email/password is deployed on Workers with PlanetScale/Hyperdrive, with verified session/MFA checks and completed delivered-email password reset and two-person stolen-account recovery acceptance. Reserve Access for staff; human email-change acceptance remains unfinished. |
 | PlanetScale provisioning | Staging PS-5 ARM and production PS-20 ARM with two replicas are provisioned in Oregon, billed through Cloudflare, with separate runtime roles, migration access and seven-day backup retention. Both have 46 migrations; actual capacity and accrued billing still need ongoing observation. |
-| Definition of family | Include chosen family through mutual confirmation without documentary proof. |
+| Definition of family | Include chosen family; each member labels their connections independently, without agreement or documentary proof. |
 | Content permanence | Default to no timer, with clearly visible optional expiration; shortening only after publishing. |
 | Public discovery and groups | Private groups and limited member discovery at launch. |
 | Backup and safety retention | Seven-day database/media backups and independent privacy-journal replay are implemented; the real hosted restore passed. Retain the disclosed backup delay and tested first/final deletion obligations when describing erasure. |

@@ -7,21 +7,24 @@ struct ConnectionsView: View {
     @State private var kind = "friend"
     @State private var requestHistory = ConnectionHistory.newConnectionDefault
     @State private var acceptanceHistory: [String: ConnectionHistory] = [:]
+    @State private var acceptanceKind: [String: String] = [:]
     @State private var verifiedRecipient: VerificationRecipient?
     @State private var changingHistory = false
+    @State private var changingKind = false
     var body: some View { List {
         Section {
             Text("\(data["items"].array.count) of 300 friends, including family").font(.headline)
             TextField("Find an exact @handle", text: $handle).textInputAutocapitalization(.never).autocorrectionDisabled()
-            Picker("Connection", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }
+            ConnectionLabelPicker(selection: $kind)
             HistorySharingPicker(selection: $requestHistory)
             Button("Send connection request") { Task { await model.perform {
                 _ = try await model.api.social("/connections/requests", method: "POST", body: .object([
                     "handle": .string(handle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "")),
                     "kind": .string(kind), "history": .string(requestHistory.rawValue)]))
                 handle = ""; requestHistory = .newConnectionDefault; await refresh()
-            } } }.disabled(handle.isEmpty || !model.canWriteSocial)
-            Text("This controls your posts. Each person chooses separately. Earlier posts are shared from an unlocked device, within their original audience and timers.").font(.caption).foregroundStyle(.secondary)
+            } } }.disabled(handle.isEmpty || data["items"].array.count >= 300 || !model.canWriteSocial)
+            Text("Your label controls whether this person can see your friends-only or family-only posts. Each person chooses their own label.").font(.caption).foregroundStyle(.secondary)
+            Text("Earlier posts are shared from an unlocked device, within their original audience and timers.").font(.caption).foregroundStyle(.secondary)
         }
         PlatformInvitationSection()
         if model.historySharingBusy || model.historySharingNotice != nil {
@@ -39,11 +42,13 @@ struct ConnectionsView: View {
                 VStack(alignment: .leading) {
                     Text("@" + name(request["sender"].string == model.member?.id ? request["recipient"].string : request["sender"].string))
                     if request["recipient"].string == model.member?.id {
+                        ConnectionLabelPicker(selection: Binding(get: { acceptanceKind[requestID] ?? "friend" }, set: { acceptanceKind[requestID] = $0 }))
                         HistorySharingPicker(selection: Binding(get: { acceptanceHistory[requestID] ?? .newConnectionDefault }, set: { acceptanceHistory[requestID] = $0 }))
-                        Button("Accept \(request["kind"].string ?? "friend")") { Task {
-                            await action("/connections/requests/\(requestID)/accept", body: .object(["history": .string((acceptanceHistory[requestID] ?? .newConnectionDefault).rawValue)]), shareHistory: true)
-                        } }.disabled(!model.canWriteSocial)
+                        Button("Accept") { Task {
+                            await action("/connections/requests/\(requestID)/accept", body: .object(["kind": .string(acceptanceKind[requestID] ?? "friend"), "history": .string((acceptanceHistory[requestID] ?? .newConnectionDefault).rawValue)]), shareHistory: true)
+                        } }.disabled(data["items"].array.count >= 300 || !model.canWriteSocial)
                     } else {
+                        Text("Your label: " + (request["kind"].string == "family" ? "Family" : "Friend")).font(.caption)
                         Text("Your posts: " + ConnectionHistory.persisted(request["history"]).title).font(.caption)
                     }
                     Button(request["sender"].string == model.member?.id ? "Cancel" : "Decline", role: .destructive) { Task { await action("/connections/requests/\(requestID)/decline") } }.disabled(!model.canWriteSocial)
@@ -54,12 +59,17 @@ struct ConnectionsView: View {
             ForEach(Array(data["items"].array.enumerated()), id: \.offset) { _, connection in
                 let person = connection["member_a"].string == model.member?.id ? connection["member_b"].string ?? "" : connection["member_a"].string ?? ""
                 VStack(alignment: .leading, spacing: 12) {
-                    NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { Label("@\(name(person)) · \(connection["kind"].string ?? "friend")", systemImage: connection["kind"].string == "family" ? "house" : "person") }
+                    NavigationLink { ProfileView(memberID: person, handle: name(person)) } label: { Label("@\(name(person))", systemImage: connection["kind"].string == "family" ? "house" : "person") }
+                    ConnectionLabelPicker(selection: Binding(get: { connection["kind"].string == "family" ? "family" : "friend" }, set: { label in
+                        Task { changingKind = true; defer { changingKind = false }
+                            await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string(label)]), shareHistory: true)
+                        }
+                    })).disabled(changingKind || changingHistory || !model.canWriteSocial)
                     HistorySharingPicker(selection: Binding(get: { .persisted(connection["own_history"]) }, set: { history in
                         Task { changingHistory = true; defer { changingHistory = false }
                             await action("/connections/\(connection["id"].string ?? "")/history", method: "PUT", body: .object(["history": .string(history.rawValue)]), shareHistory: true)
                         }
-                    })).disabled(changingHistory || !model.canWriteSocial)
+                    })).disabled(changingHistory || changingKind || !model.canWriteSocial)
                 }
                 .swipeActions {
                     Button("Remove", role: .destructive) { Task { await action("/connections/\(connection["id"].string ?? "")", method: "DELETE") } }.disabled(!model.canWriteSocial)
@@ -67,8 +77,6 @@ struct ConnectionsView: View {
                 }
                 .contextMenu {
                     Button("Verify encryption keys") { verifiedRecipient = VerificationRecipient(id: person, handle: name(person)) }
-                    Button("Propose family label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("family")])) } }.disabled(!model.canWriteSocial)
-                    Button("Propose friend label") { Task { await action("/connections/\(connection["id"].string ?? "")/kind", method: "PUT", body: .object(["kind": .string("friend")])) } }.disabled(!model.canWriteSocial)
                     Button("Block", role: .destructive) { Task { await action("/blocks/" + person, method: "PUT") } }
                 }
             }
@@ -76,7 +84,7 @@ struct ConnectionsView: View {
         }
     }.navigationTitle("Connections").task { await refresh(); await model.refreshHistoricalPosts() }.refreshable { await refresh(); await model.refreshHistoricalPosts(retry: true) }
         .sheet(item: $verifiedRecipient) { recipient in NavigationStack { RecipientKeyVerificationView(recipient: recipient) }.id(recipient.id) }
-        .onChange(of: model.member?.id) { _, _ in verifiedRecipient = nil; acceptanceHistory = [:]; requestHistory = .newConnectionDefault }
+        .onChange(of: model.member?.id) { _, _ in verifiedRecipient = nil; acceptanceHistory = [:]; acceptanceKind = [:]; requestHistory = .newConnectionDefault; kind = "friend" }
     }
     private func name(_ id: String?) -> String { data["handles"].array.first { $0["member_id"].string == id || $0["id"].string == id }?["handle"].string ?? "member" }
     private func refresh() async { await model.perform { data = try await model.api.social("/connections") } }
@@ -86,6 +94,15 @@ struct ConnectionsView: View {
             _ = try await model.api.social(path, method: method, body: method == "DELETE" ? nil : body)
             await refresh()
             if shareHistory { await model.refreshHistoricalPosts(retry: true) }
+        }
+    }
+}
+private struct ConnectionLabelPicker: View {
+    @Binding var selection: String
+    var body: some View {
+        Picker("Your label", selection: $selection) {
+            Text("Friend").tag("friend")
+            Text("Family").tag("family")
         }
     }
 }

@@ -136,25 +136,31 @@ suite('PostgreSQL restore reconciliation',()=>{
     for(const name of(await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
   },30000);
   afterAll(async()=>{if(sql)await sql.end();});
-  it('journals either relationship-kind change so restore cannot revive friends-only historical access',async()=>{
-    const a=randomUUID(),b=randomUUID(),device=randomUUID(),post=randomUUID();
+  it.each(['kind_a','kind_b'] as const)('journals a %s-only relabel and replays it without reviving narrow historical grants',async column=>{
+    const [low,high]=[randomUUID(),randomUUID()].sort(),a=column==='kind_a'?low:high,b=column==='kind_a'?high:low,
+      device=randomUUID(),post=randomUUID();
     for(const member of [a,b])await sql`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${member},now(),now())`;
     await sql`insert into app.device_keys(id,member_id,public_key,fingerprint,authorization_proof) values(${device},${b},${'synthetic-public'.repeat(12)},${'b'.repeat(64)},'{}')`;
-    const [low,high]=[a,b].sort();
     const [edge]=await sql`insert into app.connections(member_a,member_b,kind) values(${low},${high},'friend') returning *`;
     await sql`insert into app.posts(id,author_id,audience,envelope,epoch) values(${post},${a},'friends','{}',1)`;
     await sql`insert into app.post_recipients(post_id,device_id,member_id) values(${post},${device},${b})`;
     const [{sequence}]=await sql`select sequence from app.safety_journal_state`;
-    await sql`update app.connections set kind='family' where id=${edge.id}`;
+    // Updating just one column must fire the replacement trigger. The other
+    // member's preference remains Friend, and legacy kind is never authoritative.
+    await sql.unsafe(`update app.connections set ${column}='family' where id=$1`,[edge.id]);
+    const [changed]=await sql`select kind,kind_a,kind_b from app.connections where id=${edge.id}`;
+    expect(changed).toEqual({kind:'friend',kind_a:column==='kind_a'?'family':'friend',kind_b:column==='kind_b'?'family':'friend'});
     const decisions=await sql`select sequence,id,occurred_at,decision from app.safety_journal where sequence>${sequence} order by sequence`;
-    expect(decisions.some(r=>r.decision.action==='connection'&&r.decision.a===low&&r.decision.b===high)).toBe(true);
+    expect(decisions.filter(r=>r.decision.action==='connection'&&r.decision.a===low&&r.decision.b===high)).toHaveLength(1);
     expect(decisions.some(r=>r.decision.action==='recipient'&&r.decision.post===post)).toBe(true);
     expect(await sql`select * from app.post_recipients where post_id=${post}`).toHaveLength(0);
-    // Reconstruct the older relationship/grant inside restore quarantine, then
-    // replay the real recorded safety decisions from the completed relabel.
+    await sql.unsafe(`update app.connections set ${column}='family' where id=$1`,[edge.id]);
+    expect(await sql`select sequence from app.safety_journal where sequence>${sequence}`).toHaveLength(decisions.length);
+    // Reconstruct the older label/grant inside restore quarantine, then replay
+    // the recorded decision. Conservative replay removes the relationship.
     await sql.begin(async tx=>{
       await tx`select set_config('app.restore_replay','on',true)`;
-      await tx`update app.connections set kind='friend' where id=${edge.id}`;
+      await tx.unsafe(`update app.connections set ${column}='friend' where id=$1`,[edge.id]);
       await tx`insert into app.post_recipients(post_id,device_id,member_id) values(${post},${device},${b})`;
       await tx`update app.safety_journal_state set restore_quarantined=true`;
       await tx`select app.replay_safety_batch(${tx.json(decisions)})`;
