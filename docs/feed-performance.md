@@ -236,6 +236,7 @@ Larger suggestions (not current release requirements): encrypted thumbnail
 variants and WebP/AVIF with protocol/native compatibility and cleanup; mobile
 refresh profiling including crypto/key discovery and API latency; optimistic
 creates/reactions with idempotency and server reconciliation. Existing photos are
-JPEG (typically prepared at up to 1,800 px, avatars 512 px); this change does not
+JPEG (post uploads up to 2,400 px, profile/cover media 1,800 px, avatars 512 px);
+this change does not
 recompress stored content or weaken private API/media cache rules. Public assets
 already use the platform asset service and the app shell's service-worker cache.
