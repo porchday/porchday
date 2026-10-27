@@ -40,7 +40,14 @@ import {
 } from "./ui";
 import { useVault } from "./vault";
 import { reshareDeadline, resharePayload } from "./reshare";
-import { jpegDimensions, validatedPhoto } from "./photo-safety";
+import {
+  jpegDimensions,
+  jpegSource,
+  PHOTO_ACCEPT,
+  photoSourceMime,
+  stripCanvasJpegMetadata,
+  validatedPhoto,
+} from "./photo-safety";
 import { preservedPhotoDeadline } from "./archive";
 import {
   validateReactionPayload,
@@ -152,29 +159,49 @@ function readObjectURL(blob: Blob) {
 export async function preparePhoto(file: File, maxDimension = 2400) {
   if (file.size > 20 * 1024 * 1024)
     throw new Error("Each source photo must be 20 MB or smaller.");
-  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type))
-    throw new Error("Choose a JPEG, PNG, or WebP photo.");
-  if (file.type === "image/jpeg")
-    jpegDimensions(new Uint8Array(await file.arrayBuffer()), 65535);
-  const bitmap = await createImageBitmap(file);
-  if (
-    bitmap.width * bitmap.height > 40_000_000 ||
-    !bitmap.width ||
-    !bitmap.height
-  ) {
-    bitmap.close();
-    throw new Error("This photo exceeds the 40-megapixel safety limit.");
+  const bytes = new Uint8Array(await file.arrayBuffer()),
+    mime = photoSourceMime(bytes),
+    source = mime === "image/jpeg" ? jpegSource(bytes) : null;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(
+      new Blob([(source?.bytes ?? bytes) as BlobPart], { type: mime }),
+    );
+  } catch {
+    throw new Error(
+      "This browser could not decode this photo. Export it as a standard JPEG or PNG and try again.",
+    );
   }
-  const ratio = Math.min(
-    1,
-    maxDimension / Math.max(bitmap.width, bitmap.height),
-  );
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(bitmap.width * ratio);
-  canvas.height = Math.round(bitmap.height * ratio);
-  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  bitmap.close();
-  const blob = await new Promise<Blob>((resolve, reject) =>
+  let canvas: HTMLCanvasElement;
+  try {
+    canvas = document.createElement("canvas");
+    if (
+      bitmap.width * bitmap.height > 40_000_000 ||
+      !bitmap.width ||
+      !bitmap.height
+    )
+      throw new Error("This photo exceeds the 40-megapixel safety limit.");
+    // Native decoding applies EXIF rotation; portrait/landscape may swap axes.
+    if (
+      source &&
+      !(bitmap.width === source.width && bitmap.height === source.height) &&
+      !(bitmap.width === source.height && bitmap.height === source.width)
+    )
+      throw new Error("This photo has inconsistent dimensions.");
+    const ratio = Math.min(
+      1,
+      maxDimension / Math.max(bitmap.width, bitmap.height),
+    );
+    canvas.width = Math.max(1, Math.round(bitmap.width * ratio));
+    canvas.height = Math.max(1, Math.round(bitmap.height * ratio));
+    const context = canvas.getContext("2d", { colorSpace: "srgb" });
+    if (!context)
+      throw new Error("Image processing is unavailable in this browser.");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  } finally {
+    bitmap.close();
+  }
+  const encoded = await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob(
       (b) =>
         b ? resolve(b) : reject(new Error("Could not process this photo.")),
@@ -182,6 +209,13 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
       0.85,
     ),
   );
+  const normalized = stripCanvasJpegMetadata(
+    new Uint8Array(await encoded.arrayBuffer()),
+  );
+  const outputSize = jpegDimensions(normalized);
+  if (outputSize.width !== canvas.width || outputSize.height !== canvas.height)
+    throw new Error("This photo has inconsistent dimensions.");
+  const blob = new Blob([normalized as BlobPart], { type: "image/jpeg" });
   return {
     blob,
     width: canvas.width,
@@ -358,7 +392,7 @@ export function Composer({
           <input
             ref={input}
             type="file"
-            accept="image/jpeg,image/png,image/webp"
+            accept={PHOTO_ACCEPT}
             multiple
             className="sr-only"
             tabIndex={-1}

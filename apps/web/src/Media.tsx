@@ -9,7 +9,7 @@ import { post, request, type MediaPayload } from "./api";
 import { EncryptedPhoto, preparePhoto } from "./Social";
 import { Alert, Button, Icon, useAction } from "./ui";
 import { useVault } from "./vault";
-import { jpegDimensions } from "./photo-safety";
+import { jpegDimensions, PHOTO_ACCEPT } from "./photo-safety";
 import { preservedPhotoDeadline } from "./archive";
 export type PendingAsset = {
   slot: "avatar" | "cover" | "background" | "image";
@@ -67,7 +67,7 @@ export function AssetPicker({
         <input
           type="file"
           disabled={disabled || action.busy}
-          accept="image/jpeg,image/png,image/webp"
+          accept={PHOTO_ACCEPT}
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file)
