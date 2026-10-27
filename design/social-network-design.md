@@ -278,7 +278,7 @@ Publish the application source in a public repository under the Apache License 2
 
 Provide a README, contribution guide, code of conduct, release history, and a private security-reporting channel. Review dependency license compatibility and document ownership of project trademarks separately from the code license. Keep production secrets, member data, private moderation records, and sensitive operational configuration out of the public repository.
 
-The commitment is an inspectable, reusable, and contributable codebase. A supported deployment package for independent operators, alternate hosting infrastructure, and federation are outside the initial scope. Keep the export schema public and preserve portability regardless of the hosting services used by the nonprofit.
+The commitment is an inspectable, reusable, and contributable codebase. A supported deployment package for independent operators, alternate hosting infrastructure, and federation are outside the initial implementation. The [federation proposal](federation-proposal.md) now explores future participation through independently operated servers, with server addresses confined to advanced setup and the ordinary hosted experience preserved. It is a discussion draft, not a change to the current API or encryption guarantees. Keep the export schema public and preserve portability regardless of the hosting services used by the nonprofit.
 
 ### Deletion controls
 

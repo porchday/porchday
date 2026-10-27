@@ -17,6 +17,8 @@ Private social content is signed and encrypted on member devices. The operator s
 
 Google/GitHub sign-in, Datadog and technical proof of humanity are deferred. The [design](design/social-network-design.md) describes the intended product; the dated [build status](docs/build-status.md) records what was actually verified and what remains open.
 
+The [federation proposal](design/federation-proposal.md) explores participation through independently operated servers while keeping the hosted experience simple. It is a discussion draft for future work; federation is not implemented.
+
 ## Start developing
 
 Use **Node 24**, npm, and Python 3:
