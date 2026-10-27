@@ -251,7 +251,10 @@ suite('PostgreSQL restore reconciliation',()=>{
       await tx`insert into public.auth_session(id,"userId",token,"expiresAt") values(${randomUUID()},${member},${randomUUID()},now()+interval '1 day')`;
       await tx`insert into public.auth_verification(id,identifier,value,"expiresAt") values(${randomUUID()},'restored-reset','sensitive-token-fixture',now()+interval '1 day')`;
     });
+    await sql`insert into public.platform_invitation_history(id,sender_id,recipient_key,encrypted_recipient,expires_at)
+      values(${randomUUID()},${member},${'f'.repeat(64)},'encrypted-receipt-fixture',now()+interval '1 day')`;
     const removed:string[]=[];const result=await replayPrivacyJournal(store,sql,async key=>{removed.push(key);});
+    expect(await sql`select id from public.platform_invitation_history`).toHaveLength(0);
     expect(result.heldAccounts).toBe(1);expect(result.replayed).toBeGreaterThan(3);
     expect((await sql`select status from app.members where id=${member}`)[0].status).toBe('hold');
     expect((await sql`select envelope from app.profiles where member_id=${member}`)[0].envelope).toBeNull();

@@ -1,5 +1,23 @@
 import Foundation
 
+struct SentPlatformInvitation: Identifiable {
+    let id: String
+    let email: String
+    let requested: Date
+    let expires: Date
+    let status: String
+    var statusLabel: String { ["pending": "Pending", "joined": "Joined", "expired": "Expired"][status] ?? "Pending" }
+    init(_ raw: JSON) throws {
+        guard let id = raw["id"].string, UUID(uuidString: id) != nil, let email = raw["email"].string,
+              let requested = raw["requested_at"].string.flatMap(PorchDate.parse),
+              let expires = raw["expires_at"].string.flatMap(PorchDate.parse),
+              let status = raw["status"].string, ["pending", "joined", "expired"].contains(status) else {
+            throw PorchError.message("Could not load your invitations.")
+        }
+        self.id = id; self.email = email; self.requested = requested; self.expires = expires; self.status = status
+    }
+}
+
 enum PlatformInvitation {
     static let acceptedNotice = "Invitation requested. If eligible, they’ll receive an email. You can connect once they join."
     static let unconfirmedNotice = "The invitation request could not be confirmed. Check with the recipient before sending another."

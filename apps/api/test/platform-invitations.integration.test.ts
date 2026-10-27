@@ -7,6 +7,8 @@ import {app} from '../src/index';
 import {decryptAccountEmail,enqueueAccountEmail,processAccountEmails} from '../src/email-outbox';
 import {hashToken} from '../src/auth';
 import type {Env} from '../src/types';
+import {captureLegacyInvitations,invitationRecipientKey,recordInvitationHistory} from '../src/invitation-history';
+import {cleanupAuthenticationMetadata} from '../src/metadata-cleanup';
 
 const base=process.env.TEST_DATABASE_URL,suite=base?describe:describe.skip;
 const suffix=randomUUID().replaceAll('-',''),database='porchday_invitations_'+suffix,role='porchday_invite_auth_'+suffix;
@@ -27,6 +29,11 @@ async function call(path:string,body:unknown,cookie='',overrides:Partial<Env>={}
  return response;
 }
 const invite=(cookie:string,email:string,overrides:Partial<Env>={})=>call('/api/v1/platform-invitations',{email},cookie,overrides);
+async function history(cookie:string,query='') {
+ const pending:Promise<unknown>[]=[];
+ const response=await app.fetch(new Request(env.APP_URL+'/api/v1/platform-invitations'+query,{headers:{Cookie:cookie}}),env,{waitUntil(p:Promise<unknown>){pending.push(p);},passThroughOnException(){},props:{}} as ExecutionContext);
+ await Promise.all(pending);return response;
+}
 async function row(email:string){return (await owner.query(`SELECT i.*,o.encrypted_payload,o.attempts,o.delivered_at FROM public.pilot_invitations i LEFT JOIN public.auth_email_outbox o ON o.invitation_token_hash=i.token_hash WHERE i.email=$1`,[email])).rows[0];}
 suite('member platform invitations through real auth sessions and restricted SQL role',()=>{
  beforeAll(async()=>{
@@ -104,10 +111,66 @@ suite('member platform invitations through real auth sessions and restricted SQL
   await owner.query("UPDATE public.platform_invitation_requests SET created_at=now()-interval '25 hours' WHERE sender_id=$1",[a.id]);
   expect((await invite(a.cookie,randomUUID()+'@example.test')).status).toBe(202);
  });
+ it('lists only the sender’s requests, including suppressed requests, without exposing eligibility or credentials',async()=>{
+  const a=await person(),b=await person(),existing=await person(),email=randomUUID()+'@example.test';
+  await invite(a.cookie,email);await invite(a.cookie,email);await invite(a.cookie,existing.email);await invite(b.cookie,email);
+  expect((await history('')).status).toBe(401);
+  const response=await history(a.cookie),body=await response.json() as any;
+  expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('no-store');
+  expect(body.items).toHaveLength(2);expect(body.items.map((row:any)=>row.status)).toEqual(['pending','pending']);
+  for(const item of body.items)expect(Object.keys(item).sort()).toEqual(['email','expires_at','id','requested_at','status']);
+  const other=await(await history(b.cookie)).json() as any;expect(other.items).toHaveLength(1);expect(other.items[0].email).toBe(email);expect(other.items[0].status).toBe('pending');
+  const stored=(await owner.query('SELECT * FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows;
+  expect(JSON.stringify(stored)).not.toContain(email);expect(JSON.stringify(stored)).not.toContain(existing.email);
+  expect((await history(a.cookie,'?cursor=invalid')).status).toBe(400);
+ });
+ it('marks joined only after actual email verification and preserves that status after token expiry and recipient deletion',async()=>{
+  const a=await person(),b=await person(),email=randomUUID()+'@example.test';await invite(a.cookie,email);await invite(b.cookie,email);
+  const invitation=await row(email),claim=randomUUID();
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1,claimed_at=now() WHERE token_hash=$2',[claim,invitation.token_hash]);
+  const status=async(cookie:string)=>(await(await history(cookie)).json() as any).items[0].status;
+  expect(await status(a.cookie)).toBe('pending');
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$2,$3,false)',[claim,'Synthetic invited account',email]);
+  expect(await status(a.cookie)).toBe('pending');
+  await owner.query("UPDATE public.pilot_invitations SET expires_at=now()-interval '1 second' WHERE token_hash=$1",[invitation.token_hash]);
+  await cleanupAuthenticationMetadata(env);
+  await owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[claim]);
+  expect(await status(a.cookie)).toBe('joined');expect(await status(b.cookie)).toBe('pending');
+  await owner.query('DELETE FROM public.auth_user WHERE id=$1',[claim]);expect(await status(a.cookie)).toBe('joined');
+  expect((await owner.query('SELECT claimed_user FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows[0].claimed_user).toBeNull();
+  await owner.query('DELETE FROM public.auth_user WHERE id=$1',[a.id]);expect((await owner.query('SELECT count(*)::int AS n FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows[0].n).toBe(0);
+ });
+ it('preserves available legacy invitations and expires receipts independently of credential cleanup',async()=>{
+  const a=await person(),token=await hashToken(randomUUID()),email=randomUUID()+'@example.test';
+  await owner.query("INSERT INTO public.pilot_invitations(token_hash,email,sender_id,created_at,expires_at) VALUES($1,$2,$3,now()-interval '8 days',now()-interval '1 day')",[token,email,a.id]);
+  const client=await owner.connect();try{await client.query('BEGIN');await captureLegacyInvitations(client,env);await client.query('COMMIT');}finally{client.release();}
+  await cleanupAuthenticationMetadata(env);
+  const data=await(await history(a.cookie)).json() as any;expect(data.items).toHaveLength(1);expect(data.items[0]).toMatchObject({email,status:'expired'});
+  expect(await row(email)).toBeUndefined();
+  await owner.query("UPDATE public.platform_invitation_history SET requested_at=now()-interval '91 days' WHERE sender_id=$1",[a.id]);
+  expect((await(await history(a.cookie)).json() as any).items).toEqual([]);
+  await cleanupAuthenticationMetadata(env);expect((await owner.query('SELECT count(*)::int AS n FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows[0].n).toBe(0);
+ });
+ it('pages stable sender-owned history without allowing a cursor to select another sender',async()=>{
+  const a=await person(),b=await person(),now=new Date();
+  for(let i=0;i<52;i++){
+   const email='fixture-'+i+'@example.test';
+   await recordInvitationHistory(owner,env,{sender:a.id,email,key:await invitationRecipientKey(env.BETTER_AUTH_SECRET,email),requestedAt:now,expiresAt:new Date(+now+86400_000),tokenHash:null});
+  }
+  // PostgreSQL stores microseconds; cursors must not round a tied timestamp
+  // through JavaScript Date and silently omit the rest of that page.
+  await owner.query("UPDATE public.platform_invitation_history SET requested_at=date_trunc('milliseconds',now())+interval '123 microseconds' WHERE sender_id=$1",[a.id]);
+  const first=await(await history(a.cookie)).json() as any;expect(first.items).toHaveLength(50);expect(first.next_cursor).toBeTruthy();
+  const second=await(await history(a.cookie,'?cursor='+first.next_cursor)).json() as any;expect(second.items).toHaveLength(2);expect(second.next_cursor).toBeNull();
+  expect(new Set([...first.items,...second.items].map(row=>row.id)).size).toBe(52);
+  expect((await(await history(b.cookie,'?cursor='+first.next_cursor)).json() as any).items).toEqual([]);
+  await owner.query('DELETE FROM public.auth_session WHERE id=$1',[a.session]);expect((await history(a.cookie)).status).toBe(401);
+  for(const role of ['porchday_social','porchday_jobs'])expect((await owner.query("SELECT has_table_privilege($1,'public.platform_invitation_history','SELECT') AS allowed",[role])).rows[0].allowed).toBe(false);
+ });
  it('rolls back invitation and quota metadata when durable mail insertion fails',async()=>{
   const a=await person(),email=randomUUID()+'@example.test';
   await owner.query("CREATE FUNCTION public.synthetic_mail_failure() RETURNS trigger LANGUAGE plpgsql AS $$BEGIN RAISE EXCEPTION 'Synthetic failure'; END$$; CREATE TRIGGER synthetic_failure BEFORE INSERT ON public.auth_email_outbox FOR EACH ROW EXECUTE FUNCTION public.synthetic_mail_failure()");
-  try{expect((await invite(a.cookie,email)).status).toBe(503);expect(await row(email)).toBeUndefined();expect((await owner.query('SELECT count(*)::int AS n FROM public.platform_invitation_requests WHERE sender_id=$1',[a.id])).rows[0].n).toBe(0);}
+  try{expect((await invite(a.cookie,email)).status).toBe(503);expect(await row(email)).toBeUndefined();expect((await owner.query('SELECT count(*)::int AS n FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows[0].n).toBe(0);expect((await owner.query('SELECT count(*)::int AS n FROM public.platform_invitation_requests WHERE sender_id=$1',[a.id])).rows[0].n).toBe(0);}
   finally{await owner.query('DROP TRIGGER synthetic_failure ON public.auth_email_outbox; DROP FUNCTION public.synthetic_mail_failure()');}
  });
  it('prioritizes account/security mail over an older invitation backlog',async()=>{

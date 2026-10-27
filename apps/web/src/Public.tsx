@@ -545,7 +545,7 @@ const policyContent: Record<
       ],
       [
         "What the service can see",
-        "Operational metadata includes public handles, email for authentication, membership, connections, post routing, timing, recipient devices, ciphertext sizes, and usage needed for security and delivery. This information is not end-to-end encrypted. Cloudflare and PlanetScale process necessary service metadata.",
+        "Operational metadata includes public handles, email for authentication and invitations, invitation status, membership, connections, post routing, timing, recipient devices, ciphertext sizes, and usage needed for security and delivery. This information is not end-to-end encrypted. Invitation addresses are encrypted at rest; the sender can view their invitation history for 90 days. Deleting the sender’s account removes that history. Cloudflare and PlanetScale process necessary service metadata.",
       ],
       [
         "Your keys and recovery",
