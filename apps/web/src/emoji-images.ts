@@ -5,7 +5,7 @@ import {
   CUSTOM_EMOJI_MAX_BYTES,
 } from "@porchday/crypto/reactions";
 import type { CustomEmoji } from "./emoji-library";
-import { jpegDimensions } from "./photo-safety";
+import { jpegSource, photoSourceMime } from "./photo-safety";
 
 const INPUT_BYTES = 5 * 1024 * 1024,
   INPUT_PIXELS = 16_000_000;
@@ -19,7 +19,7 @@ export function emojiSourceDimensions(bytes: Uint8Array, mime: string) {
   if (!bytes.length || bytes.length > INPUT_BYTES)
     throw new Error("Choose an image no larger than 5 MB.");
   if (mime === "image/jpeg") {
-    const size = jpegDimensions(bytes, 65535);
+    const size = jpegSource(bytes);
     return dimensions(size.width, size.height);
   }
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
@@ -196,16 +196,25 @@ export async function prepareCustomEmoji(
   if (file.size > INPUT_BYTES)
     throw new Error("Choose an image no larger than 5 MB.");
   const bytes = new Uint8Array(await file.arrayBuffer()),
-    expected = emojiSourceDimensions(bytes, file.type);
-  const bitmap = await createImageBitmap(
-    new Blob([bytes], { type: file.type }),
-  );
+    mime = photoSourceMime(bytes),
+    expected = emojiSourceDimensions(bytes, mime),
+    source = mime === "image/jpeg" ? jpegSource(bytes).bytes : bytes;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(
+      new Blob([source as BlobPart], { type: mime }),
+    );
+  } catch {
+    throw new Error(
+      "This browser could not decode this image. Export it as a standard JPEG or PNG and try again.",
+    );
+  }
   try {
     const sameDimensions =
       bitmap.width === expected.width && bitmap.height === expected.height;
     // Browser decoding applies a phone JPEG's EXIF rotation before drawing.
     const orientedJpeg =
-      file.type === "image/jpeg" &&
+      mime === "image/jpeg" &&
       bitmap.width === expected.height &&
       bitmap.height === expected.width;
     if (!sameDimensions && !orientedJpeg)

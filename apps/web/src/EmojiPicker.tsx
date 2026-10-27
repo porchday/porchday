@@ -16,6 +16,7 @@ import {
   type CustomEmoji,
 } from "./emoji-library";
 import { prepareCustomEmoji, validateCustomEmojiPixels } from "./emoji-images";
+import { PHOTO_ACCEPT } from "./photo-safety";
 
 export function EmojiGlyph({ value }: { value: ReactionPayload }) {
   const display = reactionDisplay(value);
@@ -341,7 +342,7 @@ export function EmojiPicker({
                 <input
                   ref={input}
                   type="file"
-                  accept="image/png,image/jpeg,image/webp"
+                  accept={PHOTO_ACCEPT}
                   disabled={disabled}
                   onChange={(event) => {
                     const chosen = event.target.files?.[0] ?? null;

@@ -207,6 +207,43 @@ describe("static custom image normalization", () => {
     expect(draw.mock.calls[0].slice(1)).toEqual([0, 0, 96, 128]);
     expect(close).toHaveBeenCalledOnce();
   });
+  it("imports JPEG aliases and missing MIME labels using only the primary image, while keeping emoji limits", async () => {
+    const primary = jpeg(320, 240),
+      // MPF directory plus an appended, oversized auxiliary image.
+      source = Uint8Array.from([
+        255, 216, 255, 226, 0, 6, 77, 80, 70, 0,
+        ...primary.slice(2), ...jpeg(65000, 65000),
+      ]);
+    for (const type of ["image/pjpeg", "image/jpg", "", "application/octet-stream"]) {
+      const { close } = browser(320, 240);
+      const result = await prepareCustomEmoji(
+        new File([source], "photo.jfif", { type }),
+        "photo",
+      );
+      const decoded = vi.mocked(createImageBitmap).mock.calls[0][0] as Blob;
+      expect(decoded.type).toBe("image/jpeg");
+      expect(new Uint8Array(await decoded.arrayBuffer())).toEqual(primary);
+      expect(validateCustomPng(customPngBytes(result.custom.png))).toEqual({
+        width: 128,
+        height: 96,
+      });
+      expect(close).toHaveBeenCalledOnce();
+    }
+    const decode = vi.fn();
+    vi.stubGlobal("createImageBitmap", decode);
+    await expect(prepareCustomEmoji(
+      new File([jpeg(5000, 4000)], "large.jfif", { type: "image/pjpeg" }),
+      "large",
+    )).rejects.toThrow(/16 megapixels/);
+    expect(decode).not.toHaveBeenCalled();
+  });
+  it("offers export guidance when the native decoder lacks the source JPEG codec", async () => {
+    vi.stubGlobal("createImageBitmap", vi.fn().mockRejectedValue(new Error("unsupported codec")));
+    await expect(prepareCustomEmoji(
+      new File([jpeg(320, 240)], "photo.jfif", { type: "image/pjpeg" }),
+      "photo",
+    )).rejects.toThrow(/Export it as a standard JPEG or PNG/);
+  });
   it("releases decoded resources on mismatch and failed encoding", async () => {
     let handle = browser(20, 30);
     await expect(
