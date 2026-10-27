@@ -153,11 +153,11 @@ export function Icon({
     </svg>
   );
 }
-export function Logo({ small = false }: { small?: boolean }) {
+export function Logo({ small = false, href = "/" }: { small?: boolean; href?: string }) {
   return (
     <a
       className={`logo ${small ? "logo-small" : ""}`}
-      href="/"
+      href={href}
       aria-label="Porchday home"
     >
       <img className="logo-mark" src="/logo.svg" width="40" height="40" alt="" />
