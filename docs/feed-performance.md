@@ -199,3 +199,87 @@ After CI and internal code review, the operator retained the supported one-fewer
 ### Reproducible retained placement
 
 After the code-only `3de7b9c` release, the configuration audit found that regenerating a deployable config still removed the retained staging region: the generator copied the local base, while the Oregon setting existed only in an ignored staging file. The earlier trial-only warning above describes that historical behavior. `infra/resources.json` now explicitly records staging `worker_placement: {region: "aws:us-west-2"}` and production `worker_placement: null`; the renderer validates that setting and clears any inherited local placement before applying it. This makes the current environment choices reproducible without promoting staging placement into production. Focused tests cover both environments, local-setting isolation and rejection of malformed placement without overwriting an existing output. An isolated temporary render of each environment matched its existing deployment config exactly as JSON, with no changed top-level values. This correction changes configuration generation only; it does not deploy a Worker or claim a new performance result.
+
+## Deferred browser media and pending saves (October 27, 2026)
+
+The web feed previously fetched full details for all 30 cards immediately and
+fetched/decrypted each photo before native image lazy loading could take effect.
+Cards now request details within 400 px of the viewport (or immediately on an
+expanded post); photos defer the actual encrypted-byte request to that margin.
+Browsers without IntersectionObserver retain eager loading. Existing no-store,
+authorization, expiry, abort and blob cleanup behavior remains in place.
+
+`node scripts/measure-feed-loading.mjs output.json` exercises real card/fetch
+lifecycle with synthetic data: 30 cards, 800×800 Chromium viewport, six server
+slots, 150 ms response delay, 100 KB media padding, five fresh browser contexts.
+At base `10d9ab8`, median first decoded photo was 1,403 ms (1,394–1,468);
+after deferral it was 281 ms (279–281). Initial detail requests fell from 30 to 3,
+photo requests from 30 to 2, and synthetic media response padding from 3 MB to
+0.2 MB. These are controlled component results with mocked encryption and image
+validation, not hosted latency, mobile capacity, or a production speed guarantee.
+
+Post text edits render immediately; an unconfirmed save rolls the preview back,
+restores the draft, and explains the failure. A global saving indicator covers API
+mutations through response parsing, plus encryption/upload preparation for post
+creation and editing. In-app links and routing are held while a save is pending;
+a beforeunload warning covers browser navigation/reload/close where supported.
+Browsers control that warning and may omit it on mobile/process termination; this
+is not durable offline storage or a guarantee that a tab cannot be closed.
+Other forms retain their existing server-confirmed UI. Their API writes are
+protected, but pre-request work is not universally tracked yet.
+
+`node scripts/check-feed-saves.mjs` checks deferred loading, scrolling, observer
+fallback, concurrent saves, routing protection, and optimistic success/failure
+with synthetic components in Chromium and WebKit. No hosted member data is used.
+
+Larger suggestions (not current release requirements): encrypted thumbnail
+variants and WebP/AVIF with protocol/native compatibility and cleanup; mobile
+refresh profiling including crypto/key discovery and API latency; optimistic
+creates/reactions with idempotency and server reconciliation. Existing photos are
+JPEG (post uploads up to 2,400 px, profile/cover media 1,800 px, avatars 512 px);
+this change does not
+recompress stored content or weaken private API/media cache rules. Public assets
+already use the platform asset service and the app shell's service-worker cache.
+
+## Account/device bootstrap and duplicate startup reads (October 27, 2026)
+
+A real App/Vault/Avatar startup harness reproduced five `/me` calls, one
+`/devices` call and one own-author key lookup on the previous release. The web
+app now requests `/me?bootstrap=1`: the same member, RLS-filtered connection
+count and authorized device roster are returned with one SQL statement inside
+the existing authenticated member transaction. Ordinary `/me` also combines its
+member/count reads into one statement; its response shape remains unchanged.
+No session, member-status, privacy-journal or RLS check is removed or cached.
+
+The initial profile setup, own avatar and sidebar consume that initial account
+snapshot. Existing-profile confirmation no longer causes a redundant avatar
+refresh. Later navigation/rechecks still read fresh data. Own signing keys reuse
+the authorized startup roster after the normal fingerprint checks. Other authors
+still use the separately authorized key lookup. This removes a sequential device
+request and redundant reads; it does not batch the whole feed or other profiles.
+
+`node scripts/check-startup.mjs [source-root] [new-output.json]` bundles the actual
+App, Vault and Avatar components, with synthetic HTTP (150 ms delay), mocked
+cryptography and a mocked remembered key. With one own post, five fresh Chromium
+contexts had median observed first-post DOM readiness of **722 → 405 ms**;
+the WebKit check was **785 → 407 ms**. Account reads fell **5 → 1**, separate
+roster reads **1 → 0**, and own-author key reads **1 → 0**. Timing uses a browser
+MutationObserver, excluding Playwright polling delay. These are controlled UI
+results, not US hosted or Manila latency. GET-only startup made zero writes and
+showed no save banner in both versions. The reported GET-only banner is therefore
+not reproduced; actual automatic profile setup/audience-sharing writes now say
+“Finishing background updates…” instead of suggesting an explicit user save.
+Their pending-write navigation guard remains active. Explicit saves retain their
+Saving message and guard, including before the sign-out handler clears keys.
+
+The US Mac mini baseline used 15 sequential, body-consumed, unauthenticated reads
+per path at the LAX edge. Production p50/p95: `/api/v1/health` **269/819 ms**
+(401), `/health` **27/51 ms** (200), `/app-shell` **34/41 ms** (200).
+Same-code staging, already using Oregon placement, returned **232/313**,
+**69/338**, and **69/87 ms**, respectively. `/api/v1/health` is not a public
+health endpoint: it exercises privacy/authentication rejection. These are not
+signed-in feed measurements or a causal placement experiment. The public-path
+regression risk is material because `run_worker_first` includes static delivery.
+Keep production placement unchanged for this bounded code release. An API-only
+placement design and representative signed-in US East/West measurements are
+follow-up work; no regional replicas are introduced.

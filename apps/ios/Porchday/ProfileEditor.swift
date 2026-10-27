@@ -101,7 +101,9 @@ struct ProfileEditor: View {
                 throw PorchError.message("Your profile changed elsewhere. Close this editor and reopen it to review the current photos before removing one.")
             }
             committedProfile = payload; assets.removeAll(); removedAssets.removeAll()
+            vault.invalidateAvatars()
             for (photoID,slot) in attachments { _ = try await model.api.social("/media/"+photoID+"/attachment",method:"PUT",body:.object(["kind":.string("profile"),"target_id":.string(member.id),"slot":.string(slot)])) }
+            vault.invalidateAvatars()
             submitted();dismiss()
         }
     }

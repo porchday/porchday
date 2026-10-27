@@ -1,3 +1,4 @@
+import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import { base64ToBytes, type EncryptedEnvelope } from "@porchday/crypto";
 import {
@@ -17,7 +18,6 @@ import {
 } from "./api";
 import {
   Alert,
-  Avatar,
   Button,
   Empty,
   Field,
@@ -204,6 +204,8 @@ function ProfileSettings() {
             slot: asset.slot,
           }),
         });
+      // Newly uploaded photos become readable only after attachment succeeds.
+      if (uploaded.length && currentOwner.current === owner) vault.notifyProfileChanged();
     }, "Profile saved.");
     saving.current = false;
   }
@@ -480,7 +482,7 @@ function PrivacySettings() {
         {mutes.length ? (
           mutes.map((m) => (
             <div className="member-row" key={m.target}>
-              <Avatar name="M" />
+              <MemberAvatar memberId={m.target} />
               <span className="member-info">
                 A muted connection <small>{m.target}</small>
               </span>
@@ -506,7 +508,7 @@ function PrivacySettings() {
         {blocks.length ? (
           blocks.map((b) => (
             <div className="member-row" key={b.target}>
-              <Avatar name="B" />
+              <MemberAvatar memberId={b.target} />
               <span className="member-info">
                 Blocked account <small>{b.target}</small>
               </span>
@@ -515,6 +517,7 @@ function PrivacySettings() {
                 onClick={() =>
                   action.run(async () => {
                     await del(`/blocks/${b.target}`);
+                    window.dispatchEvent(new Event("porchday:connections-changed"));
                     await refresh();
                   })
                 }

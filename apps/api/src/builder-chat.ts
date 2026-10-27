@@ -60,7 +60,7 @@ export function createBuilderChatRoutes() {
   app.onError((error, c) => {
     const code = knownCode(error);
     if (code) return fail(c, code);
-    // Before migration 048 is applied the feature does not exist yet. Answer
+    // Before migration 050 is applied the feature does not exist yet. Answer
     // like any other unavailable page instead of adding 503s for every member.
     if ((error as { code?: string }).code === '42883') return fail(c, 'NOT_FOUND');
     if (error instanceof z.ZodError || error instanceof SyntaxError || error instanceof BuilderChatError) return fail(c, 'INVALID_MESSAGE');

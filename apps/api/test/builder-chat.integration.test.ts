@@ -201,7 +201,7 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   expect(()=>access('add','nobody_here')).toThrow();
  });
 
- it('answers 404 rather than 503 when the API is deployed before migration 048',async()=>{
+ it('answers 404 rather than 503 when the API is deployed before migration 050',async()=>{
   const p=await person();
   await owner.query('ALTER FUNCTION app.builder_chat_state() RENAME TO builder_chat_state_hidden');
   try{expect((await member(p,'GET','')).status).toBe(404);}

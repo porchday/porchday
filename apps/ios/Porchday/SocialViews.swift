@@ -56,7 +56,7 @@ struct MomentCard: View {
     let item: SocialItem
     @EnvironmentObject var model: AppModel
     var body: some View { VStack(alignment: .leading, spacing: 10) {
-        HStack(alignment: .top) { Image(systemName: "person.crop.circle.fill").font(.title).foregroundStyle(.secondary); VStack(alignment: .leading) { Text(item.authorID == model.member?.id ? "@\(model.member?.handle ?? "")" : item.authorHandle).font(.headline); if let date = item.created { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Image(systemName: "lock.fill").font(.caption).accessibilityLabel("End-to-end encrypted") }
+        HStack(alignment: .top) { MemberAvatarView(memberID: item.authorID, name: item.authorHandle); VStack(alignment: .leading) { Text(item.authorID == model.member?.id ? "@\(model.member?.handle ?? "")" : item.authorHandle).font(.headline); if let date = item.created { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Image(systemName: "lock.fill").font(.caption).accessibilityLabel("End-to-end encrypted") }
         if let expiry = item.expiry { Label("Disappears \(expiry.formatted(date: .abbreviated, time: .shortened))", systemImage: "timer").font(.caption).foregroundStyle(.secondary) }
         if let error = item.error { Label(error, systemImage: "lock.trianglebadge.exclamationmark").font(.callout).foregroundStyle(.secondary) } else { Text(item.text).font(.body).textSelection(.enabled); if let payload = item.payload, payload["provenance"]["kind"].string == "reaction", let reaction = try? ReactionValue.parse(.object(payload.object.filter { ["emoji","unicode","custom"].contains($0.key) })) { ReactionGlyph(reaction:reaction) }; if let media = item.payload?["media"].array { ForEach(Array(media.enumerated()), id: \.offset) { _, photo in EncryptedPhotoView(photo: photo) } } }
     }.padding(.vertical, 10) }
@@ -139,6 +139,7 @@ struct ComposerView: View {
     }
     private var timerChoice: ComposerTimerChoice { timer == -1 ? .custom(customExpiry) : timer == 0 ? .inherit : .after(timer) }
     var body: some View { Form {
+        if let member = model.member { HStack { MemberAvatarView(memberID: member.id, name: member.handle); Text("@" + member.handle) } }
         Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("\(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) }
         if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .images) { Label("Add photos", systemImage: "photo") }; if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = UIImage(data: photo.bytes) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Photo description (alt text)", text: $photo.alt) } } } }
         Section {

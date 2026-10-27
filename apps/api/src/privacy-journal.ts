@@ -1,9 +1,10 @@
+import {phaseTiming, measureJournalRead, type RequestTiming} from './request-timing';
 import postgres from 'postgres';
 import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env, Variables} from './types.js';
 import {event,type JournalFailureCode} from './telemetry.js';
-import {feedTiming,measureFeedPhase} from './feed-timing';
+import {measureFeedPhase} from './feed-timing';
 
 export interface JournalStore {
   get(key: string): Promise<{etag: string; text(): Promise<string>} | null>;
@@ -57,8 +58,10 @@ async function immutable(store: JournalStore, key: string, value: unknown) {
 async function replace(store: JournalStore, control: JournalControl, etag: string) {
   return store.put(CONTROL,JSON.stringify(control),{onlyIf:{etagMatches:etag}});
 }
-export async function assertJournalReadable(store: JournalStore, db: JournalDatabase) {
-  let [remote, local] = await Promise.all([readJournalControl(store), readJournalStatus(db)]);
+export async function assertJournalReadable(store: JournalStore, db: JournalDatabase, timing?: RequestTiming) {
+  const control = () => measureJournalRead(timing, 'journal_r2', () => readJournalControl(store));
+  const status = () => measureJournalRead(timing, 'journal_db', () => readJournalStatus(db));
+  let [remote, local] = await Promise.all([control(), status()]);
   for(let attempt=0;attempt<2;attempt++){
     if (remote.value.mode !== 'active' || local.quarantined) stop('RESTORE_QUARANTINED');
     if (remote.value.generation !== local.generation) stop('DATABASE_ROLLBACK_DETECTED');
@@ -72,8 +75,8 @@ export async function assertJournalReadable(store: JournalStore, db: JournalData
     // A concurrent commit/checkpoint can advance R2 after the parallel SQL
     // snapshot. Recheck once in order, so SQL observes at least the committed
     // checkpoint just read. Never reuse cached state or retry a safety denial.
-    remote=await readJournalControl(store);
-    local=await readJournalStatus(db);
+    remote=await control();
+    local=await status();
   }
   return stop('DATABASE_ROLLBACK_DETECTED');
 }
@@ -272,10 +275,10 @@ export function isPrivacyMutation(method:string,path:string):boolean {
 }
 export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
   let resources:ReturnType<typeof runtime>=null;
-  const timing=feedTiming(c.env,c.req.method,c.req.path);
+  const timing=phaseTiming(c);
   try {
     resources=runtime(c.env);
-    if(resources)await measureFeedPhase(timing,'journal_check',()=>assertJournalReadable(resources!.store,resources!.db));
+    if(resources)await measureFeedPhase(timing,'journal_check',()=>assertJournalReadable(resources!.store,resources!.db,c.get('requestTiming')));
   } catch(error) {
     const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured',JOURNAL_STORE_READ_FAILED:'journal_store_read_failed',JOURNAL_CONTROL_INVALID:'journal_control_invalid',JOURNAL_DATABASE_READ_FAILED:'journal_database_read_failed',JOURNAL_DATABASE_STATUS_INVALID:'journal_database_status_invalid'};
     event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable'},c.env);

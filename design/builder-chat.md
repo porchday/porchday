@@ -80,7 +80,7 @@ The design has four parts:
 - **Web page.** `/app/builder-chat` in `apps/web/src/BuilderChat.tsx`, and a read-only staff section in `apps/web/src/StaffBuilderChat.tsx`.
 - **API.** `apps/api/src/builder-chat.ts`, with member routes under `/api/v1/builder-chat`, bridge routes under `/api/builder-bridge` and the staff route `/api/staff/builder-chat`.
 - **Bridge program.** `apps/builder-bridge`, a dependency-free Node program that runs on the Mac mini as a launchd agent. It only makes outbound requests, so the Mac mini stays private.
-- **Database.** Migration `048_builder_chat.sql`.
+- **Database.** Migration `050_builder_chat.sql`.
 
 Postgres holds the queue, and both the browser and the bridge poll over ordinary HTTPS. An earlier draft used a Cloudflare Durable Object holding WebSocket connections. That approach was dropped to keep the site stable: Porchday doesn't use Durable Objects, and adding one would have changed the Worker's deploy configuration and every deploy that follows. With polling, the only change to the deploy configuration is one new variable, `BUILDER_CHAT_PAUSED`. The browser polls every 2 seconds only while one of its messages is queued or in progress, every 15 seconds otherwise, and never in a hidden tab, so the extra load comes from a few allowlisted members.
 
@@ -127,7 +127,7 @@ Before forwarding text, the bridge also checks each paragraph against the patter
 
 ## Data model
 
-Migration `048_builder_chat.sql` adds these tables. Runtime roles have no direct table access. Members, the bridge and staff reach the tables only through `SECURITY DEFINER` functions granted to `porchday_social`, `porchday_jobs` and `porchday_auth` respectively.
+Migration `050_builder_chat.sql` adds these tables. Runtime roles have no direct table access. Members, the bridge and staff reach the tables only through `SECURITY DEFINER` functions granted to `porchday_social`, `porchday_jobs` and `porchday_auth` respectively.
 
 | Table | Columns | Notes |
 | --- | --- | --- |
@@ -227,7 +227,7 @@ All checks run locally. There is no separate staging verification for builder ch
 
 ## Rollout plan
 
-1. Merge the feature to `main` switched off, with the pause on and the allowlist empty. The hourly deploy on the Mac mini ships it, including migration 048.
+1. Merge the feature to `main` switched off, with the pause on and the allowlist empty. The hourly deploy on the Mac mini ships it, including migration 050.
 2. Bobby installs the bridge with [apps/builder-bridge/README.md](../apps/builder-bridge/README.md). That covers checking how the builder session runs, creating and uploading the token, adding the lock to the request-file loop, and installing the launchd agent.
 3. An operator sets `builder_chat_paused` to `false` for production and adds the first member.
 4. Later, Bobby sets up the separate Codex user and deploy job described in [Later phase](#later-phase-separate-codex-from-deploy-credentials).

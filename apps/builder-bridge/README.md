@@ -10,7 +10,7 @@ This guide is for the person who installs the bridge on the Mac mini (Bobby). It
 
 Builder chat ships switched off. The code reaches production through the normal hourly deploy with the pause on (`BUILDER_CHAT_PAUSED=true`) and an empty allowlist, so no member sees it. It is turned on in these steps:
 
-1. The hourly deploy ships the code and migration `048_builder_chat.sql`. Nothing is visible yet.
+1. The hourly deploy ships the code and migration `050_builder_chat.sql`. Nothing is visible yet.
 2. Bobby installs the bridge with this guide.
 3. An operator turns off the pause and adds the first member, as described in [Turning builder chat on](#turning-builder-chat-on).
 

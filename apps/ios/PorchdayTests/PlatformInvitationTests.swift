@@ -70,4 +70,25 @@ final class PlatformInvitationTests: XCTestCase {
             }
         }
     }
+    func testJoinedInvitationIdentifiesOnlyAValidHandle() {
+        let notice: JSON = .object(["kind": .string("invitation_joined"), "actor_handle": .string("new_member")])
+        XCTAssertEqual(PlatformInvitation.joinedHandle(notice), "new_member")
+        XCTAssertNil(PlatformInvitation.joinedHandle(notice.replacing("kind", with: .string("comment"))))
+        XCTAssertNil(PlatformInvitation.joinedHandle(notice.replacing("actor_handle", with: .string("../settings"))))
+        XCTAssertNil(PlatformInvitation.joinedHandle(.object(["kind": .string("invitation_joined")])))
+    }
+
+    func testSentInvitationStatusesAndDates() throws {
+        for (status, label) in [("pending", "Pending"), ("joined", "Joined"), ("expired", "Expired")] {
+            let raw: JSON = .object(["id": .string(UUID().uuidString), "email": .string("person@example.test"),
+                "requested_at": .string("2026-10-27T00:00:00Z"), "expires_at": .string("2026-11-03T00:00:00Z"), "status": .string(status)])
+            let invitation = try SentPlatformInvitation(raw)
+            XCTAssertEqual(invitation.statusLabel, label)
+            XCTAssertEqual(invitation.email, "person@example.test")
+            XCTAssertGreaterThan(invitation.expires, invitation.requested)
+            XCTAssertThrowsError(try SentPlatformInvitation(raw.replacing("status", with: .string("account_exists"))))
+            XCTAssertThrowsError(try SentPlatformInvitation(raw.replacing("requested_at", with: .string("invalid"))))
+        }
+    }
+
 }

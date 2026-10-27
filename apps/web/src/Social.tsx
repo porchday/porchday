@@ -1,3 +1,5 @@
+import { useNearViewport } from "./near-viewport";
+import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import {
   bytesToBase64,
@@ -29,7 +31,6 @@ import {
 } from "./api";
 import {
   Alert,
-  Avatar,
   Button,
   Empty,
   Field,
@@ -271,7 +272,7 @@ export function Composer({
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!text.trim() && !photos.length) return;
-    await action.run(async () => {
+    await action.runSave(async () => {
       const id = crypto.randomUUID();
       const expiresAt = deadline(timer);
       const createdAt = new Date().toISOString();
@@ -341,7 +342,7 @@ export function Composer({
       onSubmit={submit}
     >
       <div className="composer-start">
-        <Avatar name={vault.member.handle} />
+        <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
         <label className="sr-only" htmlFor="post-text">
           Write a post
         </label>
@@ -617,7 +618,9 @@ export function PostCard({
   const [edit, setEdit] = useState(false);
   const [editText, setEditText] = useState("");
   const [editTimer, setEditTimer] = useState("inherit");
+  const { ref: cardRef, near: cardNear } = useNearViewport<HTMLElement>();
   const [details, setDetails] = useState<Json | null>(null);
+  const initialDetailsId = useRef("");
   const [unavailable, setUnavailable] = useState(false);
   const action = useAction();
   useEffect(() => {
@@ -651,8 +654,11 @@ export function PostCard({
     }
   }
   useEffect(() => {
-    loadDetails().catch(() => {});
-  }, [row.id]);
+    if ((cardNear || expanded) && initialDetailsId.current !== row.id) {
+      initialDetailsId.current = row.id;
+      loadDetails().catch(() => {});
+    }
+  }, [row.id, cardNear, expanded]);
   const expiry = row.effective_expires_at || row.expires_at;
   const own = row.author_id === vault.member.id;
   async function remove() {
@@ -666,31 +672,39 @@ export function PostCard({
     });
   }
   async function saveEdit() {
-    await action.run(async () => {
-      const envelope = await vault.seal(
-        { ...content, text: editText },
-        {
-          ...row.envelope.context,
-          authorDeviceId: vault.device.id,
-          expiresAt: deadline(editTimer, row.expires_at),
-          revision: row.envelope.context.revision + 1,
-        },
-        row.id,
-      );
-      const lifecycle = await signStatement(
-        {
-          purpose: "porchday-lifecycle",
-          id: row.id,
-          revision: envelope.context.revision,
-          expiresAt: envelope.context.expiresAt,
-        },
-        vault.privateKey,
-      );
-      await request(`/posts/${row.id}`, {
-        method: "PUT",
-        body: JSON.stringify({ envelope, lifecycle }),
-      });
+    await action.runSave(async () => {
+      const previous = content;
+      setContent({ ...content, text: editText });
       setEdit(false);
+      try {
+        const envelope = await vault.seal(
+          { ...content, text: editText },
+          {
+            ...row.envelope.context,
+            authorDeviceId: vault.device.id,
+            expiresAt: deadline(editTimer, row.expires_at),
+            revision: row.envelope.context.revision + 1,
+          },
+          row.id,
+        );
+        const lifecycle = await signStatement(
+          {
+            purpose: "porchday-lifecycle",
+            id: row.id,
+            revision: envelope.context.revision,
+            expiresAt: envelope.context.expiresAt,
+          },
+          vault.privateKey,
+        );
+        await request(`/posts/${row.id}`, {
+          method: "PUT",
+          body: JSON.stringify({ envelope, lifecycle }),
+        });
+      } catch (error) {
+        setContent(previous);
+        setEdit(true);
+        throw new Error("Save was not confirmed. Your draft is restored; the preview was rolled back. " + message(error));
+      }
       onChange();
     });
   }
@@ -701,10 +715,10 @@ export function PostCard({
       </div>
     );
   return (
-    <article className="post-card panel">
+    <article ref={cardRef} className="post-card panel">
       <header className="post-heading">
         <a href={`/app/wall/${row.author_id}`} className="post-author">
-          <Avatar name={row.author_handle || row.author_id} />
+          <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} />
           <div>
             <strong>
               {row.author_id === vault.member.id
@@ -734,6 +748,7 @@ export function PostCard({
           <button
             ref={optionsButton}
             className="icon-button"
+            disabled={action.busy}
             onClick={() => setMenu(!menu)}
             aria-label="Post options"
             aria-expanded={menu}
@@ -903,12 +918,14 @@ export function PostCard({
 }
 export function EncryptedPhoto({ media }: { media: MediaPayload }) {
   const vault = useVault();
+  const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const [opened, setOpened] = useState<{ id: string; url: string } | null>(
     null,
   );
   const [error, setError] = useState("");
   const url = opened?.id === media.id ? opened.url : "";
   useEffect(() => {
+    if (!near) return;
     let alive = true;
     let objectUrl = "";
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -961,22 +978,25 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
       if (expiryTimer) clearTimeout(expiryTimer);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [media.id]);
-  return url ? (
+  }, [media.id, near]);
+  return <div ref={photoRef}>{url ? (
     <figure>
       <img
         src={url}
         alt={media.alt || "Shared photo (no description provided)"}
         loading="lazy"
+        decoding="async"
+        width={media.width}
+        height={media.height}
       />
       {media.alt && <figcaption>{media.alt}</figcaption>}
     </figure>
   ) : (
     <div className="photo-placeholder">
       <Icon name={error ? "shield" : "photo"} size={24} />
-      <span>{error || "Opening encrypted photo…"}</span>
+      <span>{error || (near ? "Opening encrypted photo…" : "Photo loads as you scroll")}</span>
     </div>
-  );
+  )}</div>;
 }
 export function Reactions({
   target,
@@ -1326,7 +1346,7 @@ function Comment({
   }
   return (
     <div className="comment">
-      <Avatar name={row.author_handle || row.author_id} size="small" />
+      <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} size="small" />
       <div className="comment-main">
         {editing ? (
           <form className="form-stack" onSubmit={save}>
@@ -1516,7 +1536,7 @@ function CommentComposer({
         fromPost={reply && ack === postRow.expires_at}
       />
       <div className="comment-compose-row">
-        <Avatar name={vault.member.handle} size="small" />
+        <MemberAvatar memberId={vault.member.id} name={vault.member.handle} size="small" />
         <label className="sr-only" htmlFor={`comment-${parent.id}`}>
           {reply ? "Write a reply" : "Write a comment"}
         </label>

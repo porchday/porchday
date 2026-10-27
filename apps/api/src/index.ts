@@ -1,10 +1,11 @@
 import { Hono } from 'hono';
+import {requestTimingMiddleware} from './request-timing';
 import { bodyLimit } from 'hono/body-limit';
 import { secureHeaders } from 'hono/secure-headers';
 import { authRoutes } from './auth-routes';
 import recoveryRoutes,{createStaffRecoveryRoutes} from './recovery';
 import {requireStaff,requireStaffIdentity} from './staff';
-import { requireMember,requireAppealMember } from './session';
+import { requireMember,requireAppealMember,prepareMemberAuth } from './session';
 import {createModerationRoutes,createAppealRoutes} from './moderation';
 import { createSocialRoutes } from './social';
 import {createIntegrationConsentRoutes,createIntegrationTokenRoutes} from './social-integrations';
@@ -26,6 +27,7 @@ import {applicationDomains} from './application-domains';
 import {createBuilderChatRoutes,createBuilderBridgeRoutes,createStaffBuilderChatRoutes} from './builder-chat';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
+app.use('*',requestTimingMiddleware);
 app.use('*',secureHeaders({
  contentSecurityPolicy:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'blob:','data:'],fontSrc:["'self'"],connectSrc:["'self'"],workerSrc:["'self'",'blob:'],objectSrc:["'none'"],baseUri:["'none'"],formAction:["'self'"],frameAncestors:["'none'"]},
  referrerPolicy:'no-referrer',xFrameOptions:'DENY',permissionsPolicy:{camera:[],microphone:[],geolocation:[]},
@@ -64,6 +66,7 @@ app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
  const result=await readOperationalHealth(c.env);
  return c.json(result,result.status==='ok'?200:503);
 });
+app.use('/api/v1/*',prepareMemberAuth);
 app.use('/api/*',privacyReadGuard);
 app.route('/api/auth',authRoutes);
 app.route('/api/account-recovery',recoveryRoutes);

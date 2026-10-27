@@ -1,3 +1,4 @@
+import { withPendingSave } from "./pending-saves";
 import type { EncryptedEnvelope, ContentContext } from "@porchday/crypto";
 export type { EncryptedEnvelope, ContentContext };
 export type Json = Record<string, any>;
@@ -17,6 +18,8 @@ export type Member = {
   envelope?: EncryptedEnvelope | null;
   profile?: { handle?: string; envelope?: EncryptedEnvelope | null };
   created_at?: string;
+  connection_count?: number;
+  startup_devices?: Device[];
 };
 export type SocialObject = {
   id: string;
@@ -121,25 +124,30 @@ export function accessLost(error: unknown): boolean {
 }
 export async function request<T = Json>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { backgroundSave?: boolean } = {},
 ): Promise<T> {
-  const response = await fetch(
-    path.startsWith("/api/") ? path : `/api/v1${path}`,
-    {
-      credentials: "same-origin",
-      cache: "no-store",
-      ...options,
-      headers: {
-        ...(options.body && !(options.body instanceof Blob)
-          ? { "Content-Type": "application/json" }
-          : {}),
-        ...options.headers,
+  const { backgroundSave = false, ...fetchOptions } = options;
+  const perform = async (): Promise<T> => {
+    const response = await fetch(
+      path.startsWith("/api/") ? path : `/api/v1${path}`,
+      {
+        credentials: "same-origin",
+        cache: "no-store",
+        ...fetchOptions,
+        headers: {
+          ...(options.body && !(options.body instanceof Blob)
+            ? { "Content-Type": "application/json" }
+            : {}),
+          ...options.headers,
+        },
       },
-    },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(response.status, data);
-  return data as T;
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new ApiError(response.status, data);
+    return data as T;
+  };
+  return ["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase())
+    ? perform() : withPendingSave(perform, backgroundSave);
 }
 export const get = <T = Json>(path: string) => request<T>(path);
 export const post = <T = Json>(path: string, data: unknown = {}) =>

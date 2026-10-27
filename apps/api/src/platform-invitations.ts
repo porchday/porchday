@@ -3,20 +3,39 @@ import { bodyLimit } from 'hono/body-limit';
 import { z } from 'zod';
 import { authPool, hashToken } from './auth';
 import { encryptAccountEmail, processAccountEmails } from './email-outbox';
+import { invitationRecipientKey, invitationHistoryRecipient, recordInvitationHistory } from './invitation-history';
 import type { Env, Variables } from './types';
 
 const input = z.object({email:z.email().max(254)}).strict();
 const accepted = {accepted:true,message:'If eligible, an invitation will be emailed. It does not create a friendship.'};
-const hex = (bytes:ArrayBuffer) => [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('');
-async function recipientKey(secret:string,email:string) {
- const encoder=new TextEncoder();
- const key=await crypto.subtle.importKey('raw',encoder.encode(secret),{name:'HMAC',hash:'SHA-256'},false,['sign']);
- return hex(await crypto.subtle.sign('HMAC',key,encoder.encode('porchday-platform-invitation\0'+email)));
-}
+const cursorSchema=z.object({at:z.iso.datetime(),id:z.uuid()}).strict();
 
 /** Mounted after normal verified-member, Origin, incident and privacy guards. */
 export function createPlatformInvitationRoutes() {
  const app=new Hono<{Bindings:Env;Variables:Variables}>();
+ app.get('/platform-invitations',async c=>{
+  let cursor:z.infer<typeof cursorSchema>|null=null;
+  try {
+   const value=c.req.query('cursor');
+   if(value){if(value.length>256||!/^[A-Za-z0-9_-]+$/.test(value))throw Error();cursor=cursorSchema.parse(JSON.parse(Buffer.from(value,'base64url').toString()));}
+  }catch{return c.json({error:{code:'INVALID_CURSOR',message:'Reload the invitation list.'}},400);}
+  const pool=authPool(c.env);
+  try {
+   const actor=await pool.query(`SELECT 1 FROM public.auth_session s
+    WHERE s.id=$1 AND s."userId"=$2 AND s."expiresAt">now() AND app.auth_member_status(s."userId"::uuid) IN('active','restricted')`,[c.get('sessionId'),c.get('memberId')]);
+   if(!actor.rowCount)return c.json({error:{code:'ACCOUNT_UNAVAILABLE',message:'Sign in to view your invitations.'}},403);
+   const {rows}=await pool.query(`SELECT id,sender_id,recipient_key,encrypted_recipient,requested_at,expires_at,
+    to_char(requested_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
+    CASE WHEN joined_at IS NOT NULL OR EXISTS(SELECT FROM public.auth_user u WHERE u.id=claimed_user AND u."emailVerified")
+     THEN 'joined' WHEN expires_at<=now() THEN 'expired' ELSE 'pending' END AS status
+    FROM public.platform_invitation_history WHERE sender_id=$1 AND requested_at>now()-interval '90 days'
+    AND ($2::timestamptz IS NULL OR (requested_at,id)<($2::timestamptz,$3::uuid))
+    ORDER BY requested_at DESC,id DESC LIMIT 51`,[c.get('memberId'),cursor?.at||null,cursor?.id||null]);
+   const page=rows.slice(0,50),last=page.at(-1);
+   const items=await Promise.all(page.map(async row=>({id:row.id,email:await invitationHistoryRecipient(c.env,row),requested_at:row.requested_at,expires_at:row.expires_at,status:row.status})));
+   return c.json({items,next_cursor:rows.length>50&&last?Buffer.from(JSON.stringify({at:last.cursor_at,id:last.id})).toString('base64url'):null});
+  }finally{c.executionCtx.waitUntil(pool.end());}
+ });
  app.use('/platform-invitations',bodyLimit({maxSize:2048,onError:c=>c.json({error:{code:'INVALID_EMAIL',message:'Enter one valid email address.'}},400)}));
  app.post('/platform-invitations',async c=>{
   if(c.env.SIGNUP_ENABLED!=='true')return c.json({error:{code:'PILOT_CLOSED',message:'Invitations are not open in this environment.'}},403);
@@ -26,7 +45,7 @@ export function createPlatformInvitationRoutes() {
    parsed=input.safeParse(value&&typeof value==='object'?{...value,email:typeof value.email==='string'?value.email.trim().toLowerCase():value.email}:value);
   }catch{return c.json({error:{code:'INVALID_EMAIL',message:'Enter one valid email address.'}},400);}
   if(!parsed.success)return c.json({error:{code:'INVALID_EMAIL',message:'Enter one valid email address.'}},400);
-  const email=parsed.data.email,key=await recipientKey(c.env.BETTER_AUTH_SECRET,email);
+  const email=parsed.data.email,key=await invitationRecipientKey(c.env.BETTER_AUTH_SECRET,email);
   const pool=authPool(c.env),db=await pool.connect();
   let committed=false;
   try {
@@ -45,7 +64,7 @@ export function createPlatformInvitationRoutes() {
     AND NOT EXISTS(SELECT FROM public.pilot_invitations WHERE email=$1 AND expires_at>now() AND consumed_user IS NULL)
     AND NOT EXISTS(SELECT FROM public.platform_invitation_requests WHERE recipient_key=$2 AND issued AND created_at>now()-interval '7 days') AS value`,[email,key]);
    const issue=eligible.rows[0].value===true;
-   await db.query('INSERT INTO public.platform_invitation_requests(sender_id,recipient_key,issued) VALUES($1,$2,$3)',[c.get('memberId'),key,issue]);
+   const receipt=await db.query('INSERT INTO public.platform_invitation_requests(sender_id,recipient_key,issued) VALUES($1,$2,$3) RETURNING created_at',[c.get('memberId'),key,issue]);
    if(issue){
     const bytes=crypto.getRandomValues(new Uint8Array(32)),token=Buffer.from(bytes).toString('base64url'),tokenHash=await hashToken(token);
     const link=new URL('/join',c.env.APP_URL);link.hash='invite='+token;
@@ -55,6 +74,17 @@ export function createPlatformInvitationRoutes() {
     const encrypted=await encryptAccountEmail(c.env,{to:email,subject:'You are invited to Porchday',text});
     await db.query("INSERT INTO public.auth_email_outbox(member_id,purpose,invitation_token_hash,encrypted_payload,expires_at) VALUES($1,'platform_invitation',$2,$3,$4)",[c.get('memberId'),tokenHash,encrypted,deadline]);
    }
+   // Associate only this sender's actual invitation. Never reveal another
+   // sender's invitation, an existing account, suppression or mail delivery.
+   const own=await db.query(`SELECT i.token_hash,i.expires_at,i.consumed_user,
+    CASE WHEN u."emailVerified" THEN coalesce(i.claimed_at,i.created_at) END AS joined_at
+    FROM public.pilot_invitations i LEFT JOIN public.auth_user u ON u.id=i.consumed_user
+    WHERE i.sender_id=$1 AND i.email=$2 ORDER BY i.created_at DESC LIMIT 1`,[c.get('memberId'),email]);
+   const prior=own.rows[0],requestedAt=new Date(receipt.rows[0].created_at);
+   await recordInvitationHistory(db,c.env,{sender:c.get('memberId'),email,key,requestedAt,
+    expiresAt:prior?new Date(prior.expires_at):new Date(requestedAt.getTime()+7*24*60*60_000),
+    tokenHash:prior?.token_hash||null,claimedUser:prior?.consumed_user,joinedAt:prior?.joined_at});
+   if(prior)await db.query('UPDATE public.pilot_invitations SET history_recorded=true WHERE token_hash=$1',[prior.token_hash]);
    await db.query('COMMIT');committed=true;
    // Response never reveals recipient existence, duplicate suppression or mail
    // delivery. A response loss is safe to repeat: quota/dedup prevent more mail.

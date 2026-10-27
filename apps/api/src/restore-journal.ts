@@ -27,6 +27,11 @@ export async function replayPrivacyJournal(store:JournalStore,sql:Sql,deleteMedi
     await tx`delete from public.auth_verification`;
     await tx`delete from public.used_email_links`;
     await tx`delete from public.pilot_invitations`;
+    // Invitation receipts are bounded operational metadata. Discard restored
+    // receipts rather than resurrecting stale contact/status history.
+    // Backups made before migration 048 have no invitation-history table.
+    const [history]=await tx`select to_regclass('public.platform_invitation_history') is not null as present`;
+    if(history.present)await tx`delete from public.platform_invitation_history`;
     await tx`update public.auth_user set credentials_changed_at=now()`;
     await tx`update public.recovery_cases set session_hash=null,session_expires_at=null,contact_token_expires_at=now(),restore_token_hash=null,restore_token_expires_at=null`;
     await tx`update public.staff_users set active=false`;
@@ -147,7 +152,7 @@ export type OriginalPrimaryRecoveryTicket=z.infer<typeof originalPrimaryRecovery
 const preservedTables=[
   'public.auth_user','public.auth_account','public.auth_two_factor','public.auth_session','public.auth_verification',
   'public.used_email_links','public.pilot_invitations','public.auth_email_outbox','public.recovery_cases','public.recovery_reviews',
-  'public.recovery_evidence','public.security_contact_history','public.staff_users',
+  'public.recovery_evidence','public.security_contact_history','public.staff_users','public.platform_invitation_history',
   'app.members','app.device_keys','app.encrypted_key_backups','app.recovery_keys','app.integration_grants',
   'app.moderator_identities','app.moderator_keys','app.native_push_subscriptions','app.native_push_outbox',
   'app.push_subscriptions','app.push_outbox','app.data_transfer_jobs','app.notifications',
@@ -159,6 +164,10 @@ export async function inspectOriginalPrimaryState(sql:Sql){
     const[status]=await tx`select app.safety_status() as value`;
     const tables=[];
     for(const table of preservedTables){
+      if(table==='public.platform_invitation_history'){
+        const [history]=await tx`select to_regclass('public.platform_invitation_history') is not null as present`;
+        if(!history.present){tables.push({table,count:0,sha256:await sha256('table absent before migration048')});continue;}
+      }
       const[row]=await tx.unsafe(`select count(*)::int as count,encode(sha256(convert_to(coalesce(string_agg(row_hash,'' order by row_hash),''),'UTF8')),'hex') as sha256 from (select encode(sha256(convert_to(to_jsonb(t)::text,'UTF8')),'hex') as row_hash from ${table} t) hashed`);
       tables.push({table,count:Number(row.count),sha256:String(row.sha256)});
     }

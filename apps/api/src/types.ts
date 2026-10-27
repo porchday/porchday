@@ -1,3 +1,5 @@
+import type {PreparedMemberAuth} from './session';
+import type {RequestTiming} from './request-timing';
 export interface Env {
   METRICS?: AnalyticsEngineDataset;
   /** Temporary aggregate diagnostics; honored only in staging, never production. */
@@ -38,6 +40,8 @@ export interface Env {
   CF_VERSION_METADATA?: { id: string; tag: string; timestamp: string };
 }
 export interface Variables {
+  requestTiming?: RequestTiming;
+  preparedMemberAuth?: PreparedMemberAuth;
   memberId: string;
   authTime: number;
   sessionId: string;

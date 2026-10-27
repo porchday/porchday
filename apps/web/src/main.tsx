@@ -1,9 +1,10 @@
+import { hasPendingSaves } from "./pending-saves";
+import { MemberAvatar, MemberAvatarProvider } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { get, auth, type Member } from "./api";
 import {
   Alert,
-  Avatar,
   Button,
   Empty,
   Icon,
@@ -12,6 +13,7 @@ import {
   useRoute,
   navigate,
   useAction,
+  PendingSaveStatus,
 } from "./ui";
 import { AuthPage, Landing, Policy, StolenAccount } from "./Public";
 import { VaultProvider, useVault } from "./vault";
@@ -95,7 +97,7 @@ function App() {
     setError("");
     setRestricted(false);
     try {
-      const m = await get<Member>("/me");
+      const m = await get<Member>("/me?bootstrap=1");
       setMember(m);
     } catch (e: any) {
       setMember(null);
@@ -162,6 +164,7 @@ function App() {
     return () => appWindow.removeEventListener("change", updateTitle);
   }, [path]);
   async function signOut() {
+    if (hasPendingSaves()) return;
     authenticationGeneration.current++;
     try {
       await signOutSafely();
@@ -340,11 +343,12 @@ function AppShell({
   onAccountDeleted: () => Promise<void>;
 }) {
   const vault = useVault();
-  const [count, setCount] = useState<number | null>(null);
+  const [count, setCount] = useState<number | null>(vault.member.connection_count ?? null);
+  const countedPath = useRef(path);
   useEffect(() => {
-    get("/me")
-      .then((m) => setCount(m.connection_count))
-      .catch(() => {});
+    if (countedPath.current === path) return;
+    countedPath.current = path;
+    get("/me").then(m => setCount(m.connection_count)).catch(() => {});
   }, [path]);
   // Builder chat appears only for allowlisted members; see design/builder-chat.md.
   const [builderChat, setBuilderChat] = useState(false);
@@ -353,6 +357,7 @@ function AppShell({
   }, []);
   const sidebarLinks = vault.member.status === "suspended" ? [links[5]] : builderChat ? [...links.slice(0, 5), builderChatLink, links[5]] : links;
   async function logout() {
+    if (hasPendingSaves()) return;
     await vault.clear();
     await onLogout();
   }
@@ -408,9 +413,10 @@ function AppShell({
       </Empty>
     );
   return (
+    <MemberAvatarProvider>
     <div className="app-layout">
       <header className="app-mobile-header">
-        <Logo small />
+        <Logo small href="/app" />
         <button className="icon-button" onClick={logout} aria-label="Sign out">
           <Icon name="logout" />
         </button>
@@ -435,7 +441,7 @@ function AppShell({
         </a>
       </header>
       <aside className="sidebar">
-        <Logo />
+        <Logo href="/app" />
         <nav aria-label="Your Porchday">
           {sidebarLinks.map(
             ([href, icon, name]) => {
@@ -459,7 +465,7 @@ function AppShell({
           )}
         </nav>
         <div className="sidebar-account">
-          <Avatar name={vault.member.handle} />
+          <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
           <a href="/app/wall">
             <strong>@{vault.member.handle}</strong>
             <small>My profile</small>
@@ -536,12 +542,14 @@ function AppShell({
         ))}
       </nav>
     </div>
+    </MemberAvatarProvider>
   );
 }
 initColorScheme();
 initSiteAppearance();
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
+    <PendingSaveStatus />
     <App />
   </ErrorBoundary>,
 );

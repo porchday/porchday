@@ -1,3 +1,5 @@
+import {readMemberBootstrap} from './member-bootstrap';
+import {phaseTiming} from './request-timing';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
 import { fingerprint, verifyDeviceAuthorization, verifyStatement, validateEncryptedPrivateKey, canonicalJson, type EncryptedEnvelope } from '@porchday/crypto';
@@ -44,7 +46,7 @@ function page(rows: any[], limit = 30) { const hasMore = rows.length > limit; co
 async function body<T>(c: C, schema: z.ZodType<T>, maxBytes = 2500000, allowEmpty = false): Promise<T> { const declared = Number(c.req.header('content-length') ?? 0); if (declared > maxBytes)
     fail('PAYLOAD_TOO_LARGE', 413); const raw = await c.req.text(); if (new TextEncoder().encode(raw).byteLength > maxBytes)
     fail('PAYLOAD_TOO_LARGE', 413); return schema.parse(allowEmpty && !raw ? {} : JSON.parse(raw)); }
-async function tx<T>(c: C, fn: (db: Db) => Promise<T>): Promise<T> { return withMember(c.env, c.get('memberId'), fn, feedTiming(c.env,c.req.method,c.req.path)); }
+async function tx<T>(c: C, fn: (db: Db) => Promise<T>): Promise<T> { return withMember(c.env, c.get('memberId'), fn, phaseTiming(c)); }
 async function writeAllowed(db: Db): Promise<void> { const [r] = await db `select app.may_write() as allowed`; if (!r?.allowed)
     fail('SOCIAL_RESTRICTED', 403); }
 async function snapshot(db: Db, audience: string, groupId: string | null = null, postId: string | null = null, historyPostId: string | null = null) { const [r] = await db `select app.lock_epoch() as epoch`; if (!r)
@@ -149,7 +151,8 @@ export function createSocialRoutes() {
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
     registerEmojiRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
-    app.get('/me', async (c) => c.json(await tx(c, async (db) => { const [member] = await db `select m.id,m.status,m.notification_preferences,p.handle,p.envelope from app.members m join app.profiles p on p.member_id=m.id where m.id=${c.get('memberId')}`; const [{ count }] = await db `select count(*)::int count from app.connections`; return { ...member, connection_count: count, connection_limit: 300 }; })));
+    app.get('/me', async c => c.json(await readMemberBootstrap(c.env,c.get('memberId'),c.req.query('bootstrap')==='1',phaseTiming(c))));
+
     app.patch('/me', async (c) => { const b = await body(c, z.object({ notification_preferences: z.object({ in_app: z.boolean(), push: z.boolean() }).strict() })); return c.json(await tx(c, async (db) => { await db `update app.members set notification_preferences=${db.json(b.notification_preferences)} where id=${c.get('memberId')}`; return { ok: true }; })); });
     app.get('/profiles/:handle', async (c) => c.json(await tx(c, async (db) => { const [lookup] = await db `select * from app.lookup_handle(${c.req.param('handle').toLowerCase()})`; if (!lookup)
         fail('NOT_FOUND', 404); const [profile] = await db `select * from app.profiles where member_id=${lookup.id}`; return profile ?? { member_id: lookup.id, handle: lookup.handle, envelope: null }; })));
@@ -272,7 +275,7 @@ export function createSocialRoutes() {
             order by p.created_at desc,p.id desc limit 31
         `)));
     });
-    app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select * from app.posts where author_id=${id(c.req.param('id'))} and group_id is null ${after ? db `and(created_at,id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by created_at desc,id desc limit 31`))); });
+    app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.author_id=${id(c.req.param('id'))} and p.group_id is null ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.post('/posts', async (c) => {
         const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]) }));
         return c.json(await tx(c, async (db) => {
@@ -371,12 +374,12 @@ export function createSocialRoutes() {
             return {id:e.id};
         }),201);
     });
-    app.get('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const post = await requirePost(db, id(c.req.param('id'))); const comments = await db `select c.*,h.handle as author_handle,app.comment_deadline(c.id) as effective_expires_at from app.comments c left join lateral app.member_handles(array[c.author_id]) h on true where post_id=${post.id} order by created_at,id`; const reactions = await db `select * from app.post_reactions where post_id=${post.id}`; const comment_reactions = await db `select r.* from app.comment_reactions r join app.comments c on c.id=r.comment_id where c.post_id=${post.id}`; const media = await db `select id,envelope,byte_size,display_order from app.media_assets where post_id=${post.id} order by display_order`; // Newly admitted readers are not recipients of other authors' older
+    app.get('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const post = await requirePost(db, id(c.req.param('id'))); const [author] = await db`select handle from app.member_handles(array[${post.author_id}]::uuid[])`; const comments = await db `select c.*,h.handle as author_handle,app.comment_deadline(c.id) as effective_expires_at from app.comments c left join lateral app.member_handles(array[c.author_id]) h on true where post_id=${post.id} order by created_at,id`; const reactions = await db `select * from app.post_reactions where post_id=${post.id}`; const comment_reactions = await db `select r.* from app.comment_reactions r join app.comments c on c.id=r.comment_id where c.post_id=${post.id}`; const media = await db `select id,envelope,byte_size,display_order from app.media_assets where post_id=${post.id} order by display_order`; // Newly admitted readers are not recipients of other authors' older
         // signed children. Never send undecryptable replies or orphan threads.
         const addressed=(row:any)=>row.envelope.recipients.some((r:any)=>r.memberId===c.get('memberId'));
         const visible=new Set<string>();let added=true;
         while(added){added=false;for(const comment of comments)if(!visible.has(comment.id)&&addressed(comment)&&(!comment.parent_id||visible.has(comment.parent_id))){visible.add(comment.id);added=true;}}
-        return { post: { ...post, media }, comments:comments.filter(row=>visible.has(row.id)), reactions:reactions.filter(addressed), comment_reactions:comment_reactions.filter(row=>visible.has(row.comment_id)&&addressed(row)) }; })));
+        return { post: { ...post, author_handle: author?.handle ?? null, media }, comments:comments.filter(row=>visible.has(row.id)), reactions:reactions.filter(addressed), comment_reactions:comment_reactions.filter(row=>visible.has(row.comment_id)&&addressed(row)) }; })));
     app.delete('/posts/:id', async (c) => c.json(await tx(c, async (db) => { const rows = await db `delete from app.posts where id=${id(c.req.param('id'))} returning id`; if (!rows.length)
         fail('NOT_FOUND', 404); return { ok: true }; })));
     app.post('/posts/:id/comments', async (c) => {
@@ -476,7 +479,7 @@ export function createSocialRoutes() {
         fail('INITIAL_GROUP_AUDIENCE'); await checkEnvelope(db, c.get('memberId'), b.envelope, 'group'); await db `select app.create_group(${e.id},${db.json(b.envelope)})`; return { id: e.id }; }), 201); });
     app.get('/groups/:id', async (c) => c.json(await tx(c, async (db) => { const groupId = id(c.req.param('id')); const [group] = await db `select * from app.groups where id=${groupId}`; if (!group)
         fail('NOT_FOUND', 404); const members = await db `select * from app.group_memberships where group_id=${groupId}`; const handles = await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(members.map(m => m.member_id))}))::uuid[])`; return { group, members, handles }; })));
-    app.get('/groups/:id/posts', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select * from app.posts where group_id=${id(c.req.param('id'))} ${after ? db `and(created_at,id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by created_at desc,id desc limit 31`))); });
+    app.get('/groups/:id/posts', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.group_id=${id(c.req.param('id'))} ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.put('/groups/:id', async (c) => {
         const b = await body(c, envelopeBody.extend({remove_media: surfaceRemovals(['image'], 1)}));
         return c.json(await tx(c, async (db) => {
@@ -496,7 +499,7 @@ export function createSocialRoutes() {
     app.delete('/groups/:id/members/:memberId', async (c) => c.json(await tx(c, async (db) => { await db `select app.change_group_member(${id(c.req.param('id'))},${id(c.req.param('memberId'))},'remove')`; return { ok: true }; })));
     app.get('/owned-groups',async c=>c.json({items:await tx(c,db=>db`select * from app.owned_groups_for_deletion()`)}));
     app.delete('/groups/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.delete_owned_group(${id(c.req.param('id'))})`; return { ok: true }; })));
-    app.get('/notifications', async (c) => c.json({ items: await tx(c, db => db `select * from app.notifications order by created_at desc limit 100`) }));
+    app.get('/notifications', async (c) => c.json({ items: await tx(c, db => db `select n.*,h.handle as actor_handle from app.notifications n left join lateral app.member_handles(array[n.actor]) h on true order by n.created_at desc limit 100`) }));
     app.put('/notifications/:id/read', async (c) => c.json(await tx(c, async (db) => { await db `update app.notifications set read_at=now() where id=${id(c.req.param('id'))}`; return { ok: true }; })));
     registerPushRoutes(app, {tx, body, fail, id});
     registerNativePushRoutes(app, {tx, body, fail, id});
