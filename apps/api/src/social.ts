@@ -1,3 +1,4 @@
+import {readMemberBootstrap} from './member-bootstrap';
 import {phaseTiming} from './request-timing';
 import { Hono, type Context } from 'hono';
 import { z } from 'zod';
@@ -150,21 +151,7 @@ export function createSocialRoutes() {
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
     registerEmojiRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
-    app.get('/me', async (c) => c.json(await tx(c, async (db) => {
-        const bootstrap = c.req.query('bootstrap') === '1';
-        const [member] = await db`select m.id,m.status,m.notification_preferences,p.handle,p.envelope,
-            (select count(*)::int from app.connections) as connection_count,
-            ${bootstrap ? db`(select coalesce(jsonb_agg(roster order by roster.created_at),'[]'::jsonb) from
-                (select id,member_id,public_key,fingerprint,created_at,revoked_at from app.device_keys) roster)` : db`null`} as startup_devices
-            from app.members m join app.profiles p on p.member_id=m.id where m.id=${c.get('memberId')}`;
-        // Match the Date serialization of the standalone roster endpoint.
-        if (bootstrap && member) member.startup_devices = member.startup_devices.map((device: any) => ({
-            ...device, created_at: new Date(device.created_at).toISOString(),
-            revoked_at: device.revoked_at ? new Date(device.revoked_at).toISOString() : null,
-        }));
-        if (!bootstrap && member) delete member.startup_devices;
-        return { ...member, connection_limit: 300 };
-    })));
+    app.get('/me', async c => c.json(await readMemberBootstrap(c.env,c.get('memberId'),c.req.query('bootstrap')==='1',phaseTiming(c))));
 
     app.patch('/me', async (c) => { const b = await body(c, z.object({ notification_preferences: z.object({ in_app: z.boolean(), push: z.boolean() }).strict() })); return c.json(await tx(c, async (db) => { await db `update app.members set notification_preferences=${db.json(b.notification_preferences)} where id=${c.get('memberId')}`; return { ok: true }; })); });
     app.get('/profiles/:handle', async (c) => c.json(await tx(c, async (db) => { const [lookup] = await db `select * from app.lookup_handle(${c.req.param('handle').toLowerCase()})`; if (!lookup)

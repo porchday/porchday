@@ -159,3 +159,26 @@ available. Compare the new header with DevTools waiting/total time from the same
 client, using a successful signed-in /me response. Do not share cookies, tokens,
 profile response bodies or private content. Authenticated geographic measurements
 and any resulting optimization remain tracked in issue #9.
+
+### Bootstrap round-trip reduction
+
+The focused `/api/v1/me` reader uses the existing social-role Hyperdrive binding
+with node-postgres. A strict UUID-only `BEGIN; SET LOCAL app.member_id = ...`
+batch establishes transaction-local RLS identity before a separate parameterized
+account query; COMMIT must succeed before returning data. Errors attempt rollback
+and destroy the request's connection without retrying. Other social transactions
+are unchanged. `social_connect_begin` now includes actor setup for this route;
+`social_actor` is absent. The query uses one Parse/Bind/Execute exchange rather
+than a describe-first wait. The social path is expected to use three sequential
+exchanges instead of approximately six; actual geographic improvement needs
+measurement, not inference from protocol counts.
+
+Read-only Better Auth schema validation starts alongside the fresh privacy
+journal check, using one request-local auth instance. `auth_schema` measures
+that work and overlaps `journal_check` and potentially `auth_session`; do not
+sum these phases. Session lookup/renewal and current account status still wait
+for the journal guard. Schema failure fails closed, and the auth pool closes
+after pending work settles. No session, status, journal, device or RLS decision
+is cached. Compare successful authenticated bootstrap headers before/after,
+including worker and total time, at the same edge. Anonymous timings do not
+measure this optimization.

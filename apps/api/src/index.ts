@@ -5,7 +5,7 @@ import { secureHeaders } from 'hono/secure-headers';
 import { authRoutes } from './auth-routes';
 import recoveryRoutes,{createStaffRecoveryRoutes} from './recovery';
 import {requireStaff,requireStaffIdentity} from './staff';
-import { requireMember,requireAppealMember } from './session';
+import { requireMember,requireAppealMember,prepareMemberAuth } from './session';
 import {createModerationRoutes,createAppealRoutes} from './moderation';
 import { createSocialRoutes } from './social';
 import {createIntegrationConsentRoutes,createIntegrationTokenRoutes} from './social-integrations';
@@ -64,6 +64,7 @@ app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
  const result=await readOperationalHealth(c.env);
  return c.json(result,result.status==='ok'?200:503);
 });
+app.use('/api/v1/*',prepareMemberAuth);
 app.use('/api/*',privacyReadGuard);
 app.route('/api/auth',authRoutes);
 app.route('/api/account-recovery',recoveryRoutes);

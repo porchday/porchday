@@ -3,8 +3,8 @@ import {feedTiming, type FeedTiming} from './feed-timing';
 import {FEED_PHASES, type FeedPhase} from './telemetry';
 import type {Env, Variables} from './types';
 
-type Phase = FeedPhase | 'journal_r2' | 'journal_db' | 'worker';
-const phases: readonly Phase[] = [...FEED_PHASES, 'journal_r2', 'journal_db', 'worker'];
+type Phase = FeedPhase | 'journal_r2' | 'journal_db' | 'worker' | 'auth_schema';
+const phases: readonly Phase[] = [...FEED_PHASES, 'journal_r2', 'journal_db', 'auth_schema', 'worker'];
 const allowed = new Set<string>(phases);
 
 /** Request-local numeric durations only. Never retained or sent to telemetry. */

@@ -1,3 +1,4 @@
+import type {PreparedMemberAuth} from './session';
 import type {RequestTiming} from './request-timing';
 export interface Env {
   METRICS?: AnalyticsEngineDataset;
@@ -37,6 +38,7 @@ export interface Env {
 }
 export interface Variables {
   requestTiming?: RequestTiming;
+  preparedMemberAuth?: PreparedMemberAuth;
   memberId: string;
   authTime: number;
   sessionId: string;

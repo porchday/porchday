@@ -34,6 +34,14 @@ vi.mock('postgres',()=>({default:(connection:string)=>{
  sql.end=async()=>{fixture.trace.push(connection==='synthetic-jobs'?'journal_close':'social_close');};
  return sql;
 }}));
+vi.mock('pg',()=>({Pool:class {
+ async connect(){return {query:async(text:string)=>{
+  if(text.startsWith('BEGIN')){fixture.trace.push('begin','actor');return {rows:[]};}
+  if(text==='COMMIT'||text==='ROLLBACK'){fixture.trace.push(text.toLowerCase());return {rows:[]};}
+  fixture.trace.push('query');if(fixture.queryFailure)throw Error('private query failure');return {rows:[]};
+ },release:()=>{}};}
+ async end(){fixture.trace.push('social_close');}
+}}));
 vi.mock('../src/auth',()=>({
  authPool:()=>({query:async()=>{fixture.trace.push('auth_status');return {rows:[{status:fixture.status}]};},end:async()=>{fixture.trace.push('auth_close');}}),
  createAuth:()=>({api:{getSession:async()=>{fixture.trace.push('auth_session');return {user:{id:fixture.member,emailVerified:fixture.verified},session:{id:'private-session',createdAt:new Date()}};}}}),
@@ -134,7 +142,7 @@ test('authenticated me exposes only fixed numeric phases; denials expose none an
  const response=await request();expect(response.status).toBe(200);
  const header=response.headers.get('server-timing')!;
  const names=header.split(', ').map(value=>{expect(value).toMatch(/^[a-z0-9_]+;dur=[0-9]+$/);return value.split(';')[0];});
- expect(names).toEqual([...FEED_PHASES,'journal_r2','journal_db','worker']);
+ expect(names).toEqual([...FEED_PHASES.filter(phase=>phase!=='social_actor'),'journal_r2','journal_db','worker']);
  expect(header).not.toMatch(/private|secret|11111111|22222222|synthetic/);
  expect(points).toHaveLength(0);
  expect(response.headers.get('cache-control')).toBe('private, no-store');
