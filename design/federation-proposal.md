@@ -42,24 +42,116 @@ Hosted federation should begin with a small, explicitly admitted set of peers. P
 
 **Privacy disclosure.** At the first cross-server sharing decision, explain in plain language that friends can use independently run services and those services handle delivery metadata and encrypted copies. This includes posting, commenting/reacting in a friend's thread, or joining a group with remote participants, even without a direct remote friendship. The consent model must cover those paths before sending the member's content/recipient metadata, with continuing control in Advanced. Detailed operator/domain information belongs in account details and Advanced, rather than every post. Hiding technical complexity must not hide a meaningful data-sharing choice.
 
-## Protocol options
+## How Mastodon works, and what we can learn from it
 
-The following is a comparison, not a protocol selection. Test the same private social flow against the strongest candidates before committing to a wire contract.
+Research checked October 26, 2026. The descriptions below refer to the linked primary documentation; recommendations for Porchday are design inferences, not tested integrations. The product decisions above remain unchanged.
 
-| Approach | What it provides | What Porchday still needs |
-| --- | --- | --- |
-| An ActivityPub profile for private encrypted content | Actor/object vocabulary, inbox delivery, addressed activities and follow/accept/reject mechanisms | Device E2EE, mutual friendship/family rules, exact recipient grants, inherited deadlines and a compatible client profile. Ordinary ActivityPub compatibility would not make private Porchday posts readable in ordinary Mastodon clients. |
-| A Matrix application profile | Federated homeservers, room membership/state, encrypted events and client device-key machinery | A workable mapping for walls, per-post audiences, family relationships, feeds and expiry; evaluate room/state complexity and operating cost. |
-| AT Protocol as the foundation | Account identity/location separation, signed repositories, schemas and portability | Its current repository model is public. Private transport, access enforcement and member-held content keys require substantial additional design; this is not a visibility flag on the existing repository model. |
-| A small Porchday protocol over HTTPS | A direct mapping to existing private objects and product rules, using established transport and cryptographic standards | Responsibility for specifying every identity, authorization, delivery, versioning and migration rule, plus independent implementations and conformance tests. |
+**Mastodon is an application; ActivityPub is an open protocol.** Mastodon is software an operator can run for a community. ActivityPub defines messages that independently operated social applications exchange. The *fediverse* is the broader network of interconnected social services, many of which use ActivityPub. Using the protocol does not require copying Mastodon's interface or turning Porchday into a public follower network. [Mastodon introduction](https://docs.joinmastodon.org/), [ActivityPub specification](https://www.w3.org/TR/activitypub/).
 
-Sources: [ActivityPub](https://www.w3.org/TR/activitypub/), [Matrix architecture](https://spec.matrix.org/latest/), [Matrix server API](https://spec.matrix.org/latest/server-server-api/), [Matrix E2EE](https://spec.matrix.org/latest/client-server-api/#end-to-end-encryption), [AT Protocol overview](https://atproto.com/guides/overview) and [repository specification](https://atproto.com/specs/repository). The fit assessments above are design inferences from these specifications.
+In Mastodon, a person signs up on one server, which handles their account. An address such as `@alex@garden.example` identifies Alex and the service hosting the account. Alex can interact with someone at `friends.example` without creating another account there. The useful analogy is choosing an email provider: people with different providers can communicate. Each operator still controls its own admission and community policies. [Mastodon signup](https://docs.joinmastodon.org/user/signup/).
 
-Proposed evaluation: compare an ActivityPub profile and a Matrix mapping against a minimal HTTPS implementation of the same two-server scenario. Reuse a complete existing mechanism where it fits; do not invent encryption primitives or claim compatibility based on similarly named endpoints. AT Protocol's identity portability is useful input even if its public repository architecture is not selected.
+An example with two servers:
+
+1. Sam, at `friends.example`, looks up Alex's complete address or profile link. WebFinger resolves the address to Alex's ActivityPub identity URL; fetching that identity document reveals its delivery endpoints. [Mastodon WebFinger](https://docs.joinmastodon.org/spec/webfinger/).
+2. Sam's server sends a `Follow` activity to Alex's server. Alex's server can accept automatically or wait for Alex's approval. This is a request concerning a person, not a request to join every account on that server. [Mastodon network features](https://docs.joinmastodon.org/user/network/).
+3. When Alex publishes to that audience, Alex's server delivers the activity to relevant recipients' inboxes. Sam's server can store its received copy and display the post in Sam's own feed. Replies travel between the services too. There is no shared database containing the entire network. [ActivityPub server interactions](https://www.w3.org/TR/activitypub/#server-to-server-interactions).
+
+```mermaid
+sequenceDiagram
+    participant S as Sam's server
+    participant A as Alex's server
+    S->>A: Resolve Alex and request a follow
+    A-->>S: Accept, automatically or after Alex approves
+    A->>S: Deliver Alex's addressed post
+    S->>A: Deliver Sam's reply
+```
+
+The diagram describes Mastodon's general delivery model, not an implemented Porchday flow. Ordinary Mastodon federation discovers peers through account lookup and interaction; users do not usually negotiate a server partnership first. Our **Advanced → Other servers** screen would be an optional discovery/control surface, with hosted peer-admission policy applied separately. It should not make every hosted member configure this process.
+
+Four differences matter for Porchday:
+
+- **Following is directional.** Two follows do not by themselves implement a mutually accepted friendship, a mutually agreed family label or a combined 300-person limit. Porchday needs its own relationship rules even if it uses ActivityPub messages. Mastodon also implements extensions beyond the base standard, so shared syntax alone does not prove interoperability. [Mastodon federation implementation](https://docs.joinmastodon.org/spec/activitypub/).
+- **Restricted visibility is not operator-blind encryption.** Mastodon has follower-restricted posts and private mentions, but participating server administrators can obtain their text. ActivityPub can address nonpublic content; the missing guarantee is end-to-end encryption and its key/audience rules. Standard Mastodon clients would not automatically read a Porchday encrypted extension. [Mastodon privacy documentation](https://docs.joinmastodon.org/user/posting/#post-visibility--privacy).
+- **Moving an account is not moving everything.** Mastodon supports redirects and follower transfer where the receiving software supports it. Its documented move does not transfer historical posts; downloadable posts/media are an archive, not a complete importable replacement account. Porchday must separately define identity continuity, relationships, encrypted history and device recovery. [Mastodon moving and export](https://docs.joinmastodon.org/user/moving/).
+- **Operators remain part of the trust model.** Mastodon operators can limit or suspend other servers. Suspension can sever existing follow relationships; lifting it does not automatically restore them. Porchday should explicitly distinguish temporarily pausing a peer, blocking it, unfriending a person and reconnecting. None of these can force a recipient to forget already received content. [Mastodon moderation](https://docs.joinmastodon.org/admin/moderation/#moderating-entire-websites).
+
+**Lesson:** borrow the ability to communicate across providers while staying in one's own app. Preserve Porchday's simpler hosted experience and stronger content-confidentiality requirements. Learning from Mastodon does not change the agreed first target of Porchday-compatible servers.
+
+## Open protocol comparison
+
+Open source, an open protocol and interoperability are separate deliverables. Publishing Porchday's code lets someone inspect and run it; a documented protocol lets an independently written implementation communicate correctly. A compatible transport is only the beginning: people must also agree on what a friend, comment, reaction, deletion and account move mean.
+
+| Candidate | Basic model | What is useful for Porchday | Main mismatch or unanswered question |
+| --- | --- | --- | --- |
+| ActivityPub | Servers deliver addressed social activities to inboxes | Social object vocabulary and existing federated delivery patterns | Requires a private encrypted application profile; ordinary Mastodon compatibility is not automatic |
+| Matrix | Homeservers synchronize events and membership in rooms | Existing E2EE, device verification and federated group machinery | Per-post audiences and metadata need careful mapping; replicated room state differs from a single thread authority |
+| AT Protocol | Portable account identities, signed repositories and application views | Account portability, schemas and separation of hosting from applications | Public repositories are unsuitable for private content; newer Spaces alpha adds access control, not E2EE |
+| Nostr | Clients sign events and publish/read them through chosen relays | Identity independent of one host and a compact event model | Relay selection, key recovery, private group state and deletion need an additional application contract |
+| Small Porchday HTTPS protocol | Home servers exchange only the operations Porchday needs | Direct expression of our audience and lifecycle rules | We own the specification, security review, SDKs, versioning and independent interoperability work |
+
+### ActivityPub: reuse the social delivery layer
+
+An ActivityPub **profile** would specify exactly which parts of the standard Porchday uses and the extensions peers must understand. It could reuse actor/object references and delivery while carrying encrypted payloads. It still needs verified member/device identities, mutual relationships, precise audience grants, nested-comment expiry and custom-reaction semantics. Incompatible peers must reject an operation rather than publish plaintext or silently lose a restriction.
+
+Mastodon's federation API and the API its own apps call are distinct; supporting one does not implement the other. Its supported object types, custom emoji and other extensions need explicit compatibility testing. Transport authentication also needs a pinned interoperability target: current Mastodon documentation covers both legacy HTTP Signatures and RFC 9421. A server signature authenticates transport, not member consent or confidentiality. [Mastodon ActivityPub implementation](https://docs.joinmastodon.org/spec/activitypub/), [protocol security](https://docs.joinmastodon.org/spec/security/).
+
+**Disposition:** keep it on the prototype shortlist. Measure what remains reusable once our encrypted semantics are specified. A plaintext bridge to Mastodon would change the audience and privacy promise and is outside this proposal; even a future public-only bridge would need separate consent, product scope and tests.
+
+### Matrix: start from encrypted shared conversations
+
+Matrix is a federated communication protocol, not just one chat app. Users have homeservers; a room's events and state are synchronized among participating homeservers. Applications can define custom event types, so a social interface could be built above it. Unlike the candidate single-authority design below, a Matrix room is replicated state rather than a room living only on the server named in its identifier. [Matrix architecture](https://spec.matrix.org/latest/), [server-to-server specification](https://spec.matrix.org/latest/server-server-api/).
+
+Its E2EE specification provides device-key exchange, verification and encrypted message mechanisms. Reusing an established client cryptographic stack is attractive, but room state/membership, ordinary reaction events and event relationships used for server aggregation are not hidden by message encryption. Custom image packs also expose data. We need an explicit representation and metadata inventory for encrypted Porchday reactions and custom emoji, not just encrypted post bodies. [Matrix E2EE](https://spec.matrix.org/latest/client-server-api/#end-to-end-encryption), [reactions](https://spec.matrix.org/latest/client-server-api/#mreaction), [image-pack encryption limits](https://spec.matrix.org/latest/client-server-api/#encrypted-image-packs).
+
+Possible mappings include a room per post/thread, a room per audience, or a room per group. A thread room offers a clear membership boundary but creates many rooms; an audience room shares more state and makes per-post access changes harder. An encrypted body alone cannot correct membership or history-access mistakes. Compare storage, device fan-out, audience changes, history access, media encryption and deletion/backup behavior. Redaction is a protocol operation, not proof every recipient erased its copy. [Matrix room history visibility](https://spec.matrix.org/latest/client-server-api/#room-history-visibility), [redactions](https://spec.matrix.org/latest/client-server-api/#redactions).
+
+**Disposition:** keep it on the shortlist as the strongest existing encrypted-room candidate. Prototype a real private post/thread and measure the cost of the mapping. If chosen, revise the authority model explicitly; do not describe ordinary Matrix room replication as our proposed single content host.
+
+### AT Protocol: portable identity, public repositories and emerging private spaces
+
+Bluesky is an application built on AT Protocol. In its public architecture, a personal data server (PDS) hosts an account's signed repository; relays aggregate public updates, and application views turn records into an application's queries and feeds. A DID is the durable account identifier, separate from a changeable handle and hosting location. This separation is useful for Porchday's account-move design. Repository signatures do not prove authorship by a member-held device: the PDS normally controls the repository signing key. Operating a PDS alone also does not provide every indexing/application service a social product needs. [AT Protocol overview](https://atproto.com/guides/overview), [account specification](https://atproto.com/specs/account), [repository specification](https://atproto.com/specs/repository).
+
+The public repository/firehose model is not a suitable place for Porchday's private posts or social graph. However, it would now be inaccurate to describe AT Protocol as having no nonpublic-data work: **Atproto Spaces entered alpha on August 20, 2026**. Spaces adds permissioned repositories, a space authority that decides access, and direct synchronization from PDS hosts without the public relay path. Its announcement explicitly distinguishes access control from encryption: space contents are not end-to-end encrypted. It also warns against production use while the alpha changes. [Spaces alpha announcement](https://atproto.com/blog/atproto-spaces-alpha).
+
+**Disposition:** learn from portable identities and versioned schemas; include Spaces in the research watchlist. Before adding it to a full prototype, verify its current maturity, operator-readable fields, space-authority trust, independent implementations and a credible member-held encryption design. Permissioned records alone do not meet Porchday's confidentiality promise. Do not interpret permission to build a new AT Protocol application as automatic interoperability with Bluesky's existing social features.
+
+### Nostr: a person signs events; relays carry them
+
+Nostr separates a person's signing identity from any particular relay. Clients publish signed events to relays and subscribe to selected events; a person can use several relays rather than migrate a single home account. This is a different topology from Mastodon's server inboxes and Porchday's proposed authoritative home. It offers useful lessons in portable identifiers, duplicate-event handling and small protocol surfaces. A valid signature proves control of a key, not that the holder is one human or is someone's friend. [Nostr basic protocol, NIP-01](https://github.com/nostr-protocol/nips/blob/master/01.md).
+
+Private messaging extensions exist: NIP-17 builds on NIP-44 encryption and NIP-59 message wrapping, including file and reaction messages. It creates a separate encrypted wrapper per recipient; its simple group model lacks administrator/invitation/ban rules and discourages use for groups above roughly ten participants. That is not a direct fit for a 300-person post audience or managed Porchday groups. Porchday still needs member/device recovery, mutual membership, parent audiences, compatible reaction formats, delivery reconciliation and relay-admission policy. NIP-44 also documents the lack of forward secrecy and post-compromise security; wrapping does not eliminate all relay/network metadata. [NIP-17](https://github.com/nostr-protocol/nips/blob/master/17.md), [NIP-44](https://github.com/nostr-protocol/nips/blob/master/44.md), [NIP-59](https://github.com/nostr-protocol/nips/blob/master/59.md).
+
+Nostr deletion is a request for relays/clients to honor. Its expiration extension permits stored expired events to persist even though they should no longer be served. Merely adding those tags would not satisfy Porchday's intended live-data cleanup, descendant cascades and restore safeguards. No protocol can compel a malicious recipient to erase plaintext it already obtained. [NIP-09 deletion](https://github.com/nostr-protocol/nips/blob/master/09.md), [NIP-40 expiration](https://github.com/nostr-protocol/nips/blob/master/40.md).
+
+**Disposition:** a useful comparison and design reference, but not on the first implementation shortlist unless we decide to replace the authoritative-home model with a relay model. That would be a substantive product/security decision, not a transport swap.
+
+### Adjacent approaches: XMPP and Solid
+
+**XMPP** offers established server federation and publish-subscribe extensions; OMEMO specifies multi-device E2EE for conversations. These pieces are relevant, but do not form one universally implemented social-network profile. The current OMEMO specification is marked Experimental, and the microblogging extension is Deferred. Exact versions and support would need checking rather than assuming any XMPP client understands encrypted Porchday walls. Keep it as background research unless the main shortlist exposes a gap it solves. [XMPP publish-subscribe](https://xmpp.org/extensions/xep-0060.html), [OMEMO](https://xmpp.org/extensions/xep-0384.html), [microblogging](https://xmpp.org/extensions/xep-0277.html).
+
+**Solid** focuses on user-controlled storage and interoperable resource access. That is relevant to data ownership, but storage authorization alone does not specify friends, feeds, thread permissions, delivery or inherited timeouts, and does not by itself prevent an operator reading content. Treat it as a storage/portability reference rather than a complete substitute for the social protocol. [Solid Protocol](https://solidproject.org/TR/protocol).
+
+### What we should evaluate next
+
+Provisional recommendation: compare **an encrypted ActivityPub profile**, **a Matrix application mapping**, and **a minimal HTTPS baseline** using the same small scenario. Keep AT Protocol Spaces under review; use Nostr's relay/key model as a challenge to our assumptions. This is a research shortlist, not a selected protocol or authorization to add production federation.
+
+The comparison should produce a short decision record, not just working message delivery:
+
+| Gate | Evidence required from each candidate |
+| --- | --- |
+| Ordinary hosted experience | Signup, invitations, finding friends and reading remain usable without entering a domain or selecting a server |
+| Confidentiality and identity | Enumerate what every operator learns; prove clients reject substituted keys and misbound content; no server-decryptable fallback |
+| Social semantics | Mutual friendship, family, the 300 limit, a nonfriend's authorized thread comment, groups and multiple/custom reactions behave consistently |
+| Revocation and lifecycle | Unfriend/block, late comments, inherited expiry, deletion, offline peers and restored backups follow explicit rules without reviving grants |
+| Portability | Separate account identity, relationships, history, media and device-key recovery; demonstrate what survives a cooperative move and what cannot survive host/key loss |
+| Operations and openness | Measure peer queues, bandwidth, storage, room/recipient growth, small-server setup and upgrades; identify required shared services and implementation/license dependencies |
+| Independent interoperability | Publish a precise profile and test vectors; a second independently implemented peer passes the same positive and adversarial cases |
+
+Reuse complete existing mechanisms where they fit, including maintained encryption libraries; do not invent cryptographic primitives. If none fits, document why a small Porchday protocol is justified and which standards it composes. Keep hosted delivery and future public-network bridges separate from this decision.
 
 ## Logical architecture
 
-This model describes responsibilities regardless of the chosen transport. It deliberately avoids a global transaction coordinator or a nonprofit-operated mandatory relay.
+This is the candidate Porchday authority model, not a claim that every protocol above has this topology. A Matrix or relay-based design may require a different mapping and an explicit revision after the experiment. It deliberately avoids a global transaction coordinator or a nonprofit-operated mandatory relay.
 
 ```mermaid
 flowchart LR
@@ -178,7 +270,7 @@ Evaluate two cases separately: a cooperative move with the old home online, and 
 ## Work plan and decision gates
 
 1. **Agree on remaining product rules.** Personal plus small community servers and Porchday-compatible interoperability first are confirmed. Review the default UX, remote disclosure and treatment of untrusted/offline hosts. Keep ordinary hosted signup and posting unchanged; existing-network compatibility is outside the initial target.
-2. **Write a threat model and evaluate protocol reuse.** Exercise identical flows with the candidate approaches above. Record dependencies, operations, storage/bandwidth, key/audience semantics and unsupported features. Select a transport/profile only after the comparison.
+2. **Write a threat model and evaluate protocol reuse.** Exercise identical flows with the candidate approaches above and record evidence against the comparison gates. Recheck the dated specifications, especially Spaces alpha and optional extensions. Record dependencies, operations, storage/bandwidth, key/audience semantics and unsupported features. Select a transport/profile only after the comparison.
 3. **Build a disposable two-server experiment.** Synthetic accounts only: discover an explicit peer, accept a mutual request, send one encrypted photo post and a comment/reaction, remove a friend, expire/delete content, and recover after a queue interruption. No production federation or relaxed current safeguards.
 4. **Specify and test the selected profile.** Publish version negotiation, state machines, error semantics, identity/key lifecycle, required cryptographic bindings, sample messages and positive/negative conformance vectors. Add a second independently implemented peer; two copies of the same server are insufficient interoperability evidence.
 5. **Extend the six-user validation plan.** Run the scenarios in [issue #19](https://github.com/porchday/porchday/issues/19) across at least three servers, with independent clocks/queues and a mix of hosted and independent accounts. Include personal walls before groups, then ownership transfer and account migration.
