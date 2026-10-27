@@ -1,6 +1,6 @@
 # Per-connection history sharing
 
-Status: implemented in web/API and native source; hosted and device verification are tracked in [issue #22](https://github.com/porchday/porchday/issues/22). This document is not evidence that a particular member's posts have finished sharing.
+Status: web/API deployed to staging and production on October 26, 2026; native source passes simulator CI. The reported member-to-member wall check remains `needs verification` in [issue #22](https://github.com/porchday/porchday/issues/22). This document is not evidence that a particular member's posts have finished sharing.
 
 ## Member choice
 
@@ -40,5 +40,9 @@ Restrictive history-policy changes participate in privacy-journal handling. Repl
 Required evidence covers both choices in both directions, default handling on old/new clients, an existing friendship opting in, exact post identity/date/deadline preservation, encrypted photos, unrelated future-only recipients, Only me and audience exclusions, old foreign-authored contributions, concurrent edits/devices, stale epochs, lost responses, block/removal, restrictive-policy replay, and a bounded retry after the author returns online. Local/API and synthetic browser checks do not establish that a real member's keys were unlocked or that every historical post has finished sharing. Record hosted and member acceptance separately in issue #22.
 
 Local verification for this implementation passed 20 crypto tests and 606 application/script tests against disposable PostgreSQL, plus workspace TypeScript checks and the web production build. CI for implementation commit `eecf3f7` passed application verification, secret scanning and the native Xcode/simulator suite. Fresh Chromium fixture checks at 1280, 375 and 320 pixels verified the choices and submitted values; these use synthetic API responses and are not hosted acceptance. Physical-device and member acceptance remain separate.
+
+The final application source is `c30f169cbe687ff4a3f46d56b4ee00319868c1fd`; its application CI and secret scan also passed. Migration `046_connection_history.sql` was applied and verified in both environments, including runtime permissions and restrictive-choice journaling. Staging version `7dbf1229-fc68-4e09-aba9-5af1aef5efbb` passed a real encrypted post/JPEG test with synthetic accounts: future-only denial, full-history opt-in, successful recipient decryption, preserved dates and both deadlines, retry, and full-to-future retaining previously delivered access. Cleanup removed the test content/relationship, restored the fixture's original blocks, and revoked the test sessions.
+
+Production version `9c12c603-5ab7-40dc-a47b-551ff8fea197` serves the same reviewed API and web assets. Protected health is healthy at both production origins. Fresh signed-out Chromium checks verified the homepage, login, available signup form and `.com` redirect over normal HTTPS. Signup, queue settings and existing provider policy were preserved. Native simulator evidence does not establish physical-device acceptance.
 
 Known follow-ups: photo replacement temporarily needs additional storage quota and large-history candidate selection needs a scale benchmark and bounded database scan ([issue #9](https://github.com/porchday/porchday/issues/9)); the portable connection list does not yet include the new directional sharing preferences ([issue #23](https://github.com/porchday/porchday/issues/23)). Import must still require fresh mutual acceptance and must never silently recreate old sharing permissions.
