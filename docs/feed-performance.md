@@ -199,3 +199,43 @@ After CI and internal code review, the operator retained the supported one-fewer
 ### Reproducible retained placement
 
 After the code-only `3de7b9c` release, the configuration audit found that regenerating a deployable config still removed the retained staging region: the generator copied the local base, while the Oregon setting existed only in an ignored staging file. The earlier trial-only warning above describes that historical behavior. `infra/resources.json` now explicitly records staging `worker_placement: {region: "aws:us-west-2"}` and production `worker_placement: null`; the renderer validates that setting and clears any inherited local placement before applying it. This makes the current environment choices reproducible without promoting staging placement into production. Focused tests cover both environments, local-setting isolation and rejection of malformed placement without overwriting an existing output. An isolated temporary render of each environment matched its existing deployment config exactly as JSON, with no changed top-level values. This correction changes configuration generation only; it does not deploy a Worker or claim a new performance result.
+
+## Deferred browser media and pending saves (October 27, 2026)
+
+The web feed previously fetched full details for all 30 cards immediately and
+fetched/decrypted each photo before native image lazy loading could take effect.
+Cards now request details within 400 px of the viewport (or immediately on an
+expanded post); photos defer the actual encrypted-byte request to that margin.
+Browsers without IntersectionObserver retain eager loading. Existing no-store,
+authorization, expiry, abort and blob cleanup behavior remains in place.
+
+`node scripts/measure-feed-loading.mjs output.json` exercises real card/fetch
+lifecycle with synthetic data: 30 cards, 800×800 Chromium viewport, six server
+slots, 150 ms response delay, 100 KB media padding, five fresh browser contexts.
+At base `10d9ab8`, median first decoded photo was 1,403 ms (1,394–1,468);
+after deferral it was 281 ms (279–281). Initial detail requests fell from 30 to 3,
+photo requests from 30 to 2, and synthetic media response padding from 3 MB to
+0.2 MB. These are controlled component results with mocked encryption and image
+validation, not hosted latency, mobile capacity, or a production speed guarantee.
+
+Post text edits render immediately; an unconfirmed save rolls the preview back,
+restores the draft, and explains the failure. A global saving indicator covers API
+mutations through response parsing, plus encryption/upload preparation for post
+creation and editing. In-app links and routing are held while a save is pending;
+a beforeunload warning covers browser navigation/reload/close where supported.
+Browsers control that warning and may omit it on mobile/process termination; this
+is not durable offline storage or a guarantee that a tab cannot be closed.
+Other forms retain their existing server-confirmed UI. Their API writes are
+protected, but pre-request work is not universally tracked yet.
+
+`node scripts/check-feed-saves.mjs` checks deferred loading, scrolling, observer
+fallback, concurrent saves, routing protection, and optimistic success/failure
+with synthetic components in Chromium and WebKit. No hosted member data is used.
+
+Larger suggestions (not current release requirements): encrypted thumbnail
+variants and WebP/AVIF with protocol/native compatibility and cleanup; mobile
+refresh profiling including crypto/key discovery and API latency; optimistic
+creates/reactions with idempotency and server reconciliation. Existing photos are
+JPEG (typically prepared at up to 1,800 px, avatars 512 px); this change does not
+recompress stored content or weaken private API/media cache rules. Public assets
+already use the platform asset service and the app shell's service-worker cache.

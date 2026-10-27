@@ -4405,3 +4405,19 @@ hr {
 .invitation-recipient { display: grid; gap: .25rem; min-width: 0; overflow-wrap: anywhere; }
 .invitation-recipient small { color: var(--muted); }
 .invitation-status { flex-shrink: 0; font-size: .85rem; border: 1px solid var(--line); padding: .15rem .45rem; }
+
+.pending-save-status {
+  position: fixed;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10000;
+  max-width: calc(100vw - 32px);
+  padding: 12px 18px;
+  border: 1px solid #974013;
+  border-radius: 8px;
+  background: #fff7e5;
+  color: #402518;
+  box-shadow: 0 3px 12px #0003;
+  font-size: 14px;
+}

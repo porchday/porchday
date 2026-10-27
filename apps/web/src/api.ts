@@ -1,3 +1,4 @@
+import { withPendingSave } from "./pending-saves";
 import type { EncryptedEnvelope, ContentContext } from "@porchday/crypto";
 export type { EncryptedEnvelope, ContentContext };
 export type Json = Record<string, any>;
@@ -123,23 +124,27 @@ export async function request<T = Json>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const response = await fetch(
-    path.startsWith("/api/") ? path : `/api/v1${path}`,
-    {
-      credentials: "same-origin",
-      cache: "no-store",
-      ...options,
-      headers: {
-        ...(options.body && !(options.body instanceof Blob)
-          ? { "Content-Type": "application/json" }
-          : {}),
-        ...options.headers,
+  const perform = async (): Promise<T> => {
+    const response = await fetch(
+      path.startsWith("/api/") ? path : `/api/v1${path}`,
+      {
+        credentials: "same-origin",
+        cache: "no-store",
+        ...options,
+        headers: {
+          ...(options.body && !(options.body instanceof Blob)
+            ? { "Content-Type": "application/json" }
+            : {}),
+          ...options.headers,
+        },
       },
-    },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new ApiError(response.status, data);
-  return data as T;
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new ApiError(response.status, data);
+    return data as T;
+  };
+  return ["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase())
+    ? perform() : withPendingSave(perform);
 }
 export const get = <T = Json>(path: string) => request<T>(path);
 export const post = <T = Json>(path: string, data: unknown = {}) =>

@@ -1,3 +1,4 @@
+import { hasPendingSaves } from "./pending-saves";
 import { MemberAvatar, MemberAvatarProvider } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -12,6 +13,7 @@ import {
   useRoute,
   navigate,
   useAction,
+  PendingSaveStatus,
 } from "./ui";
 import { AuthPage, Landing, Policy, StolenAccount } from "./Public";
 import { VaultProvider, useVault } from "./vault";
@@ -161,6 +163,7 @@ function App() {
     return () => appWindow.removeEventListener("change", updateTitle);
   }, [path]);
   async function signOut() {
+    if (hasPendingSaves()) return;
     authenticationGeneration.current++;
     try {
       await signOutSafely();
@@ -530,6 +533,7 @@ initColorScheme();
 initSiteAppearance();
 createRoot(document.getElementById("root")!).render(
   <ErrorBoundary>
+    <PendingSaveStatus />
     <App />
   </ErrorBoundary>,
 );

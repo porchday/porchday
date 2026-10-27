@@ -1,3 +1,4 @@
+import { hasPendingSaves, pendingSaves, withPendingSave } from "./pending-saves";
 import React, { useEffect, useState } from "react";
 import { message } from "./api";
 import { needsDomainNavigation } from "./domain-navigation";
@@ -325,6 +326,10 @@ export function Modal({
     </dialog>
   );
 }
+export function PendingSaveStatus() {
+  const count = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getSnapshot, () => 0);
+  return count ? <div className="pending-save-status" role="status" aria-live="polite">Saving… Keep this page open until saving finishes.</div> : null;
+}
 export function useAction() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -343,7 +348,14 @@ export function useAction() {
       setBusy(false);
     }
   }
-  return { busy, error, notice, run, setError, setNotice };
+  const saving = React.useRef(false);
+  async function runSave<T>(action: () => Promise<T>, success?: string) {
+    if (saving.current) return;
+    saving.current = true;
+    try { return await run(() => withPendingSave(action), success); }
+    finally { saving.current = false; }
+  }
+  return { busy, error, notice, run, runSave, setError, setNotice };
 }
 export function useRoute(navigationEpoch?: { current: number }) {
   const [path, setPath] = useState(location.pathname + location.search);
@@ -351,6 +363,10 @@ export function useRoute(navigationEpoch?: { current: number }) {
   useEffect(() => {
     const pop = () => {
       const next = location.pathname + location.search;
+      if (next !== observedPath.current && hasPendingSaves()) {
+        history.pushState({}, "", observedPath.current);
+        return;
+      }
       if (next !== observedPath.current) {
         observedPath.current = next;
         if (navigationEpoch) navigationEpoch.current++;
@@ -378,9 +394,19 @@ export function useRoute(navigationEpoch?: { current: number }) {
       pop();
       window.scrollTo(0, 0);
     };
+    const protectLinks = (event: MouseEvent) => {
+      const anchor = (event.target as Element)?.closest?.("a[href]");
+      if (!hasPendingSaves() || !anchor || (anchor as HTMLAnchorElement).target ||
+          (anchor as HTMLAnchorElement).hasAttribute("download") || event.button !== 0 ||
+          event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    };
+    document.addEventListener("click", protectLinks, true);
     window.addEventListener("popstate", pop);
     document.addEventListener("click", clicks);
     return () => {
+      document.removeEventListener("click", protectLinks, true);
       window.removeEventListener("popstate", pop);
       document.removeEventListener("click", clicks);
     };
@@ -428,6 +454,7 @@ export function useRoute(navigationEpoch?: { current: number }) {
   return path;
 }
 export function navigate(path: string) {
+  if (hasPendingSaves()) return;
   const destination = new URL(path, location.href);
   if (needsDomainNavigation(destination, location.origin)) {
     location.assign(destination.href);
