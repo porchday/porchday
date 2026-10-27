@@ -32,6 +32,7 @@ export function PublicFooter() {
         <a href="/community">Community rules</a>
         <a href="/accessibility">Accessibility</a>
         <a href="/help">Help & contact</a>
+        <a href="https://github.com/porchday/porchday">Source code</a>
         <a href="/third-party-notices.txt">Open-source notices</a>
       </nav>
       <BackgroundControls />
@@ -47,6 +48,7 @@ export function Landing() {
           <h1>a simple social network</h1>
           <div className="classic-box-body">
             <p className="classic-promise">No ads, algorithms, or influencers.</p>
+            <p><a href="https://github.com/porchday/porchday">Open source</a>, licensed under <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0</a>.</p>
             <p>Already have an account?</p>
             <a className="button primary" href="/login">Member log in</a>
             <p className="invitation-line">Have an invitation? <a href="/join">create account</a></p>
@@ -481,7 +483,7 @@ export function StolenAccount() {
 }
 const policyContent: Record<
   string,
-  { title: string; intro: string; sections: [string, string][] }
+  { title: string; intro: string; sections: [string, React.ReactNode][] }
 > = {
   about: {
     title: "About Porchday",
@@ -498,11 +500,11 @@ const policyContent: Record<
       ],
       [
         "Starting small",
-        "The first pilot is invitation-only and for adults 18 and older. Encryption review, moderation staffing, recovery coverage, and legal policies must be ready before real members are admitted.",
+        "The first pilot is invitation-only and for adults 18 and older. Encryption review, moderation staffing, recovery coverage, and legal policies remain requirements before broader admission.",
       ],
       [
-        "Built in the open, soon",
-        "The code is licensed under Apache 2.0. The development repository is private while we build; a reviewed public source release is a launch milestone.",
+        "Open source",
+        <>Porchday’s code is <a href="https://github.com/porchday/porchday">publicly available on GitHub</a> under <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0</a>. Read it, contribute, or build on it. Independent security review remains separate from publishing the code.</>,
       ],
     ],
   },
@@ -527,8 +529,8 @@ const policyContent: Record<
         "People operate their own accounts. Assistive technology, dictation, and translation are welcome when a person chooses and submits the action. Technical proof of humanity is future work; we do not claim verified human identity.",
       ],
       [
-        "No need to trust us",
-        "You own your data. Export it, move it, or delete your account. Porchday is being built around open-source code and an open protocol so you can inspect how it works and choose other tools and services. The code is licensed under Apache 2.0; public release of the source and protocol documentation is a launch milestone. Our open archive format already supports portable exports.",
+        "Your data and open code",
+        <>You own your data. Export it, move it, or delete your account. Porchday’s <a href="https://github.com/porchday/porchday">source code</a> is available under Apache 2.0, and its open archive format supports portable exports. An <a href="https://github.com/porchday/porchday/blob/main/design/federation-proposal.md">open federation protocol</a> is being designed; connecting independently operated servers is future work.</>,
       ],
     ],
   },

@@ -69,11 +69,14 @@ describe("public pilot acceptance contract", () => {
     expect(html).toContain("Resume an existing recovery case");
     expect(html).not.toContain('type="password"');
   });
-  it("states the core promises without claiming established nonprofit or public source status", () => {
+  it("links public Apache-licensed source without claiming established nonprofit or implemented federation", () => {
     locationFor();
     const html = renderToStaticMarkup(createElement(Landing));
     expect(html).toContain("a simple social network");
     expect(html).toContain("No ads, algorithms, or influencers.");
+    expect(html).toContain('<a href="https://github.com/porchday/porchday">Open source</a>');
+    expect(html).toContain('<a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0</a>');
+    expect(html).toContain('<a href="https://github.com/porchday/porchday">Source code</a>');
     expect(html).not.toContain("<h2>Features</h2>");
     expect(html).not.toContain("Profile example");
     expect(html).not.toContain("<h2>About the project</h2>");
@@ -90,7 +93,13 @@ describe("public pilot acceptance contract", () => {
       createElement(Policy, { page: "about" }),
     );
     expect(about).toContain("still being established");
-    expect(about).toContain("development repository is private");
+    expect(about).toContain("publicly available on GitHub");
+    expect(about).toContain("Independent security review remains separate");
+    expect(about).not.toContain("development repository is private");
     expect(about).toContain("Apache 2.0");
+    const principles = renderToStaticMarkup(createElement(Policy, { page: "principles" }));
+    expect(principles).toContain('href="https://github.com/porchday/porchday/blob/main/design/federation-proposal.md"');
+    expect(principles).toContain("connecting independently operated servers is future work");
+    expect(principles).not.toContain("public release of the source");
   });
 });

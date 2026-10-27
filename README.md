@@ -6,7 +6,7 @@ Porchday is an actively developed, invitation-only adult pilot. Original applica
 
 ## What is implemented
 
-- Up to 300 mutual connections, including family; personal walls, named groups and audience controls.
+- Up to 300 mutual connections, including family; personal walls, named groups and audience controls. Each person chooses full-history or future-only sharing when connecting; see [history sharing](docs/friend-history-sharing.md).
 - Photos, threaded comments, and multiple Unicode or custom-image reactions per person on posts and comments.
 - Optional post/comment expiration, with replies inheriting their parent's deadline or a shorter one.
 - Encrypted profiles and personalization, a web/PWA client, and a native SwiftUI iOS client.

@@ -6,6 +6,8 @@ This file records notable development changes, not a list of supported releases.
 
 ### Development update — 2026-10-26
 
+- Added independent history-sharing choices when sending/accepting a connection, defaulting to “Share full history (recommended)” in updated clients. Existing connections retain their choice until explicitly changed. An unlocked author device shares eligible earlier posts/photos using signed revisions that preserve identity, dates and expiry; earlier comments/reactions keep their original recipients. Migration `046_connection_history.sql` is required. See the [sharing contract and verified release](docs/friend-history-sharing.md).
+- Prepared public website source/license links and updated Apache-2.0 copy. Publication and website-deployment evidence are tracked in [issue #16](https://github.com/porchday/porchday/issues/16); the copy is deployed only after anonymous source access is verified.
 - Made `porchday.org` the primary site, retaining strict same-origin `.com` account/API compatibility for existing browsers and native clients, safe public-navigation redirects, and a public PWA shell that stays available on the old origin. Deployment evidence and remaining device checks are recorded in the [migration guide](docs/domain-migration.md) and issue #17.
 - Simplified the public footer to show “By invitation only.” below the logo, without copyright/date text.
 - Prepared source publication with a history/CI-output credential review, a pinned full-history secret-scan workflow, stronger local credential checks, contributor setup verification and GitHub reporting policies. Publication checks are recorded separately in the [readiness record](docs/open-source-readiness.md).
