@@ -138,7 +138,7 @@ Messages are kept for 90 days and then deleted by the existing cleanup jobs. Del
 ## Operator controls
 
 - **Allowlist.** Operators add and remove members with a new command, `scripts/builder-chat-access.ts add|remove <handle>`, following the pattern of `scripts/invite.ts`. Removing a member closes their open sockets immediately.
-- **Pause.** A new incident control, `BUILDER_CHAT_PAUSED`, joins the existing pauses in `infra/resources.json` and `docs/incident-response.md`. When the pause is on, the API refuses new messages, the relay stops sending turns to the bridge, and members see the paused state. Operators can also stop the bridge program on the Mac mini directly.
+- **Pause.** A new incident control, `BUILDER_CHAT_PAUSED`, joins the existing pauses in `infra/resources.json` and `docs/incident-response.md`. When the pause is on, the API refuses new messages, the relay stops sending turns to the bridge, and members see the paused state. Operators can also stop the bridge program on the Mac mini directly. The pause defaults to on, and the allowlist starts empty, so the feature code can be merged and deployed by the hourly deploy before the bridge is installed without any member seeing it.
 - **Staff view.** The staff console gains a read-only builder chat page, protected by the existing Cloudflare Access staff login and a new `builder_chat` staff role, showing every thread, the queue and the audit log.
 - **Bridge credential.** The bridge authenticates to the relay with a dedicated random token, `BUILDER_BRIDGE_TOKEN`, uploaded with `scripts/upload-worker-secrets.py`. The token allows only the bridge connection, and rotating the token disconnects the bridge.
 
@@ -188,28 +188,27 @@ After this phase, Codex still ships every hour, but no conversation can make Cod
 
 ## Testing and acceptance criteria
 
-The feature is ready for its first allowlisted member when all of these pass:
+All of these checks run locally. There is no separate staging verification for builder chat. The feature is ready for its first allowlisted member when all of these pass:
 
 - API tests show that non-allowlisted members, members without a current disclosure acceptance, and all members during a pause cannot open a socket or send a message, and that non-allowlisted members receive `404`.
 - API tests cover the rate limits, the single in-flight message rule, the queue limit and the 2,000 character limit.
 - Relay tests with a fake bridge show first-in, first-out ordering, streaming to every open socket of the right member and to no other member, reconnection after a bridge disconnect, and the 10 minute timeout.
 - Bridge tests show that raw command output, environment variables and text matching `scripts/check-secrets.py` patterns are never forwarded, and that a held back reply creates an audit entry.
 - Deletion tests show that account deletion removes builder chat rows, and export tests show that the member's own export includes them.
-- On staging, a builder chat change is rolled back three ways and each rollback is recorded in `docs/hosted-builder-chat-verification.md`. The three ways are Codex reverting the change when asked, an operator running `scripts/builder-chat-rollback.ts`, and an operator running `wrangler rollback` to the recorded Worker version.
-- A staging run with two synthetic allowlisted accounts shows a full conversation, a queued second member, a pause, and a removal of access while connected.
+- Rollback tests against a scratch checkout show that Codex reverts a builder chat change when asked and that `scripts/builder-chat-rollback.ts` reverts the commits recorded for a message.
+- A local end to end run, using the local development setup, `wrangler dev` for the relay and a real local Codex session working in a scratch checkout, shows a full conversation with two synthetic allowlisted accounts, a queued second member, a pause, and a removal of access while connected.
 - The web page passes the existing keyboard and screen reader checks in `scripts/local-accessibility.ts`, including announcements of streamed replies through a polite live region.
 
-## Suggested build order
+## Build and rollout plan
 
-1. Database migration, allowlist command and API routes, with a fake bridge for tests.
-2. Relay Durable Object and the web chat page, tested end to end against the fake bridge on staging.
-3. Bridge program on the Mac mini with the lock file, framing and output filter, first connected to a separate test Codex session rather than the builder session.
-4. Rollback recording, the rollback command, staff view, pause control and privacy updates.
-5. Rollback testing on staging, then the first allowlisted member on production.
-6. Later, the separate Codex user and deploy job described in [Later phase](#later-phase-separate-codex-from-deploy-credentials).
+1. Nick builds the whole feature locally: the migration, allowlist command, API routes, relay, web page, staff view, bridge program, rollback recording and rollback command, and the privacy and disclosure text. The bridge is developed against a real local Codex session working in a scratch checkout, never against the builder session.
+2. Nick merges the feature to `main` switched off, with the pause on and the allowlist empty. The hourly deploy on the Mac mini ships it, including migration 048 and the new Durable Object binding.
+3. Bobby installs the bridge on the Mac mini, points it at the builder session, adds the shared lock file to the request-file loop, confirms `codex app-server` works on his Codex version, and uploads `BUILDER_BRIDGE_TOKEN`.
+4. An operator turns off the pause and adds the first member to the allowlist on production.
+5. Later, Bobby sets up the separate Codex user and deploy job described in [Later phase](#later-phase-separate-codex-from-deploy-credentials).
 
 ## Decisions and open questions
 
 Bobby has agreed to run the bridge on his Mac mini and to the shared lock file between builder chat turns and Nick's request file.
 
-One question remains open. The implementer needs to confirm whether the installed Codex version supports driving an existing session programmatically, e.g. through `codex app-server`. If it does not, the fallback is to have the bridge write member messages into a second request file that the builder session reads. The fallback removes live streaming of progress but keeps the rest of this design.
+One question remains open. Codex `0.164.0`, installed on Nick's machine, includes `codex app-server`, marked experimental, so the bridge can be built against it locally. Bobby needs to confirm that the Codex version on the Mac mini supports driving an existing session the same way. If it does not, the fallback is to have the bridge write member messages into a second request file that the builder session reads. The fallback removes live streaming of progress but keeps the rest of this design.
