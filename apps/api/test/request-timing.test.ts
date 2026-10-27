@@ -34,3 +34,16 @@ test('journal timing preserves values and the original rejection',async()=>{
  await expect(measureJournalRead(timing,'journal_db',async()=>{throw error;})).rejects.toBe(error);
  expect(timing.header()).toMatch(/^journal_r2;dur=[0-9]+, journal_db;dur=[0-9]+$/);
 });
+
+test('operations timing requires successful dedicated authorization and contains only numeric phases',async()=>{
+ const {requireOperations}=await import('../src/operations-health');
+ const router=new Hono<{Bindings:Env;Variables:Variables}>();router.use('*',requestTimingMiddleware);
+ router.get('/api/operations/health',requireOperations,c=>{c.get('requestTiming')?.record('operations_snapshot',12);return c.text('ok',c.req.query('fail')?503:200);});
+ const env={OPERATIONS_HEALTH_TOKEN:'x'.repeat(32)} as Env;
+ for(const headers of [{},{Authorization:'Bearer wrong'}]){
+  const r=await router.request('/api/operations/health',{headers},env);expect(r.status).toBe(401);expect(r.headers.has('server-timing')).toBe(false);
+ }
+ const headers={Authorization:'Bearer '+'x'.repeat(32)};
+ const ok=await router.request('/api/operations/health',{headers},env);expect(ok.status).toBe(200);expect(ok.headers.get('server-timing')).toMatch(/^operations_snapshot;dur=12, worker;dur=\d+$/);expect(ok.headers.get('cache-control')).toBe('private, no-store');
+ const fail=await router.request('/api/operations/health?fail=1',{headers},env);expect(fail.headers.has('server-timing')).toBe(false);
+});
