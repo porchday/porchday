@@ -35,4 +35,3 @@ BEGIN
  ) INTO result;
  RETURN result;
 END $$;
-
