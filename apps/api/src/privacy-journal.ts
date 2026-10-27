@@ -5,6 +5,7 @@ import {createMiddleware} from 'hono/factory';
 import type {Env, Variables} from './types.js';
 import {event,type JournalFailureCode} from './telemetry.js';
 import {measureFeedPhase} from './feed-timing';
+import {resilientJournalIO} from './journal-io';
 
 export interface JournalStore {
   get(key: string): Promise<{etag: string; text(): Promise<string>} | null>;
@@ -195,6 +196,13 @@ export async function beginPrivacyIntent(store: JournalStore, db: JournalDatabas
   await immutable(store,`intents/${intent.id}.json`,{v:1,...intent});
   for(let tries=0;tries<40;tries++) {
     const remote=await assertJournalReadable(store,db);
+    // A conditional registration may have committed before its reply was lost.
+    // Reuse this exact operation's registration instead of adding it twice.
+    const registered=remote.value.pending.filter(p=>p.id===intent.id);
+    if(registered.length){
+      if(registered.length!==1||registered[0].started_at!==intent.started_at)stop('INVALID_JOURNAL_INTENT');
+      return intent;
+    }
     if(remote.value.pending.length>=256)stop('JOURNAL_BUSY');
     if(await replace(store,{...remote.value,pending:[...remote.value.pending,intent]},remote.etag))return intent;
   }
@@ -262,7 +270,8 @@ function runtime(env:RuntimeEnv) {
     async status(){const[r]=await sql`select app.safety_status() as value`;return r.value;},
     async page(after){const[r]=await sql`select app.safety_page(${after}::bigint,200) as value`;return r.value;},
   };
-  return {store:env.RECOVERY_JOURNAL as JournalStore,db,close:()=>sql.end({timeout:1})};
+  const io=resilientJournalIO(env.RECOVERY_JOURNAL as JournalStore,db,{report:code=>event('error',{code},env)});
+  return {...io,close:()=>sql.end({timeout:1})};
 }
 export function isPrivacyMutation(method:string,path:string):boolean {
   const uuid='[a-fA-F0-9-]{36}';
@@ -283,7 +292,10 @@ export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables
     const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured',JOURNAL_STORE_READ_FAILED:'journal_store_read_failed',JOURNAL_CONTROL_INVALID:'journal_control_invalid',JOURNAL_DATABASE_READ_FAILED:'journal_database_read_failed',JOURNAL_DATABASE_STATUS_INVALID:'journal_database_status_invalid'};
     event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable'},c.env);
     // No identifiers, SQL details, endpoint URLs or private content in errors.
-    return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message:'This action is temporarily unavailable while data safeguards are checked. Please try again later.'}},503);
+    const message=error instanceof JournalError&&error.code==='RESTORE_QUARANTINED'
+      ?'Porchday is temporarily unavailable while we resolve a service problem. Your password is not the cause.'
+      :'Porchday could not complete a required safety check. Please try again shortly.';
+    return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message}},503);
   } finally {if(resources)await measureFeedPhase(timing,'journal_close',()=>resources!.close());}
   await next();
 });

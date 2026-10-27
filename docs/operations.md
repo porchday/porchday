@@ -1,5 +1,7 @@
 # Porchday operations
 
+The availability target is **99.9% over a rolling 30 days**, covering account access and core member actions. See [the reliability objective, error budget and acceptance plan](reliability.md). It is not yet an achieved SLO; a passing homepage or deployment smoke check does not establish it.
+
 ## Admission and launch gates
 
 Registration requires an email-bound, expiring invitation issued by an operator or eligible member, adult attestation, accepted community rules, and verified email. `SIGNUP_ENABLED` is a deliberate deployment gate. The owner has authorized production access and explicitly requested that production invited signup remain enabled. Both environments therefore persist `signup_enabled=true`; preserve production's setting unless the owner requests that it be disabled. This authorization covers owner use and does not remove the encryption review, support staffing, nonprofit/legal disclosures and other admission requirements for a broader launch. Synthetic test accounts are operational test identities, not autonomous social participants.

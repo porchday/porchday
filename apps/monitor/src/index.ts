@@ -1,5 +1,6 @@
 import {initialState,observe,publicStatus,probe,alertText,type MonitorState,type Environment} from './protocol';
 import {renderStatusPage} from './status-page';
+import {recordAvailability,availabilitySummary,type AvailabilityHistory} from './availability';
 import {checkMetrics,initialMetrics,publicMetrics,metricsAlertText,type MetricsConfig,type MetricsState} from './metrics';
 
 export interface Env extends MetricsConfig {STATE:DurableObjectNamespace;ENVIRONMENT:Environment;OPERATIONS_HEALTH_TOKEN:string;MONITOR_RECIPIENT:string;EMAIL_FROM:string;EMAIL:SendEmail}
@@ -15,10 +16,10 @@ export class Monitor {
     const path=new URL(request.url).pathname;
     if(request.method==='GET'&&path==='/status'){
       try{
-        const [state,metrics]=await Promise.all([this.ctx.storage.get<MonitorState>('state'),this.ctx.storage.get<MetricsState>('metrics-state')]);
+        const [state,metrics,history]=await Promise.all([this.ctx.storage.get<MonitorState>('state'),this.ctx.storage.get<MetricsState>('metrics-state'),this.ctx.storage.get<AvailabilityHistory>('availability-history')]);
         const status=publicStatus(state??initialState());
         if(status.status==='operational'&&(metrics?.latency.status==='degraded'||metrics?.errors.status==='degraded'))status.status='degraded';
-        return json({...status,metrics_monitoring:publicMetrics(metrics??initialMetrics())});
+        return json({...status,metrics_monitoring:publicMetrics(metrics??initialMetrics()),availability:availabilitySummary(history)});
       }
       catch{return json({status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'},503);}
     }
@@ -35,6 +36,7 @@ export class Monitor {
       // Then at most one <=10s email leaves margin below the DO's 30s gate.
       const [result,metrics]=await Promise.all([probe(this.env.ENVIRONMENT,this.env.OPERATIONS_HEALTH_TOKEN),checkMetrics(previousMetrics,this.env,Date.now(),tick)]);
       const now=Date.now(),state=observe(old,result.healthy,now,tick);
+      const history=recordAvailability(await this.ctx.storage.get<AvailabilityHistory>('availability-history'),tick,result.healthy);
       // Persist before any email attempt. Storage failure cannot produce an
       // untracked email storm, and never affects the separate application.
       const candidates=[{channel:'availability' as const,state},{channel:'telemetry' as const,state:metrics.telemetry},{channel:'latency' as const,state:metrics.latency},{channel:'errors' as const,state:metrics.errors},{channel:'authentication' as const,state:metrics.authentication},{channel:'recovery' as const,state:metrics.recovery}];
@@ -42,7 +44,7 @@ export class Monitor {
       const pending=selected?.state.pending;
       const send=!!pending&&pending.nextAttemptAt<=now;
       if(send){pending!.attempts++;pending!.nextAttemptAt=now+Math.min(3600000,300000*2**Math.min(pending!.attempts-1,4));}
-      await this.ctx.storage.put({'state':state,'metrics-state':metrics});
+      await this.ctx.storage.put({'state':state,'metrics-state':metrics,'availability-history':history});
       if(send){
         let timer:ReturnType<typeof setTimeout>|undefined;
         try{
