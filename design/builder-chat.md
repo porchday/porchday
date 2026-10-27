@@ -152,7 +152,7 @@ The migration also widens `public.staff_users.roles` to allow `builder_chat`.
 | Limit | Value |
 | --- | --- |
 | Message length | 2,000 characters |
-| Messages per member | 20 per day, and one queued or in progress at a time |
+| Messages per member | 100 per day (rolling 24 hours), and one queued or in progress at a time |
 | Queue length | 20 messages for the whole service. Further messages are refused with "Codex is busy, try again later." |
 | Turn length | 10 minutes |
 

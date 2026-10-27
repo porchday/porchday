@@ -5,7 +5,7 @@ import {builderStatus,queueDetails,Disclosure,Exchange,type BuilderMessage,type 
 import {StaffBuilderChat} from '../src/StaffBuilderChat';
 
 const message=(overrides:Partial<BuilderMessage>={}):BuilderMessage=>({id:'m1',body:'Add a footer link',status:'answered',progress:null,reply:'Done.',commits:[],created_at:'2026-10-27T12:00:00Z',completed_at:'2026-10-27T12:01:00Z',...overrides});
-const state=(overrides:Partial<BuilderState>={}):BuilderState=>({paused:false,online:true,disclosure:{version:1,accepted:true},ahead:0,sent_today:0,limits:{message_length:2000,daily_messages:20},messages:[],...overrides});
+const state=(overrides:Partial<BuilderState>={}):BuilderState=>({paused:false,online:true,disclosure:{version:1,accepted:true},ahead:0,sent_today:0,limits:{message_length:2000,daily_messages:100},messages:[],...overrides});
 
 describe('builder chat status line',()=>{
  it('explains the current blocker and the known wait without claiming an ETA',()=>{

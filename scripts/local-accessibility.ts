@@ -87,7 +87,7 @@ try {
   let deferMember = false, releaseMember = () => {}, memberStarted = () => {};
   let memberGate = Promise.resolve();
   const invitationRequests: {email: string}[] = [];
-  const builder = {paused: false, online: true, activity: 'request_file', disclosure: {version: 1, accepted: false}, ahead: 0, sent_today: 0, limits: {message_length: 2000, daily_messages: 20}, messages: [] as any[]};
+  const builder = {paused: false, online: true, activity: 'request_file', disclosure: {version: 1, accepted: false}, ahead: 0, sent_today: 0, limits: {message_length: 2000, daily_messages: 100}, messages: [] as any[]};
   let builderPolls = 0;
   let invitationStarted!: () => void, releaseInvitation!: () => void;
   const invitationGate = new Promise<void>(resolve => { releaseInvitation = resolve; });

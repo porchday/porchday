@@ -115,9 +115,12 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   const second=await send(p,'another');
   expect(second.status).toBe(409);expect((await second.json()).error.code).toBe('IN_FLIGHT');
   await clearQueue();
-  await owner.query('INSERT INTO app.builder_chat_messages(member_id,body,status) SELECT $1,$2,$3 FROM generate_series(1,$4)',[p.id,'old','answered',BUILDER_CHAT.dailyMessages-1]);
+  await owner.query('INSERT INTO app.builder_chat_messages(member_id,body,status) SELECT $1,$2,$3 FROM generate_series(1,$4)',[p.id,'old','answered',98]);
+  expect((await (await member(p,'GET','')).json()).limits.daily_messages).toBe(100);
+  expect((await send(p,'message 100')).status).toBe(201);
+  await clearQueue();
   const limited=await send(p,'one too many');
-  expect(limited.status).toBe(429);expect((await limited.json()).error.code).toBe('DAILY_LIMIT');
+  expect(limited.status).toBe(429);expect((await limited.json()).error).toEqual({code:'DAILY_LIMIT',message:'You can send up to 100 builder chat messages a day. Please try again tomorrow.'});
  });
 
  it('limits the shared queue',async()=>{

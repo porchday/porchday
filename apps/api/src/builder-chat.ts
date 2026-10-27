@@ -11,7 +11,7 @@ import type { Env, Variables } from './types';
 export const BUILDER_CHAT = {
   disclosureVersion: 1,
   messageLength: 2000,
-  dailyMessages: 20,
+  dailyMessages: 100,
   queueLength: 20,
   turnSeconds: 600,
   onlineSeconds: 30,
@@ -28,7 +28,7 @@ const errors: Record<string, [number, string]> = {
   DISCLOSURE_REQUIRED: [409, 'Read and accept the builder chat notice first.'],
   INVALID_MESSAGE: [400, 'Write a message of up to 2,000 characters.'],
   IN_FLIGHT: [409, 'Wait for Codex to answer your current message before sending another.'],
-  DAILY_LIMIT: [429, 'You can send up to 20 builder chat messages a day. Please try again tomorrow.'],
+  DAILY_LIMIT: [429, `You can send up to ${BUILDER_CHAT.dailyMessages} builder chat messages a day. Please try again tomorrow.`],
   QUEUE_FULL: [429, 'Codex is busy, try again later.'],
   BUILDER_CHAT_PAUSED: [503, 'Builder chat is paused by the Porchday team.'],
 };
