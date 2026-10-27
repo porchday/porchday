@@ -37,36 +37,40 @@ export function createBridge(deps: Dependencies) {
     let before: string | null = null;
     try { before = deps.head(); } catch { deps.log(`turn ${message.id}: could not read HEAD; commits will not be recorded`); }
     const state = new TurnState();
-    let streaming = true, dirty = false, chain: Promise<void> = Promise.resolve();
+    let streaming = true, sending = false, pendingSend: Promise<void> = Promise.resolve();
     const send = () => {
-      chain = chain.then(async () => {
-        if (!streaming) return;
+      if (sending) return;
+      sending = true;
+      pendingSend = (async () => {
         try {
+          if (!streaming) { await deps.api.claim(false); return; }
           const result = await deps.api.progress(message.id, state.reply().text, state.progress);
           // The member lost access. Stop streaming but let Codex finish, so the
           // checkout is never left half edited.
           if (!result.continue) { streaming = false; deps.log(`turn ${message.id}: streaming stopped by the server`); }
         } catch (error) { deps.log(`progress ${message.id} failed: ${(error as Error).message}`); }
-      });
+        finally { sending = false; }
+      })();
     };
     // Send the latest state at most once per interval, including during a long
-    // command that produces no events.
-    const timer = setInterval(() => { if (dirty) { dirty = false; send(); } }, interval);
+    // command that produces no events. Skip ticks while a request is pending;
+    // never queue a backlog behind a slow API.
+    const timer = setInterval(send, interval);
     let result: RunResult;
     try {
       result = await deps.runTurn({
         prompt: frame(message, previousInterrupted), timeoutSeconds: turnSeconds,
-        onEvent: event => { state.apply(event); dirty = true; },
+        onEvent: event => state.apply(event),
       });
     } catch (error) {
       clearInterval(timer);
       deps.log(`turn ${message.id}: Codex could not start: ${(error as Error).message}`);
-      await chain;
+      await pendingSend;
       await finish(message.id, { status: 'failed', reply: 'Codex could not start on the builder machine. The Porchday team has been told.', commits: [], held_back: [] });
       return;
     }
     clearInterval(timer);
-    await chain;
+    await pendingSend;
     previousInterrupted = result.timedOut;
     let commits: string[] = [];
     if (before) try { commits = deps.turnCommits(before, message.id); } catch { deps.log(`turn ${message.id}: could not list commits`); }

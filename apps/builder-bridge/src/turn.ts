@@ -27,6 +27,26 @@ export function classify(command: string): Progress {
   return 'working';
 }
 
+// Leave room below the API's 65,536-byte body limit for commits and audit metadata.
+const MAX_REPLY_LENGTH = 20_000;
+const MAX_REPLY_JSON_BYTES = 48_000;
+const TRUNCATED = '\n\n[Reply truncated to fit builder chat.]';
+const jsonBytes = (text: string) => Buffer.byteLength(JSON.stringify(text), 'utf8');
+
+function boundReply(text: string, suffix: string) {
+  if (text.length <= MAX_REPLY_LENGTH && jsonBytes(text) <= MAX_REPLY_JSON_BYTES) return text;
+  const ending = TRUNCATED + (suffix ? '\n\n' + suffix : '');
+  const endingBytes = jsonBytes(ending) - 2;
+  let prefix = '', bytes = 2; // JSON string quotes.
+  for (const character of text) {
+    const size = jsonBytes(character) - 2;
+    if (prefix.length + character.length + ending.length > MAX_REPLY_LENGTH || bytes + size + endingBytes > MAX_REPLY_JSON_BYTES) break;
+    prefix += character;
+    bytes += size;
+  }
+  return prefix + ending;
+}
+
 type CodexEvent = { type?: string; item?: { type?: string; text?: string; command?: string }; error?: unknown; message?: unknown };
 
 /** Folds Codex `exec --json` events into what a member may see: Codex's own
@@ -48,6 +68,9 @@ export class TurnState {
   }
   /** The filtered reply and the secret patterns that were held back. */
   reply(suffix = '') {
-    return filterText([...this.messages.filter(Boolean), suffix].filter(Boolean).join('\n\n'));
+    const filtered = filterText([...this.messages.filter(Boolean), suffix].filter(Boolean).join('\n\n'));
+    // Filter the full text before truncation so a credential cut at the boundary
+    // cannot evade matching, and retain all audit pattern names.
+    return { ...filtered, text: boundReply(filtered.text, filterText(suffix).text) };
   }
 }
