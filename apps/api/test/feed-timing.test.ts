@@ -38,7 +38,7 @@ vi.mock('pg',()=>({Pool:class {
  async connect(){return {query:async(text:string)=>{
   if(text.startsWith('BEGIN')){fixture.trace.push('begin','actor');return {rows:[]};}
   if(text==='COMMIT'||text==='ROLLBACK'){fixture.trace.push(text.toLowerCase());return {rows:[]};}
-  fixture.trace.push('query');if(fixture.queryFailure)throw Error('private query failure');return {rows:[]};
+  fixture.trace.push('query');if(fixture.queryFailure)throw Error('private query failure');fixture.trace.push('commit');return [{rows:[]},{command:'COMMIT'}];
  },release:()=>{}};}
  async end(){fixture.trace.push('social_close');}
 }}));
@@ -142,7 +142,7 @@ test('authenticated me exposes only fixed numeric phases; denials expose none an
  const response=await request();expect(response.status).toBe(200);
  const header=response.headers.get('server-timing')!;
  const names=header.split(', ').map(value=>{expect(value).toMatch(/^[a-z0-9_]+;dur=[0-9]+$/);return value.split(';')[0];});
- expect(names).toEqual([...FEED_PHASES.filter(phase=>phase!=='social_actor'),'journal_r2','journal_db','worker']);
+ expect(names).toEqual([...FEED_PHASES.filter(phase=>phase!=='social_actor'&&phase!=='social_commit'),'journal_r2','journal_db','worker']);
  expect(header).not.toMatch(/private|secret|11111111|22222222|synthetic/);
  expect(points).toHaveLength(0);
  expect(response.headers.get('cache-control')).toBe('private, no-store');
