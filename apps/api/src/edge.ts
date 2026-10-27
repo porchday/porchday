@@ -1,5 +1,6 @@
 import {app} from './index';
 import type {Env} from './types';
+import {event,normalizedRoute} from './telemetry';
 
 /** Public requests retain the exact domain/security middleware at the edge.
  * API requests cross an internal service binding unchanged: the backend still
@@ -14,6 +15,8 @@ export default {
    try { return await env.API_BACKEND.fetch(request); }
    catch {
     // Never retry a potentially accepted write or expose binding exceptions.
+    event('error',{code:'request_failed'},env);
+    event('request',{route:normalizedRoute(path),method:request.method,status:503},env);
     return Response.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},
      {status:503,headers:{'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
    }
