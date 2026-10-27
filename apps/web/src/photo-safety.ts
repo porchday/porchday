@@ -1,6 +1,7 @@
 // File-picker hints only. Actual uploads are identified by their file signature.
 export const PHOTO_ACCEPT =
   "image/jpeg,image/pjpeg,image/jpg,image/mpo,.jpg,.jpeg,.jpe,.jfif,.jif,.jfi,.mpo,image/png,image/webp";
+export const PHOTO_SOURCE_MAX_BYTES = 50 * 1024 * 1024;
 
 export function photoSourceMime(bytes: Uint8Array) {
   if (bytes[0] === 0xff && bytes[1] === 0xd8) return "image/jpeg";
@@ -29,8 +30,8 @@ function primaryJpeg(bytes: Uint8Array, stripMetadata: boolean) {
     new Error(
       "This JPEG could not be read. Try exporting it as a standard JPEG or PNG.",
     );
-  if (bytes.length > 20 * 1024 * 1024)
-    throw new Error("This photo exceeds the 20 MB safety limit.");
+  if (bytes.length > PHOTO_SOURCE_MAX_BYTES)
+    throw new Error("Each source photo must be 50 MB or smaller.");
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8)
     throw invalid();
   let offset = 2,

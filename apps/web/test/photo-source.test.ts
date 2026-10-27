@@ -64,7 +64,7 @@ describe("source JPEG preflight", () => {
       withSegments(primary, segment(0xdc, "deferred")),
       withSegments(primary, segment(0xde, "hierarchical")),
       withSegments(primary, ...Array.from({ length: 4097 }, () => segment(0xfe, ""))),
-      new Uint8Array(20 * 1024 * 1024 + 1),
+      new Uint8Array(50 * 1024 * 1024 + 1),
     ])
       await expect(preparePhoto(new File([input], "photo.jpg", { type: "image/jpeg" }))).rejects.toThrow();
     expect(decode).not.toHaveBeenCalled();
@@ -110,6 +110,25 @@ function browser(width = 320, height = 240) {
 }
 
 describe("photo upload normalization", () => {
+  it("accepts a 50 MiB source inclusively and rejects one extra byte before reading or decoding", async () => {
+    const primary = jpeg(), input = new Uint8Array(50 * 1024 * 1024);
+    input.set(primary);
+    const { decode } = browser();
+    const result = await preparePhoto(new File([input], "large.jpg", { type: "image/jpeg" }));
+    expect(result).toMatchObject({ width: 320, height: 240 });
+    expect(new Uint8Array(await decode.mock.calls[0][0].arrayBuffer())).toEqual(primary);
+    expect(decode).toHaveBeenCalledOnce();
+    // The larger source allowance must not broaden received/archive limits.
+    expect(() => jpegDimensions(input)).toThrow(/20 MB/);
+    const oversized = new File([input, new Uint8Array(1)], "too-large.jpg", { type: "image/jpeg" });
+    const read = vi.spyOn(oversized, "arrayBuffer");
+    await expect(preparePhoto(oversized)).rejects.toThrow(/50 MB or smaller/);
+    expect(read).not.toHaveBeenCalled();
+    expect(decode).toHaveBeenCalledOnce();
+    const tooLarge = new Uint8Array(50 * 1024 * 1024 + 1);
+    tooLarge.set(primary);
+    expect(() => jpegSource(tooLarge)).toThrow(/50 MB or smaller/);
+  });
   it("accepts JPEG MIME aliases and empty/misleading MIME labels, decodes only the primary and writes a clean bounded JPEG", async () => {
     const primary = jpeg(),
       input = Uint8Array.from([...withSegments(primary, segment(0xe2, "MPF\0offsets")), ...jpeg()]);
