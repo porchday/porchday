@@ -130,6 +130,12 @@ try {
         }
         const reduced = await preparePhoto(new File([baseline], "photo.jpg"), 16);
         require(reduced.width === 16 && reduced.height === 12, "Thumbnail downscaling failed");
+        // A complete primary JPEG plus camera padding exercises the inclusive
+        // byte boundary without allocating a huge decoded image.
+        const maximumSource = new Uint8Array(50 * 1024 * 1024);
+        maximumSource.set(baseline);
+        const maximumPrepared = await preparePhoto(new File([maximumSource], "maximum.jpg", { type: "image/jpeg" }));
+        require(same(jpegDimensions(new Uint8Array(await maximumPrepared.blob.arrayBuffer())), { width: 32, height: 24 }), "Exactly 50 MiB must be accepted and normalized");
         for (const name of ["baseline", "exif-rotated", "mpf-multipicture"]) {
           const fixture = fixtures.find(fixture => fixture.name === name);
           const emoji = await prepareCustomEmoji(new File([sourceBytes(fixture)], "emoji.jfif"), "jpeg_fixture");
@@ -141,7 +147,7 @@ try {
         globalThis.createImageBitmap = () => { decoderCalls++; throw new Error("Decoder must not be reached"); };
         try {
           for (const [bytes, upload, expected] of [
-            [new Uint8Array(20 * 1024 * 1024 + 1), file => preparePhoto(file), /20 MB/],
+            [new Uint8Array(50 * 1024 * 1024 + 1), file => preparePhoto(file), /50 MB/],
             [new Uint8Array(5 * 1024 * 1024 + 1), file => prepareCustomEmoji(file, "oversized"), /5 MB/],
           ]) {
             let rejected = false;
@@ -166,7 +172,7 @@ try {
           }
           require(decoderCalls === 0, "Oversized input reached native decoder");
         } finally { globalThis.createImageBitmap = originalDecoder; }
-        return { rows, aliasChecks: 5, downscaleChecks: 1, emojiChecks: 3, predecodeLimitChecks: 4 };
+        return { rows, aliasChecks: 5, downscaleChecks: 1, inclusive50MiBChecks: 1, emojiChecks: 3, predecodeLimitChecks: 4 };
       }, fixtures);
       for (const row of result.rows) {
         if (row.outputBase64 && outputDirectory) {

@@ -44,6 +44,7 @@ import {
   jpegDimensions,
   jpegSource,
   PHOTO_ACCEPT,
+  PHOTO_SOURCE_MAX_BYTES,
   photoSourceMime,
   stripCanvasJpegMetadata,
   validatedPhoto,
@@ -157,8 +158,8 @@ function readObjectURL(blob: Blob) {
   });
 }
 export async function preparePhoto(file: File, maxDimension = 2400) {
-  if (file.size > 20 * 1024 * 1024)
-    throw new Error("Each source photo must be 20 MB or smaller.");
+  if (file.size > PHOTO_SOURCE_MAX_BYTES)
+    throw new Error("Each source photo must be 50 MB or smaller.");
   const bytes = new Uint8Array(await file.arrayBuffer()),
     mime = photoSourceMime(bytes),
     source = mime === "image/jpeg" ? jpegSource(bytes) : null;
