@@ -10,7 +10,7 @@ Let people participate in the same private social network while choosing who ope
 
 Keep the ordinary hosted experience unchanged: sign up, find people, accept requests, and read a chronological feed. No server selection during signup, federated username syntax, public server directory, or requirement to understand where a friend is hosted. People who want this capability can open **Settings → Advanced → Other servers**, enter a server address, then find or invite a particular person there. A normal invitation link should make even that setup unnecessary for its recipient.
 
-The proposed first target is interoperability among Porchday-compatible servers, including personal and small community servers. Compatibility with Mastodon or other existing networks is a separate decision. These are working recommendations awaiting discussion, not settled requirements.
+Confirmed scope for this proposal: support both personal and small community servers, and target interoperability among Porchday-compatible servers first. Compatibility with Mastodon or other existing networks is outside the initial target. Protocol selection and the remaining tradeoffs below are still open.
 
 The difficult part is preserving privacy and lifecycle behavior across independent operators. The current application can atomically check relationships, device keys and publication recipients in one database. A distributed system cannot simply copy that logic into an outbound queue and retain the same guarantees. Federation needs an explicit authorization, identity and failure model before implementation.
 
@@ -177,7 +177,7 @@ Evaluate two cases separately: a cooperative move with the old home online, and 
 
 ## Work plan and decision gates
 
-1. **Agree on product rules.** Review the default UX, remote disclosure, personal/community scope and treatment of untrusted/offline hosts. Keep ordinary hosted signup and posting unchanged. Decide whether connecting existing networks is an explicit requirement.
+1. **Agree on remaining product rules.** Personal plus small community servers and Porchday-compatible interoperability first are confirmed. Review the default UX, remote disclosure and treatment of untrusted/offline hosts. Keep ordinary hosted signup and posting unchanged; existing-network compatibility is outside the initial target.
 2. **Write a threat model and evaluate protocol reuse.** Exercise identical flows with the candidate approaches above. Record dependencies, operations, storage/bandwidth, key/audience semantics and unsupported features. Select a transport/profile only after the comparison.
 3. **Build a disposable two-server experiment.** Synthetic accounts only: discover an explicit peer, accept a mutual request, send one encrypted photo post and a comment/reaction, remove a friend, expire/delete content, and recover after a queue interruption. No production federation or relaxed current safeguards.
 4. **Specify and test the selected profile.** Publish version negotiation, state machines, error semantics, identity/key lifecycle, required cryptographic bindings, sample messages and positive/negative conformance vectors. Add a second independently implemented peer; two copies of the same server are insufficient interoperability evidence.
@@ -190,8 +190,6 @@ This is future protocol research, not a new blocker for the current source publi
 
 ## Questions for the next revision
 
-- Is the first supported operator a single person, a family/community, or both? Recommendation: both in the model; keep initial deployment and quotas small.
-- Is connecting existing ActivityPub networks a first-version requirement? Recommendation: compatible private Porchday servers first, with no plaintext bridge.
 - Should hosted members explicitly opt into cross-server sharing once, or at the first relevant action? Recommendation: explain it before the first remote friendship or other remote sharing action, including thread/group participation, with continuing control in Advanced.
 - How much offline availability should be traded for fresh permission checks? Recommendation: authoritative reads first, then measure whether bounded replica caching is worthwhile.
 - Can we commit to identity-preserving moves in the first interoperable version, or specify continuity first and implement moves later? Recommendation: design for continuity now; prove cooperative migration after basic sharing.
