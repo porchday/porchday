@@ -42,6 +42,26 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); for (const name of ['045_emoji_library.sql','046_connection_history.sql','047_independent_connection_labels.sql']) await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
+    it('includes authorized author handles on walls, post details and group posts', async () => {
+        const author = await person(), viewer = await person(), outsider = await person();
+        await connection(author, viewer);
+        const [{handle}] = await sql`select handle from app.profiles where member_id=${author.id}`;
+        const envelope = await seal(author, {text: 'Wall identity'});
+        expect((await request(author.id, '/posts', 'POST', {envelope})).status).toBe(201);
+        const expected = {id: envelope.context.id, author_id: author.id, author_handle: handle};
+        expect((await request(viewer.id, '/walls/' + author.id)).data.items).toEqual([expect.objectContaining(expected)]);
+        expect((await request(viewer.id, '/posts/' + envelope.context.id)).data.post).toMatchObject(expected);
+        expect((await request(outsider.id, '/walls/' + author.id)).data.items).toEqual([]);
+        expect((await request(outsider.id, '/posts/' + envelope.context.id)).status).toBe(404);
+        const group = await seal(author, {name: 'Identity test'}, {kind: 'group', audience: 'only_me'});
+        expect((await request(author.id, '/groups', 'POST', {envelope: group})).status).toBe(201);
+        const groupPost = await seal(author, {text: 'Group identity'}, {audience: 'group', groupId: group.context.id});
+        expect((await request(author.id, '/posts', 'POST', {envelope: groupPost})).status).toBe(201);
+        expect((await request(author.id, '/groups/' + group.context.id + '/posts')).data.items).toEqual([
+            expect.objectContaining({id: groupPost.context.id, author_handle: handle})
+        ]);
+        expect((await request(viewer.id, '/groups/' + group.context.id + '/posts')).data.items).toEqual([]);
+    }, 60000);
     it('keeps labels private and directional across requests, acceptance, audiences and immediate changes', async()=>{
         const a=await person(),b=await person(),outsider=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
