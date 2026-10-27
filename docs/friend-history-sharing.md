@@ -11,6 +11,8 @@ When sending or accepting a friend/family request, each member chooses how to sh
 
 The choices are independent. Selecting full history for someone allows that person to receive your eligible earlier posts; it does not select how they share with you. Sending a request records a preference but grants no access until it is accepted.
 
+Friend/family labels are also [independent choices](connection-labels.md). Your label controls which of your friends-only or family-only posts are eligible for that person, alongside your history preference. Their label for you does not grant access to your posts. Changing a label revokes server access to your posts in the category being left; if you later return to that category with full history enabled, your unlocked device may share eligible posts again through the authorized history flow.
+
 Connections also provides a history-sharing setting for an existing connection. Existing connections and requests from older clients retain future-only behavior until their author opts in. Missing API fields are treated as future-only; the updated UI explicitly submits its chosen value. Changing full history to future-only stops further catch-up and does not take back posts already shared. Removing or blocking a connection still revokes current service access; a later friendship requires new choices and fresh grants.
 
 “Full history” means live posts on that author's wall whose selected audience currently includes the other person. It does not include Only me posts, expired/deleted content, family-only posts shared with a friend, friends-only posts shared with family, or posts in groups they cannot access. Group history is a separate policy.

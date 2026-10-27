@@ -39,9 +39,10 @@ export function Connections() {
     pendingFocus.current.clear();
   }, []);
   const [handle, setHandle] = useState("");
-  const [kind, setKind] = useState("friend");
+  const [kind, setKind] = useState<"friend" | "family">("friend");
   const [history, setHistory] = useState<"full" | "future">("full");
   const [incomingHistory, setIncomingHistory] = useState<Record<string, "full" | "future">>({});
+  const [incomingKind, setIncomingKind] = useState<Record<string, "friend" | "family">>({});
   const [sharingConnection, setSharingConnection] = useState<{ id: string; name: string; history: "full" | "future" } | null>(null);
   const [filter, setFilter] = useState("all");
   const [mutes, setMutes] = useState<string[]>([]);
@@ -71,7 +72,7 @@ export function Connections() {
       document.addEventListener("keydown", cancelFocus);
       document.addEventListener("pointerdown", cancelFocus);
       try {
-        await post(`/connections/requests/${id}/${decision}`, decision === "accept" ? { history: incomingHistory[id] || "full" } : {});
+        await post(`/connections/requests/${id}/${decision}`, decision === "accept" ? { kind: incomingKind[id] || "friend", history: incomingHistory[id] || "full" } : {});
         await refresh();
         if (decision === "accept") window.dispatchEvent(new Event("porchday:connections-changed"));
         await new Promise<void>((resolve) => requestAnimationFrame(() => {
@@ -125,13 +126,7 @@ export function Connections() {
             maxLength={25}
             required
           />
-          <label className="field">
-            <span>Connection</span>
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="friend">Friend</option>
-              <option value="family">Family</option>
-            </select>
-          </label>
+          <ConnectionKindChoice value={kind} onChange={setKind} disabled={action.busy || vault.member.status === "restricted"} />
           <HistoryChoice value={history} onChange={setHistory} disabled={action.busy || vault.member.status === "restricted"} />
           <Button
             variant="primary"
@@ -144,8 +139,9 @@ export function Connections() {
           </Button>
         </form>
         <p className="small-copy">
-          Your handle is <strong>@{vault.member.handle}</strong>. Family
-          includes chosen family. This label is agreed by both people.
+          Your handle is <strong>@{vault.member.handle}</strong>. Your label
+          controls whether this person can see your friends-only or family-only
+          posts. Each person chooses their own label.
         </p>
         <Alert>{action.error}</Alert>
         <Alert success>{action.notice}</Alert>
@@ -155,8 +151,8 @@ export function Connections() {
         <section className="panel">
           <h2>Connection requests</h2>
           <p>
-            Choose whether to share your earlier posts with each person. Their
-            choice for their own posts is separate. Save
+            Choose your label and whether to share your earlier posts with each
+            person. Their choices for their own posts are separate. Save
             your profile again to share its details and photos with new
             connections.
           </p>
@@ -166,18 +162,18 @@ export function Connections() {
                 <Avatar name={label(r.sender)} />
                 <div className="member-info">
                   <strong>@{label(r.sender)}</strong>
-                  <small>
-                    Wants to connect as{" "}
-                    {r.kind === "family" ? "family" : "a friend"}
-                  </small>
+                  <small>Wants to connect</small>
                 </div>
-                <HistoryChoice value={incomingHistory[r.id] || "full"} onChange={value => setIncomingHistory(previous => ({ ...previous, [r.id]: value }))} disabled={action.busy || vault.member.status === "restricted"} />
+                <div className="history-choice">
+                  <ConnectionKindChoice value={incomingKind[r.id] || "friend"} onChange={value => setIncomingKind(previous => ({ ...previous, [r.id]: value }))} disabled={action.busy || vault.member.status === "restricted"} />
+                  <HistoryChoice value={incomingHistory[r.id] || "full"} onChange={value => setIncomingHistory(previous => ({ ...previous, [r.id]: value }))} disabled={action.busy || vault.member.status === "restricted"} />
+                </div>
                 <div className="button-row">
                   <Button
                     variant="primary compact"
                     aria-label={`Accept connection request from @${label(r.sender)}`}
                     busy={action.busy}
-                    disabled={vault.member.status === "restricted"}
+                    disabled={list.length >= 300 || vault.member.status === "restricted"}
                     onClick={() =>
                       respond(r.id, "accept", `Connected with @${label(r.sender)}.`)
                     }
@@ -237,11 +233,8 @@ export function Connections() {
                     <a className="member-info" href={`/app/wall/${other}`}>
                       <strong>@{label(other)}</strong>
                       <small>
-                        {r.kind === "family" ? "Family" : "Friend"}
+                        Your label: {r.kind === "family" ? "Family" : "Friend"}
                         {mutes.includes(other) ? " · muted in Home" : ""}
-                        {r.proposed_kind
-                          ? ` · ${r.proposed_kind} label awaiting agreement`
-                          : ""}
                       </small>
                     </a>
                     <details className="row-options">
@@ -287,24 +280,21 @@ export function Connections() {
                             : "Mute in Home"}
                         </button>
                         <button
-                          disabled={vault.member.status === "restricted"}
+                          disabled={action.busy || vault.member.status === "restricted"}
                           onClick={() =>
                             action.run(async () => {
                               await request(`/connections/${r.id}/kind`, {
                                 method: "PUT",
                                 body: JSON.stringify({
-                                  kind:
-                                    r.proposed_kind ||
-                                    (r.kind === "friend" ? "family" : "friend"),
+                                  kind: r.kind === "friend" ? "family" : "friend",
                                 }),
                               });
                               await refresh();
-                            }, "Changing the label needs agreement from both people.")
+                              window.dispatchEvent(new Event("porchday:connections-changed"));
+                            }, "Your label was updated.")
                           }
                         >
-                          {r.proposed_kind
-                            ? "Agree to label change"
-                            : `Ask to label as ${r.kind === "friend" ? "family" : "friend"}`}
+                          Label as {r.kind === "friend" ? "family" : "friend"}
                         </button>
                         <button
                           disabled={vault.member.status === "restricted"}
@@ -355,7 +345,7 @@ export function Connections() {
               <Avatar name={label(r.recipient)} />
               <div className="member-info">
                 <strong>@{label(r.recipient)}</strong>
-                <small>Request pending</small>
+                <small>Request pending · Your label: {r.kind === "family" ? "Family" : "Friend"}</small>
               </div>
               <Button
                 variant="quiet compact"
@@ -411,9 +401,18 @@ export function Connections() {
 export function HistoryChoice({ value, onChange, disabled }: { value: "full" | "future"; onChange: (value: "full" | "future") => void; disabled?: boolean }) {
   return <label className="field history-choice">
     <span>Share your posts</span>
-    <select value={value} disabled={disabled} onChange={event => onChange(event.target.value as "full" | "future")}>
+    <select aria-label="Share your posts" value={value} disabled={disabled} onChange={event => onChange(event.target.value as "full" | "future")}>
       <option value="full">Share full history (recommended)</option>
       <option value="future">Only share new posts</option>
+    </select>
+  </label>;
+}
+export function ConnectionKindChoice({ value, onChange, disabled }: { value: "friend" | "family"; onChange: (value: "friend" | "family") => void; disabled?: boolean }) {
+  return <label className="field">
+    <span>Your label</span>
+    <select aria-label="Your label" value={value} disabled={disabled} onChange={event => onChange(event.target.value as "friend" | "family")}>
+      <option value="friend">Friend</option>
+      <option value="family">Family</option>
     </select>
   </label>;
 }
