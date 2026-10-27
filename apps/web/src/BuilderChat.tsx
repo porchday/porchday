@@ -16,6 +16,7 @@ export type BuilderMessage = {
 export type BuilderState = {
   paused: boolean;
   online: boolean;
+  activity?: "unknown" | "idle" | "request_file" | "other_work" | "chat" | "offline";
   disclosure: { version: number; accepted: boolean };
   ahead: number;
   sent_today: number;
@@ -36,6 +37,9 @@ export function builderStatus(state: BuilderState): string {
   if (pending?.status === "working") return progressText[pending.progress || "working"];
   if (state.paused) return "Builder chat is paused by the Porchday team.";
   if (pending && !state.online) return "Codex is offline right now. Your message will be answered when Codex is back.";
+  if (pending && state.activity === "request_file") return "Codex is handling a request-file task. Your message is queued.";
+  if (pending && state.activity === "other_work") return "Codex is handling another builder task. Your message is queued.";
+  if (pending && state.activity === "chat") return "Codex is answering another builder-chat message. Your message is queued.";
   if (pending)
     return state.ahead > 0
       ? `Waiting for Codex. ${state.ahead} ${state.ahead === 1 ? "message" : "messages"} ahead of yours.`
@@ -43,6 +47,16 @@ export function builderStatus(state: BuilderState): string {
   return state.online
     ? "Codex is online."
     : "Codex is offline right now. You can send a message and it will be answered when Codex is back.";
+}
+
+/** Elapsed time is known; remaining time depends on the task and is not estimated. */
+export function queueDetails(state: BuilderState, now = Date.now()): string | null {
+  const pending = state.messages.find(m => m.status === "queued");
+  if (!pending) return null;
+  const elapsed = Math.max(0, now - Date.parse(pending.created_at));
+  const minutes = Number.isFinite(elapsed) ? Math.floor(elapsed / 60_000) : 0;
+  const waited = minutes < 1 ? "less than a minute" : minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  return `Position ${state.ahead + 1} in the chat queue · Waiting ${waited}. Tasks run one at a time; completion time varies.`;
 }
 
 /** Shows the navigation item only to allowlisted members; any error hides it. */
@@ -149,7 +163,7 @@ export function BuilderChat() {
       setState(next);
       // Announce state changes, not every streamed word.
       const latest = next.messages.at(-1);
-      const key = latest ? { id: latest.id, status: latest.status + (latest.progress || "") } : null;
+      const key = latest ? { id: latest.id, status: latest.status + (latest.progress || "") + (latest.status === "queued" ? JSON.stringify([next.activity, next.ahead, next.online, next.paused]) : "") } : null;
       if (previous.current && key && (previous.current.id !== key.id || previous.current.status !== key.status)) {
         setAnnouncement(latest!.status === "answered" ? "Codex replied: " + latest!.reply : builderStatus(next));
       }
@@ -206,6 +220,7 @@ export function BuilderChat() {
             <Icon name={state.paused ? "lock" : "comment"} size={16} />
             {builderStatus(state)}
           </p>
+          {queueDetails(state) && <p className="muted">{queueDetails(state)}</p>}
           <div className="sr-only builder-announcement" role="status" aria-live="polite">
             {announcement}
           </div>

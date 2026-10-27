@@ -49,7 +49,7 @@ const disclosureInput = z.object({ version: z.literal(BUILDER_CHAT.disclosureVer
 
 async function state(c: C) {
   const [row] = await withMember(c.env, c.get('memberId'), db => db`select app.builder_chat_state() as state`);
-  return row.state as null | { disclosure_version: number | null; bridge_seen_at: string | null; ahead: number; sent_today: number; messages: unknown[] };
+  return row.state as null | { disclosure_version: number | null; bridge_seen_at: string | null; bridge_activity?: string; ahead: number; sent_today: number; messages: unknown[] };
 }
 
 /** Mounted under /api/v1 after member authentication. Members who are not on
@@ -71,6 +71,7 @@ export function createBuilderChatRoutes() {
     if (!value) return fail(c, 'NOT_FOUND');
     const seen = value.bridge_seen_at ? Date.parse(value.bridge_seen_at) : 0;
     return c.json({
+      activity: Date.now() - seen < BUILDER_CHAT.onlineSeconds * 1000 ? value.bridge_activity ?? 'unknown' : 'offline',
       paused: builderChatPaused(c.env),
       online: Date.now() - seen < BUILDER_CHAT.onlineSeconds * 1000,
       disclosure: { version: BUILDER_CHAT.disclosureVersion, accepted: (value.disclosure_version ?? 0) >= BUILDER_CHAT.disclosureVersion },
@@ -126,7 +127,7 @@ async function jobs<T>(env: Env, work: (sql: postgres.Sql) => Promise<T>) {
   try { return await work(sql); } finally { await sql.end({ timeout: 1 }); }
 }
 const commitHash = z.string().regex(/^[0-9a-f]{7,40}$/);
-const claimInput = z.object({ take: z.boolean() }).strict();
+const claimInput = z.object({ take: z.boolean(), waiting_on: z.enum(['request_file', 'other_work']).default('other_work') }).strict();
 const progressInput = z.object({ reply: z.string().max(20000), progress: z.enum(PROGRESS).nullable() }).strict();
 const finishInput = z.object({
   status: z.enum(['answered', 'timed_out', 'failed']),
@@ -148,9 +149,9 @@ export function createBuilderBridgeRoutes() {
   app.get('/status', c => c.json({ paused: builderChatPaused(c.env), environment: c.env.ENVIRONMENT }));
   // {take:false} only records that the bridge is connected.
   app.post('/claim', async c => {
-    const { take } = claimInput.parse(await c.req.json());
+    const { take, waiting_on } = claimInput.parse(await c.req.json());
     const paused = builderChatPaused(c.env);
-    const [row] = await jobs(c.env, sql => sql`select app.builder_chat_claim(${BUILDER_CHAT.turnSeconds},${take && !paused}) as message`);
+    const [row] = await jobs(c.env, sql => sql`select app.builder_chat_poll(${BUILDER_CHAT.turnSeconds},${take && !paused},${waiting_on}) as message`);
     return c.json({ paused, message: row.message ?? null, turn_seconds: BUILDER_CHAT.turnSeconds });
   });
   app.post('/messages/:id/progress', async c => {
