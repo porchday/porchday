@@ -6,7 +6,7 @@ import UIKit
     func testRepeatedAuthorsShareAnImageAndClearForcesReload() async throws {
         let cache = ProfileAvatarCache(), image = UIImage()
         var calls = 0
-        let load = { @MainActor () async throws -> (UIImage?, Date) in calls += 1; return (image, .distantFuture) }
+        let load: @MainActor @Sendable () async throws -> (UIImage?, Date) = { calls += 1; return (image, .distantFuture) }
         let first = try await cache.image(for: "member:device:author", load: load)
         let second = try await cache.image(for: "member:device:author", load: load)
         XCTAssertTrue(first?.image === second?.image)
