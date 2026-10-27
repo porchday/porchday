@@ -4,7 +4,10 @@ import { ApiError, get, post, del, items, localDate, type Json } from "./api";
 import { Alert, Button, Empty, Field, Icon, Loading, Logo, useAction } from "./ui";
 import { useOptionalVault, Fingerprint } from "./vault";
 import { recoveryReviewNotice, reviewValidation, reviewUnconfirmed } from "./staff-review";
-type StaffIdentity = { subject: string; email: string; roles: ("recovery" | "moderation")[] };
+import { StaffBuilderChat } from "./StaffBuilderChat";
+type StaffIdentity = { subject: string; email: string; roles: ("recovery" | "moderation" | "builder_chat")[] };
+type ReviewRole = "recovery" | "moderation";
+const reviewRoles = (roles: StaffIdentity["roles"]) => roles.filter((role): role is ReviewRole => role !== "builder_chat");
 
 export function StaffEntry() {
   const [identity, setIdentity] = useState<StaffIdentity | null>(null);
@@ -13,7 +16,7 @@ export function StaffEntry() {
     setIdentity(null);
     const value = await get<StaffIdentity>("/api/staff/identity");
     if (!value || typeof value.subject !== "string" || typeof value.email !== "string" ||
-        !Array.isArray(value.roles) || value.roles.some(role => !["recovery", "moderation"].includes(role)))
+        !Array.isArray(value.roles) || value.roles.some(role => !["recovery", "moderation", "builder_chat"].includes(role)))
       throw new Error("Staff sign-in could not be verified. Reload this page to sign in again.");
     setIdentity(value);
   }
@@ -36,17 +39,18 @@ export function StaffEntry() {
         <Button variant="outline" onClick={() => window.location.assign("/cdn-cgi/access/logout")}>Sign out of staff access</Button>
       </>}
     </section>
-    {!!identity?.roles.length && <StaffConsole roles={identity.roles} onAccessLost={() => {
+    {!!identity && reviewRoles(identity.roles).length > 0 && <StaffConsole roles={reviewRoles(identity.roles)} onAccessLost={() => {
       setIdentity(null);
       action.setError("Staff access could not be verified. Sign in through Cloudflare Access again, or ask an operator to check your authorized role.");
     }} />}
+    {identity?.roles.includes("builder_chat") && <StaffBuilderChat />}
   </main>;
 }
 
-export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: StaffIdentity["roles"]; initialTab?: string; onAccessLost?: () => void } = {}) {
+export function StaffConsole({ roles, initialTab, onAccessLost }: { roles?: ReviewRole[]; initialTab?: string; onAccessLost?: () => void } = {}) {
   const vault = useOptionalVault();
   const availableTabs = [["recovery", "Account recovery"], ["moderation", "Community reports"]]
-    .filter(([role]) => !roles || roles.includes(role as StaffIdentity["roles"][number]));
+    .filter(([role]) => !roles || roles.includes(role as ReviewRole));
   const [tab, setTab] = useState(initialTab || availableTabs[0]?.[0] || "recovery");
   const [rows, setRows] = useState<Json[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);

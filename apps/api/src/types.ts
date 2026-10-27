@@ -22,6 +22,9 @@ export interface Env {
   CONTENT_WRITES_PAUSED?: string;
   MEDIA_UPLOADS_PAUSED?: string;
   SOCIAL_INVITATIONS_PAUSED?: string;
+  /** Builder chat stays paused unless this is exactly 'false'. */
+  BUILDER_CHAT_PAUSED?: string;
+  BUILDER_BRIDGE_TOKEN?: string;
   OPERATIONS_HEALTH_TOKEN?: string;
   STAFF_ACCESS_ISSUER?: string;
   STAFF_ACCESS_AUDIENCE?: string;
@@ -41,5 +44,5 @@ export interface Variables {
   requestId: string;
   staffSubject: string;
   staffEmail: string;
-  staffRoles: ('recovery' | 'moderation')[];
+  staffRoles: ('recovery' | 'moderation' | 'builder_chat')[];
 }

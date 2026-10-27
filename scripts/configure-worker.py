@@ -41,6 +41,10 @@ for flag in ['CONTENT_WRITES_PAUSED','MEDIA_UPLOADS_PAUSED','SOCIAL_INVITATIONS_
  if type(value) is not bool:
   raise SystemExit(flag.lower()+' must be a JSON boolean in infra/resources.json.')
  base['vars'][flag]='true' if value else 'false'
+# Builder chat ships paused; only an explicit reviewed false opens it.
+builder_paused=env.get('builder_chat_paused',True)
+if type(builder_paused) is not bool:raise SystemExit('builder_chat_paused must be a JSON boolean in infra/resources.json.')
+base['vars']['BUILDER_CHAT_PAUSED']='true' if builder_paused else 'false'
 base['hyperdrive']=[{'binding':'HYPERDRIVE_'+r.upper(),'id':env['hyperdrive_'+r]} for r in ['auth','social','jobs']]
 base['r2_buckets']=[{'binding':'MEDIA','bucket_name':env['bucket']},{'binding':'RECOVERY_JOURNAL','bucket_name':env['recovery_journal_bucket']}]
 base['vars']['MEDIA_BACKUP_ENABLED']='false'

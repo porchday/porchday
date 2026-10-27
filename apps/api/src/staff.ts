@@ -3,7 +3,7 @@ import {createMiddleware} from 'hono/factory';
 import {authPool} from './auth';
 import type {Env, Variables} from './types';
 
-export type StaffRole = 'recovery' | 'moderation';
+export type StaffRole = 'recovery' | 'moderation' | 'builder_chat';
 const keySets = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
 
 /** The assertion is verified at the origin too, including when workers.dev is used. */
@@ -35,7 +35,7 @@ function staffMiddleware(role?: StaffRole) {
     const pool = authPool(c.env);
     try {
       const {rows} = await pool.query('SELECT roles FROM public.staff_users WHERE subject=$1 AND lower(email)=$2 AND active', [identity.subject, identity.email]);
-      const roles: StaffRole[] = (rows[0]?.roles || []).filter((value: unknown): value is StaffRole => value==='recovery'||value==='moderation');
+      const roles: StaffRole[] = (rows[0]?.roles || []).filter((value: unknown): value is StaffRole => value==='recovery'||value==='moderation'||value==='builder_chat');
       if (role && !roles.includes(role)) return c.json({error: {code: 'STAFF_ROLE_REQUIRED'}}, 403);
       c.set('staffSubject', identity.subject); c.set('staffEmail', identity.email); c.set('staffRoles', roles);
     } finally { c.executionCtx.waitUntil(pool.end()); }
