@@ -1,9 +1,10 @@
 # Durable session revocation without a global unfinished operation
 
-Status: draft implementation, not deployed. Member and appeal middleware now
-checks denials, including prepared authentication. Better Auth HTTP endpoints and
-push delivery remain unintegrated. No writer, cleanup job or rollout flag is
-connected. This does not resolve #1, #55 or the 99.99% objective.
+Status: draft implementation, not deployed. A request-scoped Better Auth hook now
+checks denials at verified session lookup, covering direct SDK calls, member and
+appeal middleware (including prepared authentication), and endpoint-internal
+lookups. Push delivery remains unintegrated. No writer, cleanup job or rollout
+flag is connected. This does not resolve #1, #55 or the 99.99% objective.
 It is the first scoped application of a write-ahead denial model; other privacy
 mutations retain the existing independent journal and quarantine behavior.
 
@@ -27,8 +28,12 @@ The current implementation in `apps/api/src/session-denial.ts` provides the
 conditional immutable write, reconciliation after a lost acknowledgement,
 exact-record lookup and a runtime reader. Hosted readers fail closed when the
 recovery binding is missing; unbound development retains the existing journal
-exception. There is no flag that disables reads of published denials. Records contain the internal session UUID so a future
-bounded sweep can delete the exact SQL row; they never contain bearer tokens,
+exception. There is no flag that disables reads of published denials. A two-second
+read deadline includes the response body and fails closed. The private R2 binding
+does not cancel a stalled read; its late completion cannot change the returned
+verdict. This deadline does not apply to writes or prove a write failed. Hosted
+latency acceptance remains required. Records contain the internal session UUID
+so a future bounded sweep can delete the exact SQL row; they never contain bearer tokens,
 cookies, email addresses or content. Keys use a domain-separated hash. The
 caller must obtain the ID from verified server-side session authorization, never
 from a request body. Each environment uses its own configured recovery bucket.
@@ -46,12 +51,19 @@ from a request body. Each environment uses its own configured recovery bucket.
 | Denial lookup fails or is malformed | Authorization unknown | Fail closed for that check. Do not substitute cached permission or overwrite conflicting data. |
 
 The storage test models SQL rows independently from the denial store. Additional
-member/appeal HTTP middleware tests cover missing bindings, failed reads, corrupt
-records, separate sessions and prepared authentication. A disposable PostgreSQL
-test uses the real auth SDK and restricted role: it leaves a denied session row
-present, then deletes and recreates that row, verifying HTTP rejection and another
-session's continued access. This is not full database restoration, Better Auth
-endpoint, push-provider or hosted-failure acceptance. No production failure has
+disposable PostgreSQL tests use the real auth SDK and restricted role to cover
+missing bindings, failed reads, corrupt records, separate sessions and prepared
+authentication. They leave a denied session row present, then delete and
+recreate that row, verifying HTTP rejection and another
+session's continued access. SDK and application auth-router checks also exercise
+get-session, list-sessions, password changes, MFA enable, optional-session email
+verification, and successful fresh credential login with the denied old cookie.
+The SDK hook wraps only `findSession` in the request-local context, not the shared
+adapter; it does not rewrite cookies or cache authorization. Multi-session is not
+an enabled plugin and must not be enabled without auditing its separate bulk
+lookup path. Cookie caching must remain disabled. Remaining token/MFA completion,
+concurrency, push-provider and hosted-failure scenarios still require acceptance.
+These tests are not a full database restoration drill. No production failure has
 been induced for this design.
 
 ## Reader coverage required before any writer

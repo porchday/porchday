@@ -3,9 +3,10 @@ import {randomUUID} from 'node:crypto';
 import {readdir,readFile} from 'node:fs/promises';
 import {Pool} from 'pg';
 import {serializeSignedCookie} from 'better-call';
+import {hashPassword} from 'better-auth/crypto';
 import {Hono} from 'hono';
 import {createAuth} from '../src/auth';
-import {requireMember,requireAppealMember} from '../src/session';
+import {prepareMemberAuth,requireMember,requireAppealMember} from '../src/session';
 import {authRoutes} from '../src/auth-routes';
 import {persistSessionDenial} from '../src/session-denial';
 import type {Env,Variables} from '../src/types';
@@ -106,6 +107,8 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
   const actor=await person(),pending:Promise<unknown>[]=[];
   const context={waitUntil(p:Promise<unknown>){pending.push(p);},passThroughOnException(){},props:{}} as ExecutionContext;
   const app=new Hono<{Bindings:Env;Variables:Variables}>();
+  app.use('*',prepareMemberAuth);
+  app.get('/api/v1/me',requireMember,c=>c.json({id:c.get('sessionId')}));
   app.get('/api/v1/feed',requireMember,c=>c.json({memberId:c.get('memberId'),authTime:c.get('authTime')}));
   app.get('/api/v1/me',requireMember,c=>c.json({memberId:c.get('memberId')}));
   app.get('/appeals',requireAppealMember,c=>c.json({memberId:c.get('memberId')}));
@@ -135,6 +138,8 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
    put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};}};
   const guardedEnv={...env,RECOVERY_JOURNAL:store} as unknown as Env;
   const app=new Hono<{Bindings:Env;Variables:Variables}>();
+  app.use('*',prepareMemberAuth);
+  app.get('/api/v1/me',requireMember,c=>c.json({id:c.get('sessionId')}));
   app.get('/api/v1/feed',requireMember,c=>c.json({id:c.get('sessionId')}));
   app.get('/appeals',requireAppealMember,c=>c.json({id:c.get('sessionId')}));
   const context={waitUntil:(p:Promise<unknown>)=>pending.push(p)} as ExecutionContext;
@@ -146,12 +151,83 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
   await persistSessionDenial(store,actor.sessionId);
   // Publication followed by a process loss leaves the real SQL row untouched.
   expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(1);
-  for(const path of ['/api/v1/feed','/appeals']){
+  for(const path of ['/api/v1/me','/api/v1/feed','/appeals']){
    expect((await call(path)).status).toBe(401);expect((await call(path,other.cookie)).status).toBe(200);
   }
   await owner.query('DELETE FROM public.auth_session WHERE id=$1',[actor.sessionId]);
   await owner.query(`INSERT INTO public.auth_session(id,"expiresAt",token,"userId") VALUES($1,now()+interval '7 days',$2,$3)`,[actor.sessionId,actor.token,actor.memberId]);
-  for(const path of ['/api/v1/feed','/appeals'])expect((await call(path)).status).toBe(401);
+  for(const path of ['/api/v1/me','/api/v1/feed','/appeals'])expect((await call(path)).status).toBe(401);
+ });
+
+ it('enforces denials inside SDK endpoints and permits a fresh credential login with the denied cookie',async()=>{
+  const actor=await person(),other=await person(),{pool}=runtimePool(),records=new Map<string,string>();
+  let reads=0,fail=false;
+  const store={get:async(key:string)=>{reads++;if(fail)throw Error('private provider error');return records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null;},
+   put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};}};
+  const guardedEnv={...env,RECOVERY_JOURNAL:store} as unknown as Env,auth=createAuth(guardedEnv,pool);
+  const originalAdapter=(await auth.$context).internalAdapter;
+  const call=(path:string,body?:unknown,cookie=actor.cookie)=>auth.handler(new Request(env.APP_URL+'/api/auth/'+path,{method:body?'POST':'GET',headers:{cookie,Origin:env.APP_URL,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}));
+  expect((await auth.api.getSession({headers:actor.headers}))?.session.id).toBe(actor.sessionId);
+  expect(reads).toBe(1);
+  await persistSessionDenial(store,actor.sessionId);
+  expect(await auth.api.getSession({headers:actor.headers})).toBeNull();
+  expect(await(await call('get-session')).json()).toBeNull();
+  for(const [path,body] of [['list-sessions',undefined],['change-password',{currentPassword:'old-password',newPassword:'synthetic-new-password'}],['two-factor/enable',{password:'synthetic-password'}]] as const)
+   expect((await call(path,body)).status).toBe(401);
+  expect((await auth.api.getSession({headers:other.headers}))?.session.id).toBe(other.sessionId);
+  // Optional-session email verification must take the anonymous branch for a
+  // denied cookie. Both fixture accounts are verified, so no email is sent.
+  expect((await call('send-verification-email',{email:other.memberId+'@example.test'})).status).toBe(200);
+  expect((await auth.$context).internalAdapter).toBe(originalAdapter);
+  const password='synthetic-denial-fresh-password';
+  await owner.query(`INSERT INTO public.auth_account(id,"accountId","providerId","userId",password) VALUES($1,$2,'credential',$2,$3)`,[randomUUID(),actor.memberId,await hashPassword(password)]);
+  const login=await call('sign-in/email',{email:actor.memberId+'@example.test',password});
+  expect(login.status).toBe(200);
+  const cookie=login.headers.getSetCookie().find(value=>value.startsWith('better-auth.session_token='))?.split(';')[0];
+  expect(cookie).toBeTruthy();
+  const fresh=await auth.api.getSession({headers:new Headers({cookie:cookie!})});
+  expect(fresh?.user.id).toBe(actor.memberId);expect(fresh?.session.id).not.toBe(actor.sessionId);
+  expect(await auth.api.getSession({headers:actor.headers})).toBeNull();
+  fail=true;
+  const unavailable=await call('get-session');expect(unavailable.status).toBe(503);expect(await unavailable.text()).not.toContain('private');
+ });
+ it('enforces the SDK guard through the application auth router, including non-preflight session endpoints',async()=>{
+  const actor=await person(),records=new Map<string,string>(),pending:Promise<unknown>[]=[];
+  const store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,
+   put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};}};
+  const guardedEnv={...env,RECOVERY_JOURNAL:store} as unknown as Env;
+  await persistSessionDenial(store,actor.sessionId);
+  const app=new Hono<{Bindings:Env;Variables:Variables}>();app.route('/api/auth',authRoutes);
+  const context={waitUntil:(p:Promise<unknown>)=>pending.push(p)} as ExecutionContext;
+  for(const [path,body,status] of [['get-session',undefined,200],['list-sessions',undefined,401],['change-password',{currentPassword:'old-password',newPassword:'synthetic-new-password'},401],['two-factor/enable',{password:'synthetic-password'},401]] as const){
+   const response=await app.fetch(new Request(env.APP_URL+'/api/auth/'+path,{method:body?'POST':'GET',headers:{cookie:actor.cookie,Origin:env.APP_URL,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined}),guardedEnv,context);
+   await Promise.all(pending.splice(0));expect(response.status).toBe(status);
+   if(path==='get-session')expect(await response.json()).toBeNull();
+  }
+ });
+
+ it.each(['production','staging','development'] as const)('fails closed for hosted missing bindings and storage errors in %s',async environment=>{
+  const actor=await person(),pending:Promise<unknown>[]=[];
+  let mode:'missing'|'failure'|'conflict'='missing';
+  const app=new Hono<{Bindings:Env;Variables:Variables}>();
+  app.use('*',prepareMemberAuth);
+  app.get('/api/v1/me',requireMember,c=>c.json({id:c.get('sessionId')}));
+  app.get('/api/v1/feed',requireMember,c=>c.json({id:c.get('sessionId')}));
+  app.get('/appeals',requireAppealMember,c=>c.json({id:c.get('sessionId')}));
+  app.onError((_,c)=>c.json({error:{code:'SERVICE_UNAVAILABLE'}},503));
+  const context={waitUntil:(p:Promise<unknown>)=>pending.push(p)} as ExecutionContext;
+  const call=async(path:string)=>{
+   const guardedEnv={...env,ENVIRONMENT:environment,...(mode==='missing'?{}:{RECOVERY_JOURNAL:{get:async()=>{if(mode==='failure')throw Error('private provider error');return {etag:'record',text:async()=>'{}'};}}})} as unknown as Env;
+   try{return await app.fetch(new Request(env.APP_URL+path,{headers:{cookie:actor.cookie}}),guardedEnv,context);}
+   finally{await Promise.all(pending.splice(0));}
+  };
+  for(const nextMode of ['missing','failure','conflict'] as const){
+   mode=nextMode;
+   for(const path of ['/api/v1/me','/api/v1/feed','/appeals']){
+    const response=await call(path);expect(response.status).toBe(mode==='missing'&&environment==='development'?200:503);
+    expect(await response.text()).not.toContain('private');
+   }
+  }
  });
 
 });

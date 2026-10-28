@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {persistSessionDenial,sessionDenied} from '../src/session-denial';
+import {persistSessionDenial,sessionDenied,runtimeSessionDenied} from '../src/session-denial';
 const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
 function storage(){
  const rows=new Map<string,string>();let fail:'none'|'before'|'after'='none';
@@ -72,5 +72,27 @@ describe('Independent session denial storage (not live authentication integratio
   expect(await guarded(first)).toBe(false);expect(await guarded(second)).toBe(true);
   // This model proves only storage independence. Real HTTP/push/restore paths
   // must be integrated and exercised before any writer may be enabled.
+ });
+});
+
+describe('bounded runtime denial reads',()=>{
+ it.each(['lookup','body'])('rejects a stalled %s within 2s and never accepts a late result',async phase=>{
+  vi.useFakeTimers();
+  try{
+   let finish!:(value:null)=>void;
+   const stalled=new Promise<null>(resolve=>{finish=resolve;});
+   const store={get:async()=>phase==='lookup'?stalled:{etag:'x',text:async()=>{await stalled;return '{}';}}};
+   const pending=runtimeSessionDenied({ENVIRONMENT:'production',RECOVERY_JOURNAL:store as unknown as R2Bucket},first);
+   const verdict=expect(pending).rejects.toThrow('SESSION_DENIAL_READ_FAILED');
+   await vi.advanceTimersByTimeAsync(2000);await verdict;
+   finish(null);await vi.runAllTimersAsync();expect(vi.getTimerCount()).toBe(0);
+  }finally{vi.useRealTimers();}
+ });
+ it('clears the deadline after an ordinary negative lookup',async()=>{
+  vi.useFakeTimers();
+  try{
+   expect(await runtimeSessionDenied({ENVIRONMENT:'production',RECOVERY_JOURNAL:{get:async()=>null} as unknown as R2Bucket},first)).toBe(false);
+   expect(vi.getTimerCount()).toBe(0);
+  }finally{vi.useRealTimers();}
  });
 });

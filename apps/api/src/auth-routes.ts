@@ -545,7 +545,8 @@ authRoutes.all("/*", async (c) => {
         };
         const response = await handle();
         // The journal wrapper observes the committed database cursor. No R2
-        // operation happens while this request holds SQL/advisory locks.
+        // mutation happens while this request holds SQL/advisory locks. Session
+        // denial reads are bounded and repeat during in-transaction authorization.
         await client.query("COMMIT");
         transaction = false;
         return response;

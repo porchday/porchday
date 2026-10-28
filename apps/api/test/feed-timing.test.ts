@@ -64,7 +64,7 @@ test('all nine fixed phases cover the actual feed path without changing checks, 
  const {request,points,pending}=setup();
  const response=await request();await Promise.all(pending);
  expect(response.status).toBe(200);expect(await response.json()).toEqual({items:[],next_cursor:null});
- expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','session_denial_read','auth_status','begin','actor','query','commit','social_close','auth_close']);
+ expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','auth_status','begin','actor','query','commit','social_close','auth_close']);
  expect(points.map(p=>p.blobs?.[5])).toEqual(FEED_PHASES);
  expect(points.every(p=>p.indexes?.[0]==='feed_phase:/api/v1/feed'&&p.blobs?.length===7&&p.doubles?.length===3&&p.doubles[0]===0&&p.doubles[1]>=0&&p.doubles[2]===0)).toBe(true);
  expect(JSON.stringify(points)).not.toMatch(/private|secret|11111111|22222222|synthetic-/);
@@ -80,7 +80,7 @@ test('every request repeats fresh privacy and member checks, and denial never ru
  expect(points.filter(p=>p.blobs?.[2]==='feed_phase').map(p=>p.blobs?.[5])).toEqual(['journal_check','journal_close']);
  fixture.quarantined=false;fixture.status='hold';fixture.trace=[];points.length=0;
  expect((await request()).status).toBe(403);
- expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','session_denial_read','auth_status','auth_close']);
+ expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','auth_status','auth_close']);
  expect(points.some(p=>String(p.blobs?.[5]).startsWith('social_'))).toBe(false);
 });
 

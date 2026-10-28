@@ -1,7 +1,7 @@
 import type {JournalStore} from './privacy-journal';
 import type {Env} from './types';
 
-/** Independent immutable records, checked by member and appeal authorization.
+/** Independent immutable records, checked by SDK session authorization.
  * Writers must not be enabled before every session consumer enforces denials.
  * Session IDs are internal UUIDs, never bearer tokens or signed cookies.
  */
@@ -45,11 +45,20 @@ export async function persistSessionDenial(store:JournalStore,verifiedSessionId:
 /** Check only an ID obtained from verified server-side session lookup. Hosted
  * readers have no bypass flag: disabling future writers must not undo denials.
  * Match the existing journal's explicit unbound local-development exception.
+ * The 2s read deadline includes the body. R2 has no cancellation here; a late
+ * read is observed by Promise.race but cannot change an authorization decision.
+ * This is a read-only deadline, never evidence about an in-flight write.
  */
 export async function runtimeSessionDenied(env:Pick<Env,'RECOVERY_JOURNAL'|'ENVIRONMENT'>,verifiedSessionId:string):Promise<boolean>{
  if(!env.RECOVERY_JOURNAL){
   if(env.ENVIRONMENT==='development')return false;
   throw new SessionDenialError('SESSION_DENIAL_NOT_CONFIGURED');
  }
- return sessionDenied(env.RECOVERY_JOURNAL as JournalStore,verifiedSessionId);
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ try{
+  return await Promise.race([
+   sessionDenied(env.RECOVERY_JOURNAL as JournalStore,verifiedSessionId),
+   new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new SessionDenialError('SESSION_DENIAL_READ_FAILED')),2000);}),
+  ]);
+ }finally{if(timer!==undefined)clearTimeout(timer);}
 }

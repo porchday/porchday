@@ -1,4 +1,3 @@
-import {runtimeSessionDenied} from './session-denial';
 import {authSchemaGate} from './auth-schema';
 import {phaseTiming} from './request-timing';
 import { createMiddleware } from 'hono/factory';
@@ -28,10 +27,7 @@ export const requireMember=createMiddleware<{Bindings:Env;Variables:Variables}>(
  const timing=phaseTiming(c);
  try {
   if(prepared){const start=performance.now();await prepared.ready;c.get('requestTiming')?.record('auth_schema_wait',performance.now()-start);authSchemaGate.needsValidation(authSchemaGate.key(c.env));}
-  const session=await measureFeedPhase(timing,'auth_session',async()=>{
-   const found=await (prepared?.auth??createAuth(c.env,pool)).api.getSession({headers:c.req.raw.headers});
-   return found?.user.emailVerified&&await runtimeSessionDenied(c.env,found.session.id)?null:found;
-  });
+  const session=await measureFeedPhase(timing,'auth_session',()=>(prepared?.auth??createAuth(c.env,pool)).api.getSession({headers:c.req.raw.headers}));
   if(!session?.user.emailVerified)return c.json({error:{code:'UNAUTHORIZED',message:'Sign in with a verified account.'}},401);
   const {rows}=await measureFeedPhase(timing,'auth_status',()=>pool.query('SELECT app.auth_member_status($1::uuid) AS status',[session.user.id]));
   const dataOnly = (c.req.method==='GET' && (/^\/api\/v1\/(me|devices|keys\/backup|owned-groups|emoji-library)$/.test(c.req.path)||/^\/api\/v1\/devices\/[a-f0-9-]{36}$/.test(c.req.path)))
@@ -48,7 +44,7 @@ export const requireAppealMember=createMiddleware<{Bindings:Env;Variables:Variab
  const pool=authPool(c.env);
  try{
   const session=await createAuth(c.env,pool).api.getSession({headers:c.req.raw.headers});
-  if(!session?.user.emailVerified||await runtimeSessionDenied(c.env,session.session.id))return c.json({error:{code:'UNAUTHORIZED'}},401);
+  if(!session?.user.emailVerified)return c.json({error:{code:'UNAUTHORIZED'}},401);
   const {rows}=await pool.query('SELECT app.auth_member_status($1::uuid) AS status',[session.user.id]);
   if(!rows[0]?.status||['hold','deleting','deleted'].includes(rows[0].status))return c.json({error:{code:'ACCOUNT_UNAVAILABLE'}},403);
   c.set('memberId',session.user.id);c.set('sessionId',session.session.id);c.set('authTime',new Date(session.session.createdAt).getTime());
