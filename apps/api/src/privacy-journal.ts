@@ -7,6 +7,7 @@ import type {Env, Variables} from './types.js';
 import {event,type JournalFailureCode} from './telemetry.js';
 import {measureFeedPhase} from './feed-timing';
 import {resilientJournalIO} from './journal-io';
+import {trackPostgres} from './connection-metrics';
 
 export interface JournalStore {
   get(key: string): Promise<{etag: string; text(): Promise<string>} | null>;
@@ -268,7 +269,7 @@ function runtime(env:RuntimeEnv,timing?:JournalTiming) {
     if(env.ENVIRONMENT==='development')return null;
     return stop('JOURNAL_NOT_CONFIGURED');
   }
-  const sql=postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false,connect_timeout:10});
+  const sql=trackPostgres(env,'jobs',postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false,connect_timeout:10}));
   const db:JournalDatabase={
     async status(){const[r]=await sql`select app.safety_status() as value`;return r.value;},
     async page(after){const[r]=await sql`select app.safety_page(${after}::bigint,200) as value`;return r.value;},

@@ -2,6 +2,8 @@ import type {PreparedMemberAuth} from './session';
 import type {RequestTiming} from './request-timing';
 export interface Env {
   METRICS?: AnalyticsEngineDataset;
+  /** Opt-in performance traces (docs/performance-tracing.md). Absent until provisioned. */
+  TRACES?: D1Database;
   /** Temporary aggregate diagnostics; honored only in staging, never production. */
   FEED_PHASE_TIMING?: string;
   /** Opt-in aggregate logout diagnostics; no identities or request correlation. */

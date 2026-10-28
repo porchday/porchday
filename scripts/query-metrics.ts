@@ -3,7 +3,7 @@ import {JOURNAL_PHASES} from '../apps/api/src/journal-phases';
 import {FEED_PHASES} from '../apps/api/src/telemetry';
 import {metricsQuery,parseAggregates,securitySignals} from '../apps/monitor/src/metrics';
 const environment=process.argv[2],view=process.argv[3]??'summary';
-if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','logout-phases','security'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
+if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','logout-phases','security','trace-store','connections','db-snapshot'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
 if(view==='feed-phases'&&environment!=='staging')throw Error('FEED_PHASES_STAGING_ONLY');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_ANALYTICS_READ_TOKEN??process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
 if(!account||!/^[a-f0-9]{32}$/.test(account)||!token)throw Error('ANALYTICS_READ_CREDENTIALS_REQUIRED');
@@ -42,6 +42,30 @@ const queries={
  freshness:`SELECT max(timestamp) AS latest_timestamp,sum(_sample_interval) AS events
   FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '15' MINUTE
   AND blob1='porchday_metrics_v1' FORMAT JSON`,
+ // D1 health for performance traces: outcomes, wall time, D1's own duration
+ // (double4) and rows touched, over the last hour.
+ 'trace-store':`SELECT blob6 AS code,sum(_sample_interval) AS events,
+  sum(double2*_sample_interval)/sum(_sample_interval) AS mean_ms,
+  quantileExactWeighted(0.95)(double2,_sample_interval) AS p95_ms,
+  quantileExactWeighted(0.95)(double4,_sample_interval) AS store_p95_ms,
+  sum(double3*_sample_interval) AS quantity FROM ${dataset}
+  WHERE timestamp>NOW()-INTERVAL '60' MINUTE AND blob1='porchday_metrics_v1'
+  AND blob3='trace_store' GROUP BY code ORDER BY events DESC FORMAT JSON`,
+ // Issue #40: which routes and jobs hold Postgres connections, for how long,
+ // and how much of that is after the response (last hour). held_seconds/3600
+ // is the average number of connections that route kept open.
+ connections:`SELECT blob4 AS route,blob6 AS code,sum(_sample_interval) AS events,
+  sum(double3*_sample_interval) AS quantity,
+  sum(double2*_sample_interval)/1000 AS held_seconds,
+  quantileExactWeighted(0.95)(double2,_sample_interval) AS p95_ms,
+  sum(if(double4>0,double4,0)*_sample_interval)/1000 AS after_response_seconds
+  FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '60' MINUTE AND blob1='porchday_metrics_v1'
+  AND blob3='db_conn' GROUP BY route,code ORDER BY held_seconds DESC,events DESC LIMIT 150 FORMAT JSON`,
+ // Server-wide connections by role and state, once a minute (last 15 minutes).
+ 'db-snapshot':`SELECT toStartOfMinute(timestamp) AS minute,blob6 AS code,
+  max(double3) AS connections,max(double2) AS oldest_ms
+  FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '15' MINUTE AND blob1='porchday_metrics_v1'
+  AND blob3='db_snapshot' GROUP BY minute,code ORDER BY minute DESC,code LIMIT 200 FORMAT JSON`,
  usage:`SELECT sum(_sample_interval) AS estimated_events FROM ${dataset}
   WHERE timestamp>NOW()-INTERVAL '30' DAY AND blob1='porchday_metrics_v1' FORMAT JSON`,
 };
@@ -58,7 +82,7 @@ try{
  if(!Array.isArray(result.data)||result.data.length>200)throw Error('ANALYTICS_RESPONSE_INVALID');
  // Never print provider diagnostic payloads. These fixed queries return only
  // bounded labels from our exporter, aggregate values and provider timestamps.
- const columns=new Set(['route','kind','code','requests','server_errors','mean_ms','p95_ms','events','quantity','latest_timestamp','estimated_events']);
+ const columns=new Set(['route','kind','code','requests','server_errors','mean_ms','p95_ms','events','quantity','latest_timestamp','estimated_events','store_p95_ms','held_seconds','after_response_seconds','minute','connections','oldest_ms']);
  const phaseColumns=new Set(['observed_points','events','mean_ms','p50_ms','p95_ms']);
  function phaseRows(rows:Record<string,unknown>[]){
   const safe:Record<string,string|number>[]=[];

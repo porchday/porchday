@@ -3,6 +3,7 @@ import {z} from 'zod';
 import type {Env} from './types';
 import {sendAccountEmail} from './email';
 import {event} from './telemetry';
+import {trackPool} from './connection-metrics';
 
 const encoder=new TextEncoder();
 const context=encoder.encode('Porchday operational email outbox v1');
@@ -42,7 +43,7 @@ export async function enqueueRecoveryEmail(env:Env,db:Pick<Pool|PoolClient,'quer
 
 /** Claims commit before provider I/O; failed sends remain retryable after a crash. */
 export async function processAccountEmails(env:Env){
- const pool=new Pool({connectionString:env.HYPERDRIVE_AUTH.connectionString,max:1,connectionTimeoutMillis:10000,idleTimeoutMillis:1000});
+ const pool=trackPool(env,'auth',new Pool({connectionString:env.HYPERDRIVE_AUTH.connectionString,max:1,connectionTimeoutMillis:10000,idleTimeoutMillis:1000}));
  let sent=0,retried=0;
  try{
   await pool.query(`DELETE FROM public.auth_email_outbox o WHERE expires_at<=now() OR delivered_at<now()-interval '1 hour' OR failed_at<now()-interval '1 hour'

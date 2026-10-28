@@ -33,6 +33,7 @@ import { IntegrationGrantDetails, RegisterIntegration } from "./Integrations";
 import { EmailSettings, MfaSettings } from "./AccountSecurity";
 import { AssetPicker, useAssetUpload, type PendingAsset } from "./Media";
 import { DataTransfer } from "./DataTransfer";
+import { PerformanceTracing } from "./PerformanceTracing";
 import { TimeSettings } from "./TimeSettings";
 import { enableCurrentPush, disableAllPush } from "./push";
 import { PROFILE_SLOTS, planSurfacePhotos } from "./surface-media";
@@ -822,6 +823,7 @@ function DataSettings({ onAccountDeleted }: { onAccountDeleted: () => Promise<vo
           {vault.member.status !== "restricted" && <RegisterIntegration />}
         </section>
       )}
+      <PerformanceTracing />
       <section className="panel danger-panel">
         <h2>Delete account</h2>
         <p>

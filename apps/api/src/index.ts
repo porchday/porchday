@@ -26,8 +26,16 @@ import {incidentControls} from './incident-controls';
 import {createPlatformInvitationRoutes} from './platform-invitations';
 import {applicationDomains} from './application-domains';
 import {createBuilderChatRoutes,createBuilderBridgeRoutes,createStaffBuilderChatRoutes} from './builder-chat';
+import {tracingMiddleware,traceError} from './tracing';
+import {connectionScope,reportConnectionRefusal} from './connection-metrics';
+import {recordConnectionSnapshot} from './connection-snapshot';
+import {routePath} from 'hono/route';
+import {createTraceRoutes,cleanupTraces,deleteMemberTraces} from './traces';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
+// Connection accounting covers every request; points carry the matched route pattern.
+app.use('/api/*',(c,next)=>connectionScope('none',()=>next(),()=>{const route=routePath(c);return route&&!['*','/*','/api/*'].includes(route)?route:undefined;}));
+app.use('*',tracingMiddleware());
 app.use('*',requestTimingMiddleware);
 app.use('*',secureHeaders({
  contentSecurityPolicy:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'blob:','data:'],fontSrc:["'self'"],connectSrc:["'self'"],workerSrc:["'self'",'blob:'],objectSrc:["'none'"],baseUri:["'none'"],formAction:["'self'"],frameAncestors:["'none'"]},
@@ -96,29 +104,36 @@ app.delete('/api/v1/account',async c=>{
  try { await withMember(c.env,c.get('memberId'),db=>db`select app.delete_member()`); }
  catch(error){if((error as Error).message.includes('OWNED_GROUPS'))return c.json({error:{code:'OWNED_GROUPS',message:'Transfer ownership or delete your groups first.'}},409);throw error;}
  const pool=authPool(c.env);
- try {await pool.query('DELETE FROM public.auth_user WHERE id=$1',[c.get('memberId')]);return c.json({ok:true});}
+ try {await pool.query('DELETE FROM public.auth_user WHERE id=$1',[c.get('memberId')]);}
  finally{c.executionCtx.waitUntil(pool.end());}
+ // Performance traces otherwise age out within the 14-day retention window.
+ c.executionCtx.waitUntil(deleteMemberTraces(c.env,c.get('memberId')).catch(()=>{}));
+ return c.json({ok:true});
 });
 app.route('/api/v1',createPlatformInvitationRoutes());
 app.route('/api/v1',createSocialRoutes());
 app.route('/api/v1',createIntegrationConsentRoutes());
 app.route('/api/v1',createBuilderChatRoutes());
+app.route('/api/v1',createTraceRoutes());
 app.all('/api/*',c=>c.json({error:{code:'NOT_FOUND'}},404));
 app.get('*',c=>c.env.ASSETS.fetch(c.req.raw));
-app.onError((_error,c)=>{event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
+app.onError((_error,c)=>{traceError(_error);reportConnectionRefusal(c.env,_error);event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
 
 export { app };
 export default {
  fetch:app.fetch,
  async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext){
+  ctx.waitUntil(connectionScope('job:cron',()=>recordConnectionSnapshot(env)).catch(()=>{}));
   if(controller.cron==='17 3 * * *'){
    if(env.MEDIA_BACKUP_ENABLED==='true')ctx.waitUntil(env.JOBS.send({kind:'media_backup_start'}));
+   ctx.waitUntil(cleanupTraces(env).catch(()=>{}));
   }else {
    ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
    if(env.SESSION_DENIAL_CLEANUP_V1==='true')ctx.waitUntil(env.JOBS.send({kind:'session_denial_cleanup'}));
   }
  },
  async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){
+  await connectionScope('job:queue',async()=>{
   const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup'].includes(m.body.kind));
   if(cleanup.length){
    let failedPhase:CleanupFailureCode='cleanup_journal_failed';
@@ -144,7 +159,7 @@ export default {
    event('job',{code:'cleanup_complete',count:results.deleted_objects},env);
    failedPhase='cleanup_ack_failed';
    for(const message of cleanup)message.ack();
-   }catch{event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
+   }catch(error){reportConnectionRefusal(env,error);event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
   }
   for(const message of batch.messages.filter(m=>m.body.kind==='session_denial_cleanup')){
    try{const result=await cleanupDeniedSessions(env);event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
@@ -152,7 +167,8 @@ export default {
   }
   for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
    try{if(message.body.kind==='media_backup_start'){await scheduleMediaBackup(env);message.ack();continue;}if(!message.body.id)throw Error('BACKUP_ID_REQUIRED');const result=await processMediaBackup(env,message.body.id);if(result==='busy')message.retry({delaySeconds:60});else message.ack();}
-   catch{event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
+   catch(error){reportConnectionRefusal(env,error);event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
   }
+  });
  }
 } satisfies ExportedHandler<Env,{kind:string;id?:string}>;

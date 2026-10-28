@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { withMember } from './db';
 import { authPool } from './auth';
 import type { Env, Variables } from './types';
+import {trackPostgres} from './connection-metrics';
 
 /** See design/builder-chat.md. Raise the version when the disclosure text changes. */
 export const BUILDER_CHAT = {
@@ -123,7 +124,7 @@ const requireBridge = createMiddleware<{ Bindings: Env; Variables: Variables }>(
   await next();
 });
 async function jobs<T>(env: Env, work: (sql: postgres.Sql) => Promise<T>) {
-  const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, { max: 1, prepare: true, fetch_types: false, idle_timeout: 5, connect_timeout: 10 });
+  const sql = trackPostgres(env, 'jobs', postgres(env.HYPERDRIVE_JOBS.connectionString, { max: 1, prepare: true, fetch_types: false, idle_timeout: 5, connect_timeout: 10 }));
   try { return await work(sql); } finally { await sql.end({ timeout: 1 }); }
 }
 const commitHash = z.string().regex(/^[0-9a-f]{7,40}$/);
