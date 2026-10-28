@@ -62,3 +62,16 @@ export async function runtimeSessionDenied(env:Pick<Env,'RECOVERY_JOURNAL'|'ENVI
   ]);
  }finally{if(timer!==undefined)clearTimeout(timer);}
 }
+
+/** Cleanup authority comes from canonical immutable bytes at their exact key,
+ * never merely from a listed filename or a UUID supplied by a queue message. */
+export async function sessionIdFromDenialObject(key:string,text:string):Promise<string>{
+ if(!/^session-denials\/v1\/[a-f0-9]{64}\.json$/.test(key)||text.length>256)throw new SessionDenialError('SESSION_DENIAL_INVALID');
+ let value:unknown;
+ try{value=JSON.parse(text);}catch{throw new SessionDenialError('SESSION_DENIAL_INVALID');}
+ const id=(value as {sessionId?:unknown}|null)?.sessionId;
+ if(typeof id!=='string'||!sessionIdPattern.test(id))throw new SessionDenialError('SESSION_DENIAL_INVALID');
+ const record=await recordFor(id);
+ if(record.key!==key||record.text!==text)throw new SessionDenialError('SESSION_DENIAL_INVALID');
+ return id;
+}

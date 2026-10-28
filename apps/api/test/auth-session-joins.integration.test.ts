@@ -1,4 +1,4 @@
-import {afterAll,beforeAll,describe,expect,it} from 'vitest';
+import {afterAll,beforeAll,describe,expect,it,vi} from 'vitest';
 import {randomUUID} from 'node:crypto';
 import {readdir,readFile} from 'node:fs/promises';
 import {Pool} from 'pg';
@@ -9,6 +9,7 @@ import {createAuth} from '../src/auth';
 import {prepareMemberAuth,requireMember,requireAppealMember} from '../src/session';
 import {authRoutes} from '../src/auth-routes';
 import {persistSessionDenial} from '../src/session-denial';
+import {cleanupDeniedSessions,deleteDeniedSession} from '../src/session-denial-cleanup';
 import type {Env,Variables} from '../src/types';
 
 const base=process.env.TEST_DATABASE_URL;
@@ -228,6 +229,35 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
     expect(await response.text()).not.toContain('private');
    }
   }
+ });
+
+ it('sweeps a confirmed denial through the restricted auth role without deleting another session',async()=>{
+  const actor=await person(),other=await person(),records=new Map<string,string>();
+  const store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,
+   put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};},
+   list:async()=>({objects:[...records.keys()].map(key=>({key})),truncated:false})};
+  await persistSessionDenial(store,actor.sessionId);
+  const guardedEnv={...env,SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:store} as unknown as Env;
+  expect((await cleanupDeniedSessions(guardedEnv)).deleted).toBe(1);
+  expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(0);
+  expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[other.sessionId])).rowCount).toBe(1);
+  expect((await cleanupDeniedSessions(guardedEnv)).deleted).toBe(0);expect(records.size).toBe(1);
+ });
+ it('orders exact cleanup behind an existing identity operation and can retry a lost commit reply',async()=>{
+  const actor=await person(),other=await person(),{pool}=runtimePool(),lock=await owner.connect();
+  let cleanup:Promise<boolean>|undefined;
+  try{
+   await lock.query('BEGIN');await lock.query("SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",[actor.memberId]);
+   cleanup=deleteDeniedSession(pool,actor.sessionId);void cleanup.catch(()=>{});
+   await vi.waitFor(async()=>{expect((await admin.query("SELECT 1 FROM pg_stat_activity WHERE usename=$1 AND wait_event='advisory'",[role])).rowCount).toBeGreaterThan(0);});
+   expect((await lock.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(1);
+   await lock.query('COMMIT');expect(await cleanup).toBe(true);
+  }finally{await lock.query('ROLLBACK').catch(()=>{});lock.release();if(cleanup)await cleanup.catch(()=>{});}
+  const lostReplyPool={connect:async()=>{
+   const client=await pool.connect();return {release:(failed?:boolean)=>client.release(failed),query:async(input:{text:string;values?:unknown[];query_timeout?:number})=>{const value=await client.query(input);if(input.text==='COMMIT')throw Error('lost acknowledgement');return value;}};
+  }} as unknown as Pool;
+  await expect(deleteDeniedSession(lostReplyPool,other.sessionId)).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
+  expect(await deleteDeniedSession(pool,other.sessionId)).toBe(false);
  });
 
 });

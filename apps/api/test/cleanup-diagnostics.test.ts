@@ -1,7 +1,7 @@
 import {beforeEach,describe,it,expect,vi} from 'vitest';
 import type {Env} from '../src/types';
 
-const steps=vi.hoisted(()=>({journal:vi.fn(),expiry:vi.fn(),identity:vi.fn(),metadata:vi.fn(),webPush:vi.fn(),nativePush:vi.fn(),email:vi.fn(),heartbeat:vi.fn()}));
+const steps=vi.hoisted(()=>({journal:vi.fn(),expiry:vi.fn(),identity:vi.fn(),metadata:vi.fn(),webPush:vi.fn(),nativePush:vi.fn(),email:vi.fn(),heartbeat:vi.fn(),denial:vi.fn()}));
 vi.mock('../src/db',async original=>({...await original<typeof import('../src/db')>(),cleanupExpired:steps.expiry}));
 vi.mock('../src/privacy-journal',async original=>({...await original<typeof import('../src/privacy-journal')>(),withPrivacyJournal:steps.journal}));
 vi.mock('../src/identity-cleanup',()=>({cleanupDeletedIdentities:steps.identity}));
@@ -10,6 +10,7 @@ vi.mock('../src/social-push',async original=>({...await original<typeof import('
 vi.mock('../src/social-native-push',async original=>({...await original<typeof import('../src/social-native-push')>(),processNativePush:steps.nativePush}));
 vi.mock('../src/email-outbox',async original=>({...await original<typeof import('../src/email-outbox')>(),processAccountEmails:steps.email}));
 vi.mock('../src/operations-health',async original=>({...await original<typeof import('../src/operations-health')>(),recordCleanupSuccess:steps.heartbeat}));
+vi.mock('../src/session-denial-cleanup',()=>({cleanupDeniedSessions:steps.denial}));
 import worker from '../src/index';
 
 describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{
@@ -17,6 +18,7 @@ describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{
  const secretError=()=>Object.assign(Error('private SQL password=email-link member@example.test'),{code:'private-error-code'});
  beforeEach(()=>{
   for(const step of Object.values(steps))step.mockReset();
+  steps.denial.mockResolvedValue({seen:2,deleted:1,invalid:1,advanced:false});
   steps.journal.mockImplementation(async(_env,work)=>work());steps.expiry.mockResolvedValue({posts:0,comments:0,abandoned_media:0,deleted_objects:2});
   for(const name of ['identity','metadata','webPush','nativePush','email','heartbeat'] as const)steps[name].mockResolvedValue(undefined);
   points=[];env={ENVIRONMENT:'staging',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}}} as Env;
@@ -51,4 +53,16 @@ describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{
   message.ack.mockClear();steps.expiry.mockRejectedValueOnce(secretError());await run();
   expect(message.ack).not.toHaveBeenCalled();expect(message.retry).toHaveBeenCalledExactlyOnceWith({delaySeconds:60});
  });
+ it('routes denial cleanup outside the global privacy journal and exposes only fixed metrics',async()=>{
+  message.body.kind='session_denial_cleanup';await run();
+  expect(steps.denial).toHaveBeenCalledExactlyOnceWith(env);expect(steps.journal).not.toHaveBeenCalled();expect(steps.expiry).not.toHaveBeenCalled();
+  expect(points.map(point=>point.blobs?.[5])).toEqual(['session_denial_cleanup_complete','session_denial_cleanup_invalid']);
+  expect(message.ack).toHaveBeenCalledTimes(1);expect(message.retry).not.toHaveBeenCalled();
+ });
+ it('retries denial cleanup failures without registering a global unfinished intent',async()=>{
+  message.body.kind='session_denial_cleanup';steps.denial.mockRejectedValueOnce(secretError());await run();
+  expect(steps.journal).not.toHaveBeenCalled();expect(message.ack).not.toHaveBeenCalled();expect(message.retry).toHaveBeenCalledExactlyOnceWith({delaySeconds:60});
+  expect(points.map(point=>point.blobs?.[5])).toEqual(['session_denial_cleanup_retry']);expect(JSON.stringify(points)).not.toMatch(/private|password|member@example/);
+ });
+
 });

@@ -4,8 +4,9 @@ Status: draft implementation, not deployed. A request-scoped Better Auth hook no
 checks denials at verified session lookup, covering direct SDK calls, member and
 appeal middleware (including prepared authentication), and endpoint-internal
 lookups. Web and native push delivery also check denials before external sends,
-using the session-bound preparation functions in migration 056. No writer,
-cleanup job or rollout flag is connected. This does not resolve #1, #55 or the 99.99% objective.
+using the session-bound preparation functions in migration 056. A bounded cleanup
+sweep and separate queue path are implemented behind `SESSION_DENIAL_CLEANUP_V1`,
+which is absent/off in deployed configuration. No logout writer is connected. This does not resolve #1, #55 or the 99.99% objective.
 It is the first scoped application of a write-ahead denial model; other privacy
 mutations retain the existing independent journal and quarantine behavior.
 
@@ -87,6 +88,42 @@ sends exercise independent denials while SQL rows remain present, other-session
 delivery, storage recovery, role restrictions, wrong leases and legacy JSON
 compatibility. These are not live provider or hosted deployment acceptance tests.
 
+## Durable cleanup and operator recovery
+
+The optional cleanup cron queues `session_denial_cleanup` separately from the
+existing privacy-journal cleanup. The queue handler must continue excluding this
+kind from the global intent wrapper. No queue message supplies deletion authority:
+the sweep discovers immutable denial records directly, validates canonical bytes
+and their hashed key, and deletes only the exact independently denied session.
+It obtains the current SQL owner, takes the existing identity advisory lock, then
+deletes with both session ID and owner predicates. R2 reads/writes happen outside
+that transaction. SQL statements have five-second server/lock limits and six-second
+client read deadlines; failed clients are discarded. A lost commit acknowledgement
+retries the same idempotent deletion, never an auth handler or a broader mutation.
+
+Each invocation visits at most ten records. A conditional-write cursor at
+`session-denial-maintenance/v1/cursor.json` advances only after confirmed cleanup
+and wraps at the end, so later inserts before an old cursor are discovered in a
+subsequent pass. Competing workers cannot overwrite a newer cursor. Lost cursor
+replies are safe whether or not the progress write committed. A corrupt denial
+is counted and skipped without deleting its SQL row; valid records on later pages
+continue processing. Missing/unreadable listed records or failed SQL stop the
+page for retry. No denial object is deleted or expired.
+
+Fixed metrics are `session_denial_cleanup_complete`,
+`session_denial_cleanup_invalid`, and `session_denial_cleanup_retry`; no IDs or
+provider errors are recorded. On retry, investigate independent storage and SQL
+health. On invalid records, preserve private evidence and repair only through a
+reviewed integrity investigation; never invent a denial or infer deletion authority
+from a filename. A corrupt maintenance cursor may be conditionally reset to
+`{"v":1,"cursor":null}` after preserving its evidence: this only repeats idempotent
+cleanup. That operation must never touch `control.json` or the denial namespace.
+Disabling cleanup stops SQL housekeeping, not denial enforcement. Retained records
+and recurring sweeps increase reads with history size; capacity/cost and full-pass
+latency still need measurement before writer activation. This cleanup does not
+resolve ambiguous non-session privacy operations or guarantee cancellation of
+requests authorized before denial publication.
+
 ## Reader coverage required before any writer
 
 The current source audit identifies these paths; final acceptance must also search for
@@ -128,7 +165,7 @@ claim retroactive cancellation of an in-flight response or external delivery.
    denial keeps the old session unusable. Do not claim that publication alone
    cancels in-flight operations or satisfies the existing logout ordering. Keep
    other privacy operations unchanged.
-3. Add idempotent SQL cleanup and a bounded persistent sweep. Queue delivery is an
+3. Verify the implemented idempotent SQL cleanup and bounded persistent sweep. Queue delivery is an
    optimization, not the only discovery mechanism: process loss before queue send
    must not strand cleanup. Validate each object's exact ID/key relationship
    before deleting a row; malformed or unknown records are not cleanup authority.
