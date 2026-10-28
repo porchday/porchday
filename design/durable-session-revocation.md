@@ -53,8 +53,11 @@ new direct SQL consumers and new `createAuth` callers at the reviewed commit.
 - `session.ts`: ordinary member and appeal authorization, including prepared auth,
   session refresh, native bearer adaptation and all downstream protected routes.
 - `auth-routes.ts`: preflight and in-transaction authorization, recent-session/MFA
-  checks, email-change callbacks, and the HTTP Better Auth handler's get-session
-  response. Cover library-internal session use as well as direct `api.getSession`.
+  checks, email-change callbacks, and every session-backed HTTP Better Auth
+  endpoint (including get-session, list-sessions and verification-email sending).
+  Cover library-internal session use as well as direct `api.getSession`. Preserve
+  fresh credential/token authentication even when a request also carries an old
+  denied session cookie; do not trap a logged-out member in a login failure loop.
 - `social-push.ts` and `social-native-push.ts`: verify the session before an
   outbound send. Their SQL preparation routines currently decide eligibility
   from database state, so API-only integration would be insufficient. Expose the
