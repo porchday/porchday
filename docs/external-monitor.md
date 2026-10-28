@@ -22,7 +22,7 @@ Investigate a failed check through [the reliability runbook](reliability.md) and
 
 ## Limits and outstanding acceptance
 
-- A Mac launch agent depends on that Mac being awake, logged in, connected and running its pinned Node and GitHub CLI installations. It is an external vantage point, not a highly available monitoring service. A hosted backup is configured and its manual execution is verified; actual scheduled execution still needs observation.
+- The owner selected the Mac mini as the continuous host and authorized keeping it awake. A Mac launch agent still depends on that Mac being logged in, connected and running its pinned Node and GitHub CLI installations. It is an external vantage point, not a highly available monitoring service. A hosted backup is configured and its manual execution is verified; actual scheduled execution still needs observation.
 - GitHub API availability and the owners' GitHub notification settings govern delivery. A successful comment write does not prove an inbox notification, operator response or a guaranteed delivery time. GitHub is independent of Cloudflare, but this is not a dedicated paging service.
 - A nominal 20-second interval plus 10-second deadline targets detection within 30 seconds while running. Scheduling, sleep and transport delays prevent a guaranteed bound. A five-minute scheduled GitHub job alone cannot meet that objective.
 - Encrypted writes/deletes, mail delivery and independent regional coverage are not yet included. No automatic production recovery is performed. These checks do not prove 99.99% monthly availability.
@@ -76,3 +76,22 @@ At 21:26:02 UTC the Mac bundle was upgraded to the same reviewed release source,
 The ongoing watch also revealed **17 retained whole-journey deadline failures** before the bundle upgrade. The initial ten occurred between 21:11 and 21:15 UTC; subsequent failures are retained through the 21:30 evidence snapshot. Logout or the subsequent revocation observation exhausted the shared ten-second budget. A check attempted with an already-aborted signal does not prove failed revocation. Sampled server metrics showed sign-out p95 around 7.8 seconds with no sampled sign-out 5xx, and read-only follow-up found an active journal, no pending intents and no SQL quarantine. The cause is still unconfirmed in [#55](https://github.com/porchday/porchday/issues/55). The relay upgrade did not change the application or fix its latency; the later healthy cycles do not close that investigation.
 
 See the [sanitized acceptance evidence](evidence/external-backup-2026-10-28.json). The production API release remained `44afbb8d-3133-4aac-8663-efd6fb5feb47`; this release deployed monitoring workflows and a local monitor bundle, not application Workers or production migrations. No monthly SLO achievement is claimed.
+
+### Mac mini sleep prevention (October 28)
+
+The owner chose to keep the existing Mac mini awake instead of provisioning a
+new host. AC idle sleep was already disabled (`sleep 0`). The separate launch
+agent `com.porchday.monitor-keepawake` now runs `/usr/bin/caffeinate -is` with
+`RunAtLoad` and `KeepAlive`. This holds idle-system and AC system-sleep assertions;
+it leaves display sleep enabled. The monitor itself was not restarted, and its
+observation history and notification outbox were preserved.
+
+Inspect the assertion with `pmset -g assertions` and the service with
+`launchctl print gui/$(id -u)/com.porchday.monitor-keepawake`. The plist is in
+`~/Library/LaunchAgents/com.porchday.monitor-keepawake.plist`; a reproducible
+template is checked in under `scripts/macos/`. To intentionally
+stop sleep prevention, boot out that agent; bootstrap the same plist to resume.
+It restarts after login, not before login. Power loss, network loss, explicit
+shutdown, logout and host failure remain monitoring gaps. No new paid service was
+added; existing Mac power and network costs remain. This does not establish
+redundant monitoring or the monthly availability target.
