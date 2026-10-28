@@ -1,10 +1,12 @@
+import {JOURNAL_PHASES} from './journal-phases';
 import type {Env} from './types';
 import {JOURNAL_IO_CODES} from './journal-io';
 
 /** Only these finite dimensions can reach console output or Analytics Engine.
  * No request/response objects, headers, URLs, identifiers, SQL or error objects.
  */
-const names=new Set(['request','job','email','error','feed_phase']);
+const journalPhases=new Set<string>(JOURNAL_PHASES);
+const names=new Set(['journal_phase','request','job','email','error','feed_phase']);
 export const FEED_PHASES=['journal_check','journal_close','auth_session','auth_status','social_connect_begin','social_actor','social_query','social_commit','social_close'] as const;
 export type FeedPhase=typeof FEED_PHASES[number];
 export const JOURNAL_FAILURE_CODES=['journal_begin_failed','journal_work_failed','journal_completion_failed','journal_close_failed'] as const;
@@ -18,10 +20,15 @@ const environments=new Set(['development','staging','production']);
 const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/auth/*','/api/account-recovery/*','/api/*','/assets/*',
  ...['sign-in/email','sign-up/email','sign-out','get-session','verify-email','request-password-reset','reset-password','send-verification-email','change-password','list-sessions','revoke-session','revoke-sessions'].map(route=>'/api/auth/'+route)]);
 type Fields={route?:string;method?:string;status?:number;durationMs?:number;code?:string;environment?:string;count?:number};
-type MetricsEnvironment=Pick<Env,'ENVIRONMENT'|'METRICS'|'FEED_PHASE_TIMING'>;
-export function event(name:'request'|'job'|'email'|'error'|'feed_phase',fields:Fields={},env?:MetricsEnvironment):void{
+type MetricsEnvironment=Pick<Env,'ENVIRONMENT'|'METRICS'|'FEED_PHASE_TIMING'|'LOGOUT_PHASE_TIMING'>;
+export function event(name:'journal_phase'|'request'|'job'|'email'|'error'|'feed_phase',fields:Fields={},env?:MetricsEnvironment):void{
  try{
   if(!names.has(name))return;
+  if(name==='journal_phase'){
+   if(env?.LOGOUT_PHASE_TIMING!=='true'||!['staging','production'].includes(env.ENVIRONMENT)||fields.route!=='/api/auth/sign-out'||fields.method!=='POST'||!fields.code||!journalPhases.has(fields.code))return;
+   if(typeof fields.durationMs!=='number'||!Number.isFinite(fields.durationMs)||fields.durationMs<0||fields.durationMs>3_600_000)return;
+   fields={route:'/api/auth/sign-out',method:'POST',code:fields.code,durationMs:fields.durationMs};
+  }
   if(name==='feed_phase'){
    // Gate here as well as at the call sites: even an accidental direct call
    // cannot enable production diagnostics or attach extra fields to a phase.
@@ -32,7 +39,7 @@ export function event(name:'request'|'job'|'email'|'error'|'feed_phase',fields:F
   const safe:Record<string,string|number>={event:name};
   if(typeof fields.route==='string'&&routes.has(fields.route))safe.route=fields.route;
   if(fields.method&&methods.has(fields.method))safe.method=fields.method;
-  if(fields.code&&(name==='feed_phase'?feedPhases:codes).has(fields.code))safe.code=fields.code;
+  if(fields.code&&(name==='journal_phase'?journalPhases:name==='feed_phase'?feedPhases:codes).has(fields.code))safe.code=fields.code;
   const environment=env?.ENVIRONMENT??fields.environment;
   if(environment&&environments.has(environment))safe.environment=environment;
   if(Number.isInteger(fields.status)&&fields.status!>=100&&fields.status!<=599)safe.status=fields.status!;

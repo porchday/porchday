@@ -1,3 +1,4 @@
+import {logoutJournalTiming,measureJournalPhase,type JournalTiming} from './journal-timing';
 import {phaseTiming, measureJournalRead, type RequestTiming} from './request-timing';
 import postgres from 'postgres';
 import {z} from 'zod';
@@ -208,9 +209,10 @@ export async function beginPrivacyIntent(store: JournalStore, db: JournalDatabas
   }
   return stop('JOURNAL_BUSY');
 }
-export async function completePrivacyIntent(store: JournalStore, db: JournalDatabase, intent: {id:string;started_at:string}) {
-  const checkpoint=await checkpointJournal(store,db);
-  await immutable(store,`receipts/${intent.id}.json`,{v:1,id:intent.id,generation:checkpoint.generation,sequence:checkpoint.sequence,head:checkpoint.head});
+export async function completePrivacyIntent(store: JournalStore, db: JournalDatabase, intent: {id:string;started_at:string},timing?:JournalTiming) {
+  const checkpoint=await measureJournalPhase(timing,'checkpoint',()=>checkpointJournal(store,db));
+  await measureJournalPhase(timing,'receipt',()=>immutable(store,`receipts/${intent.id}.json`,{v:1,id:intent.id,generation:checkpoint.generation,sequence:checkpoint.sequence,head:checkpoint.head}));
+  return measureJournalPhase(timing,'retirement',async()=>{
   for(let tries=0;tries<40;tries++) {
     const remote=await readJournalControl(store);
     if(remote.value.mode!=='active')stop('RESTORE_QUARANTINED');
@@ -218,6 +220,7 @@ export async function completePrivacyIntent(store: JournalStore, db: JournalData
     if(await replace(store,{...remote.value,pending:remote.value.pending.filter(p=>p.id!==intent.id)},remote.etag))return;
   }
   stop('JOURNAL_BUSY');
+  });
 }
 export async function quarantineJournal(store: JournalStore, reason: string) {
   for(let tries=0;tries<40;tries++) {
@@ -260,7 +263,7 @@ export async function verifyJournalChain(store: JournalStore): Promise<{control:
 }
 
 type RuntimeEnv=Pick<Env,'RECOVERY_JOURNAL'|'HYPERDRIVE_JOBS'|'ENVIRONMENT'|'METRICS'>;
-function runtime(env:RuntimeEnv) {
+function runtime(env:RuntimeEnv,timing?:JournalTiming) {
   if(!env.RECOVERY_JOURNAL) {
     if(env.ENVIRONMENT==='development')return null;
     return stop('JOURNAL_NOT_CONFIGURED');
@@ -271,7 +274,13 @@ function runtime(env:RuntimeEnv) {
     async page(after){const[r]=await sql`select app.safety_page(${after}::bigint,200) as value`;return r.value;},
   };
   const io=resilientJournalIO(env.RECOVERY_JOURNAL as JournalStore,db,{report:code=>event('error',{code},env)});
-  return {...io,close:()=>sql.end({timeout:1})};
+  const store:JournalStore={
+    // The retry adapter consumes the body, so this includes lookup, body and retry waits.
+    get:key=>measureJournalPhase(timing,'r2_read',()=>io.store.get(key)),
+    put:(key,value,options)=>measureJournalPhase(timing,'r2_write',()=>io.store.put(key,value,options)),
+  };
+  const measured:JournalDatabase={status:()=>measureJournalPhase(timing,'database_status',()=>io.db.status()),page:after=>measureJournalPhase(timing,'database_page',()=>io.db.page(after))};
+  return {store:timing?store:io.store,db:timing?measured:io.db,close:()=>sql.end({timeout:1})};
 }
 export function isPrivacyMutation(method:string,path:string):boolean {
   const uuid='[a-fA-F0-9-]{36}';
@@ -319,7 +328,7 @@ export const privacyMutationMiddleware=createMiddleware<{Bindings:Env;Variables:
     return c.res;
   }
 });
-type HttpJournalContext={env:RuntimeEnv;readonly executionCtx:Pick<ExecutionContext,'waitUntil'>};
+type HttpJournalContext={req?:{method:string;path:string};env:RuntimeEnv&Pick<Env,'LOGOUT_PHASE_TIMING'>;readonly executionCtx:Pick<ExecutionContext,'waitUntil'>};
 /** Retain the same awaited operation during HTTP disconnects, within Workers'
  * bounded waitUntil grace period. The observer never forwards private errors
  * to detached runtime logging; the original promise still rejects to its caller.
@@ -334,29 +343,29 @@ export async function withHttpPrivacyJournal<T>(context:HttpJournalContext,work:
     // supply one before any journal intent or application work can start.
     if(context.env.ENVIRONMENT!=='development')throw new JournalError('JOURNAL_EXECUTION_CONTEXT_REQUIRED');
   }
-  const operation=withPrivacyJournal(context.env,work);
+  const operation=withPrivacyJournal(context.env,work,logoutJournalTiming(context.env,context.req));
   if(keepAlive)keepAlive(operation.then(()=>undefined,()=>undefined));
   return await operation;
 }
-export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>):Promise<T> {
-  const resources=runtime(env);
+export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>,timing?:JournalTiming):Promise<T> {
+  const resources=runtime(env,timing);
   if(!resources)return work();
   // Fixed phase names only. A phase identifies where the operation stopped;
   // it does not prove rollback or authorize clearing an unresolved intent.
   let failedPhase:JournalFailureCode='journal_begin_failed';
   try {
-    await assertJournalReadable(resources.store,resources.db);
-    const intent=await beginPrivacyIntent(resources.store,resources.db);
+    await measureJournalPhase(timing,'guard',()=>assertJournalReadable(resources.store,resources.db));
+    const intent=await measureJournalPhase(timing,'registration',()=>beginPrivacyIntent(resources.store,resources.db));
     let value:T;
     failedPhase='journal_work_failed';
-    try {value=await work();}
-    catch(error){if(knownRollback(error)){failedPhase='journal_completion_failed';await completePrivacyIntent(resources.store,resources.db,intent);failedPhase='journal_work_failed';}throw error;}
+    try {value=await measureJournalPhase(timing,'work',work);}
+    catch(error){if(knownRollback(error)){failedPhase='journal_completion_failed';await completePrivacyIntent(resources.store,resources.db,intent,timing);failedPhase='journal_work_failed';}throw error;}
     failedPhase='journal_completion_failed';
-    try {await completePrivacyIntent(resources.store,resources.db,intent);}
+    try {await completePrivacyIntent(resources.store,resources.db,intent,timing);}
     catch(error){if(error instanceof JournalError)throw error;throw new JournalError('PRIVACY_CHECKPOINT_REQUIRED');}
     return value;
   } catch(error){event('error',{code:failedPhase},env);throw error;}
-  finally {try{await resources.close();}catch(error){event('error',{code:'journal_close_failed'},env);throw error;}}
+  finally {try{await measureJournalPhase(timing,'close',()=>resources.close());}catch(error){event('error',{code:'journal_close_failed'},env);throw error;}}
 }
 export async function checkpointPrivacyJournal(env:RuntimeEnv) {
   const resources=runtime(env);if(!resources)return;
