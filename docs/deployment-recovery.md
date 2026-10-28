@@ -8,8 +8,8 @@ user journeys passed.
 
 This controller is **not yet the live deployment entry point**. The Cloudflare
 transport, private filesystem journal and deployment lease are implemented and
-tested. Integration with artifact/schema evidence, synthetic journeys and crash-safe
-canonical record finalization, plus a hosted staging rollback drill, remain required
+tested. Integration with artifact/schema evidence and synthetic journeys, plus a hosted
+staging rollback drill, remain required
 before unattended use. Unit tests do not establish that production can recover automatically.
 
 ## Inputs and safety boundaries
@@ -79,7 +79,9 @@ A live controller excludes a second controller. After process loss, the same
 immutable plan can resume; a different operation or legacy rollout marker is
 never taken over based on elapsed time or a PID. Closing the lease releases only
 the kernel mutex and retains the persistent marker. Releasing the marker requires
-a matching terminal journal and must follow canonical record finalization.
+a matching terminal journal and completed canonical record finalization. It
+atomically renames the intact lock directory into an operation-specific archive,
+so interruption cannot leave an empty lock directory.
 
 `leasedDeploymentPorts` checks the lease and unchanged canonical record at the
 provider I/O boundary, requires a matching durable intent before a write, and
@@ -90,9 +92,23 @@ floor is an acknowledgment requirement, not proof of artifact compatibility.
 Tests kill isolated child controllers and demonstrate same-plan resumption after
 both lock acquisition and a simulated provider commit. The latter resumes from
 the durable activation intent without another POST. These are local fixtures,
-not hosted recovery evidence. Crash recovery across canonical record replacement
-and lock release remains unfinished: changed canonical bytes currently stop
-resumption. Do not enable unattended deployment until that boundary is resolved.
+not hosted recovery evidence.
+
+After the controller verifies a terminal outcome, call `finalize(journal)` and
+then `release(journal)`. Finalization saves a durable receipt containing the exact
+before/after canonical bytes and terminal journal state before replacing the
+canonical record. Only the targeted API version/source and its deployment recovery
+receipt change; schema, assets, routes and other deployment evidence are retained.
+This is suitable for API-version-only operations. Changes to other resources need
+a separate reviewed finalization contract.
+
+A restart during finalization may reacquire the same plan when the canonical bytes
+match either side of its receipt. Such a lease prohibits provider I/O: resume
+`finalize` and `release` only. Any other canonical bytes or altered receipt stop
+recovery. Tests kill real child processes before replacement, after replacement,
+and after lock archival. After archival, `completed` reads the historical receipt
+and checks it against the journal; it does not assert current provider health.
+An archived operation ID cannot start another deployment.
 
 ## Outcomes and operator action
 
