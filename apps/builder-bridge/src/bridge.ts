@@ -1,6 +1,6 @@
 import type { BridgeApi, FinishBody } from './api.ts';
 import type { RunOptions, RunResult } from './codex.ts';
-import { frame, TurnState, type ClaimedMessage } from './turn.ts';
+import { frame, featureProposal, TurnState, type ClaimedMessage } from './turn.ts';
 
 export type Dependencies = {
   api: BridgeApi;
@@ -8,6 +8,7 @@ export type Dependencies = {
   head: () => string;
   turnCommits: (before: string, messageId: string) => string[];
   tryLock: () => (() => void) | null;
+  waitingOn?: () => 'request_file' | 'other_work';
   log: (line: string) => void;
   sleep: (ms: number) => Promise<void>;
   progressIntervalMs?: number;
@@ -79,13 +80,17 @@ export function createBridge(deps: Dependencies) {
       : status === 'failed' ? 'Codex stopped before finishing this request.'
       : state.messages.length ? '' : 'Codex finished without a written reply.';
     const reply = state.reply(suffix);
-    await finish(message.id, { status, reply: reply.text, commits, held_back: reply.matched });
+    const proposal = status === 'answered' && message.share_plan && message.task_kind !== 'feature_build' && !commits.length && !reply.matched.length
+      ? featureProposal(state.messages.at(-1) || '') : null;
+    const finalReply = proposal ? 'Your feature plan is posted in Feature additions. It needs a net score of +3 before implementation.'
+      : message.task_kind === 'feature_plan' && status === 'answered' ? state.reply('No publishable plan was produced. Review the reply and submit a clarified feature request.').text : reply.text;
+    await finish(message.id, { status, reply: finalReply, commits, held_back: reply.matched, ...(proposal ? {proposal} : {}) });
     deps.log(`turn ${message.id} ${status} commits=${commits.join(',') || 'none'}${reply.matched.length ? ' held_back=' + reply.matched.join(',') : ''}`);
   }
 
   async function step(): Promise<StepResult> {
     const release = deps.tryLock();
-    if (!release) { await deps.api.claim(false); return 'locked'; }
+    if (!release) { await deps.api.claim(false, deps.waitingOn?.() ?? 'other_work'); return 'locked'; }
     try {
       const claimed = await deps.api.claim(true);
       if (claimed.paused) return 'paused';

@@ -3,8 +3,8 @@ import {feedTiming, type FeedTiming} from './feed-timing';
 import {FEED_PHASES, type FeedPhase} from './telemetry';
 import type {Env, Variables} from './types';
 
-type Phase = FeedPhase | 'journal_r2' | 'journal_db' | 'worker' | 'auth_schema';
-const phases: readonly Phase[] = [...FEED_PHASES, 'journal_r2', 'journal_db', 'auth_schema', 'worker'];
+type Phase = FeedPhase | 'journal_r2' | 'journal_db' | 'worker' | 'auth_schema' | 'auth_schema_wait' | 'operations_snapshot' | 'operations_close';
+const phases: readonly Phase[] = [...FEED_PHASES, 'journal_r2', 'journal_db', 'auth_schema', 'auth_schema_wait', 'operations_snapshot', 'operations_close', 'worker'];
 const allowed = new Set<string>(phases);
 
 /** Request-local numeric durations only. Never retained or sent to telemetry. */
@@ -21,12 +21,12 @@ export class RequestTiming implements FeedTiming {
 }
 
 export const requestTimingMiddleware: MiddlewareHandler<{Bindings: Env; Variables: Variables}> = async (c, next) => {
-  if (c.req.method !== 'GET' || !['/health', '/api/v1/me'].includes(c.req.path)) return next();
+  if (c.req.method !== 'GET' || !['/health', '/api/v1/me', '/api/operations/health'].includes(c.req.path)) return next();
   const timing = new RequestTiming(), start = performance.now();
   c.set('requestTiming', timing);
   await next();
   // Do not expose authentication/denial phase differences to anonymous callers.
-  if (c.res.status !== 200 || (c.req.path === '/api/v1/me' && !c.get('memberId'))) return;
+  if (c.res.status !== 200 || (c.req.path === '/api/v1/me' && !c.get('memberId')) || (c.req.path === '/api/operations/health' && !c.get('operationsAuthorized'))) return;
   timing.record('worker', performance.now() - start);
   c.header('Server-Timing', timing.header());
   c.header('Cache-Control', c.req.path === '/health' ? 'no-store' : 'private, no-store');
@@ -39,6 +39,13 @@ export function phaseTiming(c: Context<{Bindings: Env; Variables: Variables}>): 
 }
 
 export async function measureJournalRead<T>(timing: RequestTiming | undefined, phase: 'journal_r2' | 'journal_db', work: () => Promise<T>): Promise<T> {
+  if (!timing) return work();
+  const start = performance.now();
+  try {return await work();}
+  finally {timing.record(phase, performance.now() - start);}
+}
+
+export async function measureOperationsPhase<T>(timing: RequestTiming | undefined, phase: 'operations_snapshot' | 'operations_close', work: () => Promise<T>): Promise<T> {
   if (!timing) return work();
   const start = performance.now();
   try {return await work();}

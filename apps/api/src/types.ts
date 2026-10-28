@@ -41,6 +41,7 @@ export interface Env {
 }
 export interface Variables {
   requestTiming?: RequestTiming;
+  operationsAuthorized?: boolean;
   preparedMemberAuth?: PreparedMemberAuth;
   memberId: string;
   authTime: number;

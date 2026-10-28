@@ -4,7 +4,7 @@ import {measureFeedPhase, type FeedTiming} from './feed-timing';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A bounded read using the same social role/RLS and transaction-local actor.
- * pg sends Parse/Bind/Execute together, avoiding describe-first network waits.
+ * A UUID-only simple-protocol query/COMMIT batch avoids a separate commit wait.
  * No session-wide identity, cached rows, or change to other social transactions.
  */
 export async function readMemberBootstrap(env: Pick<Env,'HYPERDRIVE_SOCIAL'>, memberId: string, bootstrap: boolean, timing?: FeedTiming) {
@@ -19,14 +19,16 @@ export async function readMemberBootstrap(env: Pick<Env,'HYPERDRIVE_SOCIAL'>, me
       await client.query(`BEGIN; SET LOCAL app.member_id = '${memberId}'`);
     });
     const member=await measureFeedPhase(timing,'social_query',async()=>{
-      const {rows}=await client!.query(`select m.id,m.status,m.notification_preferences,p.handle,p.envelope,
+      const results=await client!.query(`select m.id,m.status,m.notification_preferences,p.handle,p.envelope,
         (select count(*)::int from app.connections) as connection_count,
         ${bootstrap ? `(select coalesce(jsonb_agg(roster order by roster.created_at),'[]'::jsonb) from
           (select id,member_id,public_key,fingerprint,created_at,revoked_at from app.device_keys) roster)` : 'null'} as startup_devices
-        from app.members m join app.profiles p on p.member_id=m.id where m.id=$1::uuid`,[memberId]);
-      return rows[0];
+        from app.members m join app.profiles p on p.member_id=m.id where m.id='${memberId}'::uuid; COMMIT`);
+      // Simple-protocol batching returns only after COMMIT succeeds. The UUID
+      // was strictly validated above; no other request text enters this SQL.
+      if(!Array.isArray(results)||results.length!==2||results[1].command!=='COMMIT')throw Error('BOOTSTRAP_COMMIT_UNCONFIRMED');
+      return results[0].rows[0];
     });
-    await measureFeedPhase(timing,'social_commit',async()=>{await client!.query('COMMIT');});
     if (bootstrap && member) member.startup_devices=member.startup_devices.map((device:any)=>({
       ...device,created_at:new Date(device.created_at).toISOString(),revoked_at:device.revoked_at?new Date(device.revoked_at).toISOString():null,
     }));

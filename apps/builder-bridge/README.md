@@ -189,6 +189,10 @@ An operator with deployment access does this after the bridge reports `state pau
 
 If the bridge stops in the middle of a turn, the server marks the message as timed out 12 minutes after the turn started, so no member waits forever.
 
+## Queue status
+
+Migration `051_builder_queue_status.sql` adds fixed activity labels to the member status. The page shows whether the bridge is waiting for a request-file task, another builder task, or another chat message, plus the member’s own chat-queue position and elapsed waiting time. It does not expose other members’ messages or estimate completion times. Deploy migration 051 and the API before restarting an updated bridge. Older bridge payloads remain accepted and report a generic builder task while locked.
+
 ## Troubleshooting
 
 | What you see | What to do |
@@ -204,3 +208,8 @@ If the bridge stops in the middle of a turn, the server marks the message as tim
 ## Development
 
 Run the bridge tests with `npx vitest run apps/builder-bridge` from the repository root, and the type check with `npm run typecheck -w @porchday/builder-bridge`. For a local run against a development API, point `api_url` at `http://127.0.0.1:8787`, use a scratch checkout for `repo_dir`, and start a scratch session with `codex exec --json "Reply READY"` in that checkout. Never point a development bridge at the real builder session.
+
+
+### Feature voting rollout
+
+Feature additions requires migration 053 and the matching API deployment before restarting this bridge. Restart only after the active turn finishes. Feature protocol 1 claims carry server-controlled task phases: ordinary web requests plan enhancements, explicit feature submissions generate plans, and approved tasks implement the immutable voted plan. Old bridges heartbeat but do not claim work after the API upgrade. See [feature voting](../../design/builder-chat.md#feature-additions-and-web-feature-voting) for the sharing disclosure, vote rules, and failure behavior.

@@ -1,4 +1,4 @@
-import {beforeEach,describe,it,expect,vi} from 'vitest';
+import {afterEach,beforeEach,describe,it,expect,vi} from 'vitest';
 import {randomUUID} from 'node:crypto';
 import type {Env} from '../src/types';
 const database=vi.hoisted(()=>({query:Object.assign(vi.fn(),{end:vi.fn()})}));
@@ -29,6 +29,7 @@ describe('Privacy-journal failure phase diagnostics preserve durability decision
   env={ENVIRONMENT:'staging',RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:'synthetic-not-connected'},METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}}} as unknown as Env;
  });
  const codes=()=>points.map(point=>point.blobs?.[5]);
+ afterEach(()=>vi.useRealTimers());
  const receiptCount=()=>[...store.rows.keys()].filter(key=>key.startsWith('receipts/')).length;
  it('attributes setup failure before work without fabricating an intent receipt',async()=>{
   store.rows.delete('control.json');const work=vi.fn();
@@ -46,8 +47,10 @@ describe('Privacy-journal failure phase diagnostics preserve durability decision
   expect((await readJournalControl(store)).value.pending).toHaveLength(0);expect(receiptCount()).toBe(1);expect(codes()).toEqual(['journal_work_failed']);
  });
  it('identifies durability completion failure and does not acknowledge or clear the intent',async()=>{
-  store.failReceipt=true;await expect(withPrivacyJournal(env,async()=>42)).rejects.toThrow('PRIVACY_CHECKPOINT_REQUIRED');
-  expect((await readJournalControl(store)).value.pending).toHaveLength(1);expect(receiptCount()).toBe(0);expect(codes()).toEqual(['journal_completion_failed']);
+  vi.useFakeTimers();store.failReceipt=true;const result=expect(withPrivacyJournal(env,async()=>42)).rejects.toThrow('PRIVACY_CHECKPOINT_REQUIRED');
+  await vi.runAllTimersAsync();await result;
+  expect((await readJournalControl(store)).value.pending).toHaveLength(1);expect(receiptCount()).toBe(0);expect(codes()).toEqual(['journal_r2_write_retry','journal_r2_write_retry','journal_r2_write_retry','journal_io_exhausted','journal_completion_failed']);
+  expect(JSON.stringify(points)).not.toMatch(/private|token|secret/);
  });
  it('distinguishes a close failure after a durable completion from an unresolved mutation',async()=>{
   const failure=rawError();database.query.end.mockRejectedValueOnce(failure);

@@ -6,7 +6,7 @@ import type { Env } from './types';
 import { sendAccountEmail } from './email';
 import {enqueueAccountEmail} from './email-outbox';
 
-export function createAuth(env: Env, pool: Pool, signupId?: string, inTransaction=false) {
+export function createAuth(env: Env, pool: Pool, signupId?: string, inTransaction=false, validateSchema=true) {
   const accountEmail=(memberId:string,to:string,subject:string,text:string)=>inTransaction
     ? enqueueAccountEmail(env,pool,memberId,to,subject,text)
     : sendAccountEmail(env,to,subject,text);
@@ -15,7 +15,7 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
     secret: env.BETTER_AUTH_SECRET, database: inTransaction ? {dialect:new PostgresDialect({pool}),type:'postgres',transaction:false} : pool,
     trustedOrigins: [env.APP_URL],
     advanced: {
-      database: { joins:true, generateId: ({model}) => model === 'user' && signupId ? signupId : crypto.randomUUID() },
+      database: { validateSchema, joins:true, generateId: ({model}) => model === 'user' && signupId ? signupId : crypto.randomUUID() },
       useSecureCookies: env.APP_URL.startsWith('https:'),
       defaultCookieAttributes: { sameSite: 'lax', httpOnly: true },
       disableOriginCheck: false,

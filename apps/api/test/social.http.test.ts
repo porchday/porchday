@@ -39,7 +39,7 @@ async function seal(a: Person, payload: unknown, override: Partial<ContentContex
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
         throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); for (const name of ['045_emoji_library.sql','046_connection_history.sql','047_independent_connection_labels.sql']) await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); for (const name of ['045_emoji_library.sql','046_connection_history.sql','047_independent_connection_labels.sql','052_group_invitation_roster.sql']) await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
     afterAll(async () => { if (sql)
         await sql.end(); });
     it('bootstraps only the same authorized roster as devices, preserving the ordinary me shape', async () => {
@@ -56,6 +56,47 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect(ordinary).not.toHaveProperty('startup_devices');
         expect(account.connection_count).toBe(0);
     });
+    it('shows invitation identities and status only to owners, paginates, and updates the latest inviter', async () => {
+        const owner=await person(), moderator=await person(), recipient=await person(), outsider=await person();
+        const handle=(p: Person) => 't_'+p.id.replaceAll('-','').slice(0,20);
+        const group=await seal(owner,{name:'Invitation roster'},{kind:'group',audience:'only_me'}), groupId=group.context.id;
+        expect((await request(owner.id,'/groups','POST',{envelope:group})).status).toBe(201);
+        const invite=await request(owner.id,`/groups/${groupId}/invitations`,'POST',{handle:handle(moderator)});
+        expect((await request(moderator.id,`/group-invitations/${invite.data.id}/accept`,'POST')).status).toBe(200);
+        expect((await request(owner.id,`/groups/${groupId}/members/${moderator.id}`,'PUT',{role:'moderator'})).status).toBe(200);
+        expect((await request(owner.id,`/groups/${groupId}/invitations`,'POST',{handle:handle(recipient)})).status).toBe(201);
+        expect((await request(moderator.id,`/groups/${groupId}/invitations`,'POST',{handle:handle(recipient)})).status).toBe(201);
+        let roster=await request(owner.id,`/groups/${groupId}/invitations`);
+        expect(roster.status).toBe(200);
+        expect(roster.data.items).toEqual(expect.arrayContaining([
+            expect.objectContaining({recipient_handle:handle(recipient),inviter_handle:handle(moderator),accepted_at:null}),
+            expect.objectContaining({recipient_handle:handle(moderator),inviter_handle:handle(owner),accepted_at:expect.any(String)})
+        ]));
+        expect(roster.data.items.every((i:any)=>!('envelope' in i)&&!('recipient' in i))).toBe(true);
+        for(const p of [moderator,recipient,outsider]) expect((await request(p.id,`/groups/${groupId}/invitations`)).status).toBe(403);
+        await sql`insert into app.blocks(actor,target) values(${owner.id},${recipient.id})`;
+        roster=await request(owner.id,`/groups/${groupId}/invitations`);
+        expect(roster.data.items.some((i:any)=>i.recipient_handle===null)).toBe(true);
+        await sql`update app.group_invitations set expires_at=now()-interval '1 day' where group_id=${groupId} and recipient=${recipient.id}`;
+        roster=await request(owner.id,`/groups/${groupId}/invitations`);
+        expect(roster.data.items.some((i:any)=>!i.accepted_at&&Date.parse(i.expires_at)<Date.now())).toBe(true);
+        for(let n=0;n<30;n++){
+            const id=randomUUID();
+            await sql`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`;
+            await sql`insert into app.profiles(member_id,handle) values(${id},${'inv_'+id.replaceAll('-','').slice(0,20)})`;
+            await sql`insert into app.group_invitations(id,group_id,inviter,recipient) values(${randomUUID()},${groupId},${owner.id},${id})`;
+        }
+        await sql`update app.group_invitations set expires_at='2030-01-01T00:00:00.123456Z' where group_id=${groupId}`;
+        roster=await request(owner.id,`/groups/${groupId}/invitations`);
+        expect(roster.data.items).toHaveLength(30);
+        const next=await request(owner.id,`/groups/${groupId}/invitations?cursor=${encodeURIComponent(roster.data.next_cursor)}`);
+        expect(next.data.items).toHaveLength(2);
+        expect(new Set([...roster.data.items,...next.data.items].map((i:any)=>i.id)).size).toBe(32);
+        expect(next.data.next_cursor).toBeNull();
+        expect((await request(owner.id,`/groups/${groupId}/members/${moderator.id}`,'PUT',{role:'owner'})).status).toBe(200);
+        expect((await request(owner.id,`/groups/${groupId}/invitations`)).status).toBe(403);
+        expect((await request(moderator.id,`/groups/${groupId}/invitations`)).status).toBe(200);
+    },60000);
     it('includes authorized author handles on walls, post details and group posts', async () => {
         const author = await person(), viewer = await person(), outsider = await person();
         await connection(author, viewer);

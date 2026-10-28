@@ -4,7 +4,7 @@ import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { filterText, HELD_BACK } from '../src/filter.ts';
-import { classify, frame, TurnState, type ClaimedMessage } from '../src/turn.ts';
+import { classify, frame, featureProposal, TurnState, type ClaimedMessage } from '../src/turn.ts';
 import { isStale, readLock, tryAcquire } from '../src/lock.ts';
 import { runCodexTurn, turnCommits } from '../src/codex.ts';
 import { createBridge } from '../src/bridge.ts';
@@ -193,6 +193,13 @@ describe('bridge step', () => {
     expect(calls.claim).toEqual([false]);
     expect(ran).toBe(false);
   });
+  it('reports only the fixed request-file label while waiting for the shared lock', async () => {
+    const claim = vi.fn(async () => ({ paused: false, message: null, turn_seconds: 600 }));
+    const { api } = fakeApi({ claim });
+    const bridge = createBridge({ ...quiet, api, tryLock: () => null, waitingOn: () => 'request_file', runTurn: async () => { throw Error('Must not start while locked'); } });
+    expect(await bridge.step()).toBe('locked');
+    expect(claim).toHaveBeenCalledWith(false, 'request_file');
+  });
   it('runs a claimed message, streams filtered progress and records commits and held back patterns', async () => {
     const { api, calls } = fakeApi();
     let released = 0;
@@ -351,4 +358,21 @@ describe('configuration', () => {
     chmodSync(token, 0o600);
     expect(readToken(token)).toBe('x'.repeat(40));
   });
+});
+
+describe('feature voting bridge protocol',()=>{
+ it('frames unapproved web enhancements as planning and approved tasks as implementation',()=>{
+  expect(frame({...message,share_plan:true})).toContain('Do not implement, edit files, commit, deploy');
+  expect(frame({...message,task_kind:'feature_plan',share_plan:true})).toContain('explicitly a feature-planning submission');
+  expect(frame({...message,task_kind:'feature_build',feature:{id:'feature',title:'Title',plan:'Approved scope'}})).toContain('SERVER-APPROVED FEATURE IMPLEMENTATION');
+  expect(frame(message)).toContain('has not accepted plan sharing');
+ });
+ it('accepts one final plan block and rejects malformed, duplicate and secret-containing plans',()=>{
+  const block=(value:unknown)=>'```porchday-feature\n'+JSON.stringify(value)+'\n```';
+  expect(featureProposal(block({title:'Title',plan:'Acceptance and tests'}))).toEqual({title:'Title',plan:'Acceptance and tests'});
+  expect(featureProposal(block({title:'Title',plan:'Plan'})+' after')).toBeNull();
+  expect(featureProposal(block({title:'Title',plan:'Plan'})+'\n'+block({title:'Title',plan:'Plan'}))).toBeNull();
+  expect(featureProposal(block({title:'Title',plan:fakeSecrets.github_token}))).toBeNull();
+  expect(featureProposal(block({title:'',plan:'Plan'}))).toBeNull();
+ });
 });

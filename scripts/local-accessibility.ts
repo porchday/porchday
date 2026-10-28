@@ -87,7 +87,7 @@ try {
   let deferMember = false, releaseMember = () => {}, memberStarted = () => {};
   let memberGate = Promise.resolve();
   const invitationRequests: {email: string}[] = [];
-  const builder = {paused: false, online: true, disclosure: {version: 1, accepted: false}, ahead: 0, sent_today: 0, limits: {message_length: 2000, daily_messages: 20}, messages: [] as any[]};
+  const builder = {paused: false, online: true, activity: 'request_file', disclosure: {version: 1, accepted: false}, ahead: 0, sent_today: 0, limits: {message_length: 2000, daily_messages: 100}, messages: [] as any[]};
   let builderPolls = 0;
   let invitationStarted!: () => void, releaseInvitation!: () => void;
   const invitationGate = new Promise<void>(resolve => { releaseInvitation = resolve; });
@@ -263,6 +263,8 @@ try {
   assert.match(await builderMessage.getAttribute('aria-describedby') || '', /builder-message-help/);
   await memberPage.keyboard.type('Synthetic builder chat question');
   await activate(memberPage, memberPage.getByRole('button', {name: 'Send to Codex', exact: true}));
+  await memberPage.getByText('Codex is handling a request-file task. Your message is queued.', {exact: true}).waitFor();
+  await memberPage.getByText(/Position 1 in the chat queue/).waitFor();
   await memberPage.locator('.builder-announcement').filter({hasText: 'Codex replied: Synthetic reply from Codex.'}).waitFor({state: 'attached', timeout: 10000});
   assert.equal(await memberPage.locator('.builder-announcement').getAttribute('aria-live'), 'polite');
   assert.equal(builder.messages[0].body, 'Synthetic builder chat question');

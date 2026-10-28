@@ -18,6 +18,7 @@ function bridgeFor(config: Config) {
     runTurn: options => runCodexTurn({ ...options, command: config.codexCommand, args: config.codexArgs, session: config.codexSession, cwd: config.repoDir }),
     head: () => head(config.repoDir),
     turnCommits: (before, id) => turnCommits(config.repoDir, before, id),
+    waitingOn: () => readLock(config.lockFile)?.owner === 'request-file' ? 'request_file' : 'other_work',
     tryLock: () => tryAcquire(config.lockFile, 'builder-bridge', config.lockStaleSeconds),
   });
 }

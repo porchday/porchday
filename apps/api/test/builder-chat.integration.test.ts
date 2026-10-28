@@ -28,7 +28,7 @@ async function call(method:string,path:string,{cookie='',body,overrides={},heade
  return response;
 }
 const member=(p:Person,method:string,path:string,body?:unknown,overrides:Partial<Env>={})=>call(method,'/api/v1/builder-chat'+path,{cookie:p.cookie,body,overrides});
-const bridge=(path:string,body:unknown={},overrides:Partial<Env>={},auth='Bearer '+token)=>call('POST','/api/builder-bridge'+path,{body,overrides,headers:{Authorization:auth,Origin:''}});
+const bridge=(path:string,body:unknown={},overrides:Partial<Env>={},auth='Bearer '+token)=>call('POST','/api/builder-bridge'+path,{body:path==='/claim'?{...(body as object),feature_protocol:1}:body,overrides,headers:{Authorization:auth,Origin:''}});
 async function allow(p:Person,accept=true){
  await owner.query("INSERT INTO app.builder_chat_access(member_id,enabled_by) VALUES($1,'test-operator')",[p.id]);
  if(accept)expect((await member(p,'POST','/disclosure',{version:BUILDER_CHAT.disclosureVersion})).status).toBe(200);
@@ -59,12 +59,32 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   }finally{await admin.end();}
  });
 
+ it('exposes fixed queue activity, clears stale labels, and never includes another member’s message',async()=>{
+  await clearQueue();
+  const first=await person(),second=await person();await allow(first);await allow(second);
+  await send(first,'Private first request');await send(second,'My queued request');
+  expect((await bridge('/claim',{take:false,waiting_on:'request_file'})).status).toBe(200);
+  let value=await (await member(second,'GET','')).json();
+  expect(value.activity).toBe('request_file');expect(value.ahead).toBe(1);
+  expect(JSON.stringify(value)).not.toContain('Private first request');
+  expect((await bridge('/claim',{take:false,waiting_on:'/private/lock-owner'})).status).toBe(400);
+  await owner.query("UPDATE app.builder_chat_bridge SET seen_at=now()-interval '1 minute'");
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('offline');
+  await claim();
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('chat');
+  await clearQueue();await claim();
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('idle');
+  // Old bridge payloads remain accepted during a rolling installation.
+  expect((await bridge('/claim',{take:false})).status).toBe(200);
+  value=await (await member(second,'GET','')).json();expect(value.activity).toBe('other_work');
+ });
+
  it('hides builder chat from members who are not on the allowlist, even while paused',async()=>{
   const outsider=await person();
   for(const overrides of [{},{BUILDER_CHAT_PAUSED:'true'}]){
    expect((await member(outsider,'GET','',undefined,overrides)).status).toBe(404);
    expect((await send(outsider,'hello',overrides)).status).toBe(404);
-   expect((await member(outsider,'POST','/disclosure',{version:1},overrides)).status).toBe(404);
+   expect((await member(outsider,'POST','/disclosure',{version:BUILDER_CHAT.disclosureVersion},overrides)).status).toBe(404);
    expect((await member(outsider,'GET','/export',undefined,overrides)).status).toBe(404);
   }
   expect((await call('GET','/api/v1/builder-chat')).status).toBe(401);
@@ -95,9 +115,12 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   const second=await send(p,'another');
   expect(second.status).toBe(409);expect((await second.json()).error.code).toBe('IN_FLIGHT');
   await clearQueue();
-  await owner.query('INSERT INTO app.builder_chat_messages(member_id,body,status) SELECT $1,$2,$3 FROM generate_series(1,$4)',[p.id,'old','answered',BUILDER_CHAT.dailyMessages-1]);
+  await owner.query('INSERT INTO app.builder_chat_messages(member_id,body,status) SELECT $1,$2,$3 FROM generate_series(1,$4)',[p.id,'old','answered',98]);
+  expect((await (await member(p,'GET','')).json()).limits.daily_messages).toBe(100);
+  expect((await send(p,'message 100')).status).toBe(201);
+  await clearQueue();
   const limited=await send(p,'one too many');
-  expect(limited.status).toBe(429);expect((await limited.json()).error.code).toBe('DAILY_LIMIT');
+  expect(limited.status).toBe(429);expect((await limited.json()).error).toEqual({code:'DAILY_LIMIT',message:'You can send up to 100 builder chat messages a day. Please try again tomorrow.'});
  });
 
  it('limits the shared queue',async()=>{
@@ -165,6 +188,57 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   expect((await claim()).id).toBe(cId);
   expect(await (await bridge(`/messages/${cId}/progress`,{reply:'x',progress:null},{BUILDER_CHAT_PAUSED:'true'})).json()).toEqual({continue:true});
   await clearQueue();
+ });
+
+ it('publishes plans with consent and dispatches exactly once at net +3',async()=>{
+  await clearQueue();
+  const author=await person(),b=await person(),c=await person(),d=await person(),outsider=await person();
+  for(const p of [author,b,c,d])await allow(p);
+  expect((await member(outsider,'GET','/features')).status).toBe(404);
+  const task=(await (await member(author,'POST','/features',{message:'Add a feature board'})).json()).id;
+  const claimed=await claim();expect(claimed).toMatchObject({id:task,task_kind:'feature_plan',share_plan:true});
+  const finish={status:'answered',reply:'Plan posted',commits:[],held_back:[],proposal:{title:'Feature test',plan:'Add the capability. Verify permissions and tests.'}};
+  expect((await bridge(`/messages/${task}/finish`,finish)).status).toBe(200);
+  await bridge(`/messages/${task}/finish`,finish);
+  const board=await (await member(author,'GET','/features')).json();expect(board.items.filter((p:any)=>p.title==='Feature test')).toHaveLength(1);
+  const feature=board.items.find((p:any)=>p.title==='Feature test'),path=`/features/${feature.id}/vote`;
+  expect(feature.score).toBe(0);
+  expect((await member(outsider,'PUT',path,{value:1})).status).toBe(404);
+  for(const p of [author,b,c])expect((await member(p,'PUT',path,{value:1})).status).toBe(200);
+  await member(d,'PUT',path,{value:-1});
+  const voteExport=await (await member(d,'GET','/export')).json();
+  expect(voteExport.feature_votes).toEqual([{feature_id:feature.id,value:-1}]);
+  await member(author,'PUT',path,{value:1});
+  expect((await (await member(b,'GET','/features')).json()).items.find((p:any)=>p.id===feature.id).score).toBe(2);
+  expect(await claim()).toBeNull();
+  await member(d,'PUT',path,{value:0});
+  // Legacy bridges cannot accidentally execute an unframed approved job.
+  const legacy=await call('POST','/api/builder-bridge/claim',{body:{take:true},headers:{Authorization:'Bearer '+token,Origin:''}});
+  expect((await legacy.json()).message).toBeNull();
+  const results=await Promise.all([claim(),claim()]);
+  const build=results.find(Boolean);expect(results.filter(Boolean)).toHaveLength(1);
+  expect(build).toMatchObject({task_kind:'feature_build',feature:{id:feature.id,title:'Feature test',plan:finish.proposal.plan}});
+  expect((await member(d,'PUT',path,{value:-1})).status).toBe(409);
+  await bridge(`/messages/${build.id}/finish`,{status:'answered',reply:'Implemented',commits:['abcd1234'],held_back:[]});
+  expect((await (await member(author,'GET','/features')).json()).items.find((p:any)=>p.id===feature.id)).toMatchObject({status:'delivered',commits:['abcd1234']});
+  expect(await claim()).toBeNull();
+  // Removing the proposer removes the shared plan and votes as well.
+  await owner.query('DELETE FROM app.members WHERE id=$1',[author.id]);
+  expect((await owner.query('SELECT count(*)::int AS n FROM app.feature_votes WHERE feature_id=$1',[feature.id])).rows[0].n).toBe(0);
+ });
+
+ it('does not publish old private chats or filtered plans, and rejects missing consent',async()=>{
+  await clearQueue();const p=await person();await allow(p,false);
+  expect((await member(p,'POST','/features',{message:'proposal'})).status).toBe(409);
+  await allowConsent();
+  async function allowConsent(){await member(p,'POST','/disclosure',{version:2});}
+  const id=(await (await send(p,'A private old message')).json()).id;
+  await owner.query('UPDATE app.builder_chat_messages SET share_plan=false WHERE id=$1',[id]);
+  await claim();await bridge(`/messages/${id}/finish`,{status:'answered',reply:'private',commits:[],held_back:[],proposal:{title:'Do not share',plan:'Private'}});
+  expect((await (await member(p,'GET','/features')).json()).items.some((f:any)=>f.title==='Do not share')).toBe(false);
+  const second=(await (await member(p,'POST','/features',{message:'another feature'})).json()).id;
+  await claim();await bridge(`/messages/${second}/finish`,{status:'answered',reply:'held back',commits:[],held_back:['assigned_secret'],proposal:{title:'Filtered',plan:'Do not publish'}});
+  expect((await (await member(p,'GET','/features')).json()).items.some((f:any)=>f.title==='Filtered')).toBe(false);
  });
 
  it('exports the member’s own messages and deletes them with the account',async()=>{

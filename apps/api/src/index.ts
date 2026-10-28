@@ -63,7 +63,7 @@ app.get('/.well-known/apple-app-site-association',c=>{
  return c.json({applinks:{details:[{appIDs:[team+'.'+bundle],components:[{'/':'/app/post/*',comment:'Open a Porchday post in the signed native app.'}]}]}});
 });
 app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
- const result=await readOperationalHealth(c.env);
+ const result=await readOperationalHealth(c.env,c.get('requestTiming'));
  return c.json(result,result.status==='ok'?200:503);
 });
 app.use('/api/v1/*',prepareMemberAuth);

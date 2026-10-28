@@ -1,13 +1,24 @@
 import {describe,expect,it} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
-import {builderStatus,Disclosure,Exchange,type BuilderMessage,type BuilderState} from '../src/BuilderChat';
+import {builderStatus,queueDetails,Disclosure,Exchange,type BuilderMessage,type BuilderState} from '../src/BuilderChat';
 import {StaffBuilderChat} from '../src/StaffBuilderChat';
 
 const message=(overrides:Partial<BuilderMessage>={}):BuilderMessage=>({id:'m1',body:'Add a footer link',status:'answered',progress:null,reply:'Done.',commits:[],created_at:'2026-10-27T12:00:00Z',completed_at:'2026-10-27T12:01:00Z',...overrides});
-const state=(overrides:Partial<BuilderState>={}):BuilderState=>({paused:false,online:true,disclosure:{version:1,accepted:true},ahead:0,sent_today:0,limits:{message_length:2000,daily_messages:20},messages:[],...overrides});
+const state=(overrides:Partial<BuilderState>={}):BuilderState=>({paused:false,online:true,disclosure:{version:1,accepted:true},ahead:0,sent_today:0,limits:{message_length:2000,daily_messages:100},messages:[],...overrides});
 
 describe('builder chat status line',()=>{
+ it('explains the current blocker and the known wait without claiming an ETA',()=>{
+  const waiting=state({messages:[message({status:'queued'})],activity:'request_file'});
+  expect(builderStatus(waiting)).toContain('request-file task');
+  expect(builderStatus({...waiting,activity:'chat'})).toContain('another builder-chat message');
+  expect(builderStatus({...waiting,activity:'other_work'})).toContain('another builder task');
+  expect(builderStatus({...waiting,online:false})).toContain('offline');
+  expect(builderStatus({...waiting,paused:true})).toContain('paused');
+  expect(queueDetails(waiting,Date.parse('2026-10-27T12:03:00Z'))).toContain('Position 1 in the chat queue · Waiting 3 minutes');
+  expect(queueDetails({...waiting,ahead:2},Date.parse('2026-10-27T12:00:30Z'))).toContain('Position 3 in the chat queue · Waiting less than a minute');
+  expect(queueDetails(state())).toBeNull();
+ });
  it('describes each conversation state in plain words',()=>{
   expect(builderStatus(state())).toBe('Codex is online.');
   expect(builderStatus(state({online:false}))).toContain('Codex is offline right now. You can send a message');

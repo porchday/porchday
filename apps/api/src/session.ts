@@ -1,3 +1,4 @@
+import {authSchemaGate} from './auth-schema';
 import {phaseTiming} from './request-timing';
 import { createMiddleware } from 'hono/factory';
 import { authPool,createAuth } from './auth';
@@ -8,8 +9,12 @@ export type PreparedMemberAuth = {pool: ReturnType<typeof authPool>; auth: Retur
  * current account status remain behind the fresh privacy guard. Request-local. */
 export const prepareMemberAuth=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
  if(c.req.method!=='GET'||c.req.path!=='/api/v1/me')return next();
- const pool=authPool(c.env),auth=createAuth(c.env,pool),started=performance.now();
- const ready=auth.$context.then(async context=>{await context.checkSchema?.();})
+ const key=authSchemaGate.key(c.env),validate=authSchemaGate.needsValidation(key);
+ const pool=authPool(c.env),auth=createAuth(c.env,pool,undefined,false,validate),started=performance.now();
+ const ready=auth.$context.then(async context=>{
+  if(validate){if(!context.checkSchema)throw Error('AUTH_SCHEMA_CHECK_REQUIRED');await context.checkSchema();}
+  authSchemaGate.succeeded(key);
+ }).catch(error=>{authSchemaGate.failed(key);throw error;})
   .finally(()=>c.get('requestTiming')?.record('auth_schema',performance.now()-started));
  void ready.catch(()=>{}); // Observe early rejection while the journal is still pending.
  c.set('preparedMemberAuth',{pool,auth,ready});
@@ -21,7 +26,8 @@ export const requireMember=createMiddleware<{Bindings:Env;Variables:Variables}>(
  const pool=prepared?.pool??authPool(c.env);
  const timing=phaseTiming(c);
  try {
-  const session=await measureFeedPhase(timing,'auth_session',async()=>{await prepared?.ready;return (prepared?.auth??createAuth(c.env,pool)).api.getSession({headers:c.req.raw.headers});});
+  if(prepared){const start=performance.now();await prepared.ready;c.get('requestTiming')?.record('auth_schema_wait',performance.now()-start);authSchemaGate.needsValidation(authSchemaGate.key(c.env));}
+  const session=await measureFeedPhase(timing,'auth_session',()=>(prepared?.auth??createAuth(c.env,pool)).api.getSession({headers:c.req.raw.headers}));
   if(!session?.user.emailVerified)return c.json({error:{code:'UNAUTHORIZED',message:'Sign in with a verified account.'}},401);
   const {rows}=await measureFeedPhase(timing,'auth_status',()=>pool.query('SELECT app.auth_member_status($1::uuid) AS status',[session.user.id]));
   const dataOnly = (c.req.method==='GET' && (/^\/api\/v1\/(me|devices|keys\/backup|owned-groups|emoji-library)$/.test(c.req.path)||/^\/api\/v1\/devices\/[a-f0-9-]{36}$/.test(c.req.path)))
