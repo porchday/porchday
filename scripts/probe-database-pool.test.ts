@@ -1,7 +1,9 @@
 import {describe,it,expect} from 'vitest';
 import {pooledTarget} from './probe-database-pool';
 describe('pool probe target isolation',()=>{
- const source='postgres://runtime.stage:synthetic@sample.pg.psdb.cloud:5432/postgres';
+ const fixture=new URL('postgres://sample.pg.psdb.cloud:5432/postgres');
+ fixture.username='runtime.stage';fixture.password='synthetic';
+ const source=fixture.href;
  it('changes only the port of the verified branch-qualified connection',()=>{
   const target=new URL(pooledTarget(source,'stage')),original=new URL(source);
   expect(target.port).toBe('6432');target.port='5432';expect(target.href).toBe(original.href);
