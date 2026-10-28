@@ -129,5 +129,13 @@
       "pattern": "www.porchday.com",
       "custom_domain": true
     }
+  ],
+  "d1_databases": [
+    {
+      "binding": "TRACES",
+      "database_name": "porchday-production-traces",
+      "database_id": "e2999366-1369-4cdf-ae61-4906e3987375",
+      "migrations_dir": "d1/traces"
+    }
   ]
 }
