@@ -1,0 +1,229 @@
+{
+  "v": 1,
+  "at": "2026-10-28T21:34:40.516922+00:00",
+  "releaseSource": "dfbf7e3edb6b1023127fa164933f70fcae125655",
+  "mergedSource": "dfd08960891c697f2bd4f429b607d2c9f5ad0b8c",
+  "pullRequest": "https://github.com/porchday/porchday/pull/54",
+  "validation": {
+    "ciRuns": [
+      40770551977,
+      40770563122
+    ],
+    "tests": 843,
+    "suites": 118,
+    "monitorTests": 40,
+    "typecheckBuildSecretScanPassed": true
+  },
+  "hostedBackup": {
+    "workflowId": 399922265,
+    "manualRun": 40771588895,
+    "manualRunConclusion": "success",
+    "scopedSecretVerifiedByExecution": true,
+    "observations": [
+      {
+        "at": "2026-10-28T21:23:57.343Z",
+        "environment": "production",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 884
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 512
+          },
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 334
+          },
+          {
+            "name": "legacy_anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 988
+          },
+          {
+            "name": "login",
+            "status": 200,
+            "ok": true,
+            "durationMs": 2050
+          },
+          {
+            "name": "logout",
+            "status": 200,
+            "ok": true,
+            "durationMs": 2561
+          },
+          {
+            "name": "monitor_freshness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 439
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 449
+          },
+          {
+            "name": "revocation",
+            "status": 401,
+            "ok": true,
+            "durationMs": 203
+          }
+        ],
+        "durationMs": 5396,
+        "scope": "login_authorized_reads_logout_and_readiness"
+      },
+      {
+        "at": "2026-10-28T21:24:17.348Z",
+        "environment": "production",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 454
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 552
+          },
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 302
+          },
+          {
+            "name": "legacy_anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 545
+          },
+          {
+            "name": "login",
+            "status": 200,
+            "ok": true,
+            "durationMs": 1288
+          },
+          {
+            "name": "logout",
+            "status": 200,
+            "ok": true,
+            "durationMs": 2459
+          },
+          {
+            "name": "monitor_freshness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 284
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 195
+          },
+          {
+            "name": "revocation",
+            "status": 401,
+            "ok": true,
+            "durationMs": 294
+          }
+        ],
+        "durationMs": 4596,
+        "scope": "login_authorized_reads_logout_and_readiness"
+      }
+    ],
+    "configuredScheduleMinutes": 5,
+    "scheduledExecutionObserved": false,
+    "scheduledExecutionStatus": "Awaiting an actual scheduled run; dispatch is not scheduling proof",
+    "notificationDrill": {
+      "botAuthored": true,
+      "outage": "https://github.com/porchday/porchday/issues/53#issuecomment-6481041184",
+      "recovery": "https://github.com/porchday/porchday/issues/53#issuecomment-6481041757"
+    }
+  },
+  "macUpgrade": {
+    "at": "2026-10-28T21:26:02.650320+00:00",
+    "source": "dfbf7e3edb6b1023127fa164933f70fcae125655",
+    "bundleSha256": "ca44ea289bd45ab9ac627893cdc4f65addcdf856743a7b6d9a33e2e5230d193e",
+    "historyAndCredentialsPreserved": true,
+    "verifiedAt": "2026-10-28T21:30:21.873915+00:00",
+    "running": true,
+    "bundleMatches": true,
+    "observationsAfterUpgrade": 13,
+    "failedAfterUpgrade": 0,
+    "pendingNotifications": 0,
+    "historyFailuresRetained": 17,
+    "relayDrill": {
+      "botCommentsVerified": true,
+      "events": [
+        {
+          "id": "relay-drill-c1e92050-8cb3-472b-9193-223ffbd5f74f",
+          "kind": "outage",
+          "url": "https://github.com/porchday/porchday/issues/52#issuecomment-6481109693",
+          "deliveredAt": "2026-10-28T21:27:58Z"
+        },
+        {
+          "id": "relay-drill-56f2c1b4-d754-4d3a-9547-c19aebfe89c8",
+          "kind": "recovery",
+          "url": "https://github.com/porchday/porchday/issues/52#issuecomment-6481117842",
+          "deliveredAt": "2026-10-28T21:28:23Z"
+        }
+      ]
+    }
+  },
+  "notificationVerification": {
+    "githubInboxVerifiedFor": "bobbyhwilder",
+    "verifiedIssueThreads": [
+      52,
+      53
+    ],
+    "humanAcknowledgementVerified": false,
+    "otherOwnerReceiptVerified": false,
+    "emailMobileDeliveryVerified": false
+  },
+  "newFinding": {
+    "issue": "https://github.com/porchday/porchday/issues/55",
+    "classification": "Confirmed synthetic deadline failures; cause unconfirmed; not proof of revocation failure",
+    "failuresRetainedThrough": "2026-10-28T21:30:21.873915+00:00",
+    "failedCycles": 17,
+    "journalFollowup": {
+      "at": "2026-10-28T21:21:15.727Z",
+      "readOnly": true,
+      "journalMode": "active",
+      "pendingCount": 0,
+      "oldestPendingSeconds": 0,
+      "databaseQuarantined": false,
+      "generationMatches": true,
+      "sequenceAtLeastCheckpoint": true
+    },
+    "logoutSample": {
+      "route": "/api/auth/sign-out",
+      "requests": "43",
+      "server_errors": "0",
+      "mean_ms": 4169.441860465116,
+      "p95_ms": 7792
+    }
+  },
+  "productionApiReleaseUnchanged": "44afbb8d-3133-4aac-8663-efd6fb5feb47",
+  "productionApiReleaseCheckedAt": "2026-10-28T21:33:53.489Z",
+  "applicationWorkerOrSchemaDeployed": false,
+  "scope": "login_authorized_reads_logout_and_readiness",
+  "encryptedWriteAndRegionalCoverageComplete": false,
+  "automaticRecoveryComplete": false,
+  "monthlySloAchieved": false
+}
