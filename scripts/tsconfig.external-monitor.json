@@ -14,6 +14,7 @@
     "external-monitor-alerts.ts",
     "external-monitor-github.ts",
     "external-monitor-store.ts",
-    "external-monitor-backup.ts"
+    "external-monitor-backup.ts",
+    "external-monitor-relay.ts"
   ]
 }

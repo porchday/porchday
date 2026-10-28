@@ -13,7 +13,7 @@ export const ghTransport:GitHubTransport=async(method,path,body)=>{
   if(body)return await new Promise((resolve,reject)=>{
    const child=execFile(process.env.PORCHDAY_MONITOR_GH_PATH??'/opt/homebrew/bin/gh',args,{timeout:15000,maxBuffer:1048576},(error,stdout)=>{
     if(error){reject(Error('GITHUB_REQUEST_FAILED'));return;}
-    try{resolve(JSON.parse(stdout));}catch{reject(Error('GITHUB_RESPONSE_INVALID'));}
+    try{resolve(stdout.trim()?JSON.parse(stdout):null);}catch{reject(Error('GITHUB_RESPONSE_INVALID'));}
    });
    child.stdin?.on('error',()=>{});child.stdin?.end(JSON.stringify(body));
   });
@@ -61,8 +61,9 @@ export async function previousHostedExecutionFailed(runId:string,transport:GitHu
 }
 
 /** Reconcile an uncertain comment write using its persisted event marker before retrying. */
-export async function deliver(issue:number,event:AlertEvent,source:'operator-mac'|'github-backup',options:{transport?:GitHubTransport;drill?:boolean}={}):Promise<void>{
+export async function deliver(issue:number,event:AlertEvent,source:'operator-mac'|'github-backup',options:{transport?:GitHubTransport;drill?:boolean;relay?:boolean;requireBot?:boolean}={}):Promise<void>{
  if(!Number.isSafeInteger(issue)||issue<1)throw Error('INVALID_MONITOR_ISSUE');
+ if(options.relay&&(issue!==52||source!=='operator-mac'))throw Error('INVALID_RELAY_DESTINATION');
  const transport=options.transport??ghTransport,body=alertBody(event,source,options.drill),marker=body.split('\n')[0];
  const path=`/repos/porchday/porchday/issues/${issue}`;
  const target=await transport('GET',path) as {title?:string;pull_request?:unknown};
@@ -70,12 +71,22 @@ export async function deliver(issue:number,event:AlertEvent,source:'operator-mac
  // Old events are retained in this dedicated issue; pagination prevents duplicate
  // notifications after a successful write whose acknowledgement was lost.
  for(let page=1;page<=100;page++){
-  const comments=await transport('GET',path+`/comments?per_page=100&page=${page}`) as {body?:string}[];
+  const comments=await transport('GET',path+`/comments?per_page=100&page=${page}`) as {body?:string;user?:{login?:string;type?:string}}[];
   if(!Array.isArray(comments))throw Error('GITHUB_RESPONSE_INVALID');
-  if(comments.some(c=>c.body===body))return;
+  if(comments.some(c=>c.body===body&&(!(options.relay||options.requireBot)||(c.user?.login==='github-actions[bot]'&&c.user.type==='Bot'))))return;
   // A matching marker with a different body is not trusted as delivery proof.
-  if(comments.some(c=>c.body?.startsWith(marker)))throw Error('MONITOR_EVENT_CONFLICT');
-  if(comments.length<100){await transport('POST',path+'/comments',{body});return;}
+  if(comments.some(c=>c.body?.startsWith(marker)&&c.body!==body))throw Error('MONITOR_EVENT_CONFLICT');
+  if(comments.length<100){
+   if(options.relay){
+    await transport('POST','/repos/porchday/porchday/actions/workflows/external-monitor-relay.yml/dispatches',{
+     ref:'main',inputs:{event_id:event.id,payload:JSON.stringify({event:{id:event.id,kind:event.kind,at:event.at,failedChecks:event.failedChecks},drill:!!options.drill})},
+    });
+    // Dispatch acceptance is not notification delivery. Keep the durable outbox
+    // until a later reconciliation observes the exact bot-authored comment.
+    throw Error('NOTIFICATION_PENDING');
+   }
+   await transport('POST',path+'/comments',{body});return;
+  }
  }
  throw Error('MONITOR_ISSUE_ROTATION_REQUIRED');
 }

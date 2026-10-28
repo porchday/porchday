@@ -21,7 +21,7 @@ async function main(){
    while(state.pending.length&&!stopping){
     const event=state.pending[0];
     try{
-     await deliver(config.issue,event,'operator-mac');
+     await deliver(config.issue,event,'operator-mac',{relay:true});
      // Probe completions may have appended events during delivery; preserve them.
      state={...state,pending:state.pending.filter(candidate=>candidate.id!==event.id)};save();
      console.log(JSON.stringify({at:new Date().toISOString(),event:'notification_delivered',kind:event.kind}));

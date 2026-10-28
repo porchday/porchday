@@ -28,7 +28,7 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
   state=advance(state,observation,randomUUID());
   if(stateAvailable){
    while(state.pending.length){
-    try{await deliver(config.issue,state.pending[0],'github-backup',{transport:options.transport});state.pending.shift();}
+    try{await deliver(config.issue,state.pending[0],'github-backup',{transport:options.transport,requireBot:true});state.pending.shift();}
     catch{break;}
    }
   }
@@ -43,8 +43,8 @@ export async function notificationDrill(issue:number,runId:string,transport:GitH
  const at=Date.parse(run.created_at??'');
  if(String(run.id)!==runId||run.head_branch!=='main'||run.repository?.full_name!=='porchday/porchday'||!Number.isFinite(at))throw Error('INVALID_WORKFLOW_RUN');
  // Stable IDs and timestamps make re-running the same drill idempotent.
- await deliver(issue,{id:`drill-${runId}-outage`,kind:'outage',at:new Date(at).toISOString(),failedChecks:['protected_readiness']},'github-backup',{transport,drill:true});
- await deliver(issue,{id:`drill-${runId}-recovery`,kind:'recovery',at:new Date(at+20000).toISOString(),failedChecks:[]},'github-backup',{transport,drill:true});
+ await deliver(issue,{id:`drill-${runId}-outage`,kind:'outage',at:new Date(at).toISOString(),failedChecks:['protected_readiness']},'github-backup',{transport,drill:true,requireBot:true});
+ await deliver(issue,{id:`drill-${runId}-recovery`,kind:'recovery',at:new Date(at+20000).toISOString(),failedChecks:[]},'github-backup',{transport,drill:true,requireBot:true});
 }
 
 async function main(){

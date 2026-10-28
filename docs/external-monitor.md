@@ -42,6 +42,14 @@ Manual dispatch can request `notification_drill=true`. After healthy real probes
 
 This is backup detection, not continuous sub-minute monitoring: GitHub documents [delayed or dropped scheduled runs](https://docs.github.com/en/actions/how-tos/troubleshoot-workflows) and [automatic schedule disabling after 60 days of public-repository inactivity](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows). A scheduler that stops entirely cannot report its own failure until execution resumes. The Mac and hosted checks do not guarantee a 30-second bound while either execution or delivery is unavailable. Hosted deployment and receipt acceptance are still pending; source and tests alone do not prove that the workflow runs.
 
+## Bot-authored owner notifications
+
+The original Mac installation posts through the operator's GitHub account. GitHub has a [separate notification preference for your own updates](https://docs.github.com/en/subscriptions-and-notifications/get-started/configuring-notifications), so a successful self-authored mention does not prove that the operator received an alert. The original drill remains unconfirmed.
+
+The updated source routes Mac notifications through `.github/workflows/external-monitor-relay.yml`. The Mac submits only validated event metadata and an explicit drill flag; the main-branch workflow posts the fixed notification as `github-actions[bot]`. It receives no application credentials. Dispatch is restricted to the two verified repository owners, and delivery is confined to #52. The source does not remove an event from the Mac's persistent outbox until it reads the exact bot-authored comment. Dispatch acceptance alone is not delivery. Repeated dispatches and workflow reruns reconcile the same event rather than repeating owner mentions.
+
+This relay avoids reliance on the operator's own-activity preference, but normal notification settings and GitHub Actions/API availability still govern delivery. The action queue adds latency; a pending event is reconciled or redispatched after at least 60 seconds while probes continue. The hosted backup already posts directly as the Actions bot to #53. Relay deployment, the Mac bundle upgrade and a bot-authored notification drill remain pending until recorded with live evidence.
+
 ## October 28 installation
 
 The operator Mac launch agent `com.porchday.external-monitor` is installed in `~/Library/LaunchAgents/`. Its pinned bundle, scoped configuration, state and private logs live in `~/.config/porchday-external-monitor/`. The installed source is `1c6194ac82bd330daf1dfe7c2f6131b94613b793`; bundle SHA-256 is `c15a0ee8368eed2d28514d2d6abed4e3695b169518811ac8c55bc270fbbdc48b`. Production collection began at **2026-10-28 20:54:02 UTC**. This deployment changed no Worker, application schema, domain or queue setting.
