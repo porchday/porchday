@@ -119,5 +119,13 @@
       "pattern": "staging.porchday.com",
       "custom_domain": true
     }
+  ],
+  "d1_databases": [
+    {
+      "binding": "TRACES",
+      "database_name": "porchday-staging-traces",
+      "database_id": "c481c657-d9ce-4bc9-b786-c6d15845df3f",
+      "migrations_dir": "d1/traces"
+    }
   ]
 }
