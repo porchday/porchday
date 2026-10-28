@@ -45,6 +45,7 @@ import { startInitialProfileSetup,type InitialProfileState } from "./initial-pro
 import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
 import { preparePostAudienceRefresh, startPostAudienceRefresh, type AudienceRefreshState, type RefreshPost } from "./post-audience-refresh";
 import { validatedPhoto } from "./photo-safety";
+import { markOnce, traced } from "./tracing";
 type BackupDevice = {
   id: string;
   public_key: string;
@@ -135,6 +136,9 @@ export function VaultProvider({
     key: UnlockedPrivateKey;
     history: UnlockedPrivateKey[];
   } | null>(null);
+  useEffect(() => {
+    if (active) markOnce("vault-ready");
+  }, [active]);
   const [error, setError] = useState("");
   const [generated, setGenerated] = useState<{
     device: BackupDevice;
@@ -639,7 +643,13 @@ export function VaultProvider({
       })),
     });
   }
-  async function open(
+  function open(row: Parameters<typeof openContent>[0]) {
+    return traced("decrypt", () => openContent(row)).then((value) => {
+      markOnce("first-decrypt");
+      return value;
+    });
+  }
+  async function openContent(
     row:
       | SocialObject
       | { envelope: EncryptedEnvelope; id?: string; author_id?: string },

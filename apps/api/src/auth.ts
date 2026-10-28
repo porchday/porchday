@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import type { Env } from './types';
 import { sendAccountEmail } from './email';
 import {enqueueAccountEmail} from './email-outbox';
+import {countTrace} from './tracing';
 
 export function createAuth(env: Env, pool: Pool, signupId?: string, inTransaction=false, validateSchema=true) {
   const accountEmail=(memberId:string,to:string,subject:string,text:string)=>inTransaction
@@ -68,6 +69,7 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
   });
 }
 export function authPool(env: Env): Pool {
+  countTrace('db_pool_auth');
   return new Pool({connectionString: env.HYPERDRIVE_AUTH.connectionString, max:3, connectionTimeoutMillis:10000, idleTimeoutMillis:1000});
 }
 export async function hashToken(value: string): Promise<string> {

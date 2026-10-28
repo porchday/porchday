@@ -1,5 +1,6 @@
 import {event,type FeedPhase} from './telemetry';
 import type {Env} from './types';
+import {activeTrace,recordTraceSpan} from './tracing';
 
 export interface FeedTiming { record(phase:FeedPhase,durationMs:number):void }
 
@@ -21,4 +22,9 @@ export function measureFeedPhase<T>(timing:FeedTiming|undefined,phase:FeedPhase,
   try{return await work();}
   finally{recordFeedPhase(timing,phase,performance.now()-started);}
  })();
+}
+
+/** Phase spans for an opted-in traced request when a caller supplies no timing. */
+export function traceTiming():FeedTiming|undefined {
+ return activeTrace()?{record:recordTraceSpan}:undefined;
 }

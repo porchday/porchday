@@ -39,6 +39,7 @@ import { initSiteAppearance } from "./site-appearance";
 import { initColorScheme } from "./color-scheme";
 import { BuilderChat, builderChatAvailable } from "./BuilderChat";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
+import { installTracing } from "./tracing";
 import "./styles.css";
 import "./retro.css";
 import "virtual:dark.css";
@@ -548,6 +549,7 @@ function AppShell({
     </MemberAvatarProvider>
   );
 }
+installTracing();
 initColorScheme();
 initSiteAppearance();
 createRoot(document.getElementById("root")!).render(

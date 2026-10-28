@@ -1,6 +1,7 @@
 import {Pool, type PoolClient} from 'pg';
 import type {Env} from './types';
 import {measureFeedPhase, type FeedTiming} from './feed-timing';
+import {countTrace} from './tracing';
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** A bounded read using the same social role/RLS and transaction-local actor.
@@ -9,6 +10,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  */
 export async function readMemberBootstrap(env: Pick<Env,'HYPERDRIVE_SOCIAL'>, memberId: string, bootstrap: boolean, timing?: FeedTiming) {
   if (!uuid.test(memberId)) throw Error('Invalid authenticated member identifier');
+  countTrace('db_conn_social');
   const pool = new Pool({connectionString:env.HYPERDRIVE_SOCIAL.connectionString,max:1,connectionTimeoutMillis:10000,idleTimeoutMillis:1000});
   let client: PoolClient | undefined;
   try {

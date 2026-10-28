@@ -25,8 +25,11 @@ import {incidentControls} from './incident-controls';
 import {createPlatformInvitationRoutes} from './platform-invitations';
 import {applicationDomains} from './application-domains';
 import {createBuilderChatRoutes,createBuilderBridgeRoutes,createStaffBuilderChatRoutes} from './builder-chat';
+import {tracingMiddleware,traceError} from './tracing';
+import {createTraceRoutes,cleanupTraces,deleteMemberTraces} from './traces';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
+app.use('*',tracingMiddleware());
 app.use('*',requestTimingMiddleware);
 app.use('*',secureHeaders({
  contentSecurityPolicy:{defaultSrc:["'self'"],scriptSrc:["'self'"],styleSrc:["'self'","'unsafe-inline'"],imgSrc:["'self'",'blob:','data:'],fontSrc:["'self'"],connectSrc:["'self'"],workerSrc:["'self'",'blob:'],objectSrc:["'none'"],baseUri:["'none'"],formAction:["'self'"],frameAncestors:["'none'"]},
@@ -95,16 +98,20 @@ app.delete('/api/v1/account',async c=>{
  try { await withMember(c.env,c.get('memberId'),db=>db`select app.delete_member()`); }
  catch(error){if((error as Error).message.includes('OWNED_GROUPS'))return c.json({error:{code:'OWNED_GROUPS',message:'Transfer ownership or delete your groups first.'}},409);throw error;}
  const pool=authPool(c.env);
- try {await pool.query('DELETE FROM public.auth_user WHERE id=$1',[c.get('memberId')]);return c.json({ok:true});}
+ try {await pool.query('DELETE FROM public.auth_user WHERE id=$1',[c.get('memberId')]);}
  finally{c.executionCtx.waitUntil(pool.end());}
+ // Performance traces otherwise age out within the 14-day retention window.
+ c.executionCtx.waitUntil(deleteMemberTraces(c.env,c.get('memberId')).catch(()=>{}));
+ return c.json({ok:true});
 });
 app.route('/api/v1',createPlatformInvitationRoutes());
 app.route('/api/v1',createSocialRoutes());
 app.route('/api/v1',createIntegrationConsentRoutes());
 app.route('/api/v1',createBuilderChatRoutes());
+app.route('/api/v1',createTraceRoutes());
 app.all('/api/*',c=>c.json({error:{code:'NOT_FOUND'}},404));
 app.get('*',c=>c.env.ASSETS.fetch(c.req.raw));
-app.onError((_error,c)=>{event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
+app.onError((_error,c)=>{traceError(_error);event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
 
 export { app };
 export default {
@@ -112,6 +119,7 @@ export default {
  async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext){
   if(controller.cron==='17 3 * * *'){
    if(env.MEDIA_BACKUP_ENABLED==='true')ctx.waitUntil(env.JOBS.send({kind:'media_backup_start'}));
+   ctx.waitUntil(cleanupTraces(env).catch(()=>{}));
   }else ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
  },
  async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){

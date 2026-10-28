@@ -2,7 +2,7 @@
 import {FEED_PHASES} from '../apps/api/src/telemetry';
 import {metricsQuery,parseAggregates,securitySignals} from '../apps/monitor/src/metrics';
 const environment=process.argv[2],view=process.argv[3]??'summary';
-if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','security'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_SUMMARY_COUNTERS_FRESHNESS_USAGE_FEED_PHASES_OR_SECURITY');
+if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','security','trace-store'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_SUMMARY_COUNTERS_FRESHNESS_USAGE_FEED_PHASES_SECURITY_OR_TRACE_STORE');
 if(view==='feed-phases'&&environment!=='staging')throw Error('FEED_PHASES_STAGING_ONLY');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_ANALYTICS_READ_TOKEN??process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
 if(!account||!/^[a-f0-9]{32}$/.test(account)||!token)throw Error('ANALYTICS_READ_CREDENTIALS_REQUIRED');
@@ -32,6 +32,15 @@ const queries={
  freshness:`SELECT max(timestamp) AS latest_timestamp,sum(_sample_interval) AS events
   FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '15' MINUTE
   AND blob1='porchday_metrics_v1' FORMAT JSON`,
+ // D1 health for performance traces: outcomes, wall time, D1's own duration
+ // (double4) and rows touched, over the last hour.
+ 'trace-store':`SELECT blob6 AS code,sum(_sample_interval) AS events,
+  sum(double2*_sample_interval)/sum(_sample_interval) AS mean_ms,
+  quantileExactWeighted(0.95)(double2,_sample_interval) AS p95_ms,
+  quantileExactWeighted(0.95)(double4,_sample_interval) AS store_p95_ms,
+  sum(double3*_sample_interval) AS quantity FROM ${dataset}
+  WHERE timestamp>NOW()-INTERVAL '60' MINUTE AND blob1='porchday_metrics_v1'
+  AND blob3='trace_store' GROUP BY code ORDER BY events DESC FORMAT JSON`,
  usage:`SELECT sum(_sample_interval) AS estimated_events FROM ${dataset}
   WHERE timestamp>NOW()-INTERVAL '30' DAY AND blob1='porchday_metrics_v1' FORMAT JSON`,
 };
@@ -48,7 +57,7 @@ try{
  if(!Array.isArray(result.data)||result.data.length>200)throw Error('ANALYTICS_RESPONSE_INVALID');
  // Never print provider diagnostic payloads. These fixed queries return only
  // bounded labels from our exporter, aggregate values and provider timestamps.
- const columns=new Set(['route','kind','code','requests','server_errors','mean_ms','p95_ms','events','quantity','latest_timestamp','estimated_events']);
+ const columns=new Set(['route','kind','code','requests','server_errors','mean_ms','p95_ms','events','quantity','latest_timestamp','estimated_events','store_p95_ms']);
  const phaseColumns=new Set(['observed_points','events','mean_ms','p50_ms','p95_ms']);
  function phaseRows(rows:Record<string,unknown>[]){
   const safe:Record<string,string|number>[]=[];

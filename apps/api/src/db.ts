@@ -1,12 +1,14 @@
 import postgres, { type TransactionSql } from 'postgres';
 import type { Env } from './types.js';
-import {measureFeedPhase,recordFeedPhase,type FeedTiming} from './feed-timing';
+import {measureFeedPhase,recordFeedPhase,traceTiming,type FeedTiming} from './feed-timing';
+import {countTrace} from './tracing';
 export type Db = TransactionSql;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** No session-wide identity: Hyperdrive can reassign a connection after COMMIT. */
-export async function withMember<T>(env: Pick<Env, 'HYPERDRIVE_SOCIAL'>, memberId: string, work: (db: Db) => Promise<T>, timing?:FeedTiming): Promise<T> {
+export async function withMember<T>(env: Pick<Env, 'HYPERDRIVE_SOCIAL'>, memberId: string, work: (db: Db) => Promise<T>, timing:FeedTiming|undefined=traceTiming()): Promise<T> {
     if (!uuid.test(memberId))
         throw new Error('Invalid authenticated member identifier');
+    countTrace('db_conn_social');
     // Hyperdrive supports prepared statements. Disabling them adds parameter
     // discovery messages that its transaction pool does not reliably support.
     // This caches query plans, never permission decisions or returned rows.

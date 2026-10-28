@@ -4,7 +4,9 @@ import {JOURNAL_IO_CODES} from './journal-io';
 /** Only these finite dimensions can reach console output or Analytics Engine.
  * No request/response objects, headers, URLs, identifiers, SQL or error objects.
  */
-const names=new Set(['request','job','email','error','feed_phase']);
+const names=new Set(['request','job','email','error','feed_phase','trace_store']);
+export const TRACE_STORE_CODES=['trace_write_ok','trace_write_failed','trace_write_throttled','trace_read_ok','trace_read_failed','trace_cleanup_ok','trace_cleanup_failed'] as const;
+export type TraceStoreCode=typeof TRACE_STORE_CODES[number];
 export const FEED_PHASES=['journal_check','journal_close','auth_session','auth_status','social_connect_begin','social_actor','social_query','social_commit','social_close'] as const;
 export type FeedPhase=typeof FEED_PHASES[number];
 export const JOURNAL_FAILURE_CODES=['journal_begin_failed','journal_work_failed','journal_completion_failed','journal_close_failed'] as const;
@@ -12,14 +14,15 @@ export const CLEANUP_FAILURE_CODES=['cleanup_journal_failed','cleanup_expiry_fai
 export type JournalFailureCode=typeof JOURNAL_FAILURE_CODES[number];
 export type CleanupFailureCode=typeof CLEANUP_FAILURE_CODES[number];
 const feedPhases=new Set<string>(FEED_PHASES);
-const codes=new Set(['accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry','outbox_retry','outbox_delivered','email_outbox_retry','recovery_email_retry','media_backup_retry','journal_not_initialized','restore_quarantined','database_rollback_detected','journal_not_configured','journal_unavailable','journal_store_read_failed','journal_control_invalid','journal_database_read_failed','journal_database_status_invalid',...JOURNAL_FAILURE_CODES,...CLEANUP_FAILURE_CODES,...JOURNAL_IO_CODES]);
+const codes=new Set(['accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry','outbox_retry','outbox_delivered','email_outbox_retry','recovery_email_retry','media_backup_retry','journal_not_initialized','restore_quarantined','database_rollback_detected','journal_not_configured','journal_unavailable','journal_store_read_failed','journal_control_invalid','journal_database_read_failed','journal_database_status_invalid',...JOURNAL_FAILURE_CODES,...CLEANUP_FAILURE_CODES,...JOURNAL_IO_CODES,...TRACE_STORE_CODES]);
 const methods=new Set(['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']);
 const environments=new Set(['development','staging','production']);
-const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/auth/*','/api/account-recovery/*','/api/*','/assets/*',
+const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/v1/traces','/api/auth/*','/api/account-recovery/*','/api/*','/assets/*',
  ...['sign-in/email','sign-up/email','sign-out','get-session','verify-email','request-password-reset','reset-password','send-verification-email','change-password','list-sessions','revoke-session','revoke-sessions'].map(route=>'/api/auth/'+route)]);
-type Fields={route?:string;method?:string;status?:number;durationMs?:number;code?:string;environment?:string;count?:number};
+/** storeMs: D1's own reported query duration, beside wall-clock durationMs. */
+type Fields={route?:string;method?:string;status?:number;durationMs?:number;code?:string;environment?:string;count?:number;storeMs?:number};
 type MetricsEnvironment=Pick<Env,'ENVIRONMENT'|'METRICS'|'FEED_PHASE_TIMING'>;
-export function event(name:'request'|'job'|'email'|'error'|'feed_phase',fields:Fields={},env?:MetricsEnvironment):void{
+export function event(name:'request'|'job'|'email'|'error'|'feed_phase'|'trace_store',fields:Fields={},env?:MetricsEnvironment):void{
  try{
   if(!names.has(name))return;
   if(name==='feed_phase'){
@@ -38,6 +41,7 @@ export function event(name:'request'|'job'|'email'|'error'|'feed_phase',fields:F
   if(Number.isInteger(fields.status)&&fields.status!>=100&&fields.status!<=599)safe.status=fields.status!;
   if(typeof fields.durationMs==='number'&&Number.isFinite(fields.durationMs)&&fields.durationMs>=0&&fields.durationMs<=3_600_000)safe.durationMs=Math.round(fields.durationMs);
   if(Number.isInteger(fields.count)&&fields.count!>=0&&fields.count!<=1_000_000)safe.count=fields.count!;
+  if(typeof fields.storeMs==='number'&&Number.isFinite(fields.storeMs)&&fields.storeMs>=0&&fields.storeMs<=3_600_000)safe.storeMs=Math.round(fields.storeMs*10)/10;
   // Keep debugging local. Hosted telemetry never depends on persisted console
   // records, which may otherwise acquire provider-generated request metadata.
   if(!env||env.ENVIRONMENT==='development')try{console.log(JSON.stringify(safe));}catch{}
@@ -48,7 +52,8 @@ export function event(name:'request'|'job'|'email'|'error'|'feed_phase',fields:F
   const result:unknown=env.METRICS.writeDataPoint({
    indexes:[name+':'+route],
    blobs:['porchday_metrics_v1',String(safe.environment),name,route,String(safe.method??'none'),code,status?Math.floor(status/100)+'xx':'none'],
-   doubles:[status,Number(safe.durationMs??-1),Number(safe.count??0)],
+   // double4 exists only on trace_store points; older points keep three.
+   doubles:[status,Number(safe.durationMs??-1),Number(safe.count??0),...(safe.storeMs===undefined?[]:[Number(safe.storeMs)])],
   });
   // Native writeDataPoint returns void immediately. Also absorb rejection from
   // an injected/future async adapter without awaiting or delaying the request.
