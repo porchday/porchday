@@ -76,3 +76,39 @@ At 21:26:02 UTC the Mac bundle was upgraded to the same reviewed release source,
 The ongoing watch also revealed **17 retained whole-journey deadline failures** before the bundle upgrade. The initial ten occurred between 21:11 and 21:15 UTC; subsequent failures are retained through the 21:30 evidence snapshot. Logout or the subsequent revocation observation exhausted the shared ten-second budget. A check attempted with an already-aborted signal does not prove failed revocation. Sampled server metrics showed sign-out p95 around 7.8 seconds with no sampled sign-out 5xx, and read-only follow-up found an active journal, no pending intents and no SQL quarantine. The cause is still unconfirmed in [#55](https://github.com/porchday/porchday/issues/55). The relay upgrade did not change the application or fix its latency; the later healthy cycles do not close that investigation.
 
 See the [sanitized acceptance evidence](evidence/external-backup-2026-10-28.json). The production API release remained `44afbb8d-3133-4aac-8663-efd6fb5feb47`; this release deployed monitoring workflows and a local monitor bundle, not application Workers or production migrations. No monthly SLO achievement is claimed.
+
+## Reproducible availability reports
+
+Run the read-only reporter with Node 24:
+
+```sh
+node scripts/availability-report.ts --state-dir "$HOME/.config/porchday-external-monitor/state"
+```
+
+Use `--as-of 2026-10-28T23:43:40.000Z` for a fixed cutoff, `--month 2026-10`
+for a calendar month, and `--environment staging` for staging history. Output
+contains a UTC monthly report and a rolling 30-day report. The monthly error
+budget uses the full calendar month; month-to-date coverage uses elapsed time.
+The rolling window always spans 30 days ending at the cutoff.
+
+Each completed 20-second UTC bucket receives at most one time weight. Any failed
+sample in a bucket makes that bucket failed, even if another sample succeeds.
+Buckets without a completed observation, gaps and the current incomplete bucket
+remain unknown. Future or unfinished observations cannot establish coverage.
+This is a sampled estimate of login, authorized reads, logout/revocation and
+readiness—not continuous uptime or complete core-journey availability.
+
+Read `coveragePercent` alongside `sampledSuccessRatePercent`; the latter uses only
+observed buckets and must never be presented as a whole-month success rate.
+`estimatedFailedSeconds` is a bucket estimate, not a claim about exact outage
+start/end times. The report always leaves the broader SLO unestablished because
+these probes omit encrypted writes, mail delivery and independent regional
+coverage. Earlier incidents also remain part of the actual SLO even if they
+precede this monitor's collection.
+
+The reporter opens private history read-only, bounds each input at its opening
+size, and includes byte counts and SHA-256 digests. Concurrent appends belong to a
+later report. Malformed observations, mismatched monthly files, nonprivate files
+and a torn trailing record stop reporting; they are never discarded to improve
+availability. Preserve the input byte prefixes alongside retained reports to
+reproduce a fixed snapshot. The reporter does not delete history or post alerts.
