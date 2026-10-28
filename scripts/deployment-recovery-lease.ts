@@ -18,22 +18,28 @@ function checkCanonical(plan:DeploymentPlan,text:string):Record<string,unknown>{
   if(typeof floor!=='string'||!plan.compatibleRollbackVersions.includes(floor))throw new RecoveryError('DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED');
   return canonical;
 }
-type Finalization={v:1;planHash:string;terminal:RecoveryState;before:string;after:string};
+type SnapshotReceipt={path:string;sha256:string};
+type Finalization={v:1;planHash:string;terminal:RecoveryState;before:string;after:string;snapshot?:SnapshotReceipt};
 function terminalState(state:unknown,hash:string):asserts state is RecoveryState{
  validateRecoveryState(state);if(state.planHash!==hash||!['complete','rolled-back'].includes(state.phase))throw new RecoveryError('DEPLOYMENT_LEASE_OUTCOME_UNRESOLVED');
 }
-function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string):string{
+function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,snapshot?:SnapshotReceipt):string{
  const record=checkCanonical(plan,before),environment=plan.worker.slice('porchday-'.length),success=state.phase==='complete';
  const version=success?plan.candidateVersion:plan.baselineVersion,source=success?plan.candidateSource:record[environment+'RuntimeSource'];
- return JSON.stringify({...record,[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source,
- deploymentRecovery:{...(record.deploymentRecovery as Record<string,unknown>|undefined),[environment]:{operationId:plan.operationId,planHash:deploymentPlanHash(plan),outcome:state.phase,version,source,deploymentId:success?state.candidateDeploymentId:state.rollbackDeploymentId,evidenceDigest:plan.evidenceDigest}}})+'\n';
+ if(snapshot){
+  if(!isAbsolute(snapshot.path)||!/^[a-f0-9]{64}$/.test(snapshot.sha256))throw new RecoveryError('DEPLOYMENT_SNAPSHOT_INVALID');
+  const bytes=privateText(snapshot.path);if(digest(bytes)!==snapshot.sha256)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_CHANGED');
+  const observed=JSON.parse(bytes);if(observed?.workers?.[environment]?.active!==version)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_VERSION_CHANGED');
+ }
+ return JSON.stringify({...record,...(snapshot?{latestProviderSnapshot:snapshot.path}:{}),[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source,
+ deploymentRecovery:{...(record.deploymentRecovery as Record<string,unknown>|undefined),[environment]:{operationId:plan.operationId,planHash:deploymentPlanHash(plan),outcome:state.phase,version,source,deploymentId:success?state.candidateDeploymentId:state.rollbackDeploymentId,evidenceDigest:plan.evidenceDigest,...(snapshot?{providerSnapshotSha256:snapshot.sha256}:{})}}})+'\n';
 }
 function readFinalization(directory:string,plan:DeploymentPlan,owner:Owner):Finalization|null{
  const path=join(directory,'finalization.json');if(!existsSync(path))return null;
  let value:Finalization;try{value=JSON.parse(privateText(path,6*1024*1024));}catch{throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');}
  if(!value||value.v!==1||value.planHash!==owner.planHash||typeof value.before!=='string'||typeof value.after!=='string'||digest(value.before)!==owner.baselineSha256)throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');
  terminalState(value.terminal,owner.planHash);
- if(value.after!==finalizedRecord(plan,value.terminal,value.before))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');
+ if(value.after!==finalizedRecord(plan,value.terminal,value.before,value.snapshot))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');
  return value;
 }
 /** Local replacement only: complete bytes and directory entries are durable before returning. */
@@ -92,13 +98,14 @@ export class FileDeploymentLease{
   signal?.throwIfAborted();return canonical;
  }
  /** Persist terminal evidence before replacing canonical bytes. Safe to resume, without provider writes. */
- async finalize(journal:RecoveryJournal):Promise<void>{
+ async finalize(journal:RecoveryJournal,providerSnapshotPath?:string):Promise<void>{
   this.assertOwner();const state=await journal.read();terminalState(state,this.owner.planHash);this.assertOwner();
   const directory=join(this.root,'deployment-lock'),path=join(this.root,'latest-verified-deployment.json');
   let receipt=readFinalization(directory,this.plan,this.owner);const current=privateText(path);
-  if(receipt){if(JSON.stringify(state)!==JSON.stringify(receipt.terminal))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');}
+  if(receipt){if(providerSnapshotPath!==undefined&&providerSnapshotPath!==receipt.snapshot?.path)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_CHANGED');if(JSON.stringify(state)!==JSON.stringify(receipt.terminal))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');}
   else{
-   this.assert(this.plan);receipt={v:1,planHash:this.owner.planHash,terminal:state,before:current,after:finalizedRecord(this.plan,state,current)};
+   this.assert(this.plan);const snapshot=providerSnapshotPath===undefined?undefined:{path:providerSnapshotPath,sha256:digest(privateText(providerSnapshotPath))};
+   receipt={v:1,planHash:this.owner.planHash,terminal:state,before:current,after:finalizedRecord(this.plan,state,current,snapshot),...(snapshot?{snapshot}:{})};
    atomicText(join(directory,'finalization.json'),JSON.stringify(receipt)+'\n',this.root);syncDirectory(directory);
   }
   if(current!==receipt.before&&current!==receipt.after)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');

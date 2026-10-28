@@ -121,3 +121,14 @@ it('records rollback deployment identity while preserving baseline source and un
   const record=await FileDeploymentLease.completed(f.root,plan,rollback);expect(record).toMatchObject(baseline);expect(record?.deploymentRecovery).toMatchObject({staging:{version:plan.baselineVersion,source:'c'.repeat(40),deploymentId:uuid(6),outcome:'rolled-back'}});
  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
 });
+
+it('pins the verified provider snapshot and rejects a wrong version or changed evidence',async()=>{
+ const f=fixture();let lease:FileDeploymentLease|undefined;
+ try{
+  const path=join(f.root,'provider-final.json');writeFileSync(path,JSON.stringify({workers:{staging:{active:uuid(9)}}}),{mode:0o600});
+  lease=FileDeploymentLease.acquire(f.root,plan);await expect(lease.finalize(journal('complete'),path)).rejects.toThrow('SNAPSHOT_VERSION_CHANGED');
+  writeFileSync(path,JSON.stringify({workers:{staging:{active:plan.candidateVersion}}}));await lease.finalize(journal('complete'),path);
+  const canonical=JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'));expect(canonical.latestProviderSnapshot).toBe(path);expect(canonical.deploymentRecovery.staging.providerSnapshotSha256).toMatch(/^[a-f0-9]{64}$/);
+  lease.close();writeFileSync(path,'{}');expect(()=>FileDeploymentLease.acquire(f.root,plan)).toThrow('SNAPSHOT_CHANGED');expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);
+ }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+});

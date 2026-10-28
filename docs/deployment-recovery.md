@@ -94,11 +94,17 @@ both lock acquisition and a simulated provider commit. The latter resumes from
 the durable activation intent without another POST. These are local fixtures,
 not hosted recovery evidence.
 
-After the controller verifies a terminal outcome, call `finalize(journal)` and
+After the controller verifies a terminal outcome, capture and validate the full
+provider snapshot, then call `finalize(journal, snapshotPath)` and
 then `release(journal)`. Finalization saves a durable receipt containing the exact
 before/after canonical bytes and terminal journal state before replacing the
 canonical record. Only the targeted API version/source and its deployment recovery
 receipt change; schema, assets, routes and other deployment evidence are retained.
+The snapshot path also updates `latestProviderSnapshot`; its bytes are hashed into
+the finalization receipt and must identify the terminal API version. The caller
+must verify the snapshot against the provider and release contract first; a local
+JSON file alone is not provider evidence. Omitting the snapshot is supported for
+local fixtures, but a hosted rollout must supply it.
 This is suitable for API-version-only operations. Changes to other resources need
 a separate reviewed finalization contract.
 
