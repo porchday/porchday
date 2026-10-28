@@ -1,13 +1,23 @@
+import {JOURNAL_PHASES} from '../apps/api/src/journal-phases';
 /** Fixed read-only aggregate queries. Credentials stay in the process environment. */
 import {FEED_PHASES} from '../apps/api/src/telemetry';
 import {metricsQuery,parseAggregates,securitySignals} from '../apps/monitor/src/metrics';
 const environment=process.argv[2],view=process.argv[3]??'summary';
-if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','security','trace-store','connections','db-snapshot'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
+if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','logout-phases','security','trace-store','connections','db-snapshot'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
 if(view==='feed-phases'&&environment!=='staging')throw Error('FEED_PHASES_STAGING_ONLY');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_ANALYTICS_READ_TOKEN??process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
 if(!account||!/^[a-f0-9]{32}$/.test(account)||!token)throw Error('ANALYTICS_READ_CREDENTIALS_REQUIRED');
 const dataset='porchday_'+environment+'_operations_v1';
 const queries={
+ 'logout-phases':`SELECT blob6 AS phase,count() AS observed_points,sum(_sample_interval) AS events,
+  sum(double2*_sample_interval)/sum(_sample_interval) AS mean_ms,
+  quantileExactWeighted(0.50)(double2,_sample_interval) AS p50_ms,
+  quantileExactWeighted(0.95)(double2,_sample_interval) AS p95_ms
+  FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '15' MINUTE
+  AND blob1='porchday_metrics_v1' AND blob2='${environment}' AND blob3='journal_phase'
+  AND blob4='/api/auth/sign-out' AND blob5='POST' AND double2>=0
+  AND blob6 IN (${JOURNAL_PHASES.map(phase=>"'"+phase+"'").join(',')})
+  GROUP BY phase ORDER BY phase FORMAT JSON`,
  security:metricsQuery(environment as 'staging'|'production'),
  'feed-phases':`SELECT blob6 AS phase,count() AS observed_points,sum(_sample_interval) AS events,
   sum(double2*_sample_interval)/sum(_sample_interval) AS mean_ms,
@@ -77,7 +87,7 @@ try{
  function phaseRows(rows:Record<string,unknown>[]){
   const safe:Record<string,string|number>[]=[];
   for(const row of rows){
-   if(!row||typeof row.phase!=='string'||!(FEED_PHASES as readonly string[]).includes(row.phase))continue;
+   if(!row||typeof row.phase!=='string'||!((view==='logout-phases'?JOURNAL_PHASES:FEED_PHASES) as readonly string[]).includes(row.phase))continue;
    const item:Record<string,string|number>={phase:row.phase};
    for(const key of phaseColumns){
     const value=row[key];
@@ -93,7 +103,7 @@ try{
   const data=rows.filter(row=>['/api/auth/sign-in/email','/api/auth/reset-password','/api/auth/verify-email','/api/auth/*','/api/account-recovery/*'].includes(row.route)).map(({route,requests,observations,failed_requests})=>({route,requests,observations,failed_requests}));
   console.log(JSON.stringify({environment,view,signals:securitySignals(rows),data},null,2));
  }else{
- const data=view==='feed-phases'
+ const data=view==='feed-phases'||view==='logout-phases'
   ?phaseRows(result.data)
   :result.data.map((row:Record<string,unknown>)=>Object.fromEntries(Object.entries(row).filter(([key,value])=>columns.has(key)&&(value===null||typeof value==='number'||(typeof value==='string'&&value.length<=80)))));
  console.log(JSON.stringify({environment,view,data},null,2));
