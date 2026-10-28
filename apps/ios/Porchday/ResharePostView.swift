@@ -13,7 +13,7 @@ struct ResharePostView: View {
             Section {
                 Text("Share a fresh copy of your post with the selected current audience. Comments and reactions remain on the original post.")
                 Text(item.text)
-                if let expiry = item.expiry { Label("The original deadline remains: \(expiry.formatted()).", systemImage: "timer") }
+                if let expiry = item.expiry { Label("The original deadline remains: \(DisplayPreferences.date(expiry)).", systemImage: "timer") }
             }
             if item.context["groupId"] == .null {
                 Picker("Share with", selection: $audience) {

@@ -78,3 +78,89 @@ A passing build is not a security audit. Broader launch also requires independen
 ## Licenses and rebuilds
 
 The About screen contains bundled third-party notices. From the repository root, regenerate them with `python3 scripts/build-third-party-notices.py`. Original Porchday source is Apache-2.0; dependencies retain their own licenses. Source packaging and replacement-build details are in [third-party notices](../../THIRD_PARTY_NOTICES.md).
+
+## Feature parity review (October 28, 2026)
+
+This is a source audit, not a claim of complete physical-device acceptance.
+
+| Web capability | Native status / evidence |
+| --- | --- |
+| Feed, walls, group posts, threaded comments, edits, deletion, deadlines | SwiftUI SocialViews and CommunityViews; social API shared with web |
+| Friends/family labels and history-sharing choices | ConnectionsView, ConnectionHistory, HistoricalPostSharing; sharing and history tests |
+| Unicode/custom reactions and personal emoji | ReactionViews, EmojiLibrary; ReactionsTests |
+| Encrypted photos, avatars, profile and group customization | PhotoPipeline, ProfileAvatar, ProfileEditor, GroupEditor; photo/avatar tests |
+| Sent invitations and joined notifications | PlatformInvitationSection; PlatformInvitationTests |
+| Recovery, Keychain, trusted devices, data export/import and deletion | CryptoVault, SettingsView, PortableArchive; access, Keychain and deletion tests |
+| Manual Light/Dark/System and display timezone | DisplayPreferencesSection; DisplayPreferencesTests. Device-local, independent of encrypted profiles |
+| Two-factor login | Native challenge screen; enrolling/managing 2FA and changing email currently open the website |
+| Integration grant review/revoke | Native; registration/authorization opens the website |
+| Appeals | Website handoff from native settings |
+| Builder chat | Intentionally web/PWA-only in the first-version design; native chat remains postponed |
+| Browser-generated backgrounds | Browser-specific; native has profile wallpapers and standard-theme override |
+| Push and post links | Implemented, but signed physical-device acceptance remains open in issue #7 |
+
+The native UI is not pixel-identical to the website. Full in-app workflow parity
+is not yet established for browser handoffs above. Do not call simulator success
+proof of APNs delivery, installed-app upgrades, real-member recovery or link routing.
+
+## Install on your iPhone or iPad
+
+**Recommended for a small group: TestFlight.** Testers install Apple's TestFlight
+app, open the invitation email/link, tap Accept and Install, then sign in to
+Porchday. Existing members need their own encryption recovery secret to authorize
+the new device and open old posts. Keep the working web installation until that
+has succeeded; never send recovery material to a maintainer.
+
+There is not yet a verified TestFlight invitation URL or signed distribution
+build recorded here. A simulator artifact cannot be installed on an iPhone.
+
+### One-time maintainer setup
+
+1. Enroll in the Apple Developer Program, or use your existing team. Apple lists
+   US$99/year; eligible nonprofits may request a fee waiver. Testers do not need
+   paid developer accounts. Organization enrollment and approval may take time.
+2. Install full Xcode and its iOS platform support. Select it in Xcode Settings
+   → Locations → Command Line Tools. Install XcodeGen and the Go version listed
+   in go.mod, then run the build commands above.
+3. Register `com.porchday.app` in your Apple team and create its App Store Connect
+   app record. Confirm the identifier is available to that team before signing.
+4. Open the generated `apps/ios/Porchday.xcodeproj`. Select the Porchday app target,
+   your real development team and automatic signing. The source defaults have
+   device signing disabled: explicitly set `CODE_SIGNING_ALLOWED=YES` for device
+   builds. Keep team IDs/signing overrides local; do not commit certificates or keys.
+5. Enable Push Notifications and Associated Domains on the App ID/provisioning
+   profile, matching the checked-in entitlements. TestFlight uses the production
+   APNs environment. Enable the app push flag only when backend APNs configuration
+   is ready. The entitlement still requires provisioning even while the UI flag is off.
+6. Select a generic iOS device destination and Product → Archive. In Organizer,
+   choose Distribute App → App Store Connect. Use a new build number for each
+   upload. Do not choose “TestFlight Internal Only” if this build is intended for
+   external testers.
+7. Complete App Store Connect's encryption questions accurately: Porchday embeds
+   OpenPGP/GopenPGP, not just HTTPS or Apple-provided encryption. Do not blanket-set
+   `ITSAppUsesNonExemptEncryption=NO`; complete Apple's questionnaire and any
+   required documentation before distribution.
+8. Start with an internal tester who already has appropriate App Store Connect
+   access. For friends, create an external testing group, provide beta review
+   information and a suitable review-access process, submit the first build for
+   beta review, then send invitations after approval. Do not grant friends team
+   administration merely to skip external testing review.
+9. On a physical phone verify login/recovery, photos, posting/commenting, background
+   and foreground behavior, sign-out, push permission/delivery/tap and supported
+   links. Record results in issue #7; use synthetic content for maintainer tests.
+
+### Direct Xcode installation instead
+
+TestFlight is optional for your own development phone. Connect and trust the
+phone, enable Developer Mode when prompted, select it as Xcode's destination,
+configure signing, then press Run. A free Personal Team has seven-day provisioning
+and capability limitations; the current production target declares push and
+associated domains, so it is not a drop-in free-team build. Use the paid team
+for testing those capabilities. TestFlight is more convenient for ongoing use
+and sharing updates; beta builds remain usable for up to 90 days.
+
+References: [Apple TestFlight](https://developer.apple.com/testflight/),
+[personal-device provisioning](https://developer.apple.com/help/account/basics/about-your-developer-account),
+[enrollment](https://developer.apple.com/help/account/membership/program-enrollment),
+[external testers](https://developer.apple.com/help/app-store-connect/test-a-beta-version/invite-external-testers),
+[encryption questionnaire](https://developer.apple.com/help/app-store-connect/manage-app-information/determine-and-upload-app-encryption-documentation).

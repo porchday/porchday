@@ -36,8 +36,8 @@ struct PlatformInvitationSection: View {
                 HStack(alignment: .top) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(invitation.email).font(.body)
-                        Text("Requested " + invitation.requested.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
-                        if invitation.status == "pending" { Text("Expires " + invitation.expires.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) }
+                        Text("Requested " + DisplayPreferences.date(invitation.requested)).font(.caption).foregroundStyle(.secondary)
+                        if invitation.status == "pending" { Text("Expires " + DisplayPreferences.date(invitation.expires)).font(.caption).foregroundStyle(.secondary) }
                     }
                     Spacer()
                     Text(invitation.statusLabel).font(.caption)

@@ -30,6 +30,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             if let notice = model.member?.access.notice { Section { Text(notice) } }
+            DisplayPreferencesSection()
             Section("Account") { Text("@" + (model.member?.handle ?? "")); if let device = vault.device { Text("Device fingerprint").font(.caption); Text(device.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }; Text("Compare fingerprints through a channel you trust. The service can see account and delivery metadata, but does not hold your content keys.").font(.footnote) }
             Section("Your data") {
                 Text("Export your own posts, comments, reactions, custom emoji collection, photos and profile. References to connections and groups are included; other people's private contributions are excluded.")
@@ -74,7 +75,7 @@ struct SettingsView: View {
                         Text(summary.name).font(.headline)
                         Text(summary.purpose)
                         Text("Requested data: " + summary.scopes.joined(separator: ", ")).font(.footnote)
-                        Text(summary.lastUsed.map { "Last used: " + $0.formatted(date: .abbreviated, time: .shortened) } ?? "Not used yet").font(.footnote)
+                        Text(summary.lastUsed.map { "Last used: " + DisplayPreferences.date($0) } ?? "Not used yet").font(.footnote)
                         if summary.revoked { Text("Revoked").font(.footnote) }
                         else { Button("Revoke", role: .destructive) { Task { await model.perform { _ = try await model.api.social("/integrations/" + (grant["id"].string ?? ""), method: "DELETE"); await refresh() } } }.accessibilityLabel("Revoke " + summary.name) }
                     }
