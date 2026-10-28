@@ -381,6 +381,10 @@ partial results; a deployment mismatch invalidates completion. An interruption
 can leave the initial `collecting` output and attempt journal, which must be kept
 as incomplete evidence. Failed attempts retain their status when headers arrived,
 but never response bodies, session cookies, member IDs, or arbitrary trace headers.
+Authenticated diagnostic reads opt into request-local tracing with fresh random
+trace IDs, without uploading traces to D1. Only numeric allowlisted phase spans
+and total duration are retained; duplicate summary/span timings are not added.
+This adds instrumentation overhead, so record this condition when comparing runs.
 Numeric allowlisted Server-Timing phases are diagnostic hints; absent timing is
 null rather than zero. Elapsed time includes body transfer and validation on the
 runner, not phone rendering or photo decryption.

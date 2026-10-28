@@ -53,3 +53,17 @@ test('journal failure stops further measurement and cannot report completion',as
  const f=fixture();f.io.record.mockRejectedValueOnce(Error('disk full'));
  const r=await collect(plan(),f.io);expect(r.reason).toBe('probe-interrupted');expect(r.samples).toHaveLength(1);expect(f.io.fetch).toHaveBeenCalledTimes(2);
 });
+
+test('reads current server span format without duplicate counting or trace metadata',()=>{
+ const r=timing('worker;dur=80, auth_session;dur=20, pd-total;dur=85, pd-span;dur=20;desc="auth_session@2", pd-span;dur=5;desc="social_query@30", pd-span;dur=7;desc="social_query@40", pd-trace;desc="secret", pd-span;dur=4;desc="private_name@0"');
+ expect(r).toEqual({serverMs:85,phases:{worker:80,auth_session:20,social_query:12}});
+});
+test('opts authenticated reads into tracing with fresh IDs but never uploads traces',async()=>{
+ const f=fixture(),r=await collect(plan(),f.io);
+ const headers=f.calls.filter(c=>c.init.headers.Cookie).map(c=>c.init.headers.traceparent);
+ expect(headers).toHaveLength(4);expect(new Set(headers).size).toBe(4);
+ for(const h of headers)expect(h).toMatch(/^00-[a-f0-9]{32}-[a-f0-9]{16}-01$/);
+ expect(f.calls.filter(c=>!c.init.headers.Cookie).every(c=>!c.init.headers.traceparent)).toBe(true);
+ for(const h of headers)expect(JSON.stringify(r)).not.toContain(h);
+ expect(f.calls.some(c=>c.url.includes('/traces'))).toBe(false);
+});
