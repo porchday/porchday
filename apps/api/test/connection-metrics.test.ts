@@ -97,4 +97,16 @@ describe.skipIf(!url)('connection snapshot against PostgreSQL',()=>{
   try{await expect(social`select app.connection_snapshot()`).rejects.toMatchObject({code:'42501'});}
   finally{await social.end();await owner.unsafe(`DROP ROLE ${other}`);}
  });
+ test('superuser backends are other, even though pg_has_role says they have every runtime role',async()=>{
+  const admin=postgres(url!,{max:1}),reserved=await admin.reserve();
+  await reserved`begin read only`;
+  try{
+   const [identity]=await reserved`select rolsuper,pg_has_role(current_user,'porchday_auth','USAGE') as auth from pg_roles where rolname=current_user`;
+   expect(identity).toMatchObject({rolsuper:true,auth:true});
+   const target=new URL(url!);target.username=role;target.password=password;
+   const {env,points}=metrics();
+   await recordConnectionSnapshot({...env,HYPERDRIVE_JOBS:{connectionString:target.href}} as Env);
+   expect(points().find(point=>point.code==='other_idle_in_transaction')?.count).toBeGreaterThanOrEqual(1);
+  }finally{await reserved`rollback`;reserved.release();await admin.end();}
+ });
 });
