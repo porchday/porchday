@@ -26,7 +26,7 @@ describe('Privacy-journal failure phase diagnostics preserve durability decision
    if(parts[0].includes('app.safety_status()'))return [{value:{generation,sequence:'0',quarantined:false}}];
    throw Error('Unexpected test query');
   });
-  env={ENVIRONMENT:'staging',RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:'synthetic-not-connected'},METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}}} as unknown as Env;
+  env={ENVIRONMENT:'staging',RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:'synthetic-not-connected'},METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{if(point.blobs?.[2]!=='db_conn')points.push(point);}}} as unknown as Env; // Connection accounting is covered in connection-metrics.test.ts.
  });
  const codes=()=>points.map(point=>point.blobs?.[5]);
  afterEach(()=>vi.useRealTimers());

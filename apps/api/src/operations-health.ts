@@ -3,6 +3,7 @@ import {measureOperationsPhase, type RequestTiming} from './request-timing';
 import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env,Variables} from './types';
+import {trackPostgres} from './connection-metrics';
 
 const count=z.number().int().nonnegative();
 export const operationalSnapshotSchema=z.object({
@@ -41,7 +42,7 @@ export function mediaBackupIssues(snapshot:z.infer<typeof mediaBackupSnapshotSch
  return issues;
 }
 async function operationsDb<T>(env:Pick<Env,'HYPERDRIVE_JOBS'>,work:(sql:ReturnType<typeof postgres>)=>Promise<T>,timing?:RequestTiming){
- const sql=postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false,connect_timeout:5,idle_timeout:1});
+ const sql=trackPostgres(env,'jobs',postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false,connect_timeout:5,idle_timeout:1}));
  try{return await measureOperationsPhase(timing,'operations_snapshot',()=>work(sql));}finally{await measureOperationsPhase(timing,'operations_close',()=>sql.end({timeout:1}));}
 }
 export const recordCleanupSuccess=(env:Pick<Env,'HYPERDRIVE_JOBS'>)=>operationsDb(env,async sql=>{await sql`select app.record_cleanup_success()`;});

@@ -137,3 +137,26 @@ test('production domain rendering preserves legacy access, signup, sender and re
   }
  }finally{await rm(directory,{recursive:true,force:true});}
 });
+
+test('deployment renderer binds trace storage only to an explicitly provisioned D1 database',async()=>{
+ const directory=await mkdtemp(join(tmpdir(),'porchday-traces-config-'));
+ try{
+  await mkdir(join(directory,'infra'));await mkdir(join(directory,'apps/api'),{recursive:true});
+  await writeFile(join(directory,'apps/api/wrangler.local.jsonc'),await readFile('apps/api/wrangler.local.jsonc'));
+  const staging:Record<string,unknown>={hyperdrive_auth:'1'.repeat(32),hyperdrive_social:'2'.repeat(32),hyperdrive_jobs:'3'.repeat(32),
+   bucket:'porchday-staging-media',recovery_journal_bucket:'porchday-staging-journal',queue:'porchday-staging-jobs',dead_letter_queue:'porchday-staging-dead'};
+  const render=async()=>{
+   await writeFile(join(directory,'infra/resources.json'),JSON.stringify({account_id:'a'.repeat(32),environments:{staging}}));
+   const result=spawnSync('python3',[resolve('scripts/configure-worker.py'),'staging'],{cwd:directory,encoding:'utf8'});
+   return {result,config:result.status===0?JSON.parse(await readFile(join(directory,'apps/api/wrangler.staging.jsonc'),'utf8')):undefined};
+  };
+  // The local placeholder database is never inherited.
+  expect((await render()).config.d1_databases).toBeUndefined();
+  staging.traces_d1_database_id='4f1b2c3d-0000-4000-8000-0000000000aa';
+  expect((await render()).config.d1_databases).toEqual([{binding:'TRACES',database_name:'porchday-staging-traces',database_id:'4f1b2c3d-0000-4000-8000-0000000000aa',migrations_dir:'d1/traces'}]);
+  for(const invalid of ['00000000-0000-0000-0000-000000000001','not-a-uuid',7]){
+   staging.traces_d1_database_id=invalid;
+   const {result}=await render();expect(result.status).not.toBe(0);expect(result.stderr).toContain('traces_d1_database_id');
+  }
+ }finally{await rm(directory,{recursive:true,force:true});}
+});

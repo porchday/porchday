@@ -51,6 +51,14 @@
       "bucket_name": "porchday-local-recovery-journal"
     }
   ],
+  "d1_databases": [
+    {
+      "binding": "TRACES",
+      "database_name": "porchday-local-traces",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "d1/traces"
+    }
+  ],
   "queues": {
     "producers": [
       {

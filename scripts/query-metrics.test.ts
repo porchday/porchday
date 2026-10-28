@@ -60,3 +60,20 @@ test('security view shares the monitor query and returns only validated fixed ro
  expect(JSON.parse(output.mock.calls[0][0])).toEqual({environment:'staging',view:'security',signals:{authentication:null,recovery:false},data:[{route:'/api/account-recovery/*',requests:100,observations:50,failed_requests:25}]});
  expect(JSON.stringify(output.mock.calls)).not.toContain('private');expect(errors).not.toHaveBeenCalled();
 });
+
+test('trace-store view reports D1 write outcomes, wall time and D1 duration',async()=>{
+ const {fetcher,output,errors}=await invoke('trace-store',Response.json({data:[{code:'trace_write_ok',events:40,mean_ms:31.5,p95_ms:88,store_p95_ms:4.2,quantity:900,member:'private'}]}),'production');
+ const [,options]=fetcher.mock.calls[0];
+ expect(options.body).toContain("blob3='trace_store'");expect(options.body).toContain('FROM porchday_production_operations_v1');
+ expect(JSON.parse(output.mock.calls[0][0])).toEqual({environment:'production',view:'trace-store',data:[{code:'trace_write_ok',events:40,mean_ms:31.5,p95_ms:88,store_p95_ms:4.2,quantity:900}]});
+ expect(errors).not.toHaveBeenCalled();
+});
+
+test('connection views query only db_conn and db_snapshot points and return bounded columns',async()=>{
+ const connections=await invoke('connections',Response.json({data:[{route:'/api/v1/media/:id/bytes',code:'auth_close',events:12,quantity:24,held_seconds:30.5,p95_ms:4100,after_response_seconds:12.25,query:'private'}]}),'production');
+ expect(connections.fetcher.mock.calls[0][1].body).toContain("blob3='db_conn'");
+ expect(JSON.parse(connections.output.mock.calls[0][0]).data).toEqual([{route:'/api/v1/media/:id/bytes',code:'auth_close',events:12,quantity:24,held_seconds:30.5,p95_ms:4100,after_response_seconds:12.25}]);
+ const snapshot=await invoke('db-snapshot',Response.json({data:[{minute:'2026-10-28 07:31:00',code:'jobs_idle_in_transaction',connections:3,oldest_ms:65000}]}),'production');
+ expect(snapshot.fetcher.mock.calls.at(-1)![1].body).toContain("blob3='db_snapshot'");
+ expect(JSON.parse(snapshot.output.mock.calls.at(-1)![0]).data).toEqual([{minute:'2026-10-28 07:31:00',code:'jobs_idle_in_transaction',connections:3,oldest_ms:65000}]);
+});

@@ -51,7 +51,7 @@ afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
 
 function setup(overrides:Partial<Env>={}, path='/api/v1/feed'){
  const points:AnalyticsEngineDataPoint[]=[],pending:Promise<unknown>[]=[];
- const env={ENVIRONMENT:'staging',FEED_PHASE_TIMING:'true',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}},
+ const env={ENVIRONMENT:'staging',FEED_PHASE_TIMING:'true',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{if(point.blobs?.[2]!=='db_conn')points.push(point);}}, // Connection accounting is covered in connection-metrics.test.ts.
   HYPERDRIVE_JOBS:{connectionString:'synthetic-jobs'},HYPERDRIVE_SOCIAL:{connectionString:'synthetic-social'},
   RECOVERY_JOURNAL:{get:async()=>{fixture.trace.push('journal_read');return {etag:'private-etag',text:async()=>JSON.stringify({v:1,generation:fixture.generation,mode:'active',sequence:'0',head:null,pending:[],reason:null})};}},...overrides} as unknown as Env;
  const app=new Hono<{Bindings:Env;Variables:Variables}>();
