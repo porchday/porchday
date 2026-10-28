@@ -1,5 +1,13 @@
 title = "Porchday reviewed secret-scan exceptions"
 
+[[allowlists]]
+description = "Exact public /health release UUID recorded in the external monitor acceptance evidence; not a credential."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['(?:^|/)docs/evidence/external-backup-2026-10-28\.json$']
+regexes = ['^\s*"productionApiReleaseUnchanged": "44afbb8d-3133-4aac-8663-efd6fb5feb47",\s*$']
+
 # Keep the upstream detector rules. Every exception below requires BOTH its
 # exact file and reviewed value/field. Do not exclude test trees or commits.
 [extend]
