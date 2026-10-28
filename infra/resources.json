@@ -88,7 +88,19 @@
         "migrations_applied": 45,
         "backup_retention_days": 7,
         "backup_policy_id": "ojzr7qivd2i8",
-        "initial_backup_id": "nb2sischn10x"
+        "initial_backup_id": "nb2sischn10x",
+        "pooling": {
+          "kind": "planetscale-local-pgbouncer",
+          "runtime_origin_port": 6432,
+          "peers": 1,
+          "default_pool_size": 4,
+          "max_user_connections": 4,
+          "max_db_connections": 12,
+          "reserve_pool_size": 0,
+          "query_wait_timeout_seconds": 5,
+          "server_idle_timeout_seconds": 30,
+          "pool_mode": "transaction"
+        }
       },
       "hyperdrive_auth": "08d3d9ffa9e049e9a8e475d8c0f6736e",
       "hyperdrive_social": "5dd95c4012ef4abca0006867c8bddfd4",

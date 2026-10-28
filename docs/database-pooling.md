@@ -6,7 +6,7 @@ The corrective path uses the existing [PlanetScale local PgBouncer](https://plan
 
 ## Configuration and limits
 
-The staging configuration was applied and verified on October 28:
+The staging configuration was applied and verified on October 28, then applied to production after staging acceptance:
 
 | Parameter | Value | Purpose |
 | --- | --- | --- |
@@ -20,7 +20,7 @@ The staging configuration was applied and verified on October 28:
 
 These are provisional limits, not a throughput certification. Twelve application backends plus observed provider/admin backends leave room under the current 25-connection server ceiling. Include direct clients, superuser-reserved slots, process count, failover and rollout overlap in capacity reviews. Changing the number of pooler processes requires recalculating the total. Increasing queue time does not create capacity.
 
-The pooler is included in the existing database service. This change did not alter database size or replica count or purchase a dedicated pooler. It adds no new recurring subscription; ordinary existing usage still applies. A local pooler shares the primary's failure domain. Dedicated poolers can improve failover behavior but require separately approved costs and compatibility testing.
+The pooler is included in the existing database service. This change did not alter database size or replica count (staging remains PS-5 with zero replicas; production remains PS-20 with two replicas) or purchase a dedicated pooler. It adds no new recurring subscription; ordinary existing usage still applies. A local pooler shares the primary's failure domain. Dedicated poolers can improve failover behavior but require separately approved costs and compatibility testing.
 
 ## Verification
 
@@ -33,7 +33,7 @@ python3 scripts/with-secrets.py node --import tsx scripts/probe-database-pool-lo
 
 The compatibility probe checks PostgreSQL.js for all three roles and node-postgres for authentication, named prepared statements, verified TLS and transaction-local identity cleanup. The load probe runs 36 read-only clients against staging's existing pooler, holds each transaction for only 250ms, and verifies distinct transaction-local identities. It samples backend counts using one direct, read-only operator connection. It refuses production and a baseline without headroom. It does not query member data.
 
-On October 28 all compatibility checks passed. All 36 concurrent transactions completed in approximately 1.9 seconds; corrected samples showed at most 12 application backends and 15 total backends including two provider superusers and the observer. The initial probe falsely classified the two superusers as auth connections and failed its acceptance check at 14. PostgreSQL superusers satisfy `pg_has_role` for every runtime role; the corrected probe excludes them from application counts. Migration 055 fixes the same issue in the aggregate snapshot introduced by 054 without changing its contract or permissions. A disposable PostgreSQL regression verifies the classification and jobs-only access. Neither new migration has been deployed by the pooling change.
+On October 28 all compatibility checks passed. All 36 concurrent transactions completed in approximately 1.9 seconds; corrected samples showed at most 12 application backends and 15 total backends including two provider superusers and the observer. The initial probe falsely classified the two superusers as auth connections and failed its acceptance check at 14. PostgreSQL superusers satisfy `pg_has_role` for every runtime role; the corrected probe excludes them from application counts. Migration 055 fixes the same issue in the aggregate snapshot introduced by 054 without changing its contract or permissions. A disposable PostgreSQL regression verifies the classification and jobs-only access. Neither new migration has been deployed by the pooling change. The operator capacity helper also now distinguishes superusers and server-wide client connections.
 
 The existing staging application, through Hyperdrive, passed browser login, 24 serial authorized reads, 36 further reads at concurrency six, logout, and old-cookie rejection. Both isolated test identities were removed and absence verified. These are bounded tests, not a complete load, queue-timeout, failover, restore or production certification. Preserve the original failed measurement alongside the corrected result.
 
@@ -47,3 +47,12 @@ The existing staging application, through Hyperdrive, passed browser login, 24 s
 6. A privacy quarantine must follow the guarded original-primary recovery runbook. Never clear it because a pool probe passes or blindly replay an uncertain write.
 
 Pool limits prevent one source of server exhaustion; overloaded transactions can still time out. Durable privacy completion, overload admission, external monitoring and verified failover remain required under [the reliability plan](reliability.md) and [issue #40](https://github.com/porchday/porchday/issues/40).
+
+
+## Production acceptance, October 28
+
+Production's parameter-only change completed at 20:27:09 UTC, retaining PS-20 and two replicas. The three existing Hyperdrive configurations were switched to port 6432 with every other returned setting preserved apart from the provider modification timestamp. Independent reads confirmed the live parameters and all six environment/role routes. No Worker, schema, domain, queue, signup-policy or member-capability rollout occurred.
+
+An isolated production browser passed login, 60 authorized reads (36 at concurrency six), logout and old-cookie rejection. Its account was removed and absence verified. Both production origins passed protected health through 20:31:13 UTC, 130 seconds after acceptance completed. Both environment monitors were operational. Production's 625 failed minute observations remained retained. [Sanitized acceptance evidence](evidence/database-pooling-2026-10-28.json) includes the bounded checks and their limitations.
+
+The live application still uses runtime source `005454607c98ffdb7c430a947bedb4586a14a45b`. Migrations 054/055 and their new runtime telemetry are not deployed. This configuration improvement does not resolve the shared journal bottleneck or guarantee safe automatic recovery of ambiguous writes. No intentional overload, query-timeout or failover injection was performed in production.
