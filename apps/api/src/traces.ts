@@ -55,7 +55,7 @@ type MetricsEnv=Pick<Env,'ENVIRONMENT'|'METRICS'|'FEED_PHASE_TIMING'>;
 function report(env:MetricsEnv,code:TraceStoreCode,started:number,results:D1Result[]=[],count?:number):void {
  const storeMs=results.reduce((sum,result)=>sum+(Number(result.meta?.duration)||0),0);
  const rows=count??results.reduce((sum,result)=>sum+(Number(result.meta?.rows_written)||0)+(Number(result.meta?.rows_read)||0),0);
- event('trace_store',{route:'/api/v1/traces',code,durationMs:Date.now()-started,count:rows,...(results.length?{storeMs}:{})},env);
+ event('trace_store',{route:'/api/v1/traces',code,durationMs:Date.now()-started,count:rows,...(results.length?{detailMs:storeMs}:{})},env);
 }
 
 export async function storeTrace(env:Pick<Env,'TRACES'>&MetricsEnv,memberId:string,trace:TraceUpload,context:{edge?:string;release?:string},now=Date.now(),guard=limiter):Promise<'stored'|'throttled'|'failed'> {

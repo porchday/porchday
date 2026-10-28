@@ -4,6 +4,7 @@ import postgres from "postgres";
 import { importPKCS8, SignJWT } from "jose";
 import type { Db } from "./db.js";
 import type { Env, Variables } from "./types.js";
+import {trackPostgres} from './connection-metrics';
 
 export type NativePushEnv = {
   APNS_TEAM_ID?: string;
@@ -256,12 +257,12 @@ export async function processNativePush(
 ) {
   const counts = { sent: 0, retried: 0, skipped: 0 };
   if (!nativePushConfigured(env)) return counts;
-  const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, {
+  const sql = trackPostgres(env, 'jobs', postgres(env.HYPERDRIVE_JOBS.connectionString, {
     max: 1,
     prepare: true,
     fetch_types: false,
     connect_timeout: 10,
-  });
+  }));
   try {
     const jobs = await sql`select * from app.claim_native_push(20)`;
     if (!jobs.length) return counts;

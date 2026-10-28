@@ -26,9 +26,14 @@ import {createPlatformInvitationRoutes} from './platform-invitations';
 import {applicationDomains} from './application-domains';
 import {createBuilderChatRoutes,createBuilderBridgeRoutes,createStaffBuilderChatRoutes} from './builder-chat';
 import {tracingMiddleware,traceError} from './tracing';
+import {connectionScope,reportConnectionRefusal} from './connection-metrics';
+import {recordConnectionSnapshot} from './connection-snapshot';
+import {routePath} from 'hono/route';
 import {createTraceRoutes,cleanupTraces,deleteMemberTraces} from './traces';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
+// Connection accounting covers every request; points carry the matched route pattern.
+app.use('/api/*',(c,next)=>connectionScope('none',()=>next(),()=>{const route=routePath(c);return route&&!['*','/*','/api/*'].includes(route)?route:undefined;}));
 app.use('*',tracingMiddleware());
 app.use('*',requestTimingMiddleware);
 app.use('*',secureHeaders({
@@ -111,18 +116,20 @@ app.route('/api/v1',createBuilderChatRoutes());
 app.route('/api/v1',createTraceRoutes());
 app.all('/api/*',c=>c.json({error:{code:'NOT_FOUND'}},404));
 app.get('*',c=>c.env.ASSETS.fetch(c.req.raw));
-app.onError((_error,c)=>{traceError(_error);event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
+app.onError((_error,c)=>{traceError(_error);reportConnectionRefusal(c.env,_error);event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
 
 export { app };
 export default {
  fetch:app.fetch,
  async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext){
+  ctx.waitUntil(connectionScope('job:cron',()=>recordConnectionSnapshot(env)).catch(()=>{}));
   if(controller.cron==='17 3 * * *'){
    if(env.MEDIA_BACKUP_ENABLED==='true')ctx.waitUntil(env.JOBS.send({kind:'media_backup_start'}));
    ctx.waitUntil(cleanupTraces(env).catch(()=>{}));
   }else ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
  },
  async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){
+  await connectionScope('job:queue',async()=>{
   const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start'].includes(m.body.kind));
   if(cleanup.length){
    let failedPhase:CleanupFailureCode='cleanup_journal_failed';
@@ -148,11 +155,12 @@ export default {
    event('job',{code:'cleanup_complete',count:results.deleted_objects},env);
    failedPhase='cleanup_ack_failed';
    for(const message of cleanup)message.ack();
-   }catch{event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
+   }catch(error){reportConnectionRefusal(env,error);event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
   }
   for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
    try{if(message.body.kind==='media_backup_start'){await scheduleMediaBackup(env);message.ack();continue;}if(!message.body.id)throw Error('BACKUP_ID_REQUIRED');const result=await processMediaBackup(env,message.body.id);if(result==='busy')message.retry({delaySeconds:60});else message.ack();}
-   catch{event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
+   catch(error){reportConnectionRefusal(env,error);event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
   }
+  });
  }
 } satisfies ExportedHandler<Env,{kind:string;id?:string}>;

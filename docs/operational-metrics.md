@@ -26,16 +26,37 @@ Positions have stable meanings. Change the schema marker/dataset version before 
 | index1 | Fixed `event:route` class used for sampling, never a person or random identifier |
 | blob1 | `porchday_metrics_v1` |
 | blob2 | development, staging or production |
-| blob3 | request, job, email, error, or staging-only feed_phase |
-| blob4 | `/api/v1/feed`, a fixed allowlisted auth action, `/api/auth/*`, `/api/account-recovery/*`, `/api/*`, `/api/operations/health`, `/assets/*`, `/health`, or `none` |
+| blob3 | request, job, email, error, staging-only feed_phase, trace_store, db_conn or db_snapshot |
+| blob4 | `/api/v1/feed`, `/api/v1/traces`, a fixed allowlisted auth action, `/api/auth/*`, `/api/account-recovery/*`, `/api/*`, `/api/operations/health`, `/assets/*`, `/health`, or `none`. For `db_conn` and `db_snapshot` only, also a registered route pattern such as `/api/v1/media/:id/bytes` (parameter names, never values), `job:cron` or `job:queue` |
 | blob5 | Allowlisted HTTP method or `none` |
 | blob6 | Allowlisted operational code, fixed staging feed phase, or `none` |
 | blob7 | HTTP status class such as `5xx`, or `none` |
 | double1 | HTTP status 100–599, otherwise 0 |
 | double2 | Rounded duration 0–3,600,000 ms, otherwise −1 |
 | double3 | Integer operation quantity 0–1,000,000, otherwise 0 |
+| double4 | Present only on some events: D1's own query duration for `trace_store`; time a connection stayed open after the HTTP response for `db_conn` closes |
 
 Every event is one observation; use the sampling weight to count events. `double3` measures a batch quantity where supplied: for example deleted objects or delivered/retried outbox entries. Email provider acceptance and outbox completion are different stages, so do not sum their event counts as unique email deliveries. Queue retry/duplicate delivery can repeat operational events; these metrics are not an accounting or security audit ledger. Request duration covers server handling through response creation, not network transfer, client decryption, image loading or rendering.
+
+## Connection accounting (issue #40)
+
+Every Postgres client the Worker creates is counted. `apps/api/src/connection-metrics.ts` wraps each `postgres()` client and `pg` pool at creation:
+
+| Code (blob6) | Meaning |
+| --- | --- |
+| `<role>_open` | A connection opened (`auth`, `social` or `jobs`). postgres.js clients use `max:1` and count as one; pg pools count each physical connect |
+| `<role>_close` | The client was ended. double2 is how long it was held; double3 how many connections it closed; double4 how much of that was after the HTTP response |
+| `<role>_open_at_response` | A client was still open when the response was returned, usually because it closes in `waitUntil` |
+| `refused_53300`, `refused_53400`, `refused_hyperdrive`, `connect_timeout` | A connection refusal reached a top-level request or job error handler |
+
+Opens minus closes for a role over time shows clients that are never ended. `held_seconds / 3600` over an hour is the average number of connections that route or job kept open. blob4 is the matched route pattern for requests, or `job:cron` / `job:queue`.
+
+Once a minute the cron also records `db_snapshot` points from `app.connection_snapshot()` (migration 054), executed by the jobs role. Each point's code is `<role>_<state>` (`auth`, `social`, `jobs` or `other`, by inherited role membership; states `active`, `idle`, `idle_in_transaction`, `idle_in_transaction_aborted`, `fastpath`, `disabled`, `unknown`), with double3 the number of client backends and double2 the oldest open transaction age, capped at one hour. `max_connections` and `reserved_connections` carry the server limits. `snapshot_refused` means the snapshot itself could not connect with SQLSTATE 53300; `snapshot_failed` covers other failures. The function returns counts only: no query text, client address, application name, username or database name. If the database owner lacks `pg_read_all_stats`, other sessions' state appears as `unknown` but is still counted.
+
+```sh
+npx tsx scripts/query-metrics.ts production connections   # last hour, by route and role
+npx tsx scripts/query-metrics.ts production db-snapshot   # last 15 minutes, per minute
+```
 
 ## Read-only queries and response checks
 

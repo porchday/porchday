@@ -3,6 +3,7 @@ import {z} from 'zod';
 import {createHash} from 'node:crypto';
 import {assertJournalReadable,checkpointJournal,sha256,type JournalDatabase,type JournalStore} from './privacy-journal.js';
 import type {Env} from './types.js';
+import {trackPostgres} from './connection-metrics';
 
 const seq=z.string().regex(/^(0|[1-9][0-9]*)$/),hash=z.string().regex(/^[a-f0-9]{64}$/),sourceKey=z.string().regex(/^media\/[a-f0-9-]{36}\/[a-f0-9-]{36}$/);
 const runSchema=z.object({id:z.uuid(),restore_at:z.string(),generation:z.uuid(),base_sequence:seq,expires_at:z.string()});
@@ -85,6 +86,6 @@ export async function verifyMediaBackup(backup:Pick<R2Bucket,'get'>,id:string,pa
  }
  if(index!==0||objects!==manifest.objects||bytes!==manifest.bytes||omitted!==manifest.omitted)fail('BACKUP_MANIFEST_TOTAL_MISMATCH');return manifest;
 }
-async function configured<T>(env:Env,fn:(storage:BackupStorage)=>Promise<T>):Promise<T>{if(env.MEDIA_BACKUP_ENABLED!=='true'||!env.MEDIA_BACKUP||!env.RECOVERY_JOURNAL)fail('MEDIA_BACKUP_NOT_CONFIGURED');const sql=postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false});try{return await fn({source:env.MEDIA,backup:env.MEDIA_BACKUP!,journal:env.RECOVERY_JOURNAL!,db:backupDatabase(sql)});}finally{await sql.end({timeout:1});}}
+async function configured<T>(env:Env,fn:(storage:BackupStorage)=>Promise<T>):Promise<T>{if(env.MEDIA_BACKUP_ENABLED!=='true'||!env.MEDIA_BACKUP||!env.RECOVERY_JOURNAL)fail('MEDIA_BACKUP_NOT_CONFIGURED');const sql=trackPostgres(env,'jobs',postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false}));try{return await fn({source:env.MEDIA,backup:env.MEDIA_BACKUP!,journal:env.RECOVERY_JOURNAL!,db:backupDatabase(sql)});}finally{await sql.end({timeout:1});}}
 export async function scheduleMediaBackup(env:Env){return configured(env,async storage=>{const id=await beginMediaBackup(storage);await env.JOBS.send({kind:'media_backup',id});return id;});}
 export async function processMediaBackup(env:Env,id:string){return configured(env,async storage=>{try{const result=await copyMediaBackupPage(storage,id);if(result==='more')await env.JOBS.send({kind:'media_backup',id});return result;}catch(error){await storage.db.failed(id).catch(()=>{});throw error;}});}
