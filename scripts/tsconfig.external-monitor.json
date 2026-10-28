@@ -3,6 +3,7 @@
     "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
     "strict": true,
     "skipLibCheck": true,
     "noEmit": true
@@ -12,6 +13,7 @@
     "external-monitor-probe.ts",
     "external-monitor-alerts.ts",
     "external-monitor-github.ts",
-    "external-monitor-store.ts"
+    "external-monitor-store.ts",
+    "external-monitor-backup.ts"
   ]
 }
