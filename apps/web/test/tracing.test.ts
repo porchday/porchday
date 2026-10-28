@@ -1,5 +1,27 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { currentTraceId, flushTraces, installTracing, markOnce, setTracingEnabled, traced, traceReport, tracingEnabled } from "../src/tracing";
+import { currentTraceId, flushTraces, installTracing, markOnce, setTracingEnabled, traced, traceReport, tracingBuffers, tracingEnabled } from "../src/tracing";
+
+/** Lets a test deliver Resource Timing entries to the collector. */
+function observers() {
+  const live = new Map<string, Set<(entries: PerformanceEntry[]) => void>>();
+  class FakeObserver {
+    private type = "";
+    constructor(private readonly callback: (list: { getEntries(): PerformanceEntry[] }) => void) {}
+    private readonly deliver = (entries: PerformanceEntry[]) => this.callback({ getEntries: () => entries });
+    observe(options: { type: string }) { this.type = options.type; (live.get(this.type) ?? live.set(this.type, new Set()).get(this.type)!).add(this.deliver); }
+    disconnect() { live.get(this.type)?.delete(this.deliver); }
+  }
+  vi.stubGlobal("PerformanceObserver", FakeObserver);
+  return {
+    emit: (type: string, entries: object[]) => live.get(type)?.forEach((deliver) => deliver(entries as PerformanceEntry[])),
+    count: (type: string) => live.get(type)?.size ?? 0,
+  };
+}
+function resourceEntry(url: string, startTime: number, responseStart: number, responseEnd: number, serverTiming: object[] = []) {
+  return { name: url, initiatorType: "fetch", startTime, requestStart: startTime + 1, responseStart, responseEnd,
+    duration: responseEnd - startTime, connectStart: 0, connectEnd: 0, transferSize: 1000, encodedBodySize: 900,
+    nextHopProtocol: "h2", serverTiming };
+}
 
 function browser() {
   const store = new Map<string, string>();
@@ -49,7 +71,7 @@ describe("performance tracing", () => {
       "mark:vault-ready", "measure:decrypt", "measure:photo decode", "resource:GET /api/v1/feed",
     ]);
     expect(body.spans.find((s: { name: string }) => s.name === "photo decode").attrs).toEqual({ error: "bad jpeg" });
-    expect(body.spans.at(-1).attrs).toEqual({ status: 200 });
+    expect(body.spans.at(-1).attrs).toEqual({ status: 200, headers_only: true });
     // The upload itself is never traced or re-uploaded.
     const uploadCall = upstream.mock.calls.find(([input]) => String(input) === "/api/v1/traces")!;
     expect(new Headers(uploadCall[1]!.headers).get("traceparent")).toBeNull();
@@ -68,6 +90,62 @@ describe("performance tracing", () => {
     expect(uploads(upstream)).toHaveLength(1);
     setTracingEnabled(false);
     expect(window.fetch).toBe(upstream);
+  });
+
+  it("stops observing and releases buffers once the server reports no trace storage", async () => {
+    const perf = observers();
+    const { upstream } = browser();
+    upstream.mockImplementation(async (input) => new Response("{}", { status: String(input) === "/api/v1/traces" ? 404 : 200 }));
+    setTracingEnabled(true);
+    expect(perf.count("resource")).toBe(1);
+    markOnce("a");
+    await flushTraces(true);
+    // The reviewer's reproduction: 100 later entries must not be retained.
+    perf.emit("resource", Array.from({ length: 100 }, (_, i) => resourceEntry(`https://porchday.org/assets/${i}.js`, i, i + 1, i + 2)));
+    await window.fetch("/api/v1/feed");
+    await flushTraces(true);
+    expect(perf.count("resource")).toBe(0);
+    expect(window.fetch).toBe(upstream);
+    expect(tracingBuffers()).toEqual({ fetches: 0, resources: 0, pending: 0 });
+    expect(currentTraceId()).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  it("bounds buffers when uploads cannot drain them", async () => {
+    const perf = observers();
+    browser();
+    setTracingEnabled(true);
+    perf.emit("resource", Array.from({ length: 5_000 }, (_, i) => resourceEntry(`https://porchday.org/assets/${i}.js`, i, i + 1, i + 2)));
+    expect(tracingBuffers()!.resources).toBe(2_000);
+  });
+
+  it("measures a request through its full body download and nests the server's spans", async () => {
+    const perf = observers();
+    const { upstream } = browser();
+    vi.spyOn(performance, "now").mockReturnValueOnce(100).mockReturnValueOnce(150);
+    setTracingEnabled(true);
+    await window.fetch("/api/v1/media/abc/bytes");
+    // Headers at 150 ms, but the body finished at 2,100 ms.
+    perf.emit("resource", [resourceEntry("https://porchday.org/api/v1/media/abc/bytes", 100, 150, 2_100, [
+      { name: "pd-total", duration: 40, description: "" },
+      { name: "pd-span", duration: 25, description: "r2_media_get@10" },
+      { name: "pd-route", duration: 0, description: "/api/v1/media/:id/bytes" },
+    ])]);
+    vi.restoreAllMocks();
+    await flushTraces(true);
+    const [body] = uploads(upstream);
+    const request = body.spans.find((s: { kind: string }) => s.kind === "resource");
+    expect(request).toMatchObject({ name: "GET /api/v1/media/abc/bytes", start: 100, dur: 2_000 });
+    expect(request.attrs).toMatchObject({ download: 1_950, route: "/api/v1/media/:id/bytes", server_total: 40 });
+    expect(request.attrs.headers_only).toBeUndefined();
+    expect(body.spans.filter((s: { parent?: number }) => s.parent === request.seq).map((s: { name: string }) => s.name)).toEqual(["r2_media_get", "server total"]);
+  });
+
+  it("labels a request without a timing entry as headers-only", async () => {
+    const { upstream } = browser();
+    setTracingEnabled(true);
+    await window.fetch("/api/v1/feed");
+    await flushTraces(true);
+    expect(uploads(upstream)[0].spans.at(-1).attrs).toEqual({ status: 200, headers_only: true });
   });
 
   it("formats a nested waterfall for builder chat", () => {

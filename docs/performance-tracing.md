@@ -48,16 +48,30 @@ tracing that means:
    that produced them. Server clocks and browser clocks are not compared: server
    spans are placed inside the interval in which the browser waited for the
    response.
-5. Every 15 seconds, and when the page is hidden, the browser uploads new spans
+5. Once a minute, and when the page is hidden, the browser uploads new spans
    to `POST /api/v1/traces` in batches of at most 200 spans and 56 KB.
 
-Ordinary requests never write trace storage. Only the upload writes.
+Ordinary requests never write trace storage. Only the upload writes. Each
+request's duration runs from its start to the end of its body download
+(`responseEnd`); a request with no matching Resource Timing entry is marked
+`headers_only`. If the server has no trace storage, the browser stops
+collecting for that page and releases its buffers. Buffers are capped at 2,000
+entries each, so a tab that cannot upload does not grow without bound.
 
 ## Storage and D1 load
 
 Traces live in a dedicated D1 database (binding `TRACES`), separate from
-Postgres, so tracing never uses application database connections. Schema:
-`apps/api/d1/traces/0001_create_traces.sql`.
+Postgres. Schema: `apps/api/d1/traces/0001_create_traces.sql`.
+
+Storage uses no Postgres, but **uploads do**. `/api/v1/traces` is an ordinary
+member route, so each upload passes the fresh privacy journal check and member
+authentication like every other request, which opens jobs and auth
+connections. That is why uploads happen once a minute rather than more often.
+The always-on connection metrics in
+[operational-metrics.md](operational-metrics.md#connection-accounting-issue-40)
+report this cost under the route `/api/v1/traces`; measure it against #40
+before enabling tracing for more than a few members. Fresh authentication is
+not skipped for uploads.
 
 Write pressure is limited on purpose:
 
@@ -106,18 +120,59 @@ pattern, and lists p50, p95 and maximum durations.
 ## Provisioning
 
 Until a database is bound, the endpoints return `404 TRACING_UNAVAILABLE` and
-the Settings panel says storage is not set up. To enable it in an environment:
+the Settings panel says storage is not set up. Enable staging first. For
+production, substitute `production` for `staging` in every name below
+(`porchday-production-traces`, `wrangler.production.jsonc`).
+
+From `apps/api`, create the database:
 
 ```sh
 cd apps/api
 npx wrangler d1 create porchday-staging-traces
 ```
 
-1. Record the returned UUID as `traces_d1_database_id` for that environment in
-   `infra/resources.json`.
-2. Run `python3 scripts/configure-worker.py staging`. The renderer never
-   inherits the local placeholder database.
-3. Run `npx wrangler d1 migrations apply porchday-staging-traces --remote -c wrangler.staging.jsonc`.
-4. Deploy as usual.
+From the repository root, record the returned UUID as
+`traces_d1_database_id` under `environments.staging` in
+`infra/resources.json`, then render the configuration. The renderer reads
+repository-relative paths and never inherits the local placeholder database:
 
-Repeat for production. The daily `17 3 * * *` cron applies retention.
+```sh
+cd ../..
+python3 scripts/configure-worker.py staging
+git diff apps/api/wrangler.staging.jsonc
+```
+
+Before continuing, reconcile the rendered file with the currently deployed
+topology. The only intended change is a `d1_databases` entry whose
+`database_name` is `porchday-staging-traces` and whose `database_id` is the
+new UUID. Any other difference (routes, placement, pauses) must be explained
+by current infrastructure state before deploying.
+
+From `apps/api`, apply the schema and confirm it:
+
+```sh
+cd apps/api
+npx wrangler d1 migrations apply porchday-staging-traces --remote -c wrangler.staging.jsonc
+npx wrangler d1 execute porchday-staging-traces --remote -c wrangler.staging.jsonc \
+  --command "SELECT name FROM sqlite_master WHERE type IN ('table','index') ORDER BY name"
+```
+
+The second command must list `trace_spans`, `traces`,
+`traces_member_started` and `traces_received`. Then deploy as usual.
+
+### After each deployment
+
+The Node, Hono and SQLite tests do not establish hosted browser behavior.
+After staging, and again after production, verify with a member account:
+
+1. Turn tracing on, load the feed and open a photo.
+2. **Send now**, then confirm the visit appears and **View** shows the
+   request, its server spans (`journal_check`, `auth_session`,
+   `social_query`, `r2_media_get`) and a non-`headers_only` photo request.
+3. **Copy for builder chat** produces the waterfall text.
+4. Turn tracing off and confirm requests no longer carry `traceparent`.
+5. **Delete my traces** and confirm the list is empty.
+6. `npx tsx scripts/query-metrics.ts staging trace-store` shows
+   `trace_write_ok` points and no `trace_write_failed`; `connections` shows the
+   `/api/v1/traces` route's connection use.
+7. The next day, confirm a `trace_cleanup_ok` point from the `17 3 * * *` cron.

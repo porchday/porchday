@@ -7,7 +7,11 @@
  */
 const KEY = "porchday-performance-tracing";
 const UPLOAD = "/api/v1/traces";
-const FLUSH_MS = 15_000;
+// Each upload passes the normal member checks, which use application
+// database connections, so uploads stay infrequent.
+const FLUSH_MS = 60_000;
+// A tab that cannot upload (signed out, offline) must not grow without bound.
+const MAX_BUFFERED = 2_000;
 const MAX_BATCH = 200;
 const MAX_BATCH_BYTES = 56 * 1024; // Keepalive requests share a 64 KB budget.
 
@@ -71,7 +75,7 @@ function sameOriginApi(input: RequestInfo | URL): URL | null {
   }
 }
 function push(span: Omit<TraceSpan, "seq">): number {
-  if (!state) return -1;
+  if (!state || state.unavailable || state.pending.length >= MAX_BUFFERED) return -1;
   const seq = state.seq++;
   state.pending.push({ ...span, seq, start: round(span.start), dur: round(Math.max(0, span.dur)) });
   return seq;
@@ -113,13 +117,15 @@ export function installTracing(): void {
       throw error;
     } finally {
       record.end = performance.now();
-      state?.fetches.push(record);
+      if (state && state.fetches.length < MAX_BUFFERED) state.fetches.push(record);
     }
   };
   try {
     performance.setResourceTimingBufferSize?.(1500);
   } catch {}
-  observe("resource", (entry) => state?.resources.push(entry as PerformanceResourceTiming));
+  observe("resource", (entry) => {
+    if (state && state.resources.length < MAX_BUFFERED) state.resources.push(entry as PerformanceResourceTiming);
+  });
   observe("longtask", (entry) => push({ kind: "longtask", name: "long task", start: entry.startTime, dur: entry.duration }));
   observe("largest-contentful-paint", (entry) =>
     push({ kind: "paint", name: "largest-contentful-paint", start: entry.startTime, dur: 0,
@@ -131,7 +137,8 @@ export function installTracing(): void {
   window.addEventListener("pagehide", onPageHide);
   state.timer = setInterval(() => void flushTraces(), FLUSH_MS);
 }
-function uninstallTracing(): void {
+/** Stop all collection and release buffers. */
+function stopCollection(): void {
   if (!state) return;
   if (state.originalFetch) window.fetch = state.originalFetch;
   for (const observer of state.observers) observer.disconnect();
@@ -140,7 +147,18 @@ function uninstallTracing(): void {
   window.removeEventListener("unhandledrejection", onRejection);
   document.removeEventListener("visibilitychange", onVisibility);
   window.removeEventListener("pagehide", onPageHide);
+  state.observers = [];
+  state.fetches = [];
+  state.resources = [];
+  state.pending = [];
+}
+function uninstallTracing(): void {
+  stopCollection();
   state = null;
+}
+/** Buffer sizes, for tests. */
+export function tracingBuffers(): { fetches: number; resources: number; pending: number } | null {
+  return state && { fetches: state.fetches.length, resources: state.resources.length, pending: state.pending.length };
 }
 function observe(type: string, handle: (entry: PerformanceEntry) => void): void {
   try {
@@ -254,8 +272,13 @@ function collect(final: boolean): void {
     const attrs: Attrs = entry ? resourceAttrs(entry) : {};
     if (record.status !== undefined) attrs.status = record.status;
     if (record.error) attrs.error = record.error;
-    const seq = push({ kind: "resource", name: `${record.method} ${path(record.url)}`, start: record.start, dur: record.end - record.start, attrs });
-    if (entry) serverSpans(entry, seq, attrs);
+    // fetch() resolves when headers arrive. Resource Timing's responseEnd
+    // includes the body download, so prefer it when the entry is available.
+    const start = entry ? Math.min(entry.startTime, record.start) : record.start;
+    const end = entry?.responseEnd ? Math.max(entry.responseEnd, record.end) : record.end;
+    if (!entry || !entry.responseEnd) attrs.headers_only = true;
+    const seq = push({ kind: "resource", name: `${record.method} ${path(record.url)}`, start, dur: end - start, attrs });
+    if (entry && seq >= 0) serverSpans(entry, seq, attrs);
   }
   state.fetches = waiting;
   const remaining: PerformanceResourceTiming[] = [];
@@ -265,7 +288,7 @@ function collect(final: boolean): void {
     if (sameOriginApi(entry.name) && !final && now - entry.responseEnd < 4_000) { remaining.push(entry); continue; }
     const attrs = resourceAttrs(entry);
     const seq = push({ kind: "resource", name: `${entry.initiatorType} ${path(entry.name)}`, start: entry.startTime, dur: entry.duration, attrs });
-    serverSpans(entry, seq, attrs);
+    if (seq >= 0) serverSpans(entry, seq, attrs);
   }
   state.resources = remaining;
 }
@@ -300,7 +323,12 @@ export async function flushTraces(final = document.visibilityState === "hidden")
         method: "POST", body, keepalive: true, credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
       });
-      if (response.status === 404 && state) state.unavailable = true;
+      if (response.status === 404 && state) {
+        // No trace storage on this server: stop collecting for this page.
+        state.unavailable = true;
+        stopCollection();
+        return;
+      }
       if (!response.ok) return; // Signed out or unavailable: drop, never retry.
     } catch {
       return;

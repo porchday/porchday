@@ -55,7 +55,7 @@ export function PerformanceTracing() {
         <>
           <p className="small-copy">
             This visit: <code>{currentTraceId() ?? "starting…"}</code>. Traces
-            upload every 15 seconds and when you leave the page.
+            upload once a minute and when you leave the page.
           </p>
           <div className="button-row">
             <Button variant="outline compact" busy={action.busy}
