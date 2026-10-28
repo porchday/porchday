@@ -42,7 +42,7 @@ jobs:
       - run: node scripts/migrate.ts
       - run: npm run typecheck
       - run: npx tsc -p scripts/tsconfig.external-monitor.json
-      - run: node --input-type=module -e "await import('./scripts/external-monitor-backup.ts'); await import('./scripts/external-monitor-relay.ts')"
+      - run: node --input-type=module -e "await import('./scripts/external-monitor-backup.ts'); await import('./scripts/external-monitor-relay.ts'); await import('./scripts/external-monitor-delivery.ts')"
       - run: node scripts/prepare-test-databases.ts
       - run: npm test
       - run: npm run build
