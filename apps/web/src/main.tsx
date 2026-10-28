@@ -1,3 +1,4 @@
+import { FeatureAdditions } from "./FeatureAdditions";
 import { hasPendingSaves } from "./pending-saves";
 import { MemberAvatar, MemberAvatarProvider } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
@@ -356,7 +357,7 @@ function AppShell({
   useEffect(() => {
     if (vault.member.status !== "suspended") builderChatAvailable().then(setBuilderChat);
   }, []);
-  const sidebarLinks = vault.member.status === "suspended" ? [links[5]] : builderChat ? [...links.slice(0, 5), builderChatLink, links[5]] : links;
+  const sidebarLinks = vault.member.status === "suspended" ? [links[5]] : builderChat ? [...links.slice(0, 5), builderChatLink, ["/app/features", "plus", "Feature additions"], links[5]] : links;
   async function logout() {
     if (hasPendingSaves()) return;
     await vault.clear();
@@ -393,6 +394,7 @@ function AppShell({
   else if (path.startsWith("/app/groups/"))
     content = <GroupDetail id={path.split("/")[3]} />;
   else if (path === "/app/notifications") content = <Notifications />;
+  else if (path === "/app/features") content = <FeatureAdditions />;
   else if (path === "/app/builder-chat") content = <BuilderChat />;
   else if (path === "/app/integrations/authorize")
     content = <IntegrationConsent />;

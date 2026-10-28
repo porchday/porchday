@@ -237,3 +237,16 @@ All checks run locally. There is no separate staging verification for builder ch
 Bobby has agreed to run the bridge on his Mac mini and to the shared lock file between builder chat turns and Nick's request file.
 
 One question remains open. The bridge works best when every turn in the builder session, including Nick's file requests, runs as a separate `codex exec resume` turn. If the builder session is an interactive Codex window that stays open, that window won't see builder chat turns until it is resumed. Bobby checks this in step 1 of the install guide.
+
+
+## Feature additions and web feature voting
+
+Web feature requests now go through a shared plan board, available to the existing builder-chat allowlist. A new disclosure (version 2) explains that future feature plans and proposer handles are shared with that audience. Existing conversations remain sender-only. Owners have not authorized expanding this to every member.
+
+Feature additions submits a planning task to the existing queue; general builder chat also frames new enhancements as planning-only. The final Codex response ends with one `porchday-feature` fenced JSON object containing `title` and `plan`. The bridge accepts only a valid final block, applies secret filtering, and publishes only when the source consented, the turn succeeded, and it made no commits. Missing or filtered plans are not published. Non-feature questions and bug fixes keep ordinary handling. No operator or request-file work enters this gate.
+
+One vote per eligible active allowlisted member is stored as +1 or -1; zero removes it. Votes can change until dispatch. The next unpaused bridge poll atomically queues a single implementation once the current net score is at least +3. An opposing vote subtracts one. If the queue is full or the proposer has a pending turn, dispatch waits and voting stays open. Dispatch freezes votes and the immutable plan. Only server metadata produces the approved-implementation frame, never member-supplied message text. Code delivery is distinct from deployment; failed, interrupted, or no-commit implementation turns need review and are not automatically retried.
+
+Plans and votes cascade with author deletion and expire with the 90-day source-message retention. Expired plans are hidden immediately; polling removes expired rows. Vote deletion follows voter deletion. The board shows 30 entries at a time with stable timestamp/ID pagination. No raw private chat history, tool output or implementation replies are copied to the board.
+
+Rollout: apply migration 053, deploy the API and web assets, then restart the bridge **after its active turn finishes** to load feature protocol 1. An old bridge may heartbeat but cannot claim work from the new API. This is deliberate: it must not execute approved feature work without the new frame. A new bridge requires the matching API; do not upgrade it against the old strict claim schema. The new tables/columns are additive and the previous database functions remain callable for application rollback. No rollout or hosted/browser verification is implied by a local test pass.

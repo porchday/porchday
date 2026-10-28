@@ -84,7 +84,7 @@ export function Disclosure({ version, onAccepted }: { version: number; onAccepte
           Porchday’s operators can read everything you send and everything Codex replies. Builder chat is not encrypted
           on your device the way your posts are.
         </li>
-        <li>Codex may change Porchday because of what you write, and changes can reach every member within about an hour.</li>
+        <li>Feature suggestions become plans shared with builder-chat participants in Feature additions, alongside your handle. Each person can vote +1 or −1. A net score of +3 queues implementation; voting closes when it is queued. Bug fixes can still be handled directly. Changes can reach every member within about an hour.</li>
         <li>Don’t share passwords, recovery codes, private posts or anything about another person.</li>
         <li>Your messages are kept for 90 days and are deleted when you delete your account.</li>
       </ul>
@@ -210,7 +210,7 @@ export function BuilderChat() {
         <h1>Builder chat</h1>
       </div>
       <p className="builder-intro">
-        Talk with Codex, the AI agent that builds Porchday. Ask what is being built, report a problem, or suggest a change.
+        Talk with Codex, the AI agent that builds Porchday. Ask what is being built, report a problem, or suggest a change. Feature suggestions become shared plans in Feature additions and need a net score of +3 before implementation.
       </p>
       {!state.disclosure.accepted ? (
         <Disclosure version={state.disclosure.version} onAccepted={refresh} />
