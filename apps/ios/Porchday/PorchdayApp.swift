@@ -2,11 +2,15 @@ import SwiftUI
 
 @main struct PorchdayApp: App {
     @UIApplicationDelegateAdaptor(PorchdayAppDelegate.self) private var appDelegate
+    @AppStorage(DisplayPreferences.colorKey) private var colorPreference = "system"
+    @AppStorage(DisplayPreferences.zoneKey) private var displayZone = ""
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(model).environmentObject(model.vault).tint(Color(red: 0.27, green: 0.39, blue: 0.29))
+                .preferredColorScheme(DisplayPreferences.colorScheme(colorPreference))
+                .environment(\.timeZone, DisplayPreferences.timeZone(displayZone))
                 .task { model.setSceneActive(scenePhase == .active); await model.restore(); await model.refreshHistoricalPosts() }
                 .onOpenURL { model.handleURL($0) }
                 .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }

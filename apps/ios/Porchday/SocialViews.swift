@@ -57,7 +57,7 @@ struct MomentCard: View {
     @EnvironmentObject var model: AppModel
     var body: some View { VStack(alignment: .leading, spacing: 10) {
         HStack(alignment: .top) { MemberAvatarView(memberID: item.authorID, name: item.authorHandle); VStack(alignment: .leading) { Text(item.authorID == model.member?.id ? "@\(model.member?.handle ?? "")" : item.authorHandle).font(.headline); if let date = item.created { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Image(systemName: "lock.fill").font(.caption).accessibilityLabel("End-to-end encrypted") }
-        if let expiry = item.expiry { Label("Disappears \(expiry.formatted(date: .abbreviated, time: .shortened))", systemImage: "timer").font(.caption).foregroundStyle(.secondary) }
+        if let expiry = item.expiry { Label("Disappears \(DisplayPreferences.date(expiry))", systemImage: "timer").font(.caption).foregroundStyle(.secondary) }
         if let error = item.error { Label(error, systemImage: "lock.trianglebadge.exclamationmark").font(.callout).foregroundStyle(.secondary) } else { Text(item.text).font(.body).textSelection(.enabled); if let payload = item.payload, payload["provenance"]["kind"].string == "reaction", let reaction = try? ReactionValue.parse(.object(payload.object.filter { ["emoji","unicode","custom"].contains($0.key) })) { ReactionGlyph(reaction:reaction) }; if let media = item.payload?["media"].array { ForEach(Array(media.enumerated()), id: \.offset) { _, photo in EncryptedPhotoView(photo: photo) } } }
     }.padding(.vertical, 10) }
 }
@@ -115,6 +115,7 @@ struct PostDetailView: View {
     } }
 }
 struct ComposerView: View {
+    @Environment(\.timeZone) private var displayTimeZone
     var groupID: String?
     var post: SocialItem?
     var parent: SocialItem?
@@ -145,7 +146,7 @@ struct ComposerView: View {
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
-                    if let warning = deadlineContext.warning(now: timeline.date) { InheritedDeadlineNotice(message: warning) }
+                    if let warning = deadlineContext.warning(now: timeline.date, timeZone: displayTimeZone) { InheritedDeadlineNotice(message: warning) }
                     Picker("Expiration", selection: $timer) {
                         Text(deadlineContext.inherited == nil ? "No timer" : "Same expiration as parent").tag(0)
                         ForEach([3600,86400,604800,2592000], id: \.self) { seconds in
@@ -158,9 +159,9 @@ struct ComposerView: View {
                     .accessibilityIdentifier("composer-expiration")
                     if timer == -1 {
                         let upper = max(timeline.date, deadlineContext.inherited ?? Date.distantFuture)
-                        DatePicker("Delete on", selection: $customExpiry, in: timeline.date...upper, displayedComponents: [.date, .hourAndMinute])
+                        DatePicker("Delete on", selection: $customExpiry, in: timeline.date...upper, displayedComponents: [.date, .hourAndMinute]).environment(\.timeZone, .autoupdatingCurrent)
                             .accessibilityHint("Choose a future time no later than the inherited deadline.")
-                        Text("Selected expiration: " + CommentDeadline.absolute(customExpiry)).font(.footnote)
+                        Text("Selected expiration: " + CommentDeadline.absolute(customExpiry, timeZone: displayTimeZone)).font(.footnote)
                     }
                     if parentUnavailable { Text("The parent is no longer available. Your draft has not been published.").foregroundStyle(.red) }
                     if let error = deadlineContext.validationMessage(for: timerChoice, now: timeline.date) {
@@ -228,5 +229,5 @@ struct EditContentView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var timer = 0
-    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle(item.isComment ? "Edit comment" : "Edit post").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
+    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(DisplayPreferences.date(expiry)). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle(item.isComment ? "Edit comment" : "Edit post").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
 }
