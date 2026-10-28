@@ -58,7 +58,7 @@ const queries={
   sum(double3*_sample_interval) AS quantity,
   sum(double2*_sample_interval)/1000 AS held_seconds,
   quantileExactWeighted(0.95)(double2,_sample_interval) AS p95_ms,
-  sum(if(double4>0,double4,0)*_sample_interval)/1000 AS after_response_seconds
+  sum(if(double4>0,double4,0.0)*_sample_interval)/1000 AS after_response_seconds
   FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '60' MINUTE AND blob1='porchday_metrics_v1'
   AND blob3='db_conn' GROUP BY route,code ORDER BY held_seconds DESC,events DESC LIMIT 150 FORMAT JSON`,
  // Server-wide connections by role and state, once a minute (last 15 minutes).
