@@ -1,0 +1,79 @@
+import {describe,it,expect} from 'vitest';
+import {mkdtempSync,writeFileSync,readFileSync,existsSync,mkdirSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
+import {FileDeploymentLease} from './deployment-recovery-lease.ts';
+import {deploymentPlanHash,type DeploymentPlan,type RecoveryJournal,type RecoveryState} from './deployment-recovery.ts';
+const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
+const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
+function fixture(){const root=mkdtempSync(join(tmpdir(),'porchday-lease-')),canonical=JSON.stringify({stagingVersion:plan.baselineVersion,stagingRuntimeSource:'c'.repeat(40),compatibleRollbackVersions:{staging:plan.baselineVersion}});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});return{root,canonical};}
+const journal=(phase:'prepared'|'complete'):RecoveryJournal=>({read:async()=>({v:1,revision:phase==='complete'?4:1,planHash:deploymentPlanHash(plan),phase,...(phase==='complete'?{candidateDeploymentId:uuid(5)}:{})}),write:async()=>{throw Error('unused');}});
+describe('deployment lease coordination',()=>{
+ it('excludes a second controller and resumes the same unresolved operation after close',()=>{
+  const f=fixture();let a:FileDeploymentLease|undefined,b:FileDeploymentLease|undefined;
+  try{a=FileDeploymentLease.acquire(f.root,plan);expect(()=>FileDeploymentLease.acquire(f.root,plan)).toThrow('LEASE_BUSY');a.close();expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);expect(()=>FileDeploymentLease.acquire(f.root,{...plan,operationId:uuid(9)})).toThrow('LEASE_HELD');b=FileDeploymentLease.acquire(f.root,plan);expect(b.assert(plan).stagingVersion).toBe(plan.baselineVersion);}
+  finally{a?.close();b?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('leaves a legacy deployment lock untouched',()=>{
+  const f=fixture();try{mkdirSync(join(f.root,'deployment-lock'),{mode:0o700});const path=join(f.root,'deployment-lock/owner.json'),legacy='{"owner":"another-rollout"}\n';writeFileSync(path,legacy,{mode:0o600});expect(()=>FileDeploymentLease.acquire(f.root,plan)).toThrow('LEASE_HELD');expect(readFileSync(path,'utf8')).toBe(legacy);}
+  finally{rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('detects canonical drift and refuses an unacknowledged reader floor',()=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  try{lease=FileDeploymentLease.acquire(f.root,plan);writeFileSync(join(f.root,'latest-verified-deployment.json'),f.canonical+' ');expect(()=>lease!.assert(plan)).toThrow('CANONICAL_CHANGED');lease.close();}
+  finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+  const g=fixture();try{const record=JSON.parse(g.canonical);record.compatibleRollbackVersions.staging=uuid(7);writeFileSync(join(g.root,'latest-verified-deployment.json'),JSON.stringify(record));expect(()=>FileDeploymentLease.acquire(g.root,plan)).toThrow('READER_FLOOR_NOT_ACKNOWLEDGED');expect(existsSync(join(g.root,'deployment-lock'))).toBe(false);}
+  finally{rmSync(g.root,{recursive:true,force:true});}
+ });
+ it('retains unresolved markers and releases only a matching terminal journal',async()=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  try{lease=FileDeploymentLease.acquire(f.root,plan);await expect(lease.release(journal('prepared'))).rejects.toThrow('OUTCOME_UNRESOLVED');expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);await lease.release(journal('complete'));expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(()=>lease!.assert(plan)).toThrow('NOT_HELD');}
+  finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('does not release another operation or remove unexpected lock files',async()=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  try{lease=FileDeploymentLease.acquire(f.root,plan);const wrong:RecoveryJournal={...journal('complete'),read:async()=>({...await journal('complete').read(),planHash:'d'.repeat(64)} as RecoveryState)};await expect(lease.release(wrong)).rejects.toThrow('OUTCOME_UNRESOLVED');writeFileSync(join(f.root,'deployment-lock/unexpected'),'keep',{mode:0o600});await expect(lease.release(journal('complete'))).rejects.toThrow('DIRECTORY_CHANGED');expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);}
+  finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('recovers the kernel lock after a real controller process crash without stealing a live lock',async()=>{
+  const f=fixture(),moduleUrl=new URL('./deployment-recovery-lease.ts',import.meta.url).href;
+  const child=spawn(process.execPath,['--input-type=module','-e',`import {FileDeploymentLease} from ${JSON.stringify(moduleUrl)};const plan=JSON.parse(process.argv[2]);const lease=FileDeploymentLease.acquire(process.argv[1],plan);console.log('READY');setInterval(()=>lease.assert(plan),1000);`,f.root,JSON.stringify(plan)],{stdio:['ignore','pipe','pipe']});let lease:FileDeploymentLease|undefined;
+  try{
+   await new Promise<void>((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('child startup timeout')),5000);child.stdout!.once('data',chunk=>{clearTimeout(timeout);String(chunk).includes('READY')?resolve():reject(Error('child not ready'));});child.once('error',error=>{clearTimeout(timeout);reject(error);});child.once('exit',()=>{clearTimeout(timeout);reject(Error('child exited before readiness'));});});
+   expect(()=>FileDeploymentLease.acquire(f.root,plan)).toThrow('LEASE_BUSY');const exited=once(child,'exit');child.kill('SIGKILL');await exited;
+   expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);lease=FileDeploymentLease.acquire(f.root,plan);expect(lease.assert(plan).stagingVersion).toBe(plan.baselineVersion);
+  }finally{if(child.exitCode===null&&child.signalCode===null){const exited=once(child,'exit');child.kill('SIGKILL');await exited;}lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+});
+
+it('connects the real lease and journal to recovery and rejects canonical drift at the POST boundary',async()=>{
+ const {FileRecoveryJournal}=await import('./deployment-recovery-journal.ts');const {recoverDeployment}=await import('./deployment-recovery.ts');const {leasedDeploymentPorts}=await import('./deployment-recovery-lease.ts');
+ for(const drift of [false,true]){
+  const f=fixture();let lease:FileDeploymentLease|undefined;let writes=0;
+  try{
+   lease=FileDeploymentLease.acquire(f.root,plan);const journal=new FileRecoveryJournal(join(f.root,'journal'));let current={version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null as string|null};
+   const ports=leasedDeploymentPorts(plan,lease,journal,{
+    authorize:async()=>{},observe:async()=>{if(drift)writeFileSync(join(f.root,'latest-verified-deployment.json'),f.canonical+' ');return{...current};},verify:async()=> 'healthy',
+    deploy:async(version,operationId)=>{writes++;current={version,operationId,deploymentId:uuid(5)};},
+   });
+   expect(await recoverDeployment(plan,journal,ports,{sleep:async()=>{}})).toBe(drift?'observation-unavailable':'complete');expect(writes).toBe(drift?0:1);
+   if(!drift){await lease.release(journal);expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);}
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ }
+});
+
+it('resumes a real process crash after dispatch without repeating the simulated provider write',async()=>{
+ const {FileRecoveryJournal}=await import('./deployment-recovery-journal.ts');const {recoverDeployment}=await import('./deployment-recovery.ts');const {leasedDeploymentPorts}=await import('./deployment-recovery-lease.ts');
+ const f=fixture(),leaseUrl=new URL('./deployment-recovery-lease.ts',import.meta.url).href,journalUrl=new URL('./deployment-recovery-journal.ts',import.meta.url).href,recoveryUrl=new URL('./deployment-recovery.ts',import.meta.url).href;
+ writeFileSync(join(f.root,'provider.json'),JSON.stringify({version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null}),{mode:0o600});
+ const code=`import {readFileSync,writeFileSync} from 'node:fs';import {join} from 'node:path';import {FileDeploymentLease,leasedDeploymentPorts} from ${JSON.stringify(leaseUrl)};import {FileRecoveryJournal} from ${JSON.stringify(journalUrl)};import {recoverDeployment} from ${JSON.stringify(recoveryUrl)};const root=process.argv[1],plan=JSON.parse(process.argv[2]),lease=FileDeploymentLease.acquire(root,plan),journal=new FileRecoveryJournal(join(root,'journal'));await recoverDeployment(plan,journal,leasedDeploymentPorts(plan,lease,journal,{authorize:async()=>{},observe:async()=>JSON.parse(readFileSync(join(root,'provider.json'),'utf8')),verify:async()=> 'healthy',deploy:async(version,operationId)=>{writeFileSync(join(root,'provider.json'),JSON.stringify({version,operationId,deploymentId:${JSON.stringify(uuid(5))}}));console.log('DISPATCHED');await new Promise(()=>{});}}));`;
+ const child=spawn(process.execPath,['--input-type=module','-e',code,f.root,JSON.stringify(plan)],{stdio:['ignore','pipe','pipe']});let lease:FileDeploymentLease|undefined;
+ try{
+  await new Promise<void>((resolve,reject)=>{const timeout=setTimeout(()=>reject(Error('child dispatch timeout')),5000);child.stdout!.once('data',chunk=>{clearTimeout(timeout);String(chunk).includes('DISPATCHED')?resolve():reject(Error('child did not dispatch'));});child.once('error',error=>{clearTimeout(timeout);reject(error);});child.once('exit',()=>{clearTimeout(timeout);reject(Error('child exited before dispatch'));});});
+  const exited=once(child,'exit');child.kill('SIGKILL');await exited;const journal=new FileRecoveryJournal(join(f.root,'journal'));expect((await journal.read())?.phase).toBe('activation-intent');
+  lease=FileDeploymentLease.acquire(f.root,plan);let repeats=0;const ports=leasedDeploymentPorts(plan,lease,journal,{authorize:async()=>{},observe:async()=>JSON.parse(readFileSync(join(f.root,'provider.json'),'utf8')),verify:async()=> 'healthy',deploy:async()=>{repeats++;}});
+  expect(await recoverDeployment(plan,journal,ports)).toBe('complete');expect(repeats).toBe(0);await lease.release(journal);expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+ }finally{if(child.exitCode===null&&child.signalCode===null){const exited=once(child,'exit');child.kill('SIGKILL');await exited;}lease?.close();rmSync(f.root,{recursive:true,force:true});}
+});

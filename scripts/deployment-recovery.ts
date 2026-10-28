@@ -59,12 +59,17 @@ export async function observeDeployment(ports:Pick<DeploymentPorts,'observe'>,ac
  if(last)return last;throw new RecoveryError('DEPLOYMENT_OBSERVATION_UNAVAILABLE');
 }
 
+/** Deterministic provider annotation, not an authorization token. */
+export function rollbackOperationId(operationId:string):string{
+ if(!id.test(operationId))throw new RecoveryError('DEPLOYMENT_OPERATION_INVALID');
+ const value=createHash('sha256').update(operationId+':rollback').digest('hex');
+ return value.slice(0,8)+'-'+value.slice(8,12)+'-'+value.slice(12,16)+'-'+value.slice(16,20)+'-'+value.slice(20,32);
+}
+
 /** Resume with the same plan/journal after interruption. An existing intent is never sent again. */
 export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>}={}):Promise<RecoveryResult>{
  const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
- const rollbackOperation=createHash('sha256').update(plan.operationId+':rollback').digest('hex');
- // UUID-shaped deterministic annotation, distinct from activation, not an authorization token.
- const rollbackId=rollbackOperation.slice(0,8)+'-'+rollbackOperation.slice(8,12)+'-'+rollbackOperation.slice(12,16)+'-'+rollbackOperation.slice(16,20)+'-'+rollbackOperation.slice(20,32);
+ const rollbackId=rollbackOperationId(plan.operationId);
  let state=await journal.read();if(state){validateRecoveryState(state);if(state.planHash!==hash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');}
  const advance=async(phase:Phase,fields:Partial<RecoveryState>={})=>{const next:RecoveryState={...state,...fields,v:1,revision:(state?.revision??0)+1,planHash:hash,phase};validateRecoveryTransition(state,next);await journal.write(state,next);state=next;};
  const observe=async(accept?:(value:DeploymentObservation)=>boolean)=>{try{return await observeDeployment(ports,accept,options.sleep);}catch{return null;}};

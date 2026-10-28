@@ -7,10 +7,10 @@ unnecessary. Read-only reconciliation confirmed the intended version and the
 user journeys passed.
 
 This controller is **not yet the live deployment entry point**. The Cloudflare
-transport and private filesystem journal are implemented and tested. Integration
-with the existing deployment lease, artifact/schema evidence and synthetic
-journeys, plus a hosted staging rollback drill, remain required before unattended
-use. Unit tests do not establish that production can recover automatically.
+transport, private filesystem journal and deployment lease are implemented and
+tested. Integration with artifact/schema evidence, synthetic journeys and crash-safe
+canonical record finalization, plus a hosted staging rollback drill, remain required
+before unattended use. Unit tests do not establish that production can recover automatically.
 
 ## Inputs and safety boundaries
 
@@ -66,6 +66,33 @@ are not. Deployment POSTs have a ten-second observation deadline and are never
 retried. Lease/evidence checks have ten-second deadlines; journey verification
 has a 45-second deadline. Adapters must honor cancellation; a timed-out write
 can still commit and must be reconciled.
+
+## Exclusive deployment lease
+
+`FileDeploymentLease` requires POSIX filesystem semantics and Node 24 with the
+built-in experimental `node:sqlite` module. Its SQLite transaction provides a
+kernel-released mutex, while `deployment-lock/owner.json` preserves the existing
+rollout coordination convention. Every writer must honor that directory lock.
+The canonical record and lock directory must be private and owned by the operator.
+
+A live controller excludes a second controller. After process loss, the same
+immutable plan can resume; a different operation or legacy rollout marker is
+never taken over based on elapsed time or a PID. Closing the lease releases only
+the kernel mutex and retains the persistent marker. Releasing the marker requires
+a matching terminal journal and must follow canonical record finalization.
+
+`leasedDeploymentPorts` checks the lease and unchanged canonical record at the
+provider I/O boundary, requires a matching durable intent before a write, and
+rejects a repeated dispatch within the process. The supplied authorization
+callback must still verify actual artifact/schema evidence. A recorded reader
+floor is an acknowledgment requirement, not proof of artifact compatibility.
+
+Tests kill isolated child controllers and demonstrate same-plan resumption after
+both lock acquisition and a simulated provider commit. The latter resumes from
+the durable activation intent without another POST. These are local fixtures,
+not hosted recovery evidence. Crash recovery across canonical record replacement
+and lock release remains unfinished: changed canonical bytes currently stop
+resumption. Do not enable unattended deployment until that boundary is resolved.
 
 ## Outcomes and operator action
 

@@ -11,6 +11,7 @@
   "files": [
     "deployment-recovery.ts",
     "deployment-recovery-journal.ts",
-    "cloudflare-deployment-client.ts"
+    "cloudflare-deployment-client.ts",
+    "deployment-recovery-lease.ts"
   ]
 }
