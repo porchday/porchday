@@ -115,6 +115,7 @@ struct PostDetailView: View {
     } }
 }
 struct ComposerView: View {
+    @Environment(\.timeZone) private var displayTimeZone
     var groupID: String?
     var post: SocialItem?
     var parent: SocialItem?
@@ -145,7 +146,7 @@ struct ComposerView: View {
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
-                    if let warning = deadlineContext.warning(now: timeline.date) { InheritedDeadlineNotice(message: warning) }
+                    if let warning = deadlineContext.warning(now: timeline.date, timeZone: displayTimeZone) { InheritedDeadlineNotice(message: warning) }
                     Picker("Expiration", selection: $timer) {
                         Text(deadlineContext.inherited == nil ? "No timer" : "Same expiration as parent").tag(0)
                         ForEach([3600,86400,604800,2592000], id: \.self) { seconds in
@@ -160,7 +161,7 @@ struct ComposerView: View {
                         let upper = max(timeline.date, deadlineContext.inherited ?? Date.distantFuture)
                         DatePicker("Delete on", selection: $customExpiry, in: timeline.date...upper, displayedComponents: [.date, .hourAndMinute]).environment(\.timeZone, .autoupdatingCurrent)
                             .accessibilityHint("Choose a future time no later than the inherited deadline.")
-                        Text("Selected expiration: " + CommentDeadline.absolute(customExpiry)).font(.footnote)
+                        Text("Selected expiration: " + CommentDeadline.absolute(customExpiry, timeZone: displayTimeZone)).font(.footnote)
                     }
                     if parentUnavailable { Text("The parent is no longer available. Your draft has not been published.").foregroundStyle(.red) }
                     if let error = deadlineContext.validationMessage(for: timerChoice, now: timeline.date) {
