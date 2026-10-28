@@ -1,6 +1,6 @@
 import type { ClaimedMessage, Progress } from './turn.ts';
 
-export type FinishBody = { status: 'answered' | 'timed_out' | 'failed'; reply: string; commits: string[]; held_back: string[] };
+export type FinishBody = { status: 'answered' | 'timed_out' | 'failed'; reply: string; commits: string[]; held_back: string[]; proposal?: { title: string; plan: string } | null };
 export interface BridgeApi {
   status(): Promise<{ paused: boolean; environment: string }>;
   claim(take: boolean, waitingOn?: 'request_file' | 'other_work'): Promise<{ paused: boolean; message: ClaimedMessage | null; turn_seconds: number }>;
@@ -32,7 +32,7 @@ export function createApi(baseUrl: string, token: string): BridgeApi {
   }
   return {
     status: () => call('GET', '/status'),
-    claim: (take, waitingOn = 'other_work') => call('POST', '/claim', { take, waiting_on: waitingOn }),
+    claim: (take, waitingOn = 'other_work') => call('POST', '/claim', { take, waiting_on: waitingOn, feature_protocol: 1 }),
     progress: (id, reply, progress) => call('POST', `/messages/${id}/progress`, { reply, progress }),
     finish: (id, body) => call('POST', `/messages/${id}/finish`, body),
   };

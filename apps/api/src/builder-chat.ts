@@ -9,7 +9,7 @@ import type { Env, Variables } from './types';
 
 /** See design/builder-chat.md. Raise the version when the disclosure text changes. */
 export const BUILDER_CHAT = {
-  disclosureVersion: 1,
+  disclosureVersion: 2,
   messageLength: 2000,
   dailyMessages: 100,
   queueLength: 20,
@@ -29,6 +29,7 @@ const errors: Record<string, [number, string]> = {
   INVALID_MESSAGE: [400, 'Write a message of up to 2,000 characters.'],
   IN_FLIGHT: [409, 'Wait for Codex to answer your current message before sending another.'],
   DAILY_LIMIT: [429, `You can send up to ${BUILDER_CHAT.dailyMessages} builder chat messages a day. Please try again tomorrow.`],
+  FEATURE_LOCKED: [409, 'Voting has closed because implementation was queued.'],
   QUEUE_FULL: [429, 'Codex is busy, try again later.'],
   BUILDER_CHAT_PAUSED: [503, 'Builder chat is paused by the Porchday team.'],
 };
@@ -94,8 +95,32 @@ export function createBuilderChatRoutes() {
       db`select app.builder_chat_send(${message},${BUILDER_CHAT.disclosureVersion},${BUILDER_CHAT.dailyMessages},${BUILDER_CHAT.queueLength}) as id`);
     return c.json({ id: row.id }, 201);
   });
+  app.get('/builder-chat/features', async c => {
+    let after: { at: string; id: string } | null = null;
+    if (c.req.query('cursor')) {
+      try { after = z.object({at:z.iso.datetime(),id:z.uuid()}).parse(JSON.parse(atob(c.req.query('cursor')!))); }
+      catch { return fail(c, 'INVALID_MESSAGE'); }
+    }
+    const [row] = await withMember(c.env, c.get('memberId'), db => db`select app.feature_board(${after?.at ?? null}::text::timestamptz,${after?.id ?? null}::uuid) as items`);
+    if (row.items === null) return fail(c, 'NOT_FOUND');
+    const items = row.items.slice(0,30), last = items.at(-1);
+    return c.json({items:items.map(({cursor_at,...item}: any) => item),next_cursor:row.items.length>30 && last ? btoa(JSON.stringify({at:last.cursor_at,id:last.id})) : null});
+  });
+  app.post('/builder-chat/features', async c => {
+    if (builderChatPaused(c.env)) return fail(c, (await state(c)) ? 'BUILDER_CHAT_PAUSED' : 'NOT_FOUND');
+    const {message} = messageInput.parse(await c.req.json());
+    const [row] = await withMember(c.env, c.get('memberId'), db => db`select app.feature_submit(${message},${BUILDER_CHAT.dailyMessages},${BUILDER_CHAT.queueLength}) as id`);
+    return c.json({id:row.id},201);
+  });
+  app.put('/builder-chat/features/:id/vote', async c => {
+    if (builderChatPaused(c.env)) return fail(c, (await state(c)) ? 'BUILDER_CHAT_PAUSED' : 'NOT_FOUND');
+    const id = z.uuid().parse(c.req.param('id'));
+    const {value} = z.object({value:z.union([z.literal(-1),z.literal(0),z.literal(1)])}).strict().parse(await c.req.json());
+    await withMember(c.env,c.get('memberId'),db=>db`select app.feature_vote(${id},${value})`);
+    return c.json({ok:true});
+  });
   app.get('/builder-chat/export', async c => {
-    const [row] = await withMember(c.env, c.get('memberId'), db => db`select app.builder_chat_export() as value`);
+    const [row] = await withMember(c.env, c.get('memberId'), db => db`select app.feature_export() as value`);
     if (!row.value) return fail(c, 'NOT_FOUND');
     c.header('Content-Disposition', 'attachment; filename="porchday-builder-chat.json"');
     return c.json(row.value);
@@ -127,13 +152,14 @@ async function jobs<T>(env: Env, work: (sql: postgres.Sql) => Promise<T>) {
   try { return await work(sql); } finally { await sql.end({ timeout: 1 }); }
 }
 const commitHash = z.string().regex(/^[0-9a-f]{7,40}$/);
-const claimInput = z.object({ take: z.boolean(), waiting_on: z.enum(['request_file', 'other_work']).default('other_work') }).strict();
+const claimInput = z.object({ take: z.boolean(), waiting_on: z.enum(['request_file', 'other_work']).default('other_work'), feature_protocol: z.literal(1).optional() }).strict();
 const progressInput = z.object({ reply: z.string().max(20000), progress: z.enum(PROGRESS).nullable() }).strict();
 const finishInput = z.object({
   status: z.enum(['answered', 'timed_out', 'failed']),
   reply: z.string().max(20000),
   commits: z.array(commitHash).max(50),
   held_back: z.array(z.string().regex(/^[a-z0-9_]{1,40}$/)).max(20),
+  proposal: z.object({title:z.string().trim().min(1).max(160),plan:z.string().trim().min(1).max(12000)}).strict().nullable().optional(),
 }).strict();
 
 /** Mounted at /api/builder-bridge, outside cookie authentication. Only the
@@ -149,9 +175,9 @@ export function createBuilderBridgeRoutes() {
   app.get('/status', c => c.json({ paused: builderChatPaused(c.env), environment: c.env.ENVIRONMENT }));
   // {take:false} only records that the bridge is connected.
   app.post('/claim', async c => {
-    const { take, waiting_on } = claimInput.parse(await c.req.json());
+    const { take, waiting_on, feature_protocol } = claimInput.parse(await c.req.json());
     const paused = builderChatPaused(c.env);
-    const [row] = await jobs(c.env, sql => sql`select app.builder_chat_poll(${BUILDER_CHAT.turnSeconds},${take && !paused},${waiting_on}) as message`);
+    const [row] = await jobs(c.env, sql => sql`select app.feature_poll(${BUILDER_CHAT.turnSeconds},${take && !paused && feature_protocol === 1},${waiting_on}) as message`);
     return c.json({ paused, message: row.message ?? null, turn_seconds: BUILDER_CHAT.turnSeconds });
   });
   app.post('/messages/:id/progress', async c => {
@@ -164,8 +190,8 @@ export function createBuilderBridgeRoutes() {
   app.post('/messages/:id/finish', async c => {
     const id = z.uuid().parse(c.req.param('id'));
     const body = finishInput.parse(await c.req.json());
-    const [row] = await jobs(c.env, sql => sql`select app.builder_chat_finish(${id},${body.status},${body.reply},
-      array(select jsonb_array_elements_text(${sql.json(body.commits)})),array(select jsonb_array_elements_text(${sql.json(body.held_back)}))) as value`);
+    const [row] = await jobs(c.env, sql => sql`select app.feature_finish(${id},${body.status},${body.reply},
+      array(select jsonb_array_elements_text(${sql.json(body.commits)})),array(select jsonb_array_elements_text(${sql.json(body.held_back)})),${body.proposal ? sql.json(body.proposal) : null}::jsonb) as value`);
     return c.json({ recorded: row.value === true });
   });
   return app;
