@@ -91,6 +91,7 @@ This is a source audit, not a claim of complete physical-device acceptance.
 | Encrypted photos, avatars, profile and group customization | PhotoPipeline, ProfileAvatar, ProfileEditor, GroupEditor; photo/avatar tests |
 | Sent invitations and joined notifications | PlatformInvitationSection; PlatformInvitationTests |
 | Recovery, Keychain, trusted devices, data export/import and deletion | CryptoVault, SettingsView, PortableArchive; access, Keychain and deletion tests |
+| Profile visibility | Native editor now loads and preserves Only me / Friends & family, applies the chosen audience to photos, and rejects a changed editor snapshot |
 | Manual Light/Dark/System and display timezone | DisplayPreferencesSection; DisplayPreferencesTests. Device-local, independent of encrypted profiles |
 | Two-factor login | Native challenge screen; enrolling/managing 2FA and changing email currently open the website |
 | Integration grant review/revoke | Native; registration/authorization opens the website |

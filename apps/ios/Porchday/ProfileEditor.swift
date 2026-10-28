@@ -21,11 +21,18 @@ struct ProfileEditor: View {
     @State private var assets:[String:PreparedPhoto]=[:]
     @State private var removedAssets: Set<String> = []
     @State private var committedProfile: JSON?
+    @State private var audience = "only_me"
+    @State private var loadedContext: JSON = .null
+    @State private var loaded = false
     @State private var busy=false
     private var currentProfile: JSON { committedProfile ?? profile }
     var body:some View {
         Form {
             Section("Profile details") {
+                Picker("Profile visibility", selection: $audience) {
+                    Text("My current friends & family").tag("connections")
+                    Text("Only me").tag("only_me")
+                }
                 TextField("Display name",text:$name)
                 TextField("Status",text:$status)
                 TextField("About me",text:$bio,axis:.vertical)
@@ -67,11 +74,21 @@ struct ProfileEditor: View {
                 Picker("Theme",selection:$theme) { Text("Sage").tag("sage");Text("Apricot").tag("apricot");Text("Lavender").tag("lavender");Text("Ink").tag("ink") }
                 Picker("Heading style",selection:$font) { Text("Serif").tag("serif");Text("Sans serif").tag("sans") }
                 Picker("Section order",selection:$order) { Text("About, then interests").tag("about-first");Text("Interests, then about").tag("interests-first") }
-                Text("These details are encrypted for your current connections. Share your profile again after accepting new connections.").font(.footnote)
-                Button(busy ? "Encrypting your profile…":"Save and share profile") { Task { await save() } }.disabled(busy || name.count>80 || bio.count>1000 || status.count>100 || interests.count>300)
+                Text("Profile details and photos are encrypted for the audience you choose. Changing visibility cannot recall copies already saved by others.").font(.footnote)
+                Button(busy ? "Encrypting your profile…":"Save profile") { Task { await save() } }.disabled(!loaded || busy || name.count>80 || bio.count>1000 || status.count>100 || interests.count>300)
             }
-        }.disabled(busy || !model.canWriteSocial).navigationTitle("Edit profile").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
-            .task { name=profile["displayName"].string ?? "";bio=profile["bio"].string ?? "";interests=profile["interests"].string ?? "";status=profile["status"].string ?? "";theme=profile["theme"].string ?? "sage";font=profile["font"].string ?? "serif";order=profile["sectionOrder"].string ?? "about-first";wallpaper=ProfileWallpaper.displayed(profile["wallpaper"]) }
+        }.disabled(!loaded || busy || !model.canWriteSocial).navigationTitle("Edit profile").toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
+            .task {
+                await model.perform {
+                    let raw = try await model.api.social("/me")
+                    loadedContext = raw["envelope"]["context"]
+                    audience = try ProfileVisibility.read(loadedContext)
+                    let saved = raw["envelope"] == .null ? profile : try await vault.open(raw)
+                    committedProfile = saved
+                    name=saved["displayName"].string ?? "";bio=saved["bio"].string ?? "";interests=saved["interests"].string ?? "";status=saved["status"].string ?? "";theme=saved["theme"].string ?? "sage";font=saved["font"].string ?? "serif";order=saved["sectionOrder"].string ?? "about-first";wallpaper=ProfileWallpaper.displayed(saved["wallpaper"])
+                    loaded = true
+                }
+            }
             .onChange(of:selection) { _,item in let targetSlot=slot;Task { await model.perform { if let data=try await item?.loadTransferable(type:Data.self) { assets[targetSlot]=try PhotoPipeline.prepare(data);removedAssets.remove(targetSlot) } } } }
     }
     private func save() async {
@@ -79,22 +96,25 @@ struct ProfileEditor: View {
         await model.perform {
             guard let member=model.member else{return}
             try member.access.requireSocialWrite()
+            guard loaded else { throw PorchError.message("Wait for your profile to load.") }
+            let current = try await model.api.social("/me")["envelope"]["context"]
+            guard current == loadedContext else { throw PorchError.message("Your profile changed elsewhere. Close and reopen the editor before saving.") }
             let plan = SurfacePhotoRemoval(payload: currentProfile, slots: ["avatar", "cover", "background"], removed: removedAssets, replaced: Set(assets.keys))
             var payload=plan.payload.replacing("displayName",with:.string(name)).replacing("bio",with:.string(bio)).replacing("interests",with:.string(interests)).replacing("status",with:.string(status)).replacing("theme",with:.string(theme)).replacing("font",with:.string(font)).replacing("sectionOrder",with:.string(order))
             payload = ProfileWallpaper.applying(wallpaper, to: payload, changed: wallpaperChanged)
             var attachments:[(String,String)]=[]
             for (slot,photo) in assets {
-                let meta=try await model.uploadSurfacePhoto(photo,audience:"connections",parent:member.id)
+                let meta=try await model.uploadSurfacePhoto(photo,audience:audience,parent:member.id)
                 guard let photoID=meta["id"].string else{throw PorchError.message("Photo upload is unavailable.")}
                 payload=payload.replacing(slot,with:meta);attachments.append((photoID,slot))
             }
             for slot in ["avatar","cover","background"] where assets[slot]==nil && payload[slot] != .null {
-                let photo=try await model.reshareSurfacePhoto(payload[slot],audience:"connections",parent:member.id)
+                let photo=try await model.reshareSurfacePhoto(payload[slot],audience:audience,parent:member.id)
                 payload=payload.replacing(slot,with:photo);attachments.append((photo["id"].string ?? "",slot))
             }
-            let previous=try await model.api.social("/me")["envelope"]["context"]
+            let previous=loadedContext
             let original:JSON = .object(["id":.string(member.id),"kind":.string("profile"),"createdAt":.string(PorchDate.string()),"revision":.number(Double((previous["revision"].integer ?? 0)+1))])
-            let envelope=try await vault.seal(payload,member:member,kind:"profile",audience:"connections",id:member.id,original:original)
+            let envelope=try await vault.seal(payload,member:member,kind:"profile",audience:audience,id:member.id,original:original)
             do {
                 _ = try await model.api.social("/profiles/me",method:"PUT",body:.object(["envelope":envelope, "remove_media": plan.removals]))
             } catch PorchError.api(let code, _, _) where ["MEDIA_ATTACHMENT_CHANGED", "REVISION_CHANGED"].contains(code) {
