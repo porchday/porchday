@@ -227,3 +227,38 @@ The bootstrap UUID-only SELECT and COMMIT now share a simple-protocol batch;
 interpolated request value is the same strictly validated UUID used for actor
 setup. All results are withheld until a confirmed COMMIT result; errors trigger
 rollback and connection destruction. The social path now has two exchanges.
+
+
+## Opt-in logout journal timings (#55)
+
+`LOGOUT_PHASE_TIMING=true` enables aggregate `journal_phase` points only for
+`POST /api/auth/sign-out` in staging or production. The flag is absent by default;
+this source change does not enable it or deploy a Worker. Use a bounded diagnostic
+window, inspect event usage, and remove the flag when the investigation ends.
+It uses the existing Analytics Engine binding; no D1 or new service is required.
+
+Only the fixed route, method, environment, phase and elapsed milliseconds are
+emitted. No operation/member/session identifier, request correlation, credentials,
+SQL, error text or response header is added. Failed operations emit elapsed time
+but that timing is not success evidence. Missing points do not establish success.
+Telemetry errors are ignored without replaying work or changing its outcome.
+
+The enclosing phases are `guard`, `registration`, `work`, `checkpoint`, `receipt`,
+`retirement` (pending-list removal), and `close`. Nested `r2_read`, `r2_write`,
+`database_status` and `database_page` points measure individual I/O operations,
+including the existing adapter's retry delays. R2 reads include consuming the body.
+Database durations include connection acquisition, network and query execution;
+they cannot isolate pool wait time. `work` includes the existing logout handler.
+Do not sum nested and enclosing dimensions or add their percentiles together.
+These aggregates cannot reconstruct a specific request or measure client network
+latency. Compare with the request metrics and external whole-journey observations.
+
+Query the fixed 15-minute aggregates with the existing credential wrapper:
+`python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts staging logout-phases`
+(or `production`). The output permits only the finite phase names and nonnegative
+numeric aggregates. Before rollout, pass journal/revocation/failure tests and
+stage synthetic acceptance; deploy only reviewed reliability changes against the
+recorded production release. No threshold, retry, receipt, quarantine, mutation
+ordering or revocation rule is changed by this instrumentation. Root cause and
+latency improvement remain unverified until measurements and a corrective change
+satisfy #55.

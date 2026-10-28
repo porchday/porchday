@@ -6,6 +6,8 @@ export interface Env {
   TRACES?: D1Database;
   /** Temporary aggregate diagnostics; honored only in staging, never production. */
   FEED_PHASE_TIMING?: string;
+  /** Opt-in aggregate logout diagnostics; no identities or request correlation. */
+  LOGOUT_PHASE_TIMING?: string;
   HYPERDRIVE_AUTH: Hyperdrive;
   HYPERDRIVE_SOCIAL: Hyperdrive;
   HYPERDRIVE_JOBS: Hyperdrive;
