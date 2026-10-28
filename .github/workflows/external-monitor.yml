@@ -1,0 +1,40 @@
+name: External production availability backup
+on:
+  schedule:
+    # Avoid the top of the hour. GitHub may still delay or drop scheduled jobs.
+    - cron: '2-57/5 * * * *'
+  workflow_dispatch:
+    inputs:
+      notification_drill:
+        description: Send an explicitly simulated outage and recovery notification after healthy probes
+        type: boolean
+        default: false
+permissions:
+  contents: read
+  actions: read
+  issues: write
+concurrency:
+  group: external-production-availability-backup
+  cancel-in-progress: false
+jobs:
+  probe:
+    if: github.repository == 'porchday/porchday' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Verify synthetic account readiness and notify owners on transitions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PORCHDAY_EXTERNAL_MONITOR_CONFIG: ${{ secrets.PORCHDAY_EXTERNAL_MONITOR_CONFIG }}
+          PORCHDAY_MONITOR_NOTIFICATION_DRILL: ${{ inputs.notification_drill }}
+        run: |
+          export PORCHDAY_MONITOR_GH_PATH="$(command -v gh)"
+          node scripts/external-monitor-backup.ts
+      # Only fixed-format observations enter job logs. No artifacts, response
+      # bodies, account IDs, cookies, deployment tokens or database credentials.
