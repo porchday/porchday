@@ -1,9 +1,10 @@
 import postgres from 'postgres';
 import {authPool} from './auth';
 import type {Env} from './types';
+import {trackPostgres} from './connection-metrics';
 /** Social deletion is durable first; retry identity erasure without restoring deleted data. */
 export async function cleanupDeletedIdentities(env: Env):Promise<number>{
- const jobs=postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false});
+ const jobs=trackPostgres(env,'jobs',postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false}));
  const auth=authPool(env);let count=0;
  try{
   const rows=await jobs`SELECT member_id FROM app.identity_deletion_outbox WHERE completed_at IS NULL ORDER BY created_at LIMIT 100`;

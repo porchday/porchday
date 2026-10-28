@@ -3,6 +3,7 @@ import { z } from 'zod';
 import postgres from 'postgres';
 import type { Env, Variables } from './types.js';
 import { withMember } from './db.js';
+import {trackPostgres} from './connection-metrics';
 const scopes = z.array(z.enum(['profile:read', 'content:read', 'media:read', 'export:read', 'emoji:read'])).min(1).max(5);
 function randomToken() { const b = crypto.getRandomValues(new Uint8Array(32)); return btoa(String.fromCharCode(...b)).replaceAll('+', '-').replaceAll('/', '_').replaceAll('=', ''); }
 async function hash(s: string) { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))), b => b.toString(16).padStart(2, '0')).join(''); }
@@ -40,7 +41,7 @@ export function createIntegrationTokenRoutes() {
     }>();
     app.onError((_, c) => c.json({ error: { code: 'INVALID_GRANT', message: 'This integration grant is unavailable.' } }, 401));
     app.use('*', async (c, next) => { c.header('Cache-Control', 'no-store'); await next(); });
-    app.post('/token', async (c) => { const b = z.object({ grant_type: z.enum(['authorization_code', 'refresh_token']), client_id: z.string().uuid(), redirect_uri: z.string().url().optional(), code: z.string().max(200).optional(), code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/).optional(), refresh_token: z.string().max(200).optional() }).parse(c.req.header('content-type')?.includes('application/json')?await c.req.json():await c.req.parseBody()); const access = randomToken(), refresh = randomToken(); const sql = postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false }); try {
+    app.post('/token', async (c) => { const b = z.object({ grant_type: z.enum(['authorization_code', 'refresh_token']), client_id: z.string().uuid(), redirect_uri: z.string().url().optional(), code: z.string().max(200).optional(), code_verifier: z.string().regex(/^[A-Za-z0-9._~-]{43,128}$/).optional(), refresh_token: z.string().max(200).optional() }).parse(c.req.header('content-type')?.includes('application/json')?await c.req.json():await c.req.parseBody()); const access = randomToken(), refresh = randomToken(); const sql = trackPostgres(c.env, 'social', postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false })); try {
         let rows;
         if (b.grant_type === 'authorization_code') {
             if (!b.code || !b.code_verifier || !b.redirect_uri)
@@ -60,7 +61,7 @@ export function createIntegrationTokenRoutes() {
         await sql.end({ timeout: 1 });
     } });
     app.get('/own/:resource', async (c) => { const map: Record<string, string> = { profile: 'profile:read', content: 'content:read', media: 'media:read', exports: 'export:read', emojis: 'emoji:read' }; const scope = map[c.req.param('resource')]; const token = c.req.header('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if (!scope || !token)
-        throw Error('Invalid grant'); const sql = postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false }); try {
+        throw Error('Invalid grant'); const sql = trackPostgres(c.env, 'social', postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false })); try {
         const tokenHash=await hash(token),rate=await limited(sql,c,tokenHash,'read');if(rate)return rate;
         let afterId='';let snapshotAt=new Date().toISOString();
         if(c.req.query('cursor')){const cursor=z.object({id:z.string().max(256),at:z.string().datetime({offset:true})}).parse(JSON.parse(atob(c.req.query('cursor')!)));afterId=cursor.id;snapshotAt=cursor.at;}
@@ -72,7 +73,7 @@ export function createIntegrationTokenRoutes() {
         await sql.end({ timeout: 1 });
     } });
     app.get('/own/media/:id/bytes', async (c) => { const id = z.string().uuid().parse(c.req.param('id')); const token = c.req.header('authorization')?.match(/^Bearer ([A-Za-z0-9_-]{43})$/)?.[1]; if (!token)
-        throw Error('Invalid grant'); const sql = postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false }); let path: string; try {
+        throw Error('Invalid grant'); const sql = trackPostgres(c.env, 'social', postgres(c.env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false })); let path: string; try {
         const tokenHash=await hash(token),rate=await limited(sql,c,tokenHash,'read');if(rate)return rate;
         const [r] = await sql `select app.integration_media(${tokenHash},${id}) as path`;
         path = r.path;

@@ -83,3 +83,20 @@ test('actual transactional-email adapter emits delivery outcomes without address
  await expect(sendAccountEmail(env,'private-person@example.test','private subject','private body')).rejects.toThrow('EMAIL_UNAVAILABLE');
  expect(writeDataPoint.mock.calls[1][0].blobs[5]).toBe('send_failed');expect(JSON.stringify(writeDataPoint.mock.calls)).not.toMatch(/private|example\.test/);
 });
+
+test('connection events accept route patterns and job labels but never concrete paths',()=>{
+ const writeDataPoint=vi.fn();
+ const env={ENVIRONMENT:'production',METRICS:{writeDataPoint}} as Env;
+ event('db_conn',{route:'/api/v1/media/:id/bytes',code:'social_close',durationMs:40,count:1,detailMs:12},env);
+ event('db_conn',{route:'/api/v1/media/4dc907ef-5906-47da-9214-84bbd9f5fb22/bytes',code:'social_close'},env);
+ event('db_snapshot',{route:'job:cron',code:'jobs_idle_in_transaction',count:3,durationMs:65000},env);
+ event('db_conn',{route:'/api/v1/media/:id/bytes',code:'member@example.test'},env);
+ event('request',{route:'/api/v1/media/:id/bytes',method:'GET',status:200},env);
+ const [a,b,c,d,e]=writeDataPoint.mock.calls.map(call=>call[0]);
+ expect(a).toEqual({indexes:['db_conn:/api/v1/media/:id/bytes'],blobs:['porchday_metrics_v1','production','db_conn','/api/v1/media/:id/bytes','none','social_close','none'],doubles:[0,40,1,12]});
+ expect(b.blobs[3]).toBe('none');
+ expect(c.blobs.slice(2,6)).toEqual(['db_snapshot','job:cron','none','jobs_idle_in_transaction']);
+ expect(d.blobs[5]).toBe('none');
+ // Ordinary request events keep their existing coarse route categories.
+ expect(e.blobs[3]).toBe('none');
+});

@@ -47,6 +47,14 @@ if type(builder_paused) is not bool:raise SystemExit('builder_chat_paused must b
 base['vars']['BUILDER_CHAT_PAUSED']='true' if builder_paused else 'false'
 base['hyperdrive']=[{'binding':'HYPERDRIVE_'+r.upper(),'id':env['hyperdrive_'+r]} for r in ['auth','social','jobs']]
 base['r2_buckets']=[{'binding':'MEDIA','bucket_name':env['bucket']},{'binding':'RECOVERY_JOURNAL','bucket_name':env['recovery_journal_bucket']}]
+# Opt-in performance traces (docs/performance-tracing.md). Never inherit the
+# local placeholder; bind only an explicitly provisioned database.
+base.pop('d1_databases',None)
+traces=env.get('traces_d1_database_id')
+if traces is not None:
+ if not isinstance(traces,str) or not re.fullmatch('[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}',traces) or traces.startswith('00000000'):
+  raise SystemExit('traces_d1_database_id must be a provisioned D1 database UUID.')
+ base['d1_databases']=[{'binding':'TRACES','database_name':'porchday-'+name+'-traces','database_id':traces,'migrations_dir':'d1/traces'}]
 base['vars']['MEDIA_BACKUP_ENABLED']='false'
 if env.get('media_backup_enabled'):
  if env.get('verified_pitr_days',0)<7 or not env.get('media_backup_bucket') or env['media_backup_bucket'] in [env['bucket'],env['recovery_journal_bucket']]:

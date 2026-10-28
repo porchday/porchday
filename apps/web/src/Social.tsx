@@ -60,6 +60,7 @@ import { EmojiGlyph, EmojiPicker } from "./EmojiPicker";
 import { decodeReactions, type DecodedReaction } from "./reaction-read";
 import { validateCustomEmojiPixels } from "./emoji-images";
 import type { CustomEmoji } from "./emoji-library";
+import { markOnce, traced } from "./tracing";
 export function TimerSelect({
   value,
   onChange,
@@ -463,6 +464,9 @@ export function Feed({
   const [clock, setClock] = useState(Date.now());
   const loadVersion = useRef(0);
   const action = useAction();
+  useEffect(() => {
+    if (loaded) markOnce("feed-loaded");
+  }, [loaded]);
   const endpoint = singleId
     ? `/posts/${singleId}`
     : groupId
@@ -944,8 +948,9 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
         if (payload.mime !== "image/jpeg" || typeof payload.bytes !== "string")
           throw new Error("Unsupported photo format.");
         const bytes = base64ToBytes(payload.bytes);
-        const { blob } = await validatedPhoto(bytes);
+        const { blob } = await traced("photo decode", () => validatedPhoto(bytes), { bytes: bytes.length });
         if (!alive) return;
+        markOnce("first-photo");
         const expiry = envelope.context.expiresAt
           ? Date.parse(envelope.context.expiresAt)
           : null;

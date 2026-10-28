@@ -4,6 +4,7 @@ import postgres from 'postgres';
 import webPush, {type PushSubscription} from 'web-push';
 import type {Db} from './db.js';
 import type {Env, Variables} from './types.js';
+import {trackPostgres} from './connection-metrics';
 
 type C = Context<{Bindings: Env; Variables: Variables}>;
 type PushEnv = Pick<Env, 'VAPID_PUBLIC_KEY' | 'VAPID_PRIVATE_KEY' | 'VAPID_SUBJECT'>;
@@ -95,7 +96,7 @@ export function webPushRequest(subscription: PushSubscription, env: PushEnv) {
 export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'> & PushEnv, send: typeof fetch = fetch): Promise<{sent: number; retried: number; skipped: number}> {
   const counts = {sent: 0, retried: 0, skipped: 0};
   if (!configured(env)) return counts;
-  const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, {max: 1, prepare: true, fetch_types: false, connect_timeout: 10});
+  const sql = trackPostgres(env, 'jobs', postgres(env.HYPERDRIVE_JOBS.connectionString, {max: 1, prepare: true, fetch_types: false, connect_timeout: 10}));
   try {
     const jobs = await sql`select * from app.claim_push(20)`;
     for (let offset = 0; offset < jobs.length; offset += 4) {

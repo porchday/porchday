@@ -8,6 +8,8 @@ import { createSocialRoutes } from '../src/social';
 import { createIntegrationConsentRoutes, createIntegrationTokenRoutes } from '../src/social-integrations';
 import type { Env, Variables } from '../src/types';
 import * as database from '../src/db';
+import { tracingMiddleware } from '../src/tracing';
+import { requestTimingMiddleware } from '../src/request-timing';
 const url = process.env.SOCIAL_HTTP_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 let sql: Sql;
@@ -55,6 +57,27 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect(account).toEqual(ordinary);
         expect(ordinary).not.toHaveProperty('startup_devices');
         expect(account.connection_count).toBe(0);
+    });
+    it('returns real database spans and connection counts to an opted-in traced member request', async () => {
+        const viewer = await person();
+        const traced = new Hono<{ Bindings: Env; Variables: Variables }>();
+        traced.use('*', tracingMiddleware());
+        traced.use('*', requestTimingMiddleware);
+        traced.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); });
+        traced.route('/api/v1', createSocialRoutes());
+        const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+        for (const path of ['/api/v1/feed', '/api/v1/me?bootstrap=1']) {
+            const response = await traced.request('https://porchday.test' + path, { headers: { 'x-test-member': viewer.id, traceparent } }, env);
+            expect(response.status).toBe(200);
+            const header = response.headers.get('server-timing')!;
+            expect(header).toContain('pd-trace;desc="4bf92f3577b34da6a3ce929d0e0e4736"');
+            expect(header).toMatch(/pd-span;dur=[0-9.]+;desc="social_connect_begin@[0-9.]+"/);
+            expect(header).toMatch(/pd-span;dur=[0-9.]+;desc="social_query@[0-9.]+"/);
+            expect(header).toContain('pd-count;desc="db_conn_social=1"');
+            expect(header).toContain('pd-route;desc="' + path.split('?')[0] + '"');
+        }
+        const untraced = await traced.request('https://porchday.test/api/v1/feed', { headers: { 'x-test-member': viewer.id } }, env);
+        expect(untraced.headers.has('server-timing')).toBe(false);
     });
     it('shows invitation identities and status only to owners, paginates, and updates the latest inviter', async () => {
         const owner=await person(), moderator=await person(), recipient=await person(), outsider=await person();

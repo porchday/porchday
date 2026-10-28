@@ -8,6 +8,7 @@ import { canonicalJson, type EncryptedEnvelope } from '@porchday/crypto';
 import { envelopeSchema } from './social-contract.js';
 import type { Db } from './db.js';
 import type { Env, Variables } from './types.js';
+import { traceSpan } from './tracing.js';
 
 export type SocialContext = Context<{ Bindings: Env; Variables: Variables }>;
 export interface RouteDependencies {
@@ -149,7 +150,7 @@ export function registerMediaRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
   });
   app.get('/media/:id/bytes',async c=>{
     const m=await tx(c,async db=>{const [row]=await db`select object_key from app.media_assets where id=${id(c.req.param('id'))} and state in('ready','attached')`;if(!row)fail('NOT_FOUND',404);return row;});
-    const object=await c.env.MEDIA.get(m.object_key);if(!object)return fail('NOT_FOUND',404);
+    const object=await traceSpan('r2_media_get',()=>c.env.MEDIA.get(m.object_key));if(!object)return fail('NOT_FOUND',404);
     return new Response(object.body,{headers:{'Content-Type':'application/octet-stream','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
   });
   app.put('/media/:id/attachment',async c=>{
