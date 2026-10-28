@@ -394,3 +394,35 @@ invalidated run; exit 1 means a configuration/persistence error. At most 100 rea
 cannot establish p99 acceptance. Retain runner location, network, release mapping,
 fixture workload and conditions separately. Never concatenate exploratory runs
 into an acceptance claim or use this tool to send production traffic.
+
+### October 28 exploratory read baseline and feed preparation candidate
+
+At 23:53:42.993–23:54:02.473 UTC, staging deployment
+`913d617a-f7f9-40fd-92b7-8efe3e649fa9` completed 20 sequential alternating
+bootstrap/feed reads, with one second minimum between starts and tracing enabled.
+Normal login verified a surviving synthetic account and an existing owned visible
+post; no posts or account data were changed. The old native interop handoff was
+not reused. The fresh session was signed out afterward, and its old cookie was
+rejected with HTTP 401. Private individual samples are retained under
+`artifacts/private/hosted-smoke/read-baseline-20261028.json` in the p99 worktree.
+
+| Operation | Observations | Runner mean / max | Server mean / max | Authentication phase mean |
+| --- | ---: | ---: | ---: | ---: |
+| Bootstrap read | 10 | 349.2 / 662.7 ms | 215.8 / 266 ms | 82.5 ms |
+| Feed read | 10 | 487.9 / 788.1 ms | 321.7 / 362 ms | 153.4 ms |
+
+All 20 returned HTTP 200 and passed account/post assertions; there were no failed,
+timeout or missing measured attempts. This is a small synthetic desktop sample
+with unverified geography and network conditions, not a p99, phone, capacity, or
+regional acceptance claim. Phase timings can overlap and must not be summed.
+
+Code inspection found that early request-local auth schema preparation applies
+only to bootstrap reads. The candidate extends it to exact `GET /api/v1/feed`
+requests. Schema metadata validation can overlap the privacy guard and reuse the
+existing deployment/binding-scoped schema verdict. Session lookup/renewal, current
+member status and feed queries still wait for the guard and schema success;
+no session, permissions, member data or sockets are shared between requests.
+Tests cover both routes, guard denial, schema failure and unchanged unrelated
+routes. The measured difference motivates the candidate, but does not prove its
+benefit. Deployment, paired staging measurement and rollback validation remain
+required before treating it as an accepted performance improvement.
