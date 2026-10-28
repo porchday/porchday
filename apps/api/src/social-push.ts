@@ -1,3 +1,4 @@
+import {runtimeSessionDenied} from './session-denial';
 import {Hono, type Context} from 'hono';
 import {z} from 'zod';
 import postgres from 'postgres';
@@ -92,7 +93,7 @@ export function webPushRequest(subscription: PushSubscription, env: PushEnv) {
 }
 
 /** At-least-once delivery; fixed topic collapses crash-retried generic previews. */
-export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'> & PushEnv, send: typeof fetch = fetch): Promise<{sent: number; retried: number; skipped: number}> {
+export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'|'ENVIRONMENT'|'RECOVERY_JOURNAL'> & PushEnv, send: typeof fetch = fetch): Promise<{sent: number; retried: number; skipped: number}> {
   const counts = {sent: 0, retried: 0, skipped: 0};
   if (!configured(env)) return counts;
   const sql = postgres(env.HYPERDRIVE_JOBS.connectionString, {max: 1, prepare: true, fetch_types: false, connect_timeout: 10});
@@ -100,23 +101,26 @@ export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'> & PushEnv
     const jobs = await sql`select * from app.claim_push(20)`;
     for (let offset = 0; offset < jobs.length; offset += 4) {
       await Promise.all(jobs.slice(offset, offset + 4).map(async job => {
-        const [row] = await sql`select app.prepare_push(${job.id},${job.lease}) as subscription`;
-        if (!row?.subscription) {counts.skipped++; return;}
+        const [row] = await sql`select app.prepare_push_delivery(${job.id},${job.lease}) as delivery`;
+        if (!row?.delivery) {counts.skipped++; return;}
         let outcome = 'retry';
         let delay = Math.min(3600, 15 * 2 ** Math.min(Number(job.attempts), 8));
         try {
-          const request = webPushRequest(row.subscription, env);
-          const response = await send(request.url, request.init);
-          if (response.status >= 300 && response.status < 400) outcome = 'failed';
-          else if (response.ok) outcome = 'sent';
-          else if ([404, 410].includes(response.status)) outcome = 'gone';
-          else if (response.status === 429 || response.status >= 500 || [401, 403].includes(response.status)) {
-            const retryAfter = response.headers.get('Retry-After');
-            const seconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) : retryAfter ? (Date.parse(retryAfter) - Date.now()) / 1000 : 0;
-            if (Number.isFinite(seconds)) delay = Math.min(3600, Math.max(delay, Math.ceil(seconds)));
-          } else outcome = 'failed';
-          // Never read, return or log push-provider response bodies or endpoint URLs.
-          await response.body?.cancel();
+          if(await runtimeSessionDenied(env,row.delivery.sessionId)){outcome='failed';}
+          else {
+            const request = webPushRequest(row.delivery.subscription, env);
+            const response = await send(request.url, request.init);
+            if (response.status >= 300 && response.status < 400) outcome = 'failed';
+            else if (response.ok) outcome = 'sent';
+            else if ([404, 410].includes(response.status)) outcome = 'gone';
+            else if (response.status === 429 || response.status >= 500 || [401, 403].includes(response.status)) {
+              const retryAfter = response.headers.get('Retry-After');
+              const seconds = retryAfter && /^\d+$/.test(retryAfter) ? Number(retryAfter) : retryAfter ? (Date.parse(retryAfter) - Date.now()) / 1000 : 0;
+              if (Number.isFinite(seconds)) delay = Math.min(3600, Math.max(delay, Math.ceil(seconds)));
+            } else outcome = 'failed';
+            // Never read, return or log push-provider response bodies or endpoint URLs.
+            await response.body?.cancel();
+          }
         } catch { /* Network/configuration failures retry with bounded backoff. */ }
         await sql`select app.finish_push(${job.id},${job.lease},${outcome},${delay})`;
         if (outcome === 'sent') counts.sent++;

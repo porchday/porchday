@@ -44,7 +44,7 @@ vi.mock('pg',()=>({Pool:class {
 }}));
 vi.mock('../src/auth',()=>({
  authPool:()=>({query:async()=>{fixture.trace.push('auth_status');return {rows:[{status:fixture.status}]};},end:async()=>{fixture.trace.push('auth_close');}}),
- createAuth:()=>({api:{getSession:async()=>{fixture.trace.push('auth_session');return {user:{id:fixture.member,emailVerified:fixture.verified},session:{id:'private-session',createdAt:new Date()}};}}}),
+ createAuth:()=>({api:{getSession:async()=>{fixture.trace.push('auth_session');return {user:{id:fixture.member,emailVerified:fixture.verified},session:{id:'33333333-3333-4333-8333-333333333333',createdAt:new Date()}};}}}),
 }));
 beforeEach(()=>{fixture.trace=[];fixture.quarantined=false;fixture.verified=true;fixture.status='active';fixture.queryFailure=false;fixture.journalFailure=false;});
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
@@ -53,7 +53,7 @@ function setup(overrides:Partial<Env>={}, path='/api/v1/feed'){
  const points:AnalyticsEngineDataPoint[]=[],pending:Promise<unknown>[]=[];
  const env={ENVIRONMENT:'staging',FEED_PHASE_TIMING:'true',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}},
   HYPERDRIVE_JOBS:{connectionString:'synthetic-jobs'},HYPERDRIVE_SOCIAL:{connectionString:'synthetic-social'},
-  RECOVERY_JOURNAL:{get:async()=>{fixture.trace.push('journal_read');return {etag:'private-etag',text:async()=>JSON.stringify({v:1,generation:fixture.generation,mode:'active',sequence:'0',head:null,pending:[],reason:null})};}},...overrides} as unknown as Env;
+  RECOVERY_JOURNAL:{get:async(key:string)=>{if(key.startsWith('session-denials/v1/')){fixture.trace.push('session_denial_read');return null;}fixture.trace.push('journal_read');return {etag:'private-etag',text:async()=>JSON.stringify({v:1,generation:fixture.generation,mode:'active',sequence:'0',head:null,pending:[],reason:null})};}},...overrides} as unknown as Env;
  const app=new Hono<{Bindings:Env;Variables:Variables}>();
  app.use('*',requestTimingMiddleware);app.use('/api/*',privacyReadGuard);app.use('/api/v1/*',requireMember);app.route('/api/v1',createSocialRoutes());
  const request=()=>app.request('https://staging.porchday.test'+path+'?private-token=secret',{headers:{Cookie:'session=private-cookie'}},env,{waitUntil:(promise:Promise<unknown>)=>pending.push(promise),passThroughOnException(){}} as ExecutionContext);

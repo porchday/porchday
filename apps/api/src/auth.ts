@@ -1,3 +1,4 @@
+import {sessionDenialAuth} from './session-denial-auth';
 import { betterAuth } from 'better-auth';
 import {twoFactor,haveIBeenPwned} from 'better-auth/plugins';
 import {PostgresDialect} from 'kysely';
@@ -26,7 +27,7 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
         await accountEmail(user.id,user.email,'Confirm a Porchday email change',`Someone requested a change to your account email. Approve this request first, then verify the new address:\n\n${url}\n\nIf this was not you, report it at ${env.APP_URL}/recovery. Never forward this link.`);
       },
     } },
-    plugins:[haveIBeenPwned(),twoFactor({issuer:'Porchday',twoFactorTable:'auth_two_factor',skipVerificationOnEnable:false,accountLockout:{enabled:true,maxFailedAttempts:5,durationSeconds:900}})],
+    plugins:[sessionDenialAuth(env),haveIBeenPwned(),twoFactor({issuer:'Porchday',twoFactorTable:'auth_two_factor',skipVerificationOnEnable:false,accountLockout:{enabled:true,maxFailedAttempts:5,durationSeconds:900}})],
     session: { modelName:'auth_session', expiresIn:60*60*24*7, updateAge:60*60*24, freshAge:60*15, cookieCache:{enabled:false} },
     account: { modelName:'auth_account', accountLinking:{enabled:false} },
     verification: { modelName:'auth_verification', storeIdentifier:{hash:hashToken} },
