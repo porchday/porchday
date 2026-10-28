@@ -41,6 +41,7 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_check_secrets.py'
       - run: node scripts/migrate.ts
       - run: npm run typecheck
+      - run: npx tsc -p scripts/tsconfig.external-monitor.json
       - run: node scripts/prepare-test-databases.ts
       - run: npm test
       - run: npm run build
