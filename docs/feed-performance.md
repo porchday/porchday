@@ -352,3 +352,41 @@ observations per critical server operation and region, representative web/PWA
 and native-iOS phone journeys, no reliability regression, verified rollback and
 seven days of production observation after the candidate release. Missing device,
 regional or seven-day evidence is incomplete work, not a reason to relax targets.
+
+
+### Bounded staging diagnostic collector
+
+`npx tsx scripts/collect-staging-latency.ts --run <manifest> <output>` performs
+sequential, alternating bootstrap and first-page feed reads against staging only.
+Both paths must be under `artifacts/private/hosted-smoke/`; the manifest is private
+(mode 0600) and contains a synthetic staging session. Never use a real member's
+session. Prepare and verify the fixture through the hosted-smoke workflow; its
+owner remains responsible for signing out and cleaning up synthetic data afterward.
+The collector does not create or revoke sessions.
+
+The manifest fields are `synthetic: true`, `origin: "https://staging.porchday.com"`,
+`cookie` (the private Cookie header), `memberId`, `postId`, `deployment` (the staging
+health endpoint's deployment UUID), `expiresAt` (within 24 hours), `attempts`
+(1–100 total authenticated requests), `intervalMs` (1,000–60,000 between request
+starts), and `timeoutMs` (1,000–15,000 per request, including body download).
+Use a known visible synthetic post and a synthetic account with a `qa_` handle.
+No redirects or retries are allowed. Two additional unauthenticated health reads
+check the deployment before and after the experiment. This does not detect a
+change followed by a rollback during the interval; retain deployment history too.
+
+The tool reserves fresh output paths before traffic and durably appends every
+attempt to a private `.attempts.jsonl` journal. It stops on the first unsuccessful
+attempt, expired fixture, or persistence failure. The final output preserves
+partial results; a deployment mismatch invalidates completion. An interruption
+can leave the initial `collecting` output and attempt journal, which must be kept
+as incomplete evidence. Failed attempts retain their status when headers arrived,
+but never response bodies, session cookies, member IDs, or arbitrary trace headers.
+Numeric allowlisted Server-Timing phases are diagnostic hints; absent timing is
+null rather than zero. Elapsed time includes body transfer and validation on the
+runner, not phone rendering or photo decryption.
+
+Exit 0 means only a completed diagnostic run; exit 2 means an interrupted or
+invalidated run; exit 1 means a configuration/persistence error. At most 100 reads
+cannot establish p99 acceptance. Retain runner location, network, release mapping,
+fixture workload and conditions separately. Never concatenate exploratory runs
+into an acceptance claim or use this tool to send production traffic.
