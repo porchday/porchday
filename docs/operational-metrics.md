@@ -262,3 +262,34 @@ recorded production release. No threshold, retry, receipt, quarantine, mutation
 ordering or revocation rule is changed by this instrumentation. Root cause and
 latency improvement remain unverified until measurements and a corrective change
 satisfy #55.
+
+
+### October 28 diagnostic rollout
+
+The opt-in diagnostics are enabled in staging and production from isolated source
+`533b6e0ddd0596fe23f1303d9e398757901fe73b`, based on the previously deployed
+`005454607c98ffdb7c430a947bedb4586a14a45b`. This includes only the reviewed timing
+change and its scan configuration; unrelated main features, D1 and migrations
+were excluded. [Deployment and sampled measurements](evidence/logout-phase-timing-2026-10-28.json)
+record the version IDs, CI, acceptance and verified rollback targets.
+
+Staging passed 16 sequential and two simultaneous synthetic journeys, with a
+clean journal after the stale-intent interval. Production passed eight journeys
+spanning more than two minutes; login, authorized reads, logout, revoked-cookie
+rejection and protected readiness passed. Both temporary fixtures were removed.
+The existing monitor identities remain active. All 24 public assets per
+environment, topology, queues, database pool configuration and schema were
+preserved. The deployment record was reconciled and its lock released.
+
+The first small, sampled production timing window included handler work averaging
+725 ms, registration 570 ms, and individual R2 writes 347 ms. These samples are
+not correlated per request and do not explain the earlier 10-second deadlines.
+Do not add their percentiles or treat them as proof of improved latency. The
+flag remains enabled for the bounded #55 investigation; remove it after the
+cause and correction are verified. Durable recovery and the monthly SLO remain
+open.
+
+Analytics Engine accepts at most [250 points per Worker invocation](https://developers.cloudflare.com/analytics/analytics-engine/limits/).
+Repeated I/O observations during extreme journal contention can consume that
+budget. Bound or aggregate these diagnostics before using them for stress-test
+acceptance; missing phases are unknown, not zero-duration successes.
