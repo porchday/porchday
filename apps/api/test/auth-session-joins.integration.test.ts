@@ -7,6 +7,7 @@ import {Hono} from 'hono';
 import {createAuth} from '../src/auth';
 import {requireMember,requireAppealMember} from '../src/session';
 import {authRoutes} from '../src/auth-routes';
+import {persistSessionDenial} from '../src/session-denial';
 import type {Env,Variables} from '../src/types';
 
 const base=process.env.TEST_DATABASE_URL;
@@ -127,4 +128,30 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
   const recent=await call('/api/auth/change-password',{currentPassword:'synthetic-current-password',newPassword:'synthetic-next-password'});
   expect(recent.status).toBe(403);expect(await recent.json()).toMatchObject({error:{code:'RECENT_AUTH_REQUIRED'}});
  });
+ it('rejects denied sessions through member and appeal HTTP routes even after a SQL row is restored',async()=>{
+  const actor=await person(),other=await person(),pending:Promise<unknown>[]=[];
+  const records=new Map<string,string>();
+  const store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,
+   put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};}};
+  const guardedEnv={...env,RECOVERY_JOURNAL:store} as unknown as Env;
+  const app=new Hono<{Bindings:Env;Variables:Variables}>();
+  app.get('/api/v1/feed',requireMember,c=>c.json({id:c.get('sessionId')}));
+  app.get('/appeals',requireAppealMember,c=>c.json({id:c.get('sessionId')}));
+  const context={waitUntil:(p:Promise<unknown>)=>pending.push(p)} as ExecutionContext;
+  const call=async(path:string,cookie=actor.cookie)=>{
+   try{return await app.fetch(new Request(env.APP_URL+path,{headers:{cookie}}),guardedEnv,context);}
+   finally{await Promise.all(pending.splice(0));}
+  };
+  expect((await call('/api/v1/feed')).status).toBe(200);
+  await persistSessionDenial(store,actor.sessionId);
+  // Publication followed by a process loss leaves the real SQL row untouched.
+  expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(1);
+  for(const path of ['/api/v1/feed','/appeals']){
+   expect((await call(path)).status).toBe(401);expect((await call(path,other.cookie)).status).toBe(200);
+  }
+  await owner.query('DELETE FROM public.auth_session WHERE id=$1',[actor.sessionId]);
+  await owner.query(`INSERT INTO public.auth_session(id,"expiresAt",token,"userId") VALUES($1,now()+interval '7 days',$2,$3)`,[actor.sessionId,actor.token,actor.memberId]);
+  for(const path of ['/api/v1/feed','/appeals'])expect((await call(path)).status).toBe(401);
+ });
+
 });

@@ -1,7 +1,9 @@
 # Durable session revocation without a global unfinished operation
 
-Status: design and storage primitive only. No live reader, writer, cleanup job or
-rollout flag is connected. This does not resolve #1, #55 or the 99.99% objective.
+Status: draft implementation, not deployed. Member and appeal middleware now
+checks denials, including prepared authentication. Better Auth HTTP endpoints and
+push delivery remain unintegrated. No writer, cleanup job or rollout flag is
+connected. This does not resolve #1, #55 or the 99.99% objective.
 It is the first scoped application of a write-ahead denial model; other privacy
 mutations retain the existing independent journal and quarantine behavior.
 
@@ -21,9 +23,11 @@ This replaces global unfinished bookkeeping for this one operation with a
 monotonic, narrowly scoped security decision. It is not permission to bypass the
 existing global read guard or remove journal coverage from other mutations.
 
-The current implementation in `apps/api/src/session-denial.ts` provides only the
-conditional immutable write, reconciliation after a lost acknowledgement, and
-exact-record lookup. Records contain the internal session UUID so a future
+The current implementation in `apps/api/src/session-denial.ts` provides the
+conditional immutable write, reconciliation after a lost acknowledgement,
+exact-record lookup and a runtime reader. Hosted readers fail closed when the
+recovery binding is missing; unbound development retains the existing journal
+exception. There is no flag that disables reads of published denials. Records contain the internal session UUID so a future
 bounded sweep can delete the exact SQL row; they never contain bearer tokens,
 cookies, email addresses or content. Keys use a domain-separated hash. The
 caller must obtain the ID from verified server-side session authorization, never
@@ -41,9 +45,14 @@ from a request body. Each environment uses its own configured recovery bucket.
 | SQL snapshot restores the row | Denial survives outside SQL | Readers and notification delivery still reject the session; existing restore quarantine and capability invalidation remain mandatory. |
 | Denial lookup fails or is malformed | Authorization unknown | Fail closed for that check. Do not substitute cached permission or overwrite conflicting data. |
 
-The storage test models SQL rows independently from the denial store. It is not
-an HTTP, database, push-provider, hosted-failure or restore acceptance test.
-No production failure has been induced for this design.
+The storage test models SQL rows independently from the denial store. Additional
+member/appeal HTTP middleware tests cover missing bindings, failed reads, corrupt
+records, separate sessions and prepared authentication. A disposable PostgreSQL
+test uses the real auth SDK and restricted role: it leaves a denied session row
+present, then deletes and recreates that row, verifying HTTP rejection and another
+session's continued access. This is not full database restoration, Better Auth
+endpoint, push-provider or hosted-failure acceptance. No production failure has
+been induced for this design.
 
 ## Reader coverage required before any writer
 

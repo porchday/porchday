@@ -44,7 +44,7 @@ vi.mock('pg',()=>({Pool:class {
 }}));
 vi.mock('../src/auth',()=>({
  authPool:()=>({query:async()=>{fixture.trace.push('auth_status');return {rows:[{status:fixture.status}]};},end:async()=>{fixture.trace.push('auth_close');}}),
- createAuth:()=>({api:{getSession:async()=>{fixture.trace.push('auth_session');return {user:{id:fixture.member,emailVerified:fixture.verified},session:{id:'private-session',createdAt:new Date()}};}}}),
+ createAuth:()=>({api:{getSession:async()=>{fixture.trace.push('auth_session');return {user:{id:fixture.member,emailVerified:fixture.verified},session:{id:'33333333-3333-4333-8333-333333333333',createdAt:new Date()}};}}}),
 }));
 beforeEach(()=>{fixture.trace=[];fixture.quarantined=false;fixture.verified=true;fixture.status='active';fixture.queryFailure=false;fixture.journalFailure=false;});
 afterEach(()=>{vi.useRealTimers();vi.restoreAllMocks();});
@@ -53,7 +53,7 @@ function setup(overrides:Partial<Env>={}, path='/api/v1/feed'){
  const points:AnalyticsEngineDataPoint[]=[],pending:Promise<unknown>[]=[];
  const env={ENVIRONMENT:'staging',FEED_PHASE_TIMING:'true',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{if(point.blobs?.[2]!=='db_conn')points.push(point);}}, // Connection accounting is covered in connection-metrics.test.ts.
   HYPERDRIVE_JOBS:{connectionString:'synthetic-jobs'},HYPERDRIVE_SOCIAL:{connectionString:'synthetic-social'},
-  RECOVERY_JOURNAL:{get:async()=>{fixture.trace.push('journal_read');return {etag:'private-etag',text:async()=>JSON.stringify({v:1,generation:fixture.generation,mode:'active',sequence:'0',head:null,pending:[],reason:null})};}},...overrides} as unknown as Env;
+  RECOVERY_JOURNAL:{get:async(key:string)=>{if(key.startsWith('session-denials/v1/')){fixture.trace.push('session_denial_read');return null;}fixture.trace.push('journal_read');return {etag:'private-etag',text:async()=>JSON.stringify({v:1,generation:fixture.generation,mode:'active',sequence:'0',head:null,pending:[],reason:null})};}},...overrides} as unknown as Env;
  const app=new Hono<{Bindings:Env;Variables:Variables}>();
  app.use('*',requestTimingMiddleware);app.use('/api/*',privacyReadGuard);app.use('/api/v1/*',requireMember);app.route('/api/v1',createSocialRoutes());
  const request=()=>app.request('https://staging.porchday.test'+path+'?private-token=secret',{headers:{Cookie:'session=private-cookie'}},env,{waitUntil:(promise:Promise<unknown>)=>pending.push(promise),passThroughOnException(){}} as ExecutionContext);
@@ -64,7 +64,7 @@ test('all nine fixed phases cover the actual feed path without changing checks, 
  const {request,points,pending}=setup();
  const response=await request();await Promise.all(pending);
  expect(response.status).toBe(200);expect(await response.json()).toEqual({items:[],next_cursor:null});
- expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','auth_status','begin','actor','query','commit','social_close','auth_close']);
+ expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','session_denial_read','auth_status','begin','actor','query','commit','social_close','auth_close']);
  expect(points.map(p=>p.blobs?.[5])).toEqual(FEED_PHASES);
  expect(points.every(p=>p.indexes?.[0]==='feed_phase:/api/v1/feed'&&p.blobs?.length===7&&p.doubles?.length===3&&p.doubles[0]===0&&p.doubles[1]>=0&&p.doubles[2]===0)).toBe(true);
  expect(JSON.stringify(points)).not.toMatch(/private|secret|11111111|22222222|synthetic-/);
@@ -80,7 +80,7 @@ test('every request repeats fresh privacy and member checks, and denial never ru
  expect(points.filter(p=>p.blobs?.[2]==='feed_phase').map(p=>p.blobs?.[5])).toEqual(['journal_check','journal_close']);
  fixture.quarantined=false;fixture.status='hold';fixture.trace=[];points.length=0;
  expect((await request()).status).toBe(403);
- expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','auth_status','auth_close']);
+ expect(fixture.trace).toEqual(['journal_read','journal_status','journal_close','auth_session','session_denial_read','auth_status','auth_close']);
  expect(points.some(p=>String(p.blobs?.[5]).startsWith('social_'))).toBe(false);
 });
 

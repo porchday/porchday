@@ -1,12 +1,13 @@
 import type {JournalStore} from './privacy-journal';
+import type {Env} from './types';
 
-/** Storage primitive only: deliberately not wired into authentication yet.
+/** Independent immutable records, checked by member and appeal authorization.
  * Writers must not be enabled before every session consumer enforces denials.
  * Session IDs are internal UUIDs, never bearer tokens or signed cookies.
  */
 const sessionIdPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 export class SessionDenialError extends Error {
- constructor(readonly code:'SESSION_DENIAL_ID_INVALID'|'SESSION_DENIAL_READ_FAILED'|'SESSION_DENIAL_INVALID'|'SESSION_DENIAL_UNCONFIRMED'){super(code);}
+ constructor(readonly code:'SESSION_DENIAL_NOT_CONFIGURED'|'SESSION_DENIAL_ID_INVALID'|'SESSION_DENIAL_READ_FAILED'|'SESSION_DENIAL_INVALID'|'SESSION_DENIAL_UNCONFIRMED'){super(code);}
 }
 async function recordFor(sessionId:string){
  if(typeof sessionId!=='string'||!sessionIdPattern.test(sessionId))throw new SessionDenialError('SESSION_DENIAL_ID_INVALID');
@@ -39,4 +40,16 @@ export async function persistSessionDenial(store:JournalStore,verifiedSessionId:
  if(acknowledged)return;
  if(await readExact(store,record))return;
  throw new SessionDenialError('SESSION_DENIAL_UNCONFIRMED');
+}
+
+/** Check only an ID obtained from verified server-side session lookup. Hosted
+ * readers have no bypass flag: disabling future writers must not undo denials.
+ * Match the existing journal's explicit unbound local-development exception.
+ */
+export async function runtimeSessionDenied(env:Pick<Env,'RECOVERY_JOURNAL'|'ENVIRONMENT'>,verifiedSessionId:string):Promise<boolean>{
+ if(!env.RECOVERY_JOURNAL){
+  if(env.ENVIRONMENT==='development')return false;
+  throw new SessionDenialError('SESSION_DENIAL_NOT_CONFIGURED');
+ }
+ return sessionDenied(env.RECOVERY_JOURNAL as JournalStore,verifiedSessionId);
 }
