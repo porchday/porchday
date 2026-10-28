@@ -283,3 +283,72 @@ regression risk is material because `run_worker_first` includes static delivery.
 Keep production placement unchanged for this bounded code release. An API-only
 placement design and representative signed-in US East/West measurements are
 follow-up work; no regional replicas are introduced.
+
+## Ambitious p99 acceptance goal (October 28, 2026)
+
+Track the owner-requested goal under #9, with logout work in #55 and reliability
+under #40/#42. Targets in milliseconds: ordinary authenticated reads 750; feed
+1,000; text post/edit/reaction confirmed saved 1,000; logout **including rejection
+of the old session** 1,000; warm launch to first readable post 1,500; cold launch
+with saved credentials and unlocked keys to usable feed 3,000; first visible photo
+fully downloaded/decrypted/decoded 2,000; honest interaction feedback 100.
+
+Run the offline acceptance report with:
+
+```sh
+node scripts/latency-acceptance.mjs /path/to/private-observations.json
+```
+
+It makes no network calls and cannot initiate a load test. Exit 0 means only that
+all supplied run-level p99s have sufficient data and meet their latency target;
+exit 2 means a missed target or insufficient evidence; exit 1 means invalid input.
+It never certifies release acceptance, a representative workload, no reliability
+regression, or completion of the goal. All inputs must come from retained,
+reviewable measurements, not fabricated/repeated samples or sampling weights.
+
+Input is a JSON object with `version: 1` and a `runs` array. Each run has:
+
+- `id`: unique experiment label (lowercase letters, digits, hyphens, at most 64).
+- `environment`: staging or production; `release`: full 40-character source SHA.
+- `region`: us-west, us-east or manila; `regionEvidence`: operator-attested,
+  runner-location or unknown. Preserve supporting runner/device evidence privately;
+  neither an edge code nor IP geolocation alone establishes phone location.
+- `platform`: web, pwa or ios; `device`: physical-phone, desktop or simulator;
+  `network`: cellular, wifi, wired or emulated. Keep device/OS/browser versions,
+  carrier/network conditions and any shaping configuration in the experiment record.
+- `workload` and `scenario`: bounded experiment labels, never member IDs or URLs.
+  Separate first-page reads, pagination, profile reads, writes, photo sizes,
+  audience sizes, cold/warm states and concurrency levels. Do not pool unlike work.
+- `operation`: read, feed, post, edit, reaction, logout, warm-feed, cold-feed,
+  first-photo or feedback; `scope`: server or end-to-end. Server intervals and
+  client intervals require separate runs and must not be added or averaged together.
+  Logout and UI/photo milestones require end-to-end scope.
+- `startedAt` and `endedAt`: UTC timestamps bounding the actual collection period;
+  `expectedAttempts`: the predeclared run size, including interrupted attempts.
+- `samples`: one record per actual attempt, with a unique zero-based `ordinal`,
+  finite nonnegative `elapsedMs` and `outcome`: success, error or timeout. Success
+  requires the operation-specific assertion, not merely HTTP 200. A write must
+  be acknowledged and verified; logout must also reject the old session. Photo
+  success ends at decode/render, not headers or download. Do not retry under the
+  same ordinal or replace a failure with its successful retry.
+
+Reports retain every run separately and expose observed/expected counts, errors,
+timeouts, missing attempts, failure rate and nearest-rank p50/p95/p99. Errors,
+timeouts and missing attempts rank as **unbounded**, preventing a fast denial or
+truncated timeout from looking like a fast successful operation. A percentile
+can still be within target with rare errors; reliability remains a separate gate.
+No percentile is emitted below 10,000 observed attempts. Incomplete runs, unknown
+region evidence, and end-to-end runs without physical phones on cellular/Wi-Fi
+cannot pass. Small exploratory samples remain useful diagnostics, not acceptance.
+
+Before production load generation, agree on exact operations/request counts,
+concurrency and request-rate caps, duration, abort thresholds, synthetic-data
+cleanup, and a spending ceiling. This goal does not authorize an unbounded
+production benchmark. Use staged workloads first, retaining all failed and
+interrupted runs and the corresponding deployment and rollback evidence.
+
+Completion requires the complete operation/region matrix with at least 10,000
+observations per critical server operation and region, representative web/PWA
+and native-iOS phone journeys, no reliability regression, verified rollback and
+seven days of production observation after the candidate release. Missing device,
+regional or seven-day evidence is incomplete work, not a reason to relax targets.
