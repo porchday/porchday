@@ -1,0 +1,85 @@
+{
+  "v": 1,
+  "at": "2026-10-28T20:57:15.893297+00:00",
+  "source": "1c6194ac82bd330daf1dfe7c2f6131b94613b793",
+  "bundleSha256": "c15a0ee8368eed2d28514d2d6abed4e3695b169518811ac8c55bc270fbbdc48b",
+  "ci": {
+    "runs": [
+      40766631310,
+      40766640111
+    ],
+    "passed": true,
+    "tests": 828,
+    "suites": 116,
+    "monitorTests": 25,
+    "secretScansPassed": true
+  },
+  "stagingCadence": {
+    "samples": 14,
+    "passed": 13,
+    "failed": 1,
+    "firstAt": "2026-10-28T20:45:57.782Z",
+    "lastAt": "2026-10-28T20:50:49.333Z",
+    "cycleMs": {
+      "min": 3168,
+      "max": 10002
+    },
+    "failures": [
+      {
+        "at": "2026-10-28T20:47:57.796Z",
+        "durationMs": 10002,
+        "failedChecks": [
+          "anonymous_session",
+          "authorized_feed",
+          "authorized_profile",
+          "login",
+          "logout",
+          "monitor_freshness",
+          "protected_readiness",
+          "revocation"
+        ]
+      }
+    ]
+  },
+  "stagingFailureCause": "unconfirmed; immediate follow-up public and protected checks healthy; no recent Mac sleep event",
+  "stagingFinalSevenPassed": true,
+  "stagingFixtureRemoved": true,
+  "productionBeforeInstall": {
+    "samples": 7,
+    "passed": 7,
+    "failed": 0,
+    "firstAt": "2026-10-28T20:51:24.649Z",
+    "lastAt": "2026-10-28T20:53:24.661Z",
+    "cycleMs": {
+      "min": 4589,
+      "max": 6397
+    },
+    "failures": []
+  },
+  "installedDaemon": {
+    "samples": 7,
+    "passed": 7,
+    "failed": 0,
+    "firstAt": "2026-10-28T20:54:02.440Z",
+    "lastAt": "2026-10-28T20:56:02.452Z",
+    "cycleMs": {
+      "min": 4553,
+      "max": 6530
+    },
+    "failures": []
+  },
+  "pendingNotificationsAtAcceptance": 0,
+  "notificationDrill": {
+    "githubAccepted": true,
+    "ownerReceiptConfirmed": false,
+    "outage": "https://github.com/porchday/porchday/issues/52#issuecomment-6480281299",
+    "recovery": "https://github.com/porchday/porchday/issues/52#issuecomment-6480281873",
+    "inducedProductionOutage": false
+  },
+  "productionFixture": "dedicated persistent synthetic monitor identity; no relationships or posts",
+  "applicationWorkerSchemaDomainsQueuesChanged": false,
+  "scope": "login_authorized_reads_logout_and_readiness",
+  "hostedBackupInstalled": false,
+  "completeRegionalAndEncryptedWriteCoverage": false,
+  "monthlySloAchieved": false
+}
