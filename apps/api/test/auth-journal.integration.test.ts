@@ -1,3 +1,5 @@
+import {persistSessionDenial} from '../src/session-denial';
+import {cleanupDeniedSessions} from '../src/session-denial-cleanup';
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
@@ -24,6 +26,10 @@ class MemoryStore implements JournalStore {
   async get(key: string) {
     const row = this.rows.get(key);
     return row ? { etag: row.etag, text: async () => row.value } : null;
+  }
+  async list(options:{prefix:string;limit:number;cursor?:string}){
+    const keys=[...this.rows.keys()].filter(key=>key.startsWith(options.prefix)&&(!options.cursor||key>options.cursor)).sort();
+    return {objects:keys.slice(0,options.limit).map(key=>({key})),truncated:keys.length>options.limit,...(keys.length>options.limit?{cursor:keys[options.limit-1]}:{})};
   }
   async put(
     key: string,
@@ -145,6 +151,11 @@ async function journal(memberId?: string) {
     };
   env.RECOVERY_JOURNAL = store as unknown as R2Bucket;
   return store;
+}
+async function writer(work:()=>Promise<void>){
+  const oldWriter=env.SESSION_DENIAL_WRITER_V1,oldCleanup=env.SESSION_DENIAL_CLEANUP_V1;
+  env.SESSION_DENIAL_WRITER_V1='true';env.SESSION_DENIAL_CLEANUP_V1='true';
+  try{await work();}finally{env.SESSION_DENIAL_WRITER_V1=oldWriter;env.SESSION_DENIAL_CLEANUP_V1=oldCleanup;}
 }
 suite("Authenticated account privacy journal boundary", () => {
   beforeAll(async () => {
@@ -269,16 +280,17 @@ suite("Authenticated account privacy journal boundary", () => {
     }
     expect(store.writes).toBe(before);
   });
-  it("journals a valid reset once and rejects its replay before another R2 intent", async () => {
+  it.each([false,true])("journals a valid reset once and rejects its replay before another R2 intent (denied cookie=%s)", async denied => {
     const p = await person(),
-      store = await journal(p.id),
-      before = store.writes;
+      store = await journal(p.id);
+    if(denied){const row=(await owner.query('SELECT id FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0];await persistSessionDenial(store,row.id);}
+    const before=store.writes;
     expect(
       (
         await call("request-password-reset", {
           email: p.email,
           redirectTo: env.APP_URL + "/reset-password",
-        })
+        },denied?p.cookie:'')
       ).response.status,
     ).toBe(200);
     expect(store.writes).toBe(before);
@@ -296,7 +308,7 @@ suite("Authenticated account privacy journal boundary", () => {
         await call("reset-password", {
           token,
           newPassword: "new-synthetic-journal-password",
-        })
+        },denied?p.cookie:'')
       ).response.status,
     ).toBe(200);
     const after = store.writes;
@@ -306,7 +318,7 @@ suite("Authenticated account privacy journal boundary", () => {
         await call("reset-password", {
           token,
           newPassword: "other-synthetic-journal-password",
-        })
+        },denied?p.cookie:'')
       ).response.status,
     ).toBe(400);
     expect(store.writes).toBe(after);
@@ -462,9 +474,29 @@ suite("Authenticated account privacy journal boundary", () => {
     expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1', [target.id])).rowCount).toBe(0);
     expect((await readJournalControl(store)).value.pending).toHaveLength(1);
   });
-  it("journals MFA enrollment and backup-code consumption while ordinary TOTP login remains read-only to R2", async () => {
+  it.each([false,true])("journals MFA enrollment and backup-code consumption while ordinary TOTP login remains read-only to R2 (durable logout=%s)", async durable => {
+    const run=durable?writer:async(work:()=>Promise<void>)=>work();
+    await run(async()=>{
     const p = await person(),
       store = await journal(p.id);
+    const cookieHeader=(response:Response)=>{
+      // Apply Set-Cookie in order like a browser; a null-session lookup may
+      // expire the old token before MFA supplies the new one in this response.
+      const values=new Map(response.headers.getSetCookie().map(value=>{const pair=value.split(';')[0],i=pair.indexOf('=');return [pair.slice(0,i),pair.slice(i+1)];}));
+      return [...values].filter(([,value])=>value!=='').map(([key,value])=>key+'='+value).join('; ');
+    };
+    const withOldCookie=(fresh:string,old:string)=>{
+      if(!durable)return fresh;
+      const pairs=new Map([...fresh.split('; '),...old.split('; ')].map(pair=>{const i=pair.indexOf('=');return [pair.slice(0,i),pair.slice(i+1)];}));
+      return [...pairs].map(([key,value])=>key+'='+value).join('; ');
+    };
+    const logout=async(cookie:string)=>{
+      const current=durable?await(await call('get-session',undefined,cookie)).response.json():null;
+      const old=durable?(await owner.query('SELECT * FROM public.auth_session WHERE id=$1',[current.session.id])).rows[0]:null;
+      expect((await call('sign-out',{},cookie)).response.status).toBe(200);
+      if(old)await owner.query('INSERT INTO public.auth_session(id,"userId",token,"expiresAt") VALUES($1,$2,$3,$4)',[old.id,p.id,old.token,old.expiresAt]);
+    };
+
     const enabled = await call(
       "two-factor/enable",
       { password: p.password },
@@ -475,55 +507,47 @@ suite("Authenticated account privacy journal boundary", () => {
     const secret = new URL(setup.totpURI).searchParams.get("secret")!;
     const code = () =>
       createOTP(new TextDecoder().decode(base32.decode(secret))).totp();
-    expect(
-      (
-        await call(
-          "two-factor/verify-totp",
-          { code: await code(), trustDevice: false },
-          p.cookie,
-        )
-      ).response.status,
-    ).toBe(200);
-    await call("sign-out", {}, p.cookie);
+    const enrollment=await call('two-factor/verify-totp',{code:await code(),trustDevice:false},p.cookie);
+    expect(enrollment.response.status).toBe(200);
+    // MFA verification rotates the login session; follow the returned cookie as
+    // a browser would, instead of attempting to log out the now-expired cookie.
+    const enrolledCookie=cookieHeader(enrollment.response);
+    await logout(enrolledCookie);
     const before = store.writes;
     const challenge = (
       await call("sign-in/email", { email: p.email, password: p.password })
     ).response;
-    const cookie = challenge.headers
-      .getSetCookie()
-      .map((v) => v.split(";")[0])
-      .join("; ");
+    const cookie = cookieHeader(challenge);
     const completed = await call(
       "two-factor/verify-totp",
       { code: await code(), trustDevice: false },
-      cookie,
+      withOldCookie(cookie,enrolledCookie),
     );
     expect(completed.response.status).toBe(200);
     expect(store.writes).toBe(before);
-    const session = completed.response.headers
-      .getSetCookie()
-      .map((v) => v.split(";")[0])
-      .join("; ");
-    await call("sign-out", {}, session);
+    const session = cookieHeader(completed.response);
+    await logout(session);
     const next = (
       await call("sign-in/email", { email: p.email, password: p.password })
     ).response;
-    const nextCookie = next.headers
-      .getSetCookie()
-      .map((v) => v.split(";")[0])
-      .join("; ");
+    const nextCookie = cookieHeader(next);
     const backupBefore = store.writes;
     expect(
       (
         await call(
           "two-factor/verify-backup-code",
           { code: setup.backupCodes[0], trustDevice: false },
-          nextCookie,
+          withOldCookie(nextCookie,session),
         )
       ).response.status,
     ).toBe(200);
     expect(store.writes).toBeGreaterThan(backupBefore);
     expect((await readJournalControl(store)).value.pending).toHaveLength(0);
+    if(durable){
+      expect(await(await call('get-session',undefined,enrolledCookie)).response.json()).toBeNull();
+      expect(await(await call('get-session',undefined,session)).response.json()).toBeNull();
+    }
+    });
   });
   it("rechecks a session revoked after preflight before changing credentials", async () => {
     const p = await person(),
@@ -619,4 +643,68 @@ suite("Authenticated account privacy journal boundary", () => {
     ).toBe(true);
     expect((await readJournalControl(store)).value.mode).toBe("quarantine");
   });
+  it.each(['http://localhost:5173','https://porchday.test'])('independently denies only the verified caller session and clears SDK cookies at %s',async appUrl=>writer(async()=>{
+    const previousUrl=env.APP_URL;env.APP_URL=appUrl;
+    try{
+      const p=await person(),other=await person(),store=await journal(p.id),before=store.writes;
+      const row=(await owner.query('SELECT * FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0];
+      const control=store.rows.get('control.json')!.value;
+      const chunkName=(appUrl.startsWith('https:')?'__Secure-':'')+'better-auth.session_data.0';
+      const result=await call('sign-out',{sessionId:'00000000-0000-4000-8000-000000000000',memberId:other.id},p.cookie+'; '+chunkName+'=obsolete-cache');
+      expect(result.response.status).toBe(200);expect(await result.response.json()).toEqual({success:true});
+      const cookies=result.response.headers.getSetCookie(),prefix=appUrl.startsWith('https:')?'__Secure-':'';
+      expect(cookies.some(value=>value.startsWith(prefix+'better-auth.session_token=;')&&/Max-Age=0/i.test(value))).toBe(true);
+      expect(cookies.every(value=>/HttpOnly/i.test(value)&&/SameSite=Lax/i.test(value))).toBe(true);
+      expect(cookies.some(value=>value.startsWith(chunkName+'=;')&&/Max-Age=0/i.test(value))).toBe(true);
+      if(prefix)expect(cookies.every(value=>/; Secure/i.test(value))).toBe(true);
+      expect(store.writes).toBe(before+1);expect(store.rows.get('control.json')!.value).toBe(control);
+      const denial=[...store.rows].find(([key])=>key.startsWith('session-denials/v1/'))!;
+      expect(JSON.parse(denial[1].value).sessionId).toBe(row.id);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[row.id])).rowCount).toBe(0);
+      expect((await call('get-session',undefined,other.cookie)).response.status).toBe(200);
+      await owner.query('INSERT INTO public.auth_session(id,"userId",token,"expiresAt") VALUES($1,$2,$3,$4)',[row.id,p.id,row.token,row.expiresAt]);
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      expect((await call('sign-out',{},p.cookie)).response.status).toBe(401);expect(store.writes).toBe(before+1);
+    }finally{env.APP_URL=previousUrl;}
+  }));
+  it('requires cleanup readiness and verified origin/session before publishing any denial',async()=>writer(async()=>{
+    const p=await person(),store=await journal(),before=store.writes;
+    env.SESSION_DENIAL_CLEANUP_V1=undefined;
+    expect((await call('sign-out',{},p.cookie)).response.status).toBe(503);
+    env.SESSION_DENIAL_CLEANUP_V1='true';
+    expect((await call('sign-out',{})).response.status).toBe(401);
+    expect((await call('sign-out',{},'better-auth.session_token=forged')).response.status).toBe(401);
+    expect((await call('sign-out',{},p.cookie,{Origin:'https://other.test'})).response.status).toBe(403);
+    expect(store.writes).toBe(before);
+    expect((await(await call('get-session',undefined,p.cookie)).response.json()).user.id).toBe(p.id);
+    expect((await call('clearDeniedSessionCookies',{},p.cookie)).response.status).toBe(404);
+  }));
+  it('leaves SQL untouched after an unconfirmed denial and reconciles a lost successful write reply',async()=>writer(async()=>{
+    const p=await person(),store=await journal(p.id),control=store.rows.get('control.json')!.value;
+    store.failPrefix='session-denials/v1/';
+    expect((await call('sign-out',{},p.cookie)).response.status).toBe(503);
+    expect((await(await call('get-session',undefined,p.cookie)).response.json()).user.id).toBe(p.id);
+    expect(store.rows.get('control.json')!.value).toBe(control);
+    store.failPrefix='';const put=store.put.bind(store);let attempts=0;
+    store.put=async(...args)=>{const value=await put(...args);if(args[0].startsWith('session-denials/v1/')){attempts++;throw Error('lost denial acknowledgement');}return value;};
+    expect((await call('sign-out',{},p.cookie)).response.status).toBe(200);expect(attempts).toBe(1);
+    expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+    expect(store.rows.get('control.json')!.value).toBe(control);
+  }));
+  it('keeps a denial effective after SQL cleanup failure, without quarantining others, then sweeps it',async()=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(p.id),control=store.rows.get('control.json')!.value;
+    await owner.query(`CREATE FUNCTION public.test_deny_session_delete() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'Synthetic cleanup failure'; END $$; CREATE TRIGGER test_deny_session_delete BEFORE DELETE ON public.auth_session FOR EACH ROW EXECUTE FUNCTION public.test_deny_session_delete()`);
+    try{
+      expect((await call('sign-out',{},p.cookie)).response.status).toBe(503);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(1);
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      expect(store.rows.get('control.json')!.value).toBe(control);
+    }finally{await owner.query('DROP TRIGGER test_deny_session_delete ON public.auth_session; DROP FUNCTION public.test_deny_session_delete()');}
+    expect((await cleanupDeniedSessions(env)).deleted).toBe(1);
+    expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+    expect(store.rows.get('control.json')!.value).toBe(control);
+  }));
+
 });

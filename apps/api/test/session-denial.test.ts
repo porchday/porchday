@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {persistSessionDenial,sessionDenied,runtimeSessionDenied} from '../src/session-denial';
+import {persistSessionDenial,sessionDenied,runtimeSessionDenied,publishSessionDenial} from '../src/session-denial';
 const first='11111111-1111-4111-8111-111111111111',second='22222222-2222-4222-8222-222222222222';
 function storage(){
  const rows=new Map<string,string>();let fail:'none'|'before'|'after'='none';
@@ -94,5 +94,22 @@ describe('bounded runtime denial reads',()=>{
    expect(await runtimeSessionDenied({ENVIRONMENT:'production',RECOVERY_JOURNAL:{get:async()=>null} as unknown as R2Bucket},first)).toBe(false);
    expect(vi.getTimerCount()).toBe(0);
   }finally{vi.useRealTimers();}
+ });
+});
+
+describe('bounded denial publication',()=>{
+ it('never proceeds to cleanup after a timeout, even if the immutable write commits later',async()=>{
+  const s=storage(),cleanup=vi.fn();let finish!:()=>void;vi.useFakeTimers();
+  try{
+   s.put.mockImplementationOnce(async(key,text)=>{await new Promise<void>(resolve=>{finish=resolve;});s.rows.set(key,text);return {etag:'stored'};});
+   const operation=publishSessionDenial({RECOVERY_JOURNAL:s as unknown as R2Bucket},first).then(cleanup);
+   const verdict=expect(operation).rejects.toThrow('SESSION_DENIAL_UNCONFIRMED');
+   await vi.waitFor(()=>expect(s.put).toHaveBeenCalledTimes(1));await vi.advanceTimersByTimeAsync(4000);await verdict;
+   expect(cleanup).not.toHaveBeenCalled();finish();await vi.runAllTimersAsync();
+   expect(await sessionDenied(s,first)).toBe(true);expect(cleanup).not.toHaveBeenCalled();expect(s.put).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
+  }finally{vi.useRealTimers();}
+ });
+ it('requires independent storage, including in development',async()=>{
+  await expect(publishSessionDenial({},first)).rejects.toThrow('SESSION_DENIAL_NOT_CONFIGURED');
  });
 });

@@ -260,4 +260,16 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
   expect(await deleteDeniedSession(pool,other.sessionId)).toBe(false);
  });
 
+ it('clears cookies through a server-only SDK endpoint without a session mutation or public route',async()=>{
+  const actor=await person(),{pool,queries}=runtimePool(),auth=createAuth(env,pool);
+  // Logout preflight resolves schema and the verified session before cleanup.
+  await auth.api.getSession({headers:actor.headers});queries.length=0;
+  const response=await auth.api.clearDeniedSessionCookies({headers:actor.headers,asResponse:true});
+  expect(response.status).toBe(200);expect(queries).toEqual([]);
+  expect(response.headers.getSetCookie().some(value=>value.startsWith('better-auth.session_token=;')&&/Max-Age=0/i.test(value))).toBe(true);
+  expect((await auth.api.getSession({headers:actor.headers}))?.session.id).toBe(actor.sessionId);
+  const exposed=await auth.handler(new Request(env.APP_URL+'/api/auth/clearDeniedSessionCookies',{method:'POST',headers:{Origin:env.APP_URL,'Content-Type':'application/json'},body:'{}'}));
+  expect(exposed.status).toBe(404);
+ });
+
 });

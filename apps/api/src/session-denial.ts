@@ -75,3 +75,18 @@ export async function sessionIdFromDenialObject(key:string,text:string):Promise<
  if(record.key!==key||record.text!==text)throw new SessionDenialError('SESSION_DENIAL_INVALID');
  return id;
 }
+
+/** Unknown write outcomes never authorize SQL cleanup or a success response.
+ * The late write may still commit and deny this exact verified session; the
+ * independent sweep then discovers it. No global intent or mutation retry.
+ */
+export async function publishSessionDenial(env:Pick<Env,'RECOVERY_JOURNAL'>,verifiedSessionId:string):Promise<void>{
+ if(!env.RECOVERY_JOURNAL)throw new SessionDenialError('SESSION_DENIAL_NOT_CONFIGURED');
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ try{
+  await Promise.race([
+   persistSessionDenial(env.RECOVERY_JOURNAL as JournalStore,verifiedSessionId),
+   new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new SessionDenialError('SESSION_DENIAL_UNCONFIRMED')),4000);}),
+  ]);
+ }finally{if(timer!==undefined)clearTimeout(timer);}
+}

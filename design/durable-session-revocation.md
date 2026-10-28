@@ -6,7 +6,9 @@ appeal middleware (including prepared authentication), and endpoint-internal
 lookups. Web and native push delivery also check denials before external sends,
 using the session-bound preparation functions in migration 056. A bounded cleanup
 sweep and separate queue path are implemented behind `SESSION_DENIAL_CLEANUP_V1`,
-which is absent/off in deployed configuration. No logout writer is connected. This does not resolve #1, #55 or the 99.99% objective.
+which is absent/off in deployed configuration. A logout writer is implemented
+behind `SESSION_DENIAL_WRITER_V1`, also absent/off. This does not resolve #1, #55
+or the 99.99% objective.
 It is the first scoped application of a write-ahead denial model; other privacy
 mutations retain the existing independent journal and quarantine behavior.
 
@@ -63,8 +65,10 @@ verification, and successful fresh credential login with the denied old cookie.
 The SDK hook wraps only `findSession` in the request-local context, not the shared
 adapter; it does not rewrite cookies or cache authorization. Multi-session is not
 an enabled plugin and must not be enabled without auditing its separate bulk
-lookup path. Cookie caching must remain disabled. Remaining token/MFA completion,
-concurrency, push-provider and hosted-failure scenarios still require acceptance.
+lookup path. Cookie caching must remain disabled. Password reset, TOTP and
+backup-code completion are tested locally with denied cookies and retained or
+recreated SQL rows. Concurrency, live provider/device behavior and hosted failure
+scenarios still require acceptance.
 These tests are not a full database restoration drill. No production failure has
 been induced for this design.
 
@@ -87,6 +91,34 @@ the provider subscription/payload. Real PostgreSQL tests with injected provider
 sends exercise independent denials while SQL rows remain present, other-session
 delivery, storage recovery, role restrictions, wrong leases and legacy JSON
 compatibility. These are not live provider or hosted deployment acceptance tests.
+
+## Logout publication and acknowledgement
+
+With the writer flag off, logout retains its existing global-journal path. With
+`SESSION_DENIAL_WRITER_V1=true`, cleanup must also be enabled. Existing origin,
+method/body, rate-limit and global privacy-read checks still apply. Authorization
+captures the internal session ID from the SDK's verified lookup; request-body
+member/session IDs never select the denial target. The writer then publishes the
+immutable denial outside SQL locks, confirms the write or its exact persisted
+record, and performs only that session's idempotent SQL cleanup. Success requires
+confirmed SQL completion. Other privacy operations retain their existing journal.
+
+Publication has a four-second deadline. A timeout or failed reconciliation returns
+an error and does not start SQL cleanup. The underlying R2 write may still commit;
+that late denial remains authoritative and the independent sweep discovers it.
+A confirmed denial followed by SQL failure also returns an error, while guarded
+readers reject the still-present SQL session. No global unfinished intent is
+registered for this operation. A subsequent request with the denied old cookie
+receives the existing unauthenticated response; fresh sign-in remains possible.
+
+After confirmed SQL cleanup, a server-only SDK endpoint clears cookies using
+Better Auth's own cookie definitions and chunk cleanup. It performs no further
+SQL work after the initialized preflight and has no public HTTP route. It does
+not replay the SDK sign-out handler. Cookie clearing alone is not a revocation
+operation; only the authorized logout path invokes it after durable confirmation.
+The writer requires the cleanup flag, but that is not proof of a deployed reader
+floor: release tooling must still verify all active readers and compatible
+rollback versions before either environment enables publication.
 
 ## Durable cleanup and operator recovery
 
@@ -157,7 +189,7 @@ claim retroactive cancellation of an in-flight response or external delivery.
    active backend and all applicable jobs. Record these as the minimum compatible
    rollback versions. Old application versions that ignore denials cannot be used
    once a denial may outlive its SQL cleanup.
-2. Add a versioned writer flag and the logout-specific path. Use a verified caller-owned session ID before publication; never hold a SQL
+2. Verify the versioned writer flag and logout-specific path before activation. Use a verified caller-owned session ID before publication; never hold a SQL
    transaction or identity lock across the R2 write. Publication only denies
    that immutable session ID, so a concurrent invalidation cannot broaden access.
    Preserve the existing identity-lock ordering for SQL cleanup and acknowledgement.

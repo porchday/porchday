@@ -17,6 +17,8 @@ export interface Env {
   RECOVERY_JOURNAL?: R2Bucket;
   /** Enable bounded denial cleanup only after the reader rollout. Never disables readers. */
   SESSION_DENIAL_CLEANUP_V1?: string;
+  /** Enable only after all consumers and compatible rollback versions enforce denials. */
+  SESSION_DENIAL_WRITER_V1?: string;
   ASSETS: Fetcher;
   EMAIL: SendEmail;
   JOBS: Queue<{ kind: string; id?: string }>;

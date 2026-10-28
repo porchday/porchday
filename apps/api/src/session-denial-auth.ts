@@ -1,5 +1,6 @@
+import {deleteSessionCookie} from 'better-auth/cookies';
 import type {BetterAuthPlugin} from 'better-auth';
-import {createAuthMiddleware,APIError} from 'better-auth/api';
+import {createAuthMiddleware,createAuthEndpoint,APIError} from 'better-auth/api';
 import {runtimeSessionDenied} from './session-denial';
 import type {Env} from './types';
 
@@ -9,8 +10,13 @@ import type {Env} from './types';
  * ordinary anonymous behavior, including fresh credential and token sign-in.
  * Cookie caching must stay disabled. No successful lookup is cached here.
  */
-export function sessionDenialAuth(env:Pick<Env,'RECOVERY_JOURNAL'|'ENVIRONMENT'>):BetterAuthPlugin{
- return {id:'porchday-session-denial',hooks:{before:[{
+export function sessionDenialAuth(env:Pick<Env,'RECOVERY_JOURNAL'|'ENVIRONMENT'>){
+ return {id:'porchday-session-denial',endpoints:{
+  clearDeniedSessionCookies:createAuthEndpoint.serverOnly({method:'POST',requireHeaders:true},async ctx=>{
+   // No database operation: caller confirms denial and exact SQL cleanup first.
+   deleteSessionCookie(ctx);return ctx.json({success:true});
+  }),
+ },hooks:{before:[{
   matcher:()=>true,
   handler:createAuthMiddleware(async ctx=>{
    const adapter=ctx.context.internalAdapter;
@@ -23,5 +29,5 @@ export function sessionDenialAuth(env:Pick<Env,'RECOVERY_JOURNAL'|'ENVIRONMENT'>
     catch{throw new APIError('SERVICE_UNAVAILABLE',{code:'SESSION_CHECK_UNAVAILABLE',message:'Please try again shortly.'});}
    }};
   }),
- }]}};
+ }]}} satisfies BetterAuthPlugin;
 }
