@@ -1,3 +1,4 @@
+import {persistSessionDenial} from '../src/session-denial';
 import {beforeAll, afterAll, describe, it, expect, vi} from 'vitest';
 import {createECDH, randomBytes, randomUUID} from 'node:crypto';
 import {createRequire} from 'node:module';
@@ -64,7 +65,7 @@ suite('Push HTTP authorization, durable delivery and revocation', () => {
     await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_push_social_test') THEN CREATE ROLE porchday_push_social_test LOGIN PASSWORD 'push-test-social' IN ROLE porchday_social; END IF; IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_push_jobs_test') THEN CREATE ROLE porchday_push_jobs_test LOGIN PASSWORD 'push-test-jobs' IN ROLE porchday_jobs; END IF; END $$");
     const socialUrl = new URL(url); socialUrl.username = 'porchday_push_social_test'; socialUrl.password = 'push-test-social';
     const jobsUrl = new URL(url); jobsUrl.username = 'porchday_push_jobs_test'; jobsUrl.password = 'push-test-jobs';
-    env = {...config, HYPERDRIVE_SOCIAL: {connectionString: socialUrl.href}, HYPERDRIVE_JOBS: {connectionString: jobsUrl.href}} as Env;
+    env = {ENVIRONMENT:'development',...config, HYPERDRIVE_SOCIAL: {connectionString: socialUrl.href}, HYPERDRIVE_JOBS: {connectionString: jobsUrl.href}} as Env;
     app = new Hono(); app.use('*', async (c, next) => {c.set('memberId', c.req.header('x-test-member')!); c.set('sessionId', c.req.header('x-test-session')!); await next();});
     const fail = (code: string, status = 400): never => {throw Object.assign(new Error(code), {status});};
     registerPushRoutes(app, {tx: (c, fn) => withMember(c.env, c.get('memberId'), fn), body: async (c, schema) => schema.parse(await c.req.json()), fail, id: value => z.string().uuid().parse(value)});
@@ -168,4 +169,46 @@ suite('Push HTTP authorization, durable delivery and revocation', () => {
     expect((await sql`select outcome from app.push_outbox where id=${first.id}`)[0].outcome).toBe('expired');
     await expect(sql.begin(async db => {await db`set local role porchday_social`; return db`select app.claim_push(20)`;})).rejects.toMatchObject({code:'42501'});
   });
+  it('suppresses a denied SQL session while delivering for a different session',async()=>{
+    const a=await seed(),b=await seed(),one=browser().subscription,two=browser().subscription;
+    await request(a,'/push/subscriptions','POST',one);await request(b,'/push/subscriptions','POST',two);
+    const first=await notification(a.id,b.id);await notification(b.id,a.id);
+    const records=new Map<string,string>();
+    const store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,
+      put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};}};
+    await persistSessionDenial(store,a.session);
+    const send=vi.fn(async()=>new Response(null,{status:201}));
+    expect(await processWebPush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:store as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:1});
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(send.mock.calls)).not.toContain(a.session);expect(JSON.stringify(send.mock.calls)).not.toContain(b.session);
+    expect(await sql`select id from public.auth_session where id=${a.session}`).toHaveLength(1);
+    expect((await sql`select outcome from app.push_outbox where notification_id=${first}`)[0].outcome).toBe('failed');
+  });
+  it('never sends on unknown denial state and can retry after storage recovers',async()=>{
+    const a=await seed(),b=await seed();await request(a,'/push/subscriptions','POST',browser().subscription);
+    const n=await notification(a.id,b.id),send=vi.fn(async()=>new Response(null,{status:201}));
+    for(const mode of ['missing','failure','malformed']){
+      const binding=mode==='missing'?undefined:{get:async()=>{if(mode==='failure')throw Error('private storage error');return {etag:'record',text:async()=>'{}'};}} as unknown as R2Bucket;
+      expect(await processWebPush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:binding},send as typeof fetch)).toEqual({sent:0,retried:1,skipped:0});
+      expect(send).not.toHaveBeenCalled();
+      expect((await sql`select completed_at from app.push_outbox where notification_id=${n}`)[0].completed_at).toBeNull();
+      await sql`update app.push_outbox set next_retry=now() where notification_id=${n}`;
+    }
+    expect(await processWebPush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:{get:async()=>null} as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:0});
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it('keeps old preparation JSON compatible and restricts the session-bound projection to jobs',async()=>{
+    const a=await seed(),b=await seed(),subscription=browser().subscription;await request(a,'/push/subscriptions','POST',subscription);await notification(a.id,b.id);
+    const result=await sql.begin(async db=>{
+      await db`set local role porchday_jobs`;
+      const [job]=await db`select * from app.claim_push(20)`;
+      const [row]=await db`select app.prepare_push_delivery(${job.id},${job.lease}) as delivery,app.prepare_push(${job.id},${job.lease}) as legacy`;
+      expect((await db`select app.prepare_push_delivery(${job.id},${randomUUID()}) as delivery`)[0].delivery).toBeNull();
+      await db`select app.finish_push(${job.id},${job.lease},'failed',60)`;
+      return row;
+    });
+    expect(result.delivery).toEqual({sessionId:a.session,subscription});expect(result.legacy).toEqual(subscription);
+    await expect(sql.begin(async db=>{await db`set local role porchday_social`;return db`select app.prepare_push_delivery(${randomUUID()},${randomUUID()})`;})).rejects.toMatchObject({code:'42501'});
+  });
+
 });

@@ -1,3 +1,4 @@
+import {runtimeSessionDenied} from './session-denial';
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 import postgres from "postgres";
@@ -252,7 +253,7 @@ async function providerToken(sql: postgres.Sql, env: NativePushEnv) {
 
 /** Jobs role only. Every attempt repeats notification, recipient, session and content-access checks. */
 export async function processNativePush(
-  env: Pick<Env, "HYPERDRIVE_JOBS"> & NativePushEnv,
+  env: Pick<Env, "HYPERDRIVE_JOBS"|"ENVIRONMENT"|"RECOVERY_JOURNAL"> & NativePushEnv,
   send: typeof fetch = fetch,
 ) {
   const counts = { sent: 0, retried: 0, skipped: 0 };
@@ -271,8 +272,8 @@ export async function processNativePush(
       await Promise.all(
         jobs.slice(offset, offset + 4).map(async (job) => {
           const [row] =
-            await sql`select app.prepare_native_push(${job.id},${job.lease}) as subscription`;
-          if (!row?.subscription) {
+            await sql`select app.prepare_native_push_delivery(${job.id},${job.lease}) as delivery`;
+          if (!row?.delivery) {
             counts.skipped++;
             return;
           }
@@ -281,11 +282,14 @@ export async function processNativePush(
             delay: Math.min(3600, 15 * 2 ** Math.min(Number(job.attempts), 8)),
           };
           try {
-            const request = nativePushRequest(row.subscription, env, token);
-            result = await nativePushOutcome(
-              await send(request.url, request.init),
-              Number(job.attempts),
-            );
+            if(await runtimeSessionDenied(env,row.delivery.sessionId)){result.outcome="failed";}
+            else {
+              const request = nativePushRequest(row.delivery.subscription, env, token);
+              result = await nativePushOutcome(
+                await send(request.url, request.init),
+                Number(job.attempts),
+              );
+            }
           } catch {
             /* Network failures retry under a lease, with no token-bearing errors logged. */
           }

@@ -3,8 +3,9 @@
 Status: draft implementation, not deployed. A request-scoped Better Auth hook now
 checks denials at verified session lookup, covering direct SDK calls, member and
 appeal middleware (including prepared authentication), and endpoint-internal
-lookups. Push delivery remains unintegrated. No writer, cleanup job or rollout
-flag is connected. This does not resolve #1, #55 or the 99.99% objective.
+lookups. Web and native push delivery also check denials before external sends,
+using the session-bound preparation functions in migration 056. No writer,
+cleanup job or rollout flag is connected. This does not resolve #1, #55 or the 99.99% objective.
 It is the first scoped application of a write-ahead denial model; other privacy
 mutations retain the existing independent journal and quarantine behavior.
 
@@ -66,9 +67,29 @@ concurrency, push-provider and hosted-failure scenarios still require acceptance
 These tests are not a full database restoration drill. No production failure has
 been induced for this design.
 
+Push preparation returns a jobs-only envelope containing the internal session ID
+and delivery subscription from the same SQL row. The original preparation
+functions delegate to the new functions and retain their prior JSON shapes for
+older Workers. No columns are dropped or changed. Apply migration 056 before
+reader Workers; production currently has migrations only through 051, so the
+isolated release must not accidentally deploy unrelated 052–055 work. All 23
+web/native push tests passed both with the full development schema and with an
+isolated local PostgreSQL 17 baseline of 000–051 plus only 056. Hosted migration
+and rollback rehearsal remain rollout gates.
+
+Both delivery paths consult the same bounded denial reader before constructing
+or sending a provider request. A confirmed denial finishes that notification as
+`failed`, leaving subscription cleanup to the separate durable cleanup protocol.
+Missing bindings, failed reads, malformed records and deadlines retain the
+existing bounded retry schedule; they never send. No internal session ID enters
+the provider subscription/payload. Real PostgreSQL tests with injected provider
+sends exercise independent denials while SQL rows remain present, other-session
+delivery, storage recovery, role restrictions, wrong leases and legacy JSON
+compatibility. These are not live provider or hosted deployment acceptance tests.
+
 ## Reader coverage required before any writer
 
-The current source audit identifies these paths; integration must also search for
+The current source audit identifies these paths; final acceptance must also search for
 new direct SQL consumers and new `createAuth` callers at the reviewed commit.
 
 - `session.ts`: ordinary member and appeal authorization, including prepared auth,
@@ -80,10 +101,9 @@ new direct SQL consumers and new `createAuth` callers at the reviewed commit.
   fresh credential/token authentication even when a request also carries an old
   denied session cookie; do not trap a logged-out member in a login failure loop.
 - `social-push.ts` and `social-native-push.ts`: verify the session before an
-  outbound send. Their SQL preparation routines currently decide eligibility
-  from database state, so API-only integration would be insufficient. Expose the
-  required internal session ID through a narrowly scoped, compatible query or
-  function; never send it to push providers or public logs.
+  outbound send. Migration 056 returns the session ID with the checked
+  subscription, and both consumers enforce the denial. Hosted lease/concurrency
+  acceptance remains necessary; never send internal IDs to providers or logs.
 - Any export, integration, WebSocket, staff or future capability path must be
   classified explicitly: session-backed capabilities require the guard; separately
   issued capabilities retain their existing revocation semantics. Do not assume
