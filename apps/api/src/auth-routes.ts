@@ -8,6 +8,7 @@ import type { Env, Variables } from "./types";
 import { event } from "./telemetry";
 import { enqueueAccountEmail, processAccountEmails } from "./email-outbox";
 import { JournalError, withHttpPrivacyJournal } from "./privacy-journal";
+import { ConfirmedTransactionRollback } from "./confirmed-rollback";
 
 type AuthContext = Context<{ Bindings: Env; Variables: Variables }>;
 class AuthRejection extends Error {
@@ -362,6 +363,7 @@ authRoutes.all("/*", async (c) => {
         end: async () => {},
       } as unknown as Pool;
       let transaction = false;
+      let commitAttempted = false;
       try {
         await client.query("BEGIN");
         transaction = true;
@@ -546,11 +548,18 @@ authRoutes.all("/*", async (c) => {
         const response = await handle();
         // The journal wrapper observes the committed database cursor. No R2
         // operation happens while this request holds SQL/advisory locks.
+        commitAttempted = true;
         await client.query("COMMIT");
         transaction = false;
         return response;
       } catch (error) {
-        if (transaction) await client.query("ROLLBACK").catch(() => {});
+        if (transaction) {
+          const rollback = await client.query("ROLLBACK").catch(() => null);
+          // Only an acknowledged rollback before any COMMIT attempt proves that
+          // this transaction did not commit. Preserve ambiguous outcomes.
+          if (!commitAttempted && rollback?.command === "ROLLBACK")
+            throw new ConfirmedTransactionRollback(error);
+        }
         throw error;
       } finally {
         client.release();
@@ -578,6 +587,7 @@ authRoutes.all("/*", async (c) => {
     }
     return response;
   } catch (error) {
+    if (error instanceof ConfirmedTransactionRollback) error = error.originalError;
     if (error instanceof AuthRejection)
       return c.json({ error: { code: error.code } }, error.status);
     if (error instanceof JournalError)
