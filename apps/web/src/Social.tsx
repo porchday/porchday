@@ -60,7 +60,8 @@ import { EmojiGlyph, EmojiPicker } from "./EmojiPicker";
 import { decodeReactions, type DecodedReaction } from "./reaction-read";
 import { validateCustomEmojiPixels } from "./emoji-images";
 import type { CustomEmoji } from "./emoji-library";
-import { markOnce, traced } from "./tracing";
+import { currentTraceId, markOnce, traced } from "./tracing";
+import { observeVisibleMilestone } from "./visible-milestone";
 export function TimerSelect({
   value,
   onChange,
@@ -619,6 +620,7 @@ export function PostCard({
 }) {
   const vault = useVault();
   const [content, setContent] = useState<Content | null>(null);
+  const readableRef = useRef<HTMLParagraphElement>(null);
   const [error, setError] = useState("");
   const [showComments, setShowComments] = useState(expanded);
   const [showReport, setShowReport] = useState(false);
@@ -701,6 +703,13 @@ export function PostCard({
     }
   }, [detailScope, cardNear, expanded]);
   const expiry = row.effective_expires_at || row.expires_at;
+  useEffect(() => {
+    const element = readableRef.current;
+    if (!currentTraceId() || !element || !content || error || unavailable || edit || !content.text) return;
+    return observeVisibleMilestone(element,
+      () => !expiry || Date.parse(expiry) > Date.now(),
+      () => markOnce("first-readable-post"));
+  }, [content, error, unavailable, edit, expiry]);
   const own = row.author_id === vault.member.id;
   async function remove() {
     if (
@@ -895,7 +904,7 @@ export function PostCard({
       ) : (
         <>
           <ReshareProvenance content={content} />
-          <p className="post-text">{content.text}</p>
+          <p ref={readableRef} className="post-text">{content.text}</p>
           {content.media && (
             <div
               className={`post-photos photos-${Math.min(content.media.length, 3)}`}
@@ -960,7 +969,8 @@ export function PostCard({
 export function EncryptedPhoto({ media }: { media: MediaPayload }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
-  const [opened, setOpened] = useState<{ id: string; url: string } | null>(
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [opened, setOpened] = useState<{ id: string; url: string; expiresAt: number | null } | null>(
     null,
   );
   const [error, setError] = useState("");
@@ -987,14 +997,14 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
         const bytes = base64ToBytes(payload.bytes);
         const { blob } = await traced("photo decode", () => validatedPhoto(bytes), { bytes: bytes.length });
         if (!alive) return;
-        markOnce("first-photo");
         const expiry = envelope.context.expiresAt
           ? Date.parse(envelope.context.expiresAt)
           : null;
         if (expiry !== null && expiry <= Date.now())
           throw new Error("This photo expired.");
         objectUrl = URL.createObjectURL(blob);
-        setOpened({ id: media.id, url: objectUrl });
+        markOnce("photo-decoded");
+        setOpened({ id: media.id, url: objectUrl, expiresAt: expiry });
         const checkExpiry = () => {
           if (expiry === null || !alive) return;
           const remaining = expiry - Date.now();
@@ -1021,9 +1031,17 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [media.id, near]);
+  useEffect(() => {
+    const element = imageRef.current;
+    if (!currentTraceId() || !element || !url || !opened) return;
+    return observeVisibleMilestone(element,
+      () => element.getAttribute("src") === url && (opened.expiresAt === null || opened.expiresAt > Date.now()),
+      () => markOnce("first-visible-photo"));
+  }, [url, opened]);
   return <div ref={photoRef}>{url ? (
     <figure>
       <img
+        ref={imageRef}
         src={url}
         alt={media.alt || "Shared photo (no description provided)"}
         loading="lazy"

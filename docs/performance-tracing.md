@@ -176,3 +176,43 @@ After staging, and again after production, verify with a member account:
    `trace_write_ok` points and no `trace_write_failed`; `connections` shows the
    `/api/v1/traces` route's connection use.
 7. The next day, confirm a `trace_cleanup_ok` point from the `17 3 * * *` cron.
+
+
+### Rendered latency milestones
+
+`feed-loaded` only records returned feed rows. It does not establish decrypted,
+readable content. `first-readable-post` records a nonempty decrypted post text
+node that is connected, intersects the viewport, is CSS-visible in a visible tab,
+and has not expired, after two animation frames. It excludes the loading/error
+and edit states. Photo-only posts need the photo milestone instead.
+
+The old `first-photo` mark preceded expiry validation and image rendering; do not
+use historical values as visible-photo acceptance. `photo-decoded` now denotes
+validated decoding after the expiry check. `first-visible-photo` additionally
+waits for the mounted image's successful `decode()`, viewport intersection,
+visibility and two animation frames, rechecking its source and expiry before
+recording. Unmount/replacement cancels observation. Broken or rejected images
+cannot produce this success mark. All names are fixed, with no content or IDs.
+
+These observers are installed only when tracing is active when content becomes
+ready. They are conservative: browsers without IntersectionObserver or
+checkVisibility produce no visible milestone. Animation frames provide a paint
+opportunity, not proof of physical display or absence of occluding windows. No
+milestone means missing evidence, never zero latency. Marks are once per traced
+page load; they do not by themselves distinguish cold/warm launches, saved-key
+state, route transitions, phone models, network conditions or geographies.
+Retain those conditions and all failed/missing journeys separately for acceptance.
+
+Run `node scripts/check-visible-milestones.mjs` with Playwright Chromium installed
+for a local, network-free browser check. It covers visible text/image success,
+offscreen content, failure to decode, expiry eligibility, unmount cancellation,
+CSS-hidden content, background tabs and one-shot recording. This is functional
+browser verification, not a physical phone latency claim.
+
+Visible-photo regression coverage also replaces an already decoded offscreen
+image with an intercepted, delayed response and moves it into view. The old helper
+incorrectly marked success while the replacement was pending. The helper now
+requires a complete, nonempty image whose current source matches the successful
+decode, checked again at both animation frames. The replacement test first failed
+on the old helper and then passed with the fix; all 13 local Chromium checks pass.
+This validates milestone eligibility, not physical-phone timing.
