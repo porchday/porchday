@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
-import { Pool } from "pg";
+import { Pool, Client } from "pg";
 import { Hono } from "hono";
 import { hashPassword } from "better-auth/crypto";
 import { createOTP } from "@better-auth/utils/otp";
@@ -203,6 +203,46 @@ suite("Authenticated account privacy journal boundary", () => {
     vi.restoreAllMocks();
     await owner?.end();
   });
+  it.each(["confirmed", "rollback-response-lost", "commit-response-lost", "rollback-receipt-failure"])(
+    "preserves transaction outcome evidence after %s",
+    async (fault) => {
+      const p = await person(), store = await journal();
+      await owner.query("CREATE TABLE IF NOT EXISTS public.rollback_probe(id uuid PRIMARY KEY)");
+      await owner.query("GRANT INSERT ON public.rollback_probe TO porchday_auth");
+      if (fault === "rollback-receipt-failure") store.failPrefix = "receipts/";
+      const original = Client.prototype.query;
+      let injected = false;
+      const spy = vi.spyOn(Client.prototype, "query").mockImplementation(function (this: Client, ...args: any[]) {
+        const text = typeof args[0] === "string" ? args[0] : args[0]?.text;
+        const execute = (...values: any[]) => (original as any).apply(this, values);
+        if (text === "SET LOCAL lock_timeout='10s'" && !injected && fault !== "commit-response-lost") {
+          injected = true;
+          return execute("INSERT INTO public.rollback_probe(id) VALUES($1)", [p.id]).then(() => { throw Error("Synthetic unknown work failure"); });
+        }
+        if (text === "COMMIT" && !injected && fault === "commit-response-lost") {
+          injected = true;
+          return execute(...args).then(() => { throw Error("Synthetic lost COMMIT response"); });
+        }
+        if (text === "ROLLBACK" && fault === "rollback-response-lost")
+          return execute(...args).then(() => { throw Error("Synthetic lost ROLLBACK response"); });
+        return execute(...args);
+      } as any);
+      try {
+        const result = await call("sign-out", {}, p.cookie);
+        expect(injected).toBe(true);
+        expect(result.response.status).toBe(503);
+        expect(await result.response.json()).toMatchObject({error:{code:"AUTH_UNAVAILABLE"}});
+        expect((await owner.query("SELECT count(*)::int AS count FROM public.rollback_probe WHERE id=$1", [p.id])).rows[0].count).toBe(0);
+        const control = (await readJournalControl(store)).value;
+        expect(control.pending).toHaveLength(fault === "confirmed" ? 0 : 1);
+        const sessions = (await owner.query('SELECT count(*)::int AS count FROM public.auth_session WHERE "userId"=$1', [p.id])).rows[0].count;
+        expect(sessions).toBe(fault === "commit-response-lost" ? 0 : 1);
+        store.failPrefix = "";
+        expect(await detectStalePrivacyIntents(store, Date.now() + 120001)).toBe(fault !== "confirmed");
+        expect((await readJournalControl(store)).value.mode).toBe(fault === "confirmed" ? "active" : "quarantine");
+      } finally { spy.mockRestore(); }
+    },
+  );
   it("rejects unauthenticated, forged, expired and cross-origin capabilities without writing R2", async () => {
     const p = await person(),
       store = await journal(),
