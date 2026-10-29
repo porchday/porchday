@@ -27,5 +27,13 @@ server commits, and a completion-receipt failure. They check database effects,
 session state, HTTP failure and journal behavior beyond the stale-intent window.
 The confirmed rollback test fails on the prior implementation and passes with
 the change. This demonstrates the defect; aggregate production telemetry does
-not prove it caused the October 29 incident. Hosted rollout and validation on
-the current reader-compatible production source remain required.
+not prove it caused the October 29 incident.
+
+The fix was carried onto the deployed reader-compatible source as
+`c57e0278bfc97026011a4737e6f05a5083a98e77` and activated in staging and production
+on October 29. Both passed exact-source CI, authenticated journeys, retained
+public assets and seven existing-session continuity samples without failure.
+The deployed candidate passed 125 local tests across seven related suites.
+[The rollout record](https://github.com/porchday/porchday/blob/e5008f8/docs/auth-rollback-rollout-2026-10-29.md)
+contains versions, scope and limitations. Broader interruption recovery remains
+open; these checks do not demonstrate the monthly availability objective.
