@@ -68,3 +68,42 @@ or expose a hosted endpoint. Deployment requires fresh CI, isolated bindings, a
 short fixed deadline, private credentials, and provider-state/cleanup verification.
 The result measures a storage operation shape, not the complete journal protocol or
 end-to-end user action. Real hosted speed, durability and recovery remain unverified.
+
+## October 29 hosted diagnostic evidence
+
+Exact source `3513f8d` passed full CI (40795261566) before either isolated deployment.
+The first single-use probe's Python urllib POST returned 403; a read-only result
+lookup also returned 403 with Cloudflare code 1010. No POST was replayed, and no
+latency result was accepted. Its endpoint, synthetic namespace and Worker were
+removed and the original inventory verified before the next independent probe.
+
+A fresh deployment used an isolated Chromium 156.0.8078.4 browser with its normal
+client identity, no member profile, and network interception restricting it to one
+POST. Security settings were unchanged. From 00:44:19.015 to 00:44:19.303 UTC the
+Worker measured the synthetic sequence below, with every operation successful:
+
+| Operation | Durations | Total |
+| --- | --- | ---: |
+| Five reads | 14, 14, 14, 13, 16 ms | 71 ms |
+| Six writes | 31, 31, 27, 30, 38, 30 ms | 187 ms |
+| Measured storage sequence | | 258 ms |
+| Setup plus sequence | | 288 ms |
+| Browser request through consumed response | | 700.1 ms |
+
+This is one observation on a fresh namespace, using tiny synthetic strings.
+The durable lease happens before measured setup, so the 288 ms interval is **not**
+a cold-object or complete-request metric; it also excludes the final result write.
+The browser interval includes those operations and network transit. Neither is a
+complete application edit: authentication, database work, real checkpoint payloads,
+encryption, recipient lookup and client rendering are absent. Region, actual object
+placement and network conditions are unverified. No p99 or mobile claim follows.
+The result supports further investigation, not replacement of the R2 journal.
+
+After collecting evidence, the endpoint was disabled, the owned synthetic namespace
+and Worker removed, and the original six-Worker/two-namespace inventory and existing
+application provider state verified. The deployment lock was released. No production
+request or application binding changed. Failed and successful evidence are retained
+separately in the primary checkout's private `journal-store-hosted-20261029` and
+`journal-store-browser-20261029` artifact directories; credentials were not copied
+into either archive. Hosted crash durability, restore/migration/rollback compatibility,
+realistic payload/concurrency performance and all original acceptance gates remain open.
