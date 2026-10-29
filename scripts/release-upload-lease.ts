@@ -46,6 +46,9 @@ export class FileUploadLease{
   if(text(join(this.root,'deployment-lock/owner.json'),4096)!==JSON.stringify(this.owner)+'\n')throw Error('UPLOAD_LEASE_CHANGED');
   if(sha(text(join(this.root,'latest-verified-deployment.json')))!==this.plan.canonicalSha256)throw Error('UPLOAD_CANONICAL_CHANGED');
  }
+ assertPlan(plan:Readonly<UploadPlan>,signal?:AbortSignal):void{
+  this.assert(signal);if(uploadPlanHash(plan)!==this.owner.planHash)throw Error('UPLOAD_PLAN_CHANGED');
+ }
  private intent():Intent|null{
   const path=join(this.root,'deployment-lock/upload-intent.json');if(!existsSync(path))return null;
   let value:Intent;try{value=JSON.parse(text(path,4096));}catch{throw Error('UPLOAD_INTENT_INVALID');}

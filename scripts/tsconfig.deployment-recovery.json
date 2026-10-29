@@ -20,6 +20,7 @@
     "release-upload-lease.ts",
     "release-upload-process.ts",
     "release-worker-artifacts.ts",
-    "release-ci.ts"
+    "release-ci.ts",
+    "release-upload-reconcile.ts"
   ]
 }
