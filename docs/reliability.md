@@ -86,9 +86,9 @@ interrupted privacy operations or establish the availability SLO.
 
 ## Denial-cleanup readiness signals (staging deployed)
 
-The v2 denial-cleanup implementation adds independent protected-readiness checks
+The v3 SQL-candidate denial-cleanup implementation adds independent protected-readiness checks
 when `SESSION_DENIAL_CLEANUP_V1=true`. Normal cleanup freshness cannot substitute
-for these checks. Staging version `966329b9` emits these codes after a verified real initial sweep
+for these checks. Staging version `7469d433` (runtime `992d24c`) emits these codes after a verified real initial sweep
 and scheduled-progress observation. Production has not received this monitoring
 release and keeps the writer/cleanup flags off. Hosted failure-alert and recovery
 verification remain pending.
@@ -99,7 +99,7 @@ verification remain pending.
 - `session_denial_cleanup_stale`: no confirmed page in three minutes. Inspect the
   minute schedule, queue delivery/retries, independent storage and SQL lock/errors.
 - `session_denial_pass_stale` / `session_denial_pass_slow`: full-pass completion or
-  traversal exceeded the five-minute operational limit. Inspect history size,
+  traversal exceeded the five-minute operational limit. Inspect remaining SQL session count,
   cursor advancement and repeated page failures even if page health is fresh.
 - `session_denial_cleanup_invalid`: preserve private evidence and investigate record
   integrity. The alert clears only after a complete clean pass. Never delete or
@@ -108,11 +108,19 @@ verification remain pending.
 After repair, verify actual scheduled progress, a fresh clean full pass, protected
 readiness and external monitoring. Never manufacture timestamps or reset members'
 sessions/keys. Reader enforcement remains active independently of SQL cleanup.
-See the [progress design and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-staging-deployed).
+See the [progress design and rollout requirements](../design/durable-session-revocation.md#sql-candidate-discovery-staging-deployed).
 
-A staging progress-read failure/recovery drill on October 29 verified readiness
+The earlier v2 staging progress-read failure/recovery drill on October 29 verified readiness
 failure while ordinary cleanup remained healthy, recovery after exact conditional
 restoration, and subsequent scheduled full-pass progress. The shared GitHub relay
 published both events as drills; bot comments were verified, but owner inbox
 receipt remains pending in #52. Notification dispatch followed restoration, so
 this does not measure automatic alert latency. See the [scoped evidence](evidence/session-denial-health-failure-staging-2026-10-29.json).
+
+The [v3 staging rollout](evidence/session-denial-candidate-staging-2026-10-29.json)
+verified actual scheduled full-pass advancement over the current three-session
+population. V3 uses `session-denial-maintenance/v3/sql-sessions.json`; it never
+refreshes v2 progress. Before a delayed rollback to v2, perform and verify a real
+v2 pass under the deployment lease, or use a separately verified compatible v3
+baseline. Never copy progress timestamps between versions. The monitoring-release
+rollback rehearsal and larger live-session capacity checks remain open.

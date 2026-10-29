@@ -1,13 +1,13 @@
 # Durable session revocation without a global unfinished operation
 
-Status as of October 29, 2026, 08:04 UTC: denial readers and migration 056 are
+Status as of October 29, 2026, 08:43 UTC: denial readers and migration 056 are
 deployed in staging and production. The request-scoped Better Auth hook covers
 direct SDK calls, member and appeal middleware, prepared authentication and
 endpoint-internal lookups. Web/native push checks denial through session-bound
 preparation functions. The bounded cleanup sweep and separate queue path use
 `SESSION_DENIAL_CLEANUP_V1`; the independent logout writer uses
-`SESSION_DENIAL_WRITER_V1`. Both flags are enabled on staging version `966329b9` (runtime `4b6825e`, including
-v2 progress monitoring)
+`SESSION_DENIAL_WRITER_V1`. Both flags are enabled on staging version `7469d433` (runtime `992d24c`, including
+v3 SQL candidate discovery and progress monitoring)
 and remain disabled in production. [Hosted validation and remaining gates](../docs/session-denial-validation.md)
 record normal logout, real identity-lock timeout, scheduled recovery, one hosted
 revocation overlap and automatic compatible-version rollback with a retained SQL
@@ -124,12 +124,12 @@ The writer requires the cleanup flag, but that is not proof of a deployed reader
 floor: release tooling must still verify all active readers and compatible
 rollback versions before either environment enables publication.
 
-## Durable cleanup and operator recovery
+## Legacy history cleanup and operator recovery
 
 The optional cleanup cron queues `session_denial_cleanup` separately from the
 existing privacy-journal cleanup. The queue handler must continue excluding this
 kind from the global intent wrapper. No queue message supplies deletion authority:
-the sweep discovers immutable denial records directly, validates canonical bytes
+the legacy sweep discovers immutable denial records directly, validates canonical bytes
 and their hashed key, and deletes only the exact independently denied session.
 It obtains the current SQL owner, takes the existing identity advisory lock, then
 deletes with both session ID and owner predicates. R2 reads/writes happen outside
@@ -137,8 +137,8 @@ that transaction. SQL statements have five-second server/lock limits and six-sec
 client read deadlines; failed clients are discarded. A lost commit acknowledgement
 retries the same idempotent deletion, never an auth handler or a broader mutation.
 
-Each invocation visits at most ten records. The prior v1 cursor is
-`session-denial-maintenance/v1/cursor.json`. Staging now uses the separate
+Each legacy invocation visits at most ten records. The prior v1 cursor is
+`session-denial-maintenance/v1/cursor.json`. The prior staging release used the separate
 `session-denial-maintenance/v2/progress.json` record described below, leaving v1
 untouched for compatible rollback. Its conditional write advances only after confirmed cleanup
 and wraps at the end, so later inserts before an old cursor are discovered in a
@@ -162,7 +162,7 @@ latency still need measurement before writer activation. This cleanup does not
 resolve ambiguous non-session privacy operations or guarantee cancellation of
 requests authorized before denial publication.
 
-## Independent denial-cleanup health (staging deployed)
+## Independent denial-cleanup health (v2 historical implementation)
 
 V2 writes cursor position and monitoring progress in one conditional update after
 all valid records on a page have confirmed cleanup. It records page completion,
@@ -265,7 +265,7 @@ restoration must preserve the namespace until an independently verified policy
 proves a recorded session can never become valid again. R2 object lifecycle rules
 or a seven-day session setting alone are not a pruning proof.
 
-## SQL candidate discovery (wired in source, not deployed)
+## SQL candidate discovery (staging deployed)
 
 The history scan cannot remain the default indefinitely. At one logout every 20
 seconds, the production monitor alone would create 4,320 immutable denials per
@@ -308,15 +308,24 @@ At these counts one 100-session page is sufficient if it completes within the
 work budget. Large live-session populations still require measured full-pass
 capacity; the strategy removes history growth, not all scaling limits.
 
-The current source selects this strategy for scheduled cleanup and protected
+Staging runtime `992d24c` selects this strategy for scheduled cleanup and protected
 readiness together, retaining the existing cleanup enable flag. Disabled cleanup
 reads no progress and creates no SQL pool. Missing v3 evidence cannot fall back
 to fresh v2 evidence. Local subprocess tests now kill the writer after native R2
 publication, then recover in a fresh process using SQL candidate discovery and
 verify the denied session is removed while another session remains usable.
 
-Before deployment, verify native-R2 CAS and actual hosted queue throughput, then
-release from an isolated runtime source. Bootstrap v3 from real work. Rehearse rollback:
+The isolated rollout passed on October 29: native-R2 scoped bootstrap completed a
+real v2 pass to keep the initial rollback baseline fresh, then a v3 pass over three
+SQL candidates in one second. Readiness-gated activation passed the synthetic
+journey and all 29 assets. Five healthy observations confirmed a new scheduled
+page and full pass within 43.005 seconds, without manual sweeps; that pass also
+covered three sessions in one second, with no invalid records. All 48 bundled
+first-party files matched the isolated Git source. No production change occurred.
+[Hosted evidence](../docs/evidence/session-denial-candidate-staging-2026-10-29.json).
+This is a small staging-population observation, not a larger-load guarantee.
+
+Rehearse rollback:
 an old v2 binary reads v2 progress, which becomes stale if v2 scans stop. A late
 rollback therefore needs an actual fresh v2 pass or an independently verified
 compatible baseline; copying v3 timestamps into v2 would fabricate evidence.

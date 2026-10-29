@@ -1,0 +1,216 @@
+{
+  "at": "2026-10-29T08:42:59.382Z",
+  "environment": "staging",
+  "passed": true,
+  "version": "7469d433-c4fd-456b-8e61-3f84192f5bb1",
+  "runtimeSource": "992d24c190db9d67283afc8df883e2b3761e8d14",
+  "toolingSource": "7c32af09d1a5353f7b3dee375e9b98955b4b6c69",
+  "baselineVersion": "966329b9-3a66-4090-be1c-df759e3aeba6",
+  "uploadOperation": "1d661739-3c2e-4c05-b2b2-3bfc99ec59e8",
+  "activationOperation": "24829629-cdf6-4ead-9062-ff760570269b",
+  "scope": {
+    "runtimeFiles": [
+      "apps/api/src/index.ts",
+      "apps/api/src/operations-health.ts",
+      "apps/api/src/session-denial-candidates.ts"
+    ],
+    "schemaChanged": false,
+    "frontendChanged": false,
+    "denialReadersOrWritersChanged": false,
+    "productionChanged": false
+  },
+  "artifact": {
+    "firstPartyFiles": 48,
+    "gitBlobProvenanceVerified": true,
+    "dryRun": {
+      "javascriptIdentical": true,
+      "mapTransformation": "file=index.js and leading parent source segments removed only",
+      "bindingsUnchangedFromActiveBaseline": true,
+      "secretsInherited": true,
+      "assetsKept": true,
+      "runtimeConfigurationUnchanged": true
+    }
+  },
+  "bootstrap": {
+    "at": "2026-10-29T08:41:41.404Z",
+    "passes": [
+      {
+        "strategy": "v2-history",
+        "at": "2026-10-29T08:41:40.429Z",
+        "pages": [
+          {
+            "seen": 10,
+            "deleted": 0,
+            "invalid": 0,
+            "advanced": true
+          },
+          {
+            "seen": 3,
+            "deleted": 0,
+            "invalid": 0,
+            "advanced": true
+          }
+        ],
+        "health": {
+          "issues": [],
+          "snapshot": {
+            "page_age_seconds": 0,
+            "pass_age_seconds": 0,
+            "last_pass_duration_seconds": 47,
+            "last_pass_seen": 23,
+            "current_pass_seen": 0,
+            "invalid_records": 0
+          }
+        },
+        "manualTimestampWrites": false
+      },
+      {
+        "strategy": "v3-candidates",
+        "at": "2026-10-29T08:41:41.296Z",
+        "pages": [
+          {
+            "seen": 3,
+            "deleted": 0,
+            "invalid": 0,
+            "advanced": false
+          }
+        ],
+        "health": {
+          "issues": [],
+          "snapshot": {
+            "page_age_seconds": 0,
+            "pass_age_seconds": 0,
+            "last_pass_duration_seconds": 1,
+            "last_pass_seen": 3,
+            "current_pass_seen": 0,
+            "invalid_records": 0
+          }
+        },
+        "manualTimestampWrites": false
+      }
+    ],
+    "baselineHealth": {
+      "issues": [],
+      "snapshot": {
+        "page_age_seconds": 1,
+        "pass_age_seconds": 1,
+        "last_pass_duration_seconds": 47,
+        "last_pass_seen": 23,
+        "current_pass_seen": 0,
+        "invalid_records": 0
+      }
+    },
+    "manualTimestampWrites": false,
+    "temporaryOperatorRemoved": true,
+    "leaseReleased": true
+  },
+  "activation": {
+    "status": "finalized",
+    "outcome": "complete",
+    "loginReadLogoutRevocationPassed": true,
+    "readinessPassed": true,
+    "schemaProviderVerificationPassed": true,
+    "publicAssetsPassed": 29
+  },
+  "scheduled": {
+    "at": "2026-10-29T08:42:59.382Z",
+    "passed": true,
+    "version": "7469d433-c4fd-456b-8e61-3f84192f5bb1",
+    "runtimeSource": "992d24c190db9d67283afc8df883e2b3761e8d14",
+    "observedWithinMs": 43005,
+    "freshPage": true,
+    "freshPass": true,
+    "samples": [
+      {
+        "at": "2026-10-29T08:42:16.636Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 35,
+          "pass_age_seconds": 35,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:42:26.931Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 46,
+          "pass_age_seconds": 46,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:42:37.164Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 56,
+          "pass_age_seconds": 56,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:42:47.503Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 66,
+          "pass_age_seconds": 66,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:42:57.878Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 6,
+          "pass_age_seconds": 6,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": true,
+        "freshPass": true
+      }
+    ],
+    "manualSweepInvocations": 0,
+    "providerUnchanged": true
+  },
+  "ci": {
+    "runtimeVerify": 40842948383,
+    "runtimeSecret": 40842948384,
+    "toolingVerify": 40842972338,
+    "toolingSecret": 40842972250,
+    "requiredPushRunsVerified": true
+  },
+  "limitations": [
+    "Single small staging population; not larger-population or production throughput evidence.",
+    "V2 historical progress becomes stale after v2 scanning stops; delayed v2 rollback needs an actual v2 pass.",
+    "Monitoring-release rollback and stalled-job detection/recovery still require hosted rehearsal.",
+    "Production writers remain disabled pending remaining acceptance gates; monthly99.99% not established."
+  ]
+}

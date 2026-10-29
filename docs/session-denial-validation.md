@@ -1,7 +1,7 @@
 # Independent session denial: validation gates
 
 The logout writer and cleanup flags are enabled on staging as of October 29,
-2026, 07:05 UTC, and remain disabled in production. Staging now runs progress-monitor runtime `4b6825e` on version `966329b9`.
+2026, 07:05 UTC, and remain disabled in production. Staging now runs SQL-candidate cleanup runtime `992d24c` on version `7469d433`.
 The scoped staging writer, concurrency and retained-row rollback rehearsals
 below passed; production enablement remains gated.
 Reader enforcement has hosted API evidence and a scoped staging push rehearsal.
@@ -456,3 +456,23 @@ This verifies a real progress-read failure, independent readiness detection,
 recovery and the shared notification path. A stopped scheduler, the three-minute
 staleness threshold, a provider storage outage and monitoring-release rollback
 were not exercised. History-growth and the remaining production gates stay open.
+
+
+## SQL-candidate cleanup staging rollout — October 29, 08:43 UTC
+
+[Hosted evidence](evidence/session-denial-candidate-staging-2026-10-29.json) records
+isolated runtime `992d24c`, successful required push CI, source-matched artifact,
+verified-inactive upload, real native-R2 bootstrap and maintained activation.
+Actual v2 work kept the initial rollback baseline fresh; v3 bootstrap examined
+three SQL candidates and completed in one second. Activation passed synthetic
+login/read/logout/revocation, protected readiness, schema/provider checks and all
+29 assets. A separate observer saw fresh scheduled v3 page/full-pass progress
+within 43.005 seconds without a manual sweep. All five health samples passed; the
+observed pass took one second over three candidates with no invalid records.
+
+This replaces repeated historical-denial enumeration on staging. Denials remain
+immutable and authoritative; SQL is candidate discovery only. No production
+writer or deployment change occurred. Hosted monitoring rollback, stale-job
+alert/recovery, larger live-session capacity, remaining interruption/concurrency
+and device gates remain open. Old v2 progress becomes stale when its sweep stops;
+a delayed v2 rollback needs actual fresh v2 work, never borrowed v3 timestamps.
