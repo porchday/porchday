@@ -111,7 +111,8 @@ it('waits for naturally aged unknown status and unavailable metrics, then requir
   const aged={...f.current,status:'unknown',metrics_monitoring:'unavailable',last_checked_at:new Date(f.now-10*60000).toISOString()};let reads=0;
   f.fetch.mockImplementation(async()=>Response.json(++reads===1?aged:f.current));
   const pending=waitForMonitorRecovery(f.options,new AbortController().signal);await vi.advanceTimersByTimeAsync(2001);expect(await pending).toBe(true);expect(reads).toBe(2);
-  const records=readdirSync(f.directory).map(n=>JSON.parse(readFileSync(join(f.directory,n),'utf8'))).filter(r=>r.kind==='monitor-recovery-read');expect(records[0].detail).toMatchObject({status:'unknown',metrics:'unavailable',httpStatus:200});
+  const records=readdirSync(f.directory).map(n=>JSON.parse(readFileSync(join(f.directory,n),'utf8'))).filter(r=>r.kind==='monitor-recovery-read');// Evidence filenames are random UUIDs, so directory order is not observation order.
+  expect(records).toHaveLength(2);expect(records.map(r=>r.detail)).toEqual(expect.arrayContaining([expect.objectContaining({status:'unknown',metrics:'unavailable',httpStatus:200}),expect.objectContaining({status:'operational',metrics:'ready',httpStatus:200})]));
  }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
 });
 it('never interprets aged unknown status as successful normal verification',async()=>{
