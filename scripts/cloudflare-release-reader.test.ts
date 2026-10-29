@@ -21,6 +21,25 @@ function fixture(){
  return{transport,calls,maximum:()=>maximum};
 }
 describe('read-only release provider inventory',()=>{
+ it('downloads bounded multipart modules using GET without treating a script as version-addressed',async()=>{
+  const data=new FormData();data.append('module',new Blob(['executable']),'index.js');data.append('map',new Blob(['map']),'index.js.map');
+  const reader=new CloudflareReleaseReader({...options,fetch:async(input,init)=>{expect(String(input)).toMatch(/scripts\/porchday-staging$/);expect(init?.method).toBe('GET');return new Response(data);}});
+  const parts=await reader.script('staging',AbortSignal.timeout(5000));expect(Object.keys(parts).sort()).toEqual(['index.js','index.js.map']);expect(Buffer.from(parts['index.js']).toString()).toBe('executable');
+ });
+ it('rejects malformed, duplicate and non-file script modules',async()=>{
+  for(const kind of ['duplicate','text','type']){
+   const data=new FormData();data.append('one',new Blob(['code']),'index.js');
+   if(kind==='duplicate')data.append('two',new Blob(['code']),'index.js');if(kind==='text')data.append('text','unexpected');
+   const reader=new CloudflareReleaseReader({...options,fetch:async()=>kind==='type'?new Response('code',{headers:{'content-type':'text/plain'}}):new Response(data)});
+   await expect(reader.script('staging',AbortSignal.timeout(5000))).rejects.toThrow(/SCRIPT_MODULE_INVALID|SCRIPT_CONTENT_TYPE_INVALID/);
+  }
+ });
+ it('rejects malformed multipart bodies and script payloads beyond the independent 16 MiB cap',async()=>{
+  for(const body of ['not multipart','x'.repeat(16*1024*1024+1)]){
+   let calls=0;const reader=new CloudflareReleaseReader({...options,fetch:async()=>{calls++;return new Response(body,{headers:{'content-type':'multipart/form-data; boundary=test'}});}});
+   await expect(reader.script('staging',AbortSignal.timeout(5000))).rejects.toThrow(/SCRIPT_MULTIPART_INVALID|BODY_LIMIT/);expect(calls).toBe(1);
+  }
+ });
  it('discovers exactly one operation-annotated upload and confirms identity on the detail read',async()=>{
   const operation='33333333-0000-4000-8000-000000000000',annotations={'workers/message':'porchday-upload:'+operation};let calls=0;
   const fetcher:typeof fetch=async(input,init)=>{calls++;expect(init?.method).toBe('GET');return String(input).endsWith('/versions')?reply({items:[{id:active,annotations:{}},{id:latest,annotations}]}):reply({id:latest,annotations,resources:{script:{etag:'candidate'},script_runtime:{},bindings:[]}});};

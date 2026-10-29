@@ -137,3 +137,30 @@ negative check on October 29 returned unresolved for an absent operation. Neithe
 check performed an upload or activation. Matching annotations and resource isolation
 do not verify executable/source-map bytes or uploaded asset content. Those checks
 remain required before writing a reconciled upload receipt and activating it.
+
+## Executable and source-map comparison
+
+`CloudflareReleaseReader.script` downloads multipart Worker modules through the
+same GET-only transport, bounded to 16 MiB total and 16 file parts. It rejects
+duplicate module names, non-file parts, unsafe names and malformed responses.
+The script endpoint is not version-addressed: identity and full inventory checks
+must surround the read under the release lease. A module download by itself must
+never be attributed to an arbitrary version ID.
+
+`verifyWorkerArtifacts` requires exactly `index.js`/`index.js.map` or
+`edge.js`/`edge.js.map`, checks the prepared files against their reviewed SHA-256
+pins, and requires byte-identical executable content. Source maps must also be
+byte-identical unless the caller explicitly allows the previously observed
+provider normalization: removal of `sourceRoot`, addition of empty `file` and null
+`sourcesRoot`, and replacement of exactly the four known missing proxy dependency
+sources with empty strings. All other fields, source paths/content, symbol names
+and mappings must match exactly. This does not grant permission to omit application
+sources or ignore arbitrary source-map differences.
+
+The comparison passed saved actual API artifacts from the October 28 drill against
+the reviewed feature release bundle: executable bytes matched and the 1,029-source
+map matched the observed normalization. No live read was performed for that proof.
+The attempted live staging-frontend validation stopped before provider access
+because another release held the shared lock. Live download validation remains
+outstanding. Local byte pins still require source/CI provenance authorization;
+these comparisons do not independently verify that provenance or static assets.

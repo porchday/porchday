@@ -18,6 +18,7 @@
     "release-schema.ts",
     "release-wrangler.ts",
     "release-upload-lease.ts",
-    "release-upload-process.ts"
+    "release-upload-process.ts",
+    "release-worker-artifacts.ts"
   ]
 }

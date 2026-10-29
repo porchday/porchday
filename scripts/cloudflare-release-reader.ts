@@ -61,7 +61,7 @@ export class CloudflareReleaseReader{
   });
  }
  private release(){const next=this.waiting.shift();if(next)next();else this.active--;}
- private async get(path:string,signal:AbortSignal):Promise<unknown>{
+ private async raw(path:string,signal:AbortSignal,limit:number):Promise<{body:Buffer;contentType:string}>{
   for(let attempt=0;attempt<3;attempt++){
    await this.slot(signal);
    try{
@@ -71,10 +71,9 @@ export class CloudflareReleaseReader{
     if(!response.ok){await response.body?.cancel().catch(()=>{});throw Error('RELEASE_PROVIDER_READ_REJECTED');}
     const reader=response.body?.getReader();if(!reader)throw Error('RELEASE_PROVIDER_BODY_INVALID');const chunks:Uint8Array[]=[];let length=0;
     try{
-     for(;;){let item:ReadableStreamReadResult<Uint8Array>;try{item=await reader.read();}catch{throw new RetryableRead();}if(deadline.aborted)throw new RetryableRead();if(item.done)break;length+=item.value.byteLength;if(length>2*1024*1024)throw Error('RELEASE_PROVIDER_BODY_LIMIT');chunks.push(item.value);}
+     for(;;){let item:ReadableStreamReadResult<Uint8Array>;try{item=await reader.read();}catch{throw new RetryableRead();}if(deadline.aborted)throw new RetryableRead();if(item.done)break;length+=item.value.byteLength;if(length>limit)throw Error('RELEASE_PROVIDER_BODY_LIMIT');chunks.push(item.value);}
     }finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
-    let value:ObjectValue;try{value=object(JSON.parse(Buffer.concat(chunks).toString('utf8')));}catch{throw Error('RELEASE_PROVIDER_RESPONSE_INVALID');}
-    if(value.success!==true||!Object.hasOwn(value,'result'))throw Error('RELEASE_PROVIDER_READ_REJECTED');return value.result;
+    return{body:Buffer.concat(chunks),contentType:response.headers.get('content-type')??''};
    }catch(error){
     if(signal.aborted)throw Error('RELEASE_READ_CANCELLED');
     if(!(error instanceof RetryableRead)||attempt===2)throw error instanceof RetryableRead?Error('RELEASE_PROVIDER_READ_UNAVAILABLE'):error;
@@ -82,6 +81,24 @@ export class CloudflareReleaseReader{
    await sleep(attempt===0?250:750,undefined,{signal});
   }
   throw Error('RELEASE_PROVIDER_READ_UNAVAILABLE');
+ }
+ private async get(path:string,signal:AbortSignal):Promise<unknown>{
+  const {body}=await this.raw(path,signal,2*1024*1024);let value:ObjectValue;
+  try{value=object(JSON.parse(body.toString('utf8')));}catch{throw Error('RELEASE_PROVIDER_RESPONSE_INVALID');}
+  if(value.success!==true||!Object.hasOwn(value,'result'))throw Error('RELEASE_PROVIDER_READ_REJECTED');return value.result;
+ }
+ /** The script endpoint is not version-addressed. Surround this read with identity/inventory checks. */
+ async script(worker:Worker,signal:AbortSignal):Promise<Record<string,Uint8Array>>{
+  const {body,contentType}=await this.raw(this.base(worker),signal,16*1024*1024);
+  if(contentType.length>512||!/^multipart\/form-data\s*;/i.test(contentType))throw Error('RELEASE_SCRIPT_CONTENT_TYPE_INVALID');
+  let data:FormData;try{data=await new Response(new Uint8Array(body),{headers:{'content-type':contentType}}).formData();}catch{throw Error('RELEASE_SCRIPT_MULTIPART_INVALID');}
+  const parts:Record<string,Uint8Array>=Object.create(null);
+  for(const [field,value] of data){
+   if(typeof value==='string')throw Error('RELEASE_SCRIPT_MODULE_INVALID');const name=value.name||field;
+   if(!/^[a-zA-Z0-9_.-]+$/.test(name)||Object.hasOwn(parts,name)||Object.keys(parts).length>=16)throw Error('RELEASE_SCRIPT_MODULE_INVALID');
+   parts[name]=new Uint8Array(await value.arrayBuffer());
+  }
+  if(!Object.keys(parts).length)throw Error('RELEASE_SCRIPT_MODULE_INVALID');signal.throwIfAborted();return parts;
  }
  private base(worker:Worker){if(!workers.includes(worker))throw Error('RELEASE_WORKER_INVALID');return '/workers/scripts/porchday-'+worker;}
  async version(worker:Worker,version:string,signal:AbortSignal):Promise<ObjectValue>{
