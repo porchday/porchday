@@ -142,7 +142,7 @@ remain required before writing a reconciled upload receipt and activating it.
 
 `CloudflareReleaseReader.script` downloads multipart Worker modules through the
 same GET-only transport, bounded to 16 MiB total and 16 file parts. It rejects
-duplicate module names, non-file parts, unsafe names and malformed responses.
+duplicate module names, unexpected text fields, unsafe names and malformed responses. The provider’s observed JavaScript text field (`index.js` or `edge.js`) is decoded as UTF-8 and still subjected to exact executable byte comparison.
 The script endpoint is not version-addressed: identity and full inventory checks
 must surround the read under the release lease. A module download by itself must
 never be attributed to an arbitrary version ID.
@@ -159,8 +159,36 @@ sources or ignore arbitrary source-map differences.
 
 The comparison passed saved actual API artifacts from the October 28 drill against
 the reviewed feature release bundle: executable bytes matched and the 1,029-source
-map matched the observed normalization. No live read was performed for that proof.
-The attempted live staging-frontend validation stopped before provider access
-because another release held the shared lock. Live download validation remains
-outstanding. Local byte pins still require source/CI provenance authorization;
-these comparisons do not independently verify that provenance or static assets.
+map matched the observed normalization. A later live staging frontend read on
+October 29 also passed after identifying a second exact provider transformation:
+leading `../` segments are removed from each source path and `file` is the entry
+filename. This requires the separate `allowObservedPathNormalization` opt-in in
+addition to the original normalization opt-in. Every remaining map field, all
+source content and all relative source-path suffixes must still match; arbitrary
+path changes remain rejected. This is a narrow comparison of observed formats,
+not permission to normalize arbitrary differences.
+
+The live read verified version `913d617a-f7f9-40fd-92b7-8efe3e649fa9`, with unchanged
+full inventories before/after and unchanged canonical bytes. Initial parser and
+map-format rejections were investigated before enabling the exact transformations.
+No upload, activation or database write occurred. Static-asset publication and
+continuous authenticated rollout acceptance remain separate requirements.
+
+## First-party source provenance
+
+`verifyWorkerSourceProvenance` checks every first-party source embedded in the map
+against immutable Git blobs at an explicit full commit SHA. The caller supplies
+the complete reviewed path set, not a minimum file count. Extra, missing, duplicate,
+unsafe or content-mismatched application paths fail. API/monitor sources and shared
+crypto sources are included. Reads are bounded, cancellable `git show` calls and do
+not use modified working-tree files. The result records individual source hashes
+and a digest of the complete source manifest.
+
+The live staging frontend map matched all 37 reviewed first-party files at
+`005454607c98ffdb7c430a947bedb4586a14a45b` and preserved the full 1,020-source map
+under the explicit provider transformation. Tests use a temporary real Git repository
+to verify immutable-commit behavior despite worktree edits, and reject omitted,
+duplicate, changed or unsafe sources. This verifies embedded source content; it
+does not prove by itself that arbitrary executable bytes were compiled from that
+content. The prepared executable/hash manifest still requires trusted build and
+exact-source CI authorization.

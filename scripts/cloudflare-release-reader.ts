@@ -94,9 +94,9 @@ export class CloudflareReleaseReader{
   let data:FormData;try{data=await new Response(new Uint8Array(body),{headers:{'content-type':contentType}}).formData();}catch{throw Error('RELEASE_SCRIPT_MULTIPART_INVALID');}
   const parts:Record<string,Uint8Array>=Object.create(null);
   for(const [field,value] of data){
-   if(typeof value==='string')throw Error('RELEASE_SCRIPT_MODULE_INVALID');const name=value.name||field;
+   if(typeof value==='string'&&!/^(index|edge)\.js$/.test(field))throw Error('RELEASE_SCRIPT_MODULE_INVALID');const name=typeof value==='string'?field:value.name||field;
    if(!/^[a-zA-Z0-9_.-]+$/.test(name)||Object.hasOwn(parts,name)||Object.keys(parts).length>=16)throw Error('RELEASE_SCRIPT_MODULE_INVALID');
-   parts[name]=new Uint8Array(await value.arrayBuffer());
+   parts[name]=typeof value==='string'?new TextEncoder().encode(value):new Uint8Array(await value.arrayBuffer());
   }
   if(!Object.keys(parts).length)throw Error('RELEASE_SCRIPT_MODULE_INVALID');signal.throwIfAborted();return parts;
  }

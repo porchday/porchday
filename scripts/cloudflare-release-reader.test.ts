@@ -22,7 +22,7 @@ function fixture(){
 }
 describe('read-only release provider inventory',()=>{
  it('downloads bounded multipart modules using GET without treating a script as version-addressed',async()=>{
-  const data=new FormData();data.append('module',new Blob(['executable']),'index.js');data.append('map',new Blob(['map']),'index.js.map');
+  const data=new FormData();data.append('index.js','executable');data.append('map',new Blob(['map']),'index.js.map');
   const reader=new CloudflareReleaseReader({...options,fetch:async(input,init)=>{expect(String(input)).toMatch(/scripts\/porchday-staging$/);expect(init?.method).toBe('GET');return new Response(data);}});
   const parts=await reader.script('staging',AbortSignal.timeout(5000));expect(Object.keys(parts).sort()).toEqual(['index.js','index.js.map']);expect(Buffer.from(parts['index.js']).toString()).toBe('executable');
  });
