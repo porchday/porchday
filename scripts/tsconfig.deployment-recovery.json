@@ -27,6 +27,7 @@
     "release-activation-evidence.ts",
     "release-activation-state.ts",
     "release-activation-review.ts",
-    "release-activation-finalize.ts"
+    "release-activation-finalize.ts",
+    "release-journey.ts"
   ]
 }

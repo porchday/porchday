@@ -392,3 +392,34 @@ assets, changed provider identity/inventory, changed journal/review, and resume
 after canonical replacement but before archive without remote calls. Existing
 real-process crash tests now exercise the resume method before and after canonical
 replacement. No new hosted rollout is claimed by these tests.
+
+### Durable authenticated-journey resume
+
+`runReleaseJourney` in `scripts/release-journey.ts` stores a private, plan/version/
+configuration-scoped journal. Login and logout intents are durable before their
+single POSTs. The synthetic session cookie stays in an owner-only file until a
+read-only member request verifies revocation, after which the cookie file is
+removed. Credentials and response bodies are not included in returned observations.
+The lease assertion callback runs at I/O boundaries.
+
+A saved login resumes without another login. An uncertain logout resumes by reading
+revocation with the retained cookie; observed rejection can establish the logout
+effect even when its HTTP acknowledgement was lost. The report explicitly marks
+that reconciliation and does not invent a successful HTTP response. A lost login
+reply with no saved cookie remains `unknown` and requires investigation; it is
+never retried under the same journey. Missing revocation also remains unknown,
+retaining the cookie and the original intent for read-only reconciliation.
+
+After revocation, resume reuses the recorded authenticated checks while refreshing
+protected readiness, anonymous-session and monitor-freshness reads. Reports retain
+the original authenticated start time and identify reused authenticated checks;
+these are not new login samples for the availability SLI. Asset verification can
+then converge without repeating login/logout.
+
+Pass `journey: {directory, assertLease}` to `createReleaseVerifier` to use this
+path. The existing monitor probe remains available for independent recurring
+monitoring; the forthcoming activation CLI must require the durable journey option.
+Local tests cover uncertain replies, retained-cookie cleanup, input/evidence drift,
+a new verifier instance, and real SIGKILL after durable logout intent. Hosted
+journey interruption validation and operator escalation for unknown login remain
+outstanding.

@@ -1,3 +1,4 @@
+import {runReleaseJourney} from './release-journey.ts';
 import {randomUUID} from 'node:crypto';
 import {constants,closeSync,fsyncSync,lstatSync,mkdirSync,openSync,writeFileSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
@@ -16,13 +17,13 @@ function evidence(directory:string,value:unknown){
 }
 
 /** The normal rollout's journey/asset gate. Provider identity and authorization stay in the controller. */
-export function createReleaseVerifier(options:{plan:DeploymentPlan;config:ProbeConfig;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest};directory:string;fetch?:typeof fetch}):DeploymentPorts['verify']&{assetProof:(version:string)=>string|undefined}{
+export function createReleaseVerifier(options:{plan:DeploymentPlan;config:ProbeConfig;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest};directory:string;fetch?:typeof fetch;journey?:{directory:string;assertLease:(signal:AbortSignal)=>void}}):DeploymentPorts['verify']&{assetProof:(version:string)=>string|undefined}{
  const plan=structuredClone(options.plan),planHash=deploymentPlanHash(plan),config=structuredClone(options.config),assets=structuredClone(options.assets);
  validateProbeConfig(config);validatePublicAssetManifest(assets.candidate);validatePublicAssetManifest(assets.baseline);
  if(plan.assetManifests&&(publicAssetManifestHash(assets.candidate)!==plan.assetManifests.candidate||publicAssetManifestHash(assets.baseline)!==plan.assetManifests.baseline))throw Error('RELEASE_ASSET_PLAN_MISMATCH');
  if(deploymentTarget(plan.worker).environment!==config.environment)throw Error('RELEASE_VERIFICATION_SCOPE_MISMATCH');
  if(!isAbsolute(options.directory))throw Error('RELEASE_EVIDENCE_PATH_INVALID');
- const directory=options.directory,transport=options.fetch??fetch;mkdirSync(directory,{recursive:true,mode:0o700});
+ const directory=options.directory,transport=options.fetch??fetch,journey=options.journey?{...options.journey}:undefined;mkdirSync(directory,{recursive:true,mode:0o700});
  const origin=config.environment==='production'?'https://porchday.org':'https://staging.porchday.com';
  let active=false;const proofs=new Map<string,string>();
  const verify:DeploymentPorts['verify']=async(version,signal)=>{
@@ -35,13 +36,14 @@ export function createReleaseVerifier(options:{plan:DeploymentPlan;config:ProbeC
    record('started',{environment:config.environment});
    if(signal.aborted)return finish('unknown');
    // One journey only. Read-only asset convergence must never repeat login/logout.
-   const observation=await probe(config,{fetch:(input,init)=>transport(input,{...init,signal:AbortSignal.any([signal,init?.signal??new AbortController().signal])})});
+   const observation=journey?await runReleaseJourney({plan,version,config,directory:journey.directory,assertLease:journey.assertLease,fetch:transport},signal):await probe(config,{fetch:(input,init)=>transport(input,{...init,signal:AbortSignal.any([signal,init?.signal??new AbortController().signal])})});
    record('journey',observation);
    if(signal.aborted)return finish('unknown');
    // A completed probe with failed/timeout checks is an observed failed journey,
    // even when it cannot diagnose the cause. It is sufficient for a safe rollback
    // only because the controller independently reauthorizes a compatible target.
-   if(!observation.healthy)return finish('unhealthy');
+   if('status' in observation){if(observation.status==='unknown')return finish('unknown');if(observation.status==='unhealthy')return finish('unhealthy');}
+   else if(!observation.healthy)return finish('unhealthy');
    const manifest=version===plan.candidateVersion?assets.candidate:assets.baseline;
    for(let round=1;round<=3;round++){
     if(signal.aborted)return finish('unknown');
