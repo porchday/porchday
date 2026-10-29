@@ -70,3 +70,9 @@ event directory before creating fixtures. No unknown write was replayed.
 This verifies the API source alignment on staging. It does not close the
 already-open browser/new-client feature-release or physical native-device gates,
 and does not promote the candidate to production.
+
+The subsequent [authenticated frontend rehearsal](evidence/authenticated-feature-rollout-2026-10-29.md)
+passed with the old signed-in group page retained alongside the new invitation
+UI. This supplies the previously missing scoped hosted browser-overlap evidence;
+service-worker behavior, fresh-device onboarding, physical native devices and
+production promotion remain separate.
