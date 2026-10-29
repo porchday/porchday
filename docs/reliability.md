@@ -82,3 +82,28 @@ The independent logout writer remains disabled. Hosted push enforcement,
 writer/cleanup failure and concurrency cases, device behavior and cost acceptance
 remain required before enabling it. This reader evidence does not resolve all
 interrupted privacy operations or establish the availability SLO.
+
+
+## Denial-cleanup readiness signals (pending deployment)
+
+The v2 denial-cleanup implementation adds independent protected-readiness checks
+when `SESSION_DENIAL_CLEANUP_V1=true`. Normal cleanup freshness cannot substitute
+for these checks. Deployment is still gated on a real initial sweep and hosted
+verification; the existing runtime does not emit these codes yet.
+
+- `session_denial_cleanup_missing` / `session_denial_cleanup_unavailable`: inspect
+  configured storage, permissions and the versioned progress record privately.
+  Missing, corrupt, future-dated or timed-out evidence must not be marked healthy.
+- `session_denial_cleanup_stale`: no confirmed page in three minutes. Inspect the
+  minute schedule, queue delivery/retries, independent storage and SQL lock/errors.
+- `session_denial_pass_stale` / `session_denial_pass_slow`: full-pass completion or
+  traversal exceeded the five-minute operational limit. Inspect history size,
+  cursor advancement and repeated page failures even if page health is fresh.
+- `session_denial_cleanup_invalid`: preserve private evidence and investigate record
+  integrity. The alert clears only after a complete clean pass. Never delete or
+  expire denial authority as a way to clear an alert.
+
+After repair, verify actual scheduled progress, a fresh clean full pass, protected
+readiness and external monitoring. Never manufacture timestamps or reset members'
+sessions/keys. Reader enforcement remains active independently of SQL cleanup.
+See the [progress design and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-implemented-not-deployed).

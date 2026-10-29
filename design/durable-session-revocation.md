@@ -136,8 +136,10 @@ that transaction. SQL statements have five-second server/lock limits and six-sec
 client read deadlines; failed clients are discarded. A lost commit acknowledgement
 retries the same idempotent deletion, never an auth handler or a broader mutation.
 
-Each invocation visits at most ten records. A conditional-write cursor at
-`session-denial-maintenance/v1/cursor.json` advances only after confirmed cleanup
+Each invocation visits at most ten records. The deployed v1 cursor is
+`session-denial-maintenance/v1/cursor.json`. The current source uses the separate
+`session-denial-maintenance/v2/progress.json` record described below, leaving v1
+untouched for compatible rollback. Its conditional write advances only after confirmed cleanup
 and wraps at the end, so later inserts before an old cursor are discovered in a
 subsequent pass. Competing workers cannot overwrite a newer cursor. Lost cursor
 replies are safe whether or not the progress write committed. A corrupt denial
@@ -150,7 +152,7 @@ Fixed metrics are `session_denial_cleanup_complete`,
 provider errors are recorded. On retry, investigate independent storage and SQL
 health. On invalid records, preserve private evidence and repair only through a
 reviewed integrity investigation; never invent a denial or infer deletion authority
-from a filename. A corrupt maintenance cursor may be conditionally reset to
+from a filename. A corrupt **v1** maintenance cursor may be conditionally reset to
 `{"v":1,"cursor":null}` after preserving its evidence: this only repeats idempotent
 cleanup. That operation must never touch `control.json` or the denial namespace.
 Disabling cleanup stops SQL housekeeping, not denial enforcement. Retained records
@@ -158,6 +160,50 @@ and recurring sweeps increase reads with history size; capacity/cost and full-pa
 latency still need measurement before writer activation. This cleanup does not
 resolve ambiguous non-session privacy operations or guarantee cancellation of
 requests authorized before denial publication.
+
+## Independent denial-cleanup health (implemented, not deployed)
+
+V2 writes cursor position and monitoring progress in one conditional update after
+all valid records on a page have confirmed cleanup. It records page completion,
+current-pass start/count/invalid count, and the last completed pass duration/count/
+invalid count. Empty and single-page scans also write progress. CAS losers cannot
+refresh another worker's heartbeat. Failed SQL does not advance progress; an
+acknowledgement lost after a committed progress write still represents real work.
+Invalid-record health persists through the following pass until a complete clean
+pass is confirmed. The record is operational metadata, never denial authority.
+
+Protected readiness reads this record only when cleanup is enabled. Its two-second
+read deadline covers the body, and its database work runs concurrently so a stalled
+R2 read does not retain the SQL connection. The response contains aggregate ages,
+counts and fixed issue codes, without the cursor or session identifiers. Missing,
+corrupt, unreadable or future-dated progress is not healthy. A page older than three
+minutes is stale. A missing/older-than-five-minute full pass or a pass lasting more
+than five minutes triggers a separate issue, even when pages remain fresh.
+These are initial operational limits, not a demonstrated maximum cleanup delay:
+new keys behind the cursor can require another pass, and growth/retries add delay.
+
+V1 and v2 scan the same immutable prefix independently and perform idempotent SQL
+cleanup. Starting v2 scans from the beginning; rolling back resumes the old v1
+cursor without changing either denial enforcement or the v2 record. Old code does
+not report the new health signal, so rollback must not be described as retaining
+that monitoring improvement.
+
+Rollout requires exact-source validation and a real successful v2 sweep under the
+maintained deployment lease before readiness-gated activation with cleanup enabled.
+Preserve the existing runtime/schema/assets and compatible reader floor; verify
+that the scheduled deployed worker advances v2 afterward. Never seed or repair
+health by fabricating a completion timestamp. An interrupted/unknown preparation
+must be reconciled from actual progress and SQL evidence, not replayed blindly.
+A corrupt v2 record requires a reviewed, evidence-preserving recovery that runs
+actual cleanup; the v1 reset payload is invalid for v2. Hosted startup, stalled-job
+alert delivery, recovery, rollback and history-growth acceptance remain open.
+
+The v2 sweep uses one progress GET and one CAS PUT per successful page, including
+empty/single-page histories. Full-page worst-case operations remain one LIST,
+eleven GETs and one PUT, excluding retries. Each enabled protected-readiness request
+adds one progress GET; the 20-second external monitor alone adds 129,600 reads in
+30 days. Other monitors and release probes add reads. Earlier one-page cost
+measurements describe v1 and must not be presented as v2 billing estimates.
 
 ## Reader coverage required before any writer
 

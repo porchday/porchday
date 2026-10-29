@@ -330,7 +330,7 @@ scheduling, exhaustive interleavings or hosted password-change races.
 
 ## Denial cleanup monitoring gap
 
-Source inspection confirms the denial cleanup queue path is separate from the
+Inspection of deployed runtime `ebc567a4` confirms the denial cleanup queue path is separate from the
 normal cleanup path that calls `recordCleanupSuccess`. Its success, invalid-record
 and retry events are logged, but `readOperationalHealth` has no denial-sweep
 freshness or full-pass-progress check. The normal cleanup heartbeat cannot prove
@@ -344,3 +344,28 @@ progress, preserve retry/CAS and compatible rollback behavior, and test startup,
 staleness, recovery and concurrent updates. Use measured history size and sweep
 progress to set an explicit cleanup-latency bound; do not prune immutable denial
 records to satisfy the bound. Track this work in #1.
+
+## Local denial-cleanup progress monitoring — October 29, 2026
+
+The source now implements a separate v2 conditional progress record and protected
+readiness integration. [Design, limits and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-implemented-not-deployed)
+describe the page/full-pass distinction and preservation of the old rollback cursor.
+The deployed runtime remains unchanged and does not yet have this monitoring.
+
+Targeted tests verify missing/startup state, page versus full-pass freshness, slow
+passes, invalid-record persistence until a clean pass, recovery, SQL failure, lost
+progress replies, concurrent CAS losers, malformed/future evidence and bounded
+health-body reads. Integration coverage verifies healthy ordinary cleanup cannot
+mask stalled denial cleanup and that the SQL connection closes before a stalled
+R2 health read times out. All 28 targeted tests passed; the existing database-only
+health test was skipped in that run.
+
+All 38 auth-journal and restricted-session PostgreSQL tests passed against disposable
+loopback databases. The process-loss case now verifies v2 progress through actual
+native local R2 after fresh-process recovery. Temporary databases/roles were removed.
+This is local evidence, not hosted health-alert delivery or production enablement.
+
+Full source validation also passed: 22 crypto tests and 1,058 general tests, with
+192 environment-dependent tests skipped in the general run. The separate
+PostgreSQL run above covers the relevant 38 auth/session tests. API typecheck,
+formatting, secret and diff checks passed. Hosted rollout remains pending.
