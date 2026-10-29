@@ -43,7 +43,7 @@ describe('SQL candidate denial discovery',()=>{
   const f=await fixture(6);await persistSessionDenial(f.store,id(1));vi.useFakeTimers();
   try{
    f.cleanup.mockImplementationOnce(async value=>{vi.setSystemTime(Date.now()+20000);return f.sessions.delete(value);});
-   expect(await f.sweep()).toEqual({seen:1,deleted:1,invalid:0,advanced:true});
+   expect(await f.sweep()).toEqual({seen:1,deleted:1,invalid:0,advanced:true,continuation:expect.any(String)});
    expect(f.progress().cursor).toBe(id(1));expect(f.progress().lastPass).toBeNull();
    expect((await f.sweep()).seen).toBe(5);expect(f.progress().lastPass?.seen).toBe(6);
   }finally{vi.useRealTimers();}
@@ -90,6 +90,39 @@ describe('SQL candidate denial discovery',()=>{
   expect(()=>parseCandidateProgress(JSON.stringify({...f.progress(),v:2}))).toThrow();
   expect(()=>parseCandidateProgress(JSON.stringify({...f.progress(),strategy:'r2-history'}))).toThrow();
   expect(()=>parseCandidateProgress(JSON.stringify({...f.progress(),extra:true}))).toThrow();
+ });
+ it('drains 10000 live candidates in bounded continuations and stops at the full pass',async()=>{
+  const f=await fixture(10000);let token:string|undefined,pages=0,total=0;
+  do{
+   const result=await sweepSessionCandidates(f.store,f.list,f.cleanup,token);
+   expect(result.seen).toBeLessThanOrEqual(100);total+=result.seen;pages++;
+   token=result.continuation;
+  }while(token&&pages<101);
+  expect(pages).toBe(100);expect(total).toBe(10000);expect(token).toBeUndefined();
+  expect(f.progress().lastPass?.seen).toBe(10000);expect(f.progress().cursor).toBeNull();
+  expect(f.cleanup).not.toHaveBeenCalled();expect(f.sessions.size).toBe(10000);
+ });
+ it('drops delayed continuation tokens before SQL discovery and cannot restart a completed pass',async()=>{
+  const f=await fixture(101),first=await f.sweep();expect(first.continuation).toBeTruthy();
+  const last=await sweepSessionCandidates(f.store,f.list,f.cleanup,first.continuation);expect(last.seen).toBe(1);expect(last.continuation).toBeUndefined();
+  f.list.mockClear();f.store.put.mockClear();
+  expect(await sweepSessionCandidates(f.store,f.list,f.cleanup,first.continuation)).toEqual({seen:0,deleted:0,invalid:0,advanced:false});
+  expect(f.list).not.toHaveBeenCalled();expect(f.store.put).not.toHaveBeenCalled();
+ });
+ it('allows only the CAS winner to continue a concurrent page',async()=>{
+  const f=await fixture(101);let release!:()=>void,entered!:()=>void;
+  const gate=new Promise<void>(r=>{release=r;}),started=new Promise<void>(r=>{entered=r;});
+  const slow=sweepSessionCandidates(f.store,async after=>{entered();await gate;return f.list(after);},f.cleanup);
+  try{await started;const winner=await f.sweep();expect(winner.continuation).toBeTruthy();release();
+   const loser=await slow;expect(loser.advanced).toBe(false);expect(loser.continuation).toBeUndefined();
+  }finally{release();await slow;}
+ });
+ it('cron resumes persisted work after a lost progress reply without trusting an old continuation',async()=>{
+  const f=await fixture(201),first=await f.sweep(),put=f.store.put.getMockImplementation()!;
+  f.store.put.mockImplementationOnce(async(...args)=>{await put(...args);throw Error('lost progress reply');});
+  await expect(sweepSessionCandidates(f.store,f.list,f.cleanup,first.continuation)).rejects.toThrow();
+  expect((await sweepSessionCandidates(f.store,f.list,f.cleanup,first.continuation)).seen).toBe(0);
+  expect((await f.sweep()).seen).toBe(1);expect(f.progress().lastPass?.seen).toBe(201);
  });
  it('rejects malformed discovery pages and failed listings before any deletion',async()=>{
   for(const page of [{ids:[id(1),id(1)],more:false},{ids:[],more:true}]){

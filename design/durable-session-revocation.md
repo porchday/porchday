@@ -346,6 +346,32 @@ rollback therefore needs an actual fresh v2 pass or an independently verified
 compatible baseline; copying v3 timestamps into v2 would fabricate evidence.
 Production writers remain disabled pending these and the other acceptance gates.
 
+## Bounded continuation between candidate pages
+
+The one-page-per-minute v3 scheduler cannot cover 10,000 live sessions within the
+five-minute full-pass deadline: it requires at least 100 pages. A small staging
+population does not establish pilot capacity. The pending continuation change
+retains the 100-candidate page and 20-second work budget, then sends another queue
+message only after successfully checkpointing an incomplete page. The message
+carries the resulting progress ETag. A stale or duplicate token is discarded
+before SQL discovery; a CAS loser cannot continue. Completed passes stop and wait
+for the next cron. SQL deletion still requires immutable R2 denial authority.
+
+Queue sends have a five-second observation deadline. A late/unknown send can still
+arrive, so its token remains unchanged; stale delivery cannot restart a completed
+pass. A crash between progress publication and enqueue, a lost successful write
+reply, or a lost continuation is recovered by the next tokenless cron from actual
+persisted progress. This fallback can add one scheduling interval; it does not
+fabricate fresh health or guarantee the five-minute deadline during an outage.
+
+Local tests drain 10,000 in-memory live candidates in 100 bounded continuations,
+exercise duplicate/CAS races, lost progress replies, failed/late queue sends and
+end-of-pass termination. That is control-flow evidence, not native R2 throughput
+or a hosted capacity claim. Hosted throughput, queue overlap, cost and compatible
+rollback remain required before promoting this change. No schema or progress
+format change is needed; old queue consumers ignore the optional token, but
+rollback to one-page-per-minute code is unsuitable for a large live population.
+
 ## Availability, cost and remaining scope
 
 Normal logout should replace several shared-control writes with one write to a

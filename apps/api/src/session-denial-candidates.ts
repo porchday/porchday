@@ -55,15 +55,20 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
  * Stop starting work after 20s; an in-flight bounded SQL operation can finish
  * later. Failed/unknown SQL leaves progress unchanged and is safely repeated.
  */
-export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>){
+export interface CandidateSweepResult{seen:number;deleted:number;invalid:number;advanced:boolean;continuation?:string}
+export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string):Promise<CandidateSweepResult>{
  const startedAt=Date.now();
+ if(expectedProgressEtag!==undefined&&(typeof expectedProgressEtag!=='string'||!expectedProgressEtag||expectedProgressEtag.length>256))throw new DenialCleanupError();
  const saved=await boundedIO(async()=>{const object=await store.get(candidateProgressKey);return object?{etag:object.etag,text:await object.text()}:null;});
+ // A delayed/duplicate continuation cannot restart a completed pass or fan out.
+ // Cron jobs have no token and resume current persisted work after a lost send.
+ if(expectedProgressEtag!==undefined&&saved?.etag!==expectedProgressEtag)return {seen:0,deleted:0,invalid:0,advanced:false};
  const previous=saved?parseCandidateProgress(saved.text):null;
  if(previous&&previous.pageCompletedAt>startedAt)throw new DenialCleanupError();
  const cursor=previous?.cursor??null,page=await list(cursor);
  if(!Array.isArray(page.ids)||page.ids.length>candidatePageSize||typeof page.more!=='boolean'||page.more&&!page.ids.length||
   page.ids.some(id=>typeof id!=='string'||!id||id.length>8192||id===cursor)||new Set(page.ids).size!==page.ids.length)throw new DenialCleanupError();
- const result={seen:0,deleted:0,invalid:0,advanced:false};
+ const result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
  let stopped=false;
  for(let offset=0;offset<page.ids.length;offset+=5){
   if(Date.now()-startedAt>=20000){stopped=true;break;}
@@ -90,15 +95,28 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
   passStartedAt:next?passStartedAt:null,passSeen:next?seen:0,passInvalid:next?invalid:0,
   lastPass:next?(previous?.lastPass??null):{completedAt,durationMs:completedAt-passStartedAt,seen,invalid}};
  const updated=await boundedIO(()=>store.put(candidateProgressKey,JSON.stringify(progress),{onlyIf:saved?{etagMatches:saved.etag}:{etagDoesNotMatch:'*'}}));
- result.advanced=!!updated&&next!==cursor;return result;
+ result.advanced=!!updated&&next!==cursor;
+ // Only the confirmed CAS winner can request the next bounded page. Completed
+ // passes stop here; the normal cron starts the next pass.
+ if(updated&&next!==null&&next!==cursor)result.continuation=updated.etag;
+ return result;
 }
 
-export async function cleanupDeniedSessionCandidates(env:Env){
+export async function cleanupDeniedSessionCandidates(env:Env,expectedProgressEtag?:string):Promise<CandidateSweepResult>{
  if(env.SESSION_DENIAL_CLEANUP_V1!=='true')return {seen:0,deleted:0,invalid:0,advanced:false};
  if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
  const pool=authPool(env);
- try{return await sweepSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id));}
+ try{return await sweepSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id),expectedProgressEtag);}
  finally{await pool.end();}
+}
+
+/** A timed-out send can still arrive. The checkpoint token makes its eventual
+ * delivery harmless if a retry or the next cron has already advanced progress. */
+export async function enqueueCandidateContinuation(env:Pick<Env,'JOBS'>,etag:string){
+ let timer:ReturnType<typeof setTimeout>|undefined;
+ try{await Promise.race([env.JOBS.send({kind:'session_denial_cleanup',denialProgressEtag:etag}),new Promise<never>((_,reject)=>{
+  timer=setTimeout(()=>reject(new DenialCleanupError()),5000);
+ })]);}finally{if(timer!==undefined)clearTimeout(timer);}
 }
 
 /** No fallback to v2: a fresh history scan cannot prove candidate progress.
