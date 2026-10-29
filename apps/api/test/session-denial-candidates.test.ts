@@ -81,6 +81,61 @@ describe('SQL candidate denial discovery',()=>{
    expect(peakReads).toBe(6);expect(peakDeletes).toBe(1);expect(f.progress().lastPass?.seen).toBe(13);
   }finally{release();await pending;}
  });
+ it('refills a finished read slot while other reads wait, then deletes in candidate order',async()=>{
+  const f=await fixture(13);for(let n=1;n<=13;n++)await persistSessionDenial(f.store,id(n));
+  const get=f.store.get.getMockImplementation()!;const gates:Array<()=>void>=[];let reads=0,active=0,peak=0,open=false;
+  f.store.get.mockImplementation(async key=>{
+   if(key===candidateProgressKey)return get(key);
+   reads++;active++;peak=Math.max(peak,active);
+   try{if(!open)await new Promise<void>(resolve=>{gates.push(resolve);});return await get(key);}finally{active--;}
+  });
+  f.cleanup.mockImplementation(async value=>{expect(active).toBe(0);return f.sessions.delete(value);});
+  const pending=f.sweep();
+  try{
+   await vi.waitFor(()=>expect(reads).toBe(6));gates[1]();
+   await vi.waitFor(()=>expect(reads).toBe(7));expect(active).toBe(6);expect(f.cleanup).not.toHaveBeenCalled();
+   open=true;for(const release of gates)release();
+   expect(await pending).toMatchObject({seen:13,deleted:13});expect(peak).toBe(6);
+   expect(f.cleanup.mock.calls.map(call=>call[0])).toEqual(Array.from({length:13},(_,i)=>id(i+1)));
+  }finally{open=true;for(const release of gates)release();await pending;}
+ });
+ it('never prefetches a later group while the current group is deleting SQL rows',async()=>{
+  const f=await fixture(30);for(let n=1;n<=30;n++)await persistSessionDenial(f.store,id(n));
+  let release!:()=>void,entered!:()=>void;const gate=new Promise<void>(r=>{release=r;}),started=new Promise<void>(r=>{entered=r;});
+  f.store.get.mockClear();f.cleanup.mockImplementationOnce(async value=>{entered();await gate;return f.sessions.delete(value);});
+  const pending=f.sweep();
+  try{await started;expect(f.store.get.mock.calls.filter(call=>call[0]!==candidateProgressKey)).toHaveLength(24);release();expect(await pending).toMatchObject({seen:30,deleted:30});}
+  finally{release();await pending;}
+ });
+ it('a failure after refilling stops further dispatch and late reads cannot delete',async()=>{
+  const f=await fixture(30);const get=f.store.get.getMockImplementation()!;let reads=0,active=0,release!:()=>void;
+  const gate=new Promise<void>(r=>{release=r;});
+  f.store.get.mockImplementation(async key=>{
+   if(key===candidateProgressKey)return get(key);
+   const ordinal=++reads;active++;
+   try{if(ordinal===7)throw Error('unavailable');if(ordinal!==1)await gate;return await get(key);}finally{active--;}
+  });
+  try{
+   await expect(f.sweep()).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');expect(reads).toBe(7);
+   release();await vi.waitFor(()=>expect(active).toBe(0));expect(reads).toBe(7);
+   expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);
+  }finally{release();}
+ });
+ it('retains a processed group prefix when a later read group crosses the work deadline',async()=>{
+  const f=await fixture(100);const get=f.store.get.getMockImplementation()!;let reads=0,now=Date.now();
+  const clock=vi.spyOn(Date,'now').mockImplementation(()=>now);
+  try{
+   f.store.get.mockImplementation(async key=>{
+    if(key===candidateProgressKey)return get(key);
+    if(++reads===25)now+=20000;return get(key);
+   });
+   expect(await f.sweep()).toMatchObject({seen:24,deleted:0,advanced:true});
+   // The six already-dispatched reads settle, but no replacement or SQL work
+   // starts after the deadline. Their IDs must not advance the processed cursor.
+   expect(reads).toBe(30);expect(f.progress().cursor).toBe(id(24));expect(f.cleanup).not.toHaveBeenCalled();
+   f.store.get.mockImplementation(get);expect((await f.sweep()).seen).toBe(76);expect(f.progress().lastPass?.seen).toBe(100);
+  }finally{clock.mockRestore();}
+ });
  it('a failed sixth authority read cannot delete or checkpoint when other reads finish late',async()=>{
   const f=await fixture(7);for(let n=1;n<=7;n++)await persistSessionDenial(f.store,id(n));
   const get=f.store.get.getMockImplementation()!;let release!:()=>void,reads=0,active=0;
