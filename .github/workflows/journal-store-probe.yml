@@ -1,0 +1,25 @@
+name: Verify isolated journal store prototype
+on:
+  push:
+    paths:
+      - 'experiments/journal-store/**'
+      - '.github/workflows/journal-store-probe.yml'
+  pull_request:
+    paths:
+      - 'experiments/journal-store/**'
+      - '.github/workflows/journal-store-probe.yml'
+permissions:
+  contents: read
+jobs:
+  local-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx --no-install tsc -p experiments/journal-store/tsconfig.json
+      - run: node experiments/journal-store/check.mjs
