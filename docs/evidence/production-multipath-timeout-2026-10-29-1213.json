@@ -1,0 +1,567 @@
+{
+  "classification": "One observed multi-path production probe timeout; source of failure unresolved",
+  "observations": [
+    {
+      "v": 1,
+      "at": "2026-10-29T12:12:13.166Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 436
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 641
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 340
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 466
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1019
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2427
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 214
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 308
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 178
+        }
+      ],
+      "durationMs": 4271,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T12:12:33.166Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 409
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 730
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 420
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 442
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 959
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2493
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 240
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 179
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 217
+        }
+      ],
+      "durationMs": 4403,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T12:12:53.168Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 405
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 631
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 351
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 475
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 930
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 3302
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 352
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 209
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 175
+        }
+      ],
+      "durationMs": 5041,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T12:13:13.173Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 454
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 611
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 424
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 452
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1087
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 3033
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 249
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 255
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 175
+        }
+      ],
+      "durationMs": 4909,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T12:13:33.173Z",
+      "environment": "production",
+      "healthy": false,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "ok": false,
+          "durationMs": 10002,
+          "failure": "deadline"
+        },
+        {
+          "name": "authorized_feed",
+          "ok": false,
+          "failure": "dependency"
+        },
+        {
+          "name": "authorized_profile",
+          "ok": false,
+          "failure": "dependency"
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "ok": false,
+          "durationMs": 10001,
+          "failure": "deadline"
+        },
+        {
+          "name": "login",
+          "ok": false,
+          "durationMs": 9999,
+          "failure": "deadline"
+        },
+        {
+          "name": "logout",
+          "ok": false,
+          "failure": "dependency"
+        },
+        {
+          "name": "monitor_freshness",
+          "ok": false,
+          "durationMs": 10000,
+          "failure": "deadline"
+        },
+        {
+          "name": "protected_readiness",
+          "ok": false,
+          "durationMs": 10003,
+          "failure": "deadline"
+        },
+        {
+          "name": "revocation",
+          "ok": false,
+          "failure": "dependency"
+        }
+      ],
+      "durationMs": 10003,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T12:13:53.176Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 458
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 746
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 402
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 467
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 877
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2604
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 238
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 174
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 257
+        }
+      ],
+      "durationMs": 4490,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T12:14:13.178Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 430
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 601
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 363
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 470
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 856
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2798
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 223
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 256
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 174
+        }
+      ],
+      "durationMs": 4439,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T12:14:33.179Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 462
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 683
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 350
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 466
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 959
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2539
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 237
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 234
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 187
+        }
+      ],
+      "durationMs": 4375,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    }
+  ],
+  "failedAt": "2026-10-29T12:13:33.173Z",
+  "recoveredAfterTwoHealthyCyclesAt": "2026-10-29T12:14:13.178Z",
+  "outageAlert": "https://github.com/porchday/porchday/issues/52#issuecomment-6496356636",
+  "recoveryAlert": "https://github.com/porchday/porchday/issues/52#issuecomment-6496369710",
+  "serverWindow": {
+    "at": "2026-10-29T12:14:48.163Z",
+    "window": {
+      "from": "2026-10-29T12:13:20Z",
+      "toExclusive": "2026-10-29T12:13:55Z"
+    },
+    "data": [
+      {
+        "route": "/api/operations/health",
+        "status": 200,
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 513
+      },
+      {
+        "route": "/api/auth/get-session",
+        "status": 200,
+        "observed_points": "2",
+        "estimated_events": "2",
+        "max_observed_ms": 390
+      },
+      {
+        "route": "/api/auth/sign-in/email",
+        "status": 200,
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 648
+      }
+    ],
+    "limitations": [
+      "Sampled aggregate window, not a trace of the failed client request.",
+      "Missing observations do not prove absence or zero latency."
+    ]
+  },
+  "hostFollowup": {
+    "at": "2026-10-29T12:14:27Z",
+    "caffeinateActive": true,
+    "preventSystemSleep": true,
+    "acSleepMinutes": 0,
+    "sleepWakeTransitionsFoundInLocal0510To0514Window": false
+  },
+  "stagingTrialFailureAt": "2026-10-29T12:13:41.214Z",
+  "limitations": [
+    "All initial production paths timed out under the shared ten-second deadline; dependent checks were not executed. This differs from prior logout-only failures.",
+    "The outcome of the timed-out login remains unknown and was not replayed. Later probes are independent journeys.",
+    "Server samples include successful 200 responses in the bounded window but cannot be correlated to the failed monitor cycle or exclude other failures.",
+    "Coincident staging collection failure suggests investigating shared observer/network dependencies; no causal conclusion is established.",
+    "Current sleep assertions and a bounded absence of logged sleep/wake transitions do not establish continuous network availability.",
+    "No production provider mutation, quarantine change or deadline relaxation was made."
+  ]
+}

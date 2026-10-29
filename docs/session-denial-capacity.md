@@ -173,3 +173,27 @@ read observation durations. Only successful groups contribute. This differs
 from the prior batch accounting, and independently sampled phase totals cannot
 be added or divided to infer a speedup. The two runs were not a randomized
 performance comparison.
+
+
+## Repeat bounded-refill trial: incomplete evidence
+
+The repeat trial on the same runtime retained one exact 10,003-candidate pass
+lasting 226.166 seconds. Its completion interval from baseline was 287.644
+seconds, leaving only 12.356 seconds against the 300-second limit. All 25 saved
+journey samples passed with 10,000 fixture sessions intact. The last saved exact
+progress had seen 9,800 candidates in the second pass.
+
+Evidence collection stopped at 12:13:41 UTC before a second completion was saved.
+The harness retained a generic error but not the failing stage, so the failed
+operation cannot be identified from that record. The repeat trial is not
+accepted; do not infer the missing completion. Exact cleanup verified zero
+fixture rows, two subsequent journeys and fresh scheduled progress passed,
+provider/canonical state remained unchanged, and the lease was released.
+[Evidence](evidence/session-denial-refill-repeat-10k-staging-2026-10-29.json).
+
+A production monitor cycle also timed out across all initial paths during this
+window, then recovered after two healthy cycles. A shared observer/network-path
+problem is a hypothesis, not a diagnosed cause. Preserve both failures and add
+fixed collection-stage diagnostics to future harnesses before another trial.
+The one successful trial does not establish repeatable margin, and the observed
+12-second margin warrants further investigation before production enablement.

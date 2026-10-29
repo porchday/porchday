@@ -1,6 +1,6 @@
 # Independent session denial: validation gates
 
-As of October 29, 2026, 11:59 UTC, staging version `2120ff4c` runs isolated
+As of October 29, 2026, 12:15 UTC, staging version `2120ff4c` runs isolated
 runtime `8634c17` with logout writer and cleanup enabled. Production `f613874a`
 retains server runtime `ebc567a4`, with both flags disabled. Current frontend
 assets are `b2b3a06`. The maintained draft PR integrates the tested runtime code;
@@ -15,6 +15,12 @@ All 22 sampled journeys passed. Exact fixture cleanup, unchanged provider state
 and released lease were verified. This is one successful trial, not repeatable
 capacity margin or complete availability coverage.
 [Evidence](evidence/session-denial-refill-10k-staging-2026-10-29.json).
+
+A repeat trial saved only one completed pass before collection failed. Its
+baseline-to-first interval was 287.644 seconds, leaving 12.356 seconds of margin.
+All 25 saved journeys passed, but no second completion was retained; the repeat
+is not accepted. Cleanup and scheduled recovery were verified.
+[Repeat evidence](evidence/session-denial-refill-repeat-10k-staging-2026-10-29.json).
 
 The preceding fixed-batch run's inferred interval above 300 seconds remains a
 failure of capacity acceptance despite healthy sampled probes.
