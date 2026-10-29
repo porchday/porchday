@@ -99,10 +99,21 @@ to the target package. The same page imports those cold modules without reload.
 A separate browser context renders the target login page with no old cache.
 The negative control must fail the old lazy import while both documents remain
 rendered; the retained package must load it with exact old entrypoint bytes and
-no old-page errors. Run the same sequence in reverse with the rollback package.
+no old-page errors. Both fresh contexts must also have zero JavaScript page errors
+and zero module-MIME errors. A visible login form alone cannot establish that
+the new client initialized successfully. Run the same sequence in reverse with the rollback package.
 The result labels this byte coverage explicitly; it is not a full module-graph
 hash check. This remains a local unauthenticated asset test, not proof of signed-in
 feature behavior, encryption or native-client compatibility.
+
+The October 29 regression check reproduced a false pass when the new client
+rendered its form and then threw, or caught a failed dynamic import served as
+HTML. The CLI now reports the fresh context's error counts and rejects both
+cases. Three real-Chromium tests cover those failures and the healthy transition;
+the browser CI job runs them explicitly with `RELEASE_ASSET_BROWSER_TESTS=1`.
+They use synthetic public builds and a loopback server, with no hosted requests
+or member accounts. This hardens the local checker; historical private hosted
+helpers and earlier release receipts are not retroactively changed or accepted.
 
 Verify deployed assets read-only against the saved package receipt:
 
