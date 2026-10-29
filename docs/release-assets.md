@@ -198,6 +198,17 @@ manifest path, release environment, authenticated continuity observation and abo
 signal. It accepts only a frontend target in the matching observation environment.
 The proof directory must already be canonical, private and owned by the operator.
 
+For a combined application worker that serves the public website, use
+`executeApplicationActivationWithClients` from the same module. It also accepts
+edge workers, requires baseline and candidate `index.html` entries plus pinned
+asset-manifest hashes, and uses the same durable browser gate before completion.
+Choose the public asset owner from the verified topology and current provider
+domain ownership. The deployment lease rejects an application asset promotion
+behind an enabled edge before acquiring the operation marker. API-only backend
+changes behind an edge continue to use `executeActivationWithContinuity`.
+Production currently serves assets from its application worker; staging serves
+them from its edge worker. Do not change routing merely to use this entry point.
+
 The wrapper rejects completed or non-prepared operations, checks the permanent
 continuity gate, and writes an exclusive, fsynced intent. It prepares the hosted
 browser and durably records its baseline before recording command intent and
@@ -237,7 +248,9 @@ passed with eleven and twelve continuity samples, no observed failures, clean
 old/new browser checks and exact fixture cleanup. Scheduled releases have not yet
 adopted this entry point. Local recovery tests with
 real Chromium and synthetic transport demonstrate both successful completion and
-rollback on a fresh-client exception; they do not mutate a provider or establish
+rollback on a fresh-client exception for both edge and combined application
+workers; combined-worker hosted acceptance remains unverified. These tests do not
+mutate a provider or establish
 hosted rollback timing. The 45-second candidate-verification limit is unchanged.
 
 Nine wrapper tests cover receipt ordering, one-time dispatch, historical-state

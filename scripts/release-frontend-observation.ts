@@ -15,8 +15,20 @@ import {createContinuityGate} from './release-continuity-gate.ts';
  */
 export async function executeFrontendActivationWithClients(path:string,env:NodeJS.ProcessEnv,
  observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
+ return executeObservedActivation(path,env,observation,signal,true);
+}
+/** Covers both edge frontends and application workers that serve web assets.
+ * API-only releases retain their normal authenticated continuity entry point. */
+export async function executeApplicationActivationWithClients(path:string,env:NodeJS.ProcessEnv,
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
+ return executeObservedActivation(path,env,observation,signal,false);
+}
+async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean){
  signal.throwIfAborted();const manifest=readActivationManifest(path),target=deploymentTarget(manifest.plan.worker),{plan,review}=manifest,e=review.execution;
- if(!target.frontend)throw Error('FRONTEND_OBSERVATION_TARGET_REQUIRED');
+ if(frontendOnly&&!target.frontend)throw Error('FRONTEND_OBSERVATION_TARGET_REQUIRED');
+ if(!frontendOnly&&(!review.assets.baseline.files['index.html']||!review.assets.candidate.files['index.html']))throw Error('APPLICATION_OBSERVATION_ASSETS_REQUIRED');
+ if(!frontendOnly&&!plan.assetManifests)throw Error('APPLICATION_OBSERVATION_ASSET_PINS_REQUIRED');
  if(observation.target.environment!==target.environment)throw Error('FRONTEND_OBSERVATION_SCOPE_CHANGED');
  const planHash=deploymentPlanHash(plan),journal=new FileRecoveryJournal(e.journalDirectory),state=await journal.read();
  if(state&&(state.phase!=='prepared'||state.planHash!==planHash)||await FileDeploymentLease.completed(e.root,plan,{read:async()=>state,write:async()=>{throw Error('FRONTEND_OBSERVATION_READ_ONLY');}}))throw Error('FRONTEND_OBSERVATION_REQUIRES_RECONCILIATION');

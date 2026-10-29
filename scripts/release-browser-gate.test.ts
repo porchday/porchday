@@ -39,11 +39,11 @@ it.each(['wrong-plan','permissions','symlink'])('rejects %s records without brow
  if(kind==='symlink'){const data=readFileSync(path('required'));rmSync(path('required'));writeFileSync(join(root,'other'),data,{mode:0o600});symlinkSync(join(root,'other'),path('required'));}
  const accept=vi.fn();await expect(gate.verify(signal(),accept)).rejects.toThrow();expect(accept).not.toHaveBeenCalled();
 });
-it('does not upgrade an unhealthy API or gate rollback/backend/monitor verification',async()=>{
+it('does not upgrade an unhealthy API or gate rollback/monitor verification',async()=>{
  const accept=vi.fn(async()=> 'healthy' as const);createBrowserGate(root,plan).require();
  expect(await withBrowserAcceptance(plan,root,async()=> 'unhealthy',accept)(plan.candidateVersion,signal())).toBe('unhealthy');
  expect(await withBrowserAcceptance(plan,root,async()=> 'healthy',accept)(plan.baselineVersion,signal())).toBe('healthy');
- for(const worker of ['porchday-staging','porchday-monitor-staging'])expect(await withBrowserAcceptance({...plan,worker},root,async()=> 'healthy',accept)(plan.candidateVersion,signal())).toBe('healthy');
+ expect(await withBrowserAcceptance({...plan,worker:'porchday-monitor-staging'},root,async()=> 'healthy',accept)(plan.candidateVersion,signal())).toBe('healthy');
  expect(accept).not.toHaveBeenCalled();
 });
 it.each(['healthy','unhealthy','unknown'] as const)('integrates %s browser evidence before the real recovery controller commits completion',async health=>{
@@ -57,4 +57,15 @@ it.each(['healthy','unhealthy','unknown'] as const)('integrates %s browser evide
  ports.verify=withBrowserAcceptance(plan,root,async()=> 'healthy');
  expect(await recoverDeployment(plan,journal,ports,{sleep:async()=>{}})).toBe(expected[health]);expect(ports.deploy).toHaveBeenCalledTimes(health==='unhealthy'?2:1);
  if(health==='unhealthy')expect(ports.authorize).toHaveBeenLastCalledWith(plan,'rollback',expect.any(AbortSignal));
+});
+
+it.each(['porchday-staging','porchday-production'])('enforces enrolled browser evidence for the asset-serving application %s',async worker=>{
+ const {backendVersion,backendReaderFloor,...base}=plan;const application={...base,worker};
+ const accept=vi.fn(async()=> 'unhealthy' as const);
+ expect(await withBrowserAcceptance(application,root,async()=> 'healthy')(application.candidateVersion,signal())).toBe('healthy');
+ createBrowserGate(root,application).require();
+ expect(await withBrowserAcceptance(application,root,async()=> 'healthy')(application.candidateVersion,signal())).toBe('unknown');
+ expect(await withBrowserAcceptance(application,root,async()=> 'healthy',accept)(application.candidateVersion,signal())).toBe('unhealthy');
+ expect(await withBrowserAcceptance(application,root,async()=> 'healthy')(application.candidateVersion,signal())).toBe('unhealthy');
+ expect(accept).toHaveBeenCalledOnce();
 });

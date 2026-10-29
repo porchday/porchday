@@ -8,7 +8,7 @@ export type BrowserAcceptance=(signal:AbortSignal)=>Promise<Health>;
  * is never repeated; unknown evidence cannot become candidate acceptance. */
 export function createBrowserGate(directory:string,plan:DeploymentPlan){
  const planHash=deploymentPlanHash(plan),operationId=plan.operationId;
- const scope=()=>{const s=lstatSync(directory);if(!recoveryTarget(plan.worker).frontend||!isAbsolute(directory)||realpathSync(directory)!==directory||!s.isDirectory()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('BROWSER_GATE_SCOPE_INVALID');};
+ const scope=()=>{const s=lstatSync(directory);if(recoveryTarget(plan.worker).monitor||!isAbsolute(directory)||realpathSync(directory)!==directory||!s.isDirectory()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('BROWSER_GATE_SCOPE_INVALID');};
  const path=(kind:string)=>join(directory,`browser-gate-${operationId}-${kind}.json`);
  const read=(kind:string)=>{
   scope();let fd:number;try{fd=openSync(path(kind),constants.O_RDONLY|constants.O_NOFOLLOW);}catch(e){if((e as NodeJS.ErrnoException).code==='ENOENT')return null;throw e;}
@@ -32,5 +32,5 @@ export function createBrowserGate(directory:string,plan:DeploymentPlan){
 /** Browser evidence can only downgrade existing verification. Rollback baseline
  * verification stays independent of the failed candidate browser. */
 export function withBrowserAcceptance(plan:DeploymentPlan,directory:string,verify:DeploymentPorts['verify'],accept?:BrowserAcceptance):DeploymentPorts['verify']{
- return async(version,signal)=>{const health=await verify(version,signal);if(health!=='healthy'||version!==plan.candidateVersion||!recoveryTarget(plan.worker).frontend)return health;return createBrowserGate(directory,plan).verify(signal,accept);};
+ return async(version,signal)=>{const health=await verify(version,signal);if(health!=='healthy'||version!==plan.candidateVersion||recoveryTarget(plan.worker).monitor)return health;return createBrowserGate(directory,plan).verify(signal,accept);};
 }

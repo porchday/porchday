@@ -38,6 +38,16 @@ describe('frontend deployment target',()=>{
  });
 });
 describe('deployment lease coordination',()=>{
+ it.each(['staging','production'])('rejects %s application asset promotion behind an active edge before creating a lease marker',environment=>{
+  const f=fixture(),app={...plan,worker:'porchday-'+environment,assetManifests:{candidate:'a'.repeat(64),baseline:'b'.repeat(64)}};let lease:FileDeploymentLease|undefined;
+  const canonical={ [environment+'Version']:plan.baselineVersion,[environment+'RuntimeSource']:'c'.repeat(40),compatibleRollbackVersions:{[environment]:plan.baselineVersion},edgeRouting:{[environment+'Enabled']:true}};
+  try{
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(canonical));
+   expect(()=>FileDeploymentLease.acquire(f.root,app)).toThrow('ASSETS_NOT_PUBLIC_TARGET');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+   canonical.edgeRouting[environment+'Enabled']=false;writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(canonical));
+   lease=FileDeploymentLease.acquire(f.root,app);expect(lease.assert(app)[environment+'Version']).toBe(plan.baselineVersion);
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
  it('excludes a second controller and resumes the same unresolved operation after close',()=>{
   const f=fixture();let a:FileDeploymentLease|undefined,b:FileDeploymentLease|undefined;
   try{a=FileDeploymentLease.acquire(f.root,plan);expect(()=>FileDeploymentLease.acquire(f.root,plan)).toThrow('LEASE_BUSY');a.close();expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);expect(()=>FileDeploymentLease.acquire(f.root,{...plan,operationId:uuid(9)})).toThrow('LEASE_HELD');b=FileDeploymentLease.acquire(f.root,plan);expect(b.assert(plan).stagingVersion).toBe(plan.baselineVersion);}

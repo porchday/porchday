@@ -9,7 +9,7 @@ vi.mock('./deployment-recovery-journal.ts',()=>({FileRecoveryJournal:class{read=
 vi.mock('./deployment-recovery-lease.ts',()=>({FileDeploymentLease:{completed:ports.completed}}));
 vi.mock('./release-continuity-gate.ts',()=>({createContinuityGate:()=>({assertPromotion:ports.gate})}));
 vi.mock('./release-alerts.ts',()=>({queueReleaseAlert:ports.alert}));
-import {executeFrontendActivationWithClients} from './release-frontend-observation.ts';
+import {executeFrontendActivationWithClients,executeApplicationActivationWithClients} from './release-frontend-observation.ts';
 let root:string,manifest:any,browser:any,observation:any;
 const id='11111111-1111-4111-8111-111111111111',baseline='22222222-2222-4222-8222-222222222222',candidate='33333333-3333-4333-8333-333333333333';
 const file=(kind:string)=>join(root,`frontend-${id}-${kind}.json`);
@@ -51,4 +51,21 @@ it('checks observer liveness during the maintained command',async()=>{
  ports.execute.mockImplementation(async(_m,_e,o)=>{o.assertScope();throw Error('must not proceed');});
  await expect(executeFrontendActivationWithClients('/manifest',{},observation,new AbortController().signal)).rejects.toThrow('UNVERIFIED');
  expect(browser.finish).not.toHaveBeenCalled();expect(ports.execute).toHaveBeenCalledOnce();expect(browser.close).toHaveBeenCalledOnce();
+});
+
+it.each(['staging','production'])('observes asset-serving %s application workers before completion',async environment=>{
+ manifest.plan.worker='porchday-'+environment;delete manifest.plan.backendVersion;delete manifest.plan.backendReaderFloor;
+ manifest.plan.assetManifests={baseline:'a'.repeat(64),candidate:'b'.repeat(64)};
+ manifest.review.assets.baseline.files['index.html']='a'.repeat(64);manifest.review.assets.candidate.files['index.html']='b'.repeat(64);observation.target.environment=environment;
+ expect((await executeApplicationActivationWithClients('/manifest',{},observation,new AbortController().signal)).browser.passed).toBe(true);
+ expect(ports.begin).toHaveBeenCalledWith(expect.objectContaining({origin:environment==='staging'?'https://staging.porchday.com':'https://porchday.org'}));expect(ports.execute).toHaveBeenCalledOnce();expect(browser.finish).toHaveBeenCalledOnce();
+});
+it('rejects missing web assets, monitor targets and environment drift before dispatch',async()=>{
+ await expect(executeApplicationActivationWithClients('/manifest',{},observation,new AbortController().signal)).rejects.toThrow('ASSETS_REQUIRED');
+ manifest.review.assets.baseline.files['index.html']='a'.repeat(64);manifest.review.assets.candidate.files['index.html']='b'.repeat(64);
+ await expect(executeApplicationActivationWithClients('/manifest',{},observation,new AbortController().signal)).rejects.toThrow('ASSET_PINS_REQUIRED');
+ manifest.plan.assetManifests={baseline:'a'.repeat(64),candidate:'b'.repeat(64)};
+ manifest.plan.worker='porchday-monitor-staging';await expect(executeApplicationActivationWithClients('/manifest',{},observation,new AbortController().signal)).rejects.toThrow('TARGET_INVALID');
+ manifest.plan.worker='porchday-staging';observation.target.environment='production';await expect(executeApplicationActivationWithClients('/manifest',{},observation,new AbortController().signal)).rejects.toThrow('SCOPE_CHANGED');
+ expect(ports.execute).not.toHaveBeenCalled();expect(ports.begin).not.toHaveBeenCalled();
 });
