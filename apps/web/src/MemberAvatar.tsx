@@ -5,6 +5,7 @@ import { createAvatarStore } from "./avatar-store";
 import { readAvatarPhoto } from "./avatar-photo";
 import { validatedPhoto } from "./photo-safety";
 import { useVault } from "./vault";
+import { useNearViewport } from "./near-viewport";
 
 const Avatars = createContext<ReturnType<typeof createAvatarStore> | null>(null);
 export function MemberAvatarProvider({ children }: { children: React.ReactNode }) {
@@ -53,12 +54,13 @@ export function MemberAvatar({ memberId, name = "?", theme = "sage", size = "" }
   memberId: string; name?: string; theme?: string; size?: string;
 }) {
   const store = useContext(Avatars), vault = useVault();
-  const subscribe = useCallback((notify: () => void) => store?.subscribe(memberId, notify) || (() => {}), [store, memberId]);
+  const { ref, near } = useNearViewport<HTMLSpanElement>();
+  const subscribe = useCallback((notify: () => void) => (near ? store?.subscribe(memberId, notify) : undefined) || (() => {}), [store, memberId, near]);
   const snapshot = useCallback(() => store?.getURL(memberId) || "", [store, memberId]);
   const url = useSyncExternalStore(subscribe, snapshot, () => "");
   const [failed, setFailed] = useState("");
   const initial = (memberId === vault.member.id ? vault.member.handle : name).replace(/^@/, "").slice(0, 1).toUpperCase() || "?";
-  return <span className={`avatar member-avatar ${theme} ${size}`} aria-hidden="true">
+  return <span ref={ref} className={`avatar member-avatar ${theme} ${size}`} aria-hidden="true">
     {url && failed !== url ? <img src={url} alt="" onError={() => setFailed(url)} /> : initial}
   </span>;
 }
