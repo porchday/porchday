@@ -125,3 +125,10 @@ receipts. It retains the same five-read/six-write budget, verifies control read-
 bytes, and reports numeric record sizes. These shapes exercise payload cost, not
 255 live concurrent operations or the full production protocol. The tiny-string
 measurements above remain labeled as such; larger-record hosted evidence is pending.
+
+Receipt-recovery checks additionally interrupt the final retirement write after
+an immutable receipt is stored. With the unchanged journal reconciliation code,
+a valid receipt's checkpoint ancestry permits clearing the stale pending intent;
+a receipt with a forged generation is rejected and the pending intent remains.
+These are local injected failures with synthetic records, not hosted crash or
+operational restore evidence.

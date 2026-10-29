@@ -80,5 +80,29 @@ try{
  const saved=events;events=events.slice(0,-1);await assert.rejects(()=>assertJournalReadable(store,db),/DATABASE_ROLLBACK_DETECTED/);events=saved;checks++;
  await quarantineJournal(store,'synthetic_verification');
  const chain=await verifyJournalChain(store);assert.deepEqual(chain.batches.flat(),events);checks++;
+ for(const corrupt of [false,true]){
+  stub=protocolNamespace.get(protocolNamespace.idFromName('synthetic-receipt-'+corrupt));events=[];
+  await initializePrivacyJournal(store,db);const root=await readJournalControl(store);
+  await store.put('control.json',JSON.stringify({...root.value,mode:'active',reason:null}),{onlyIf:{etagMatches:root.etag}});
+  const intent=await beginPrivacyIntent(store,db);
+  events=[{sequence:'1',id:randomUUID(),occurred_at:new Date().toISOString(),decision:{action:'delete',kind:'posts',id:randomUUID()}}];
+  let failed=false;
+  const interrupted={...store,async put(name,value,options){
+   if(!failed&&name==='control.json'&&!JSON.parse(value).pending.some(p=>p.id===intent.id)&&await store.get('receipts/'+intent.id+'.json')){failed=true;throw Error('synthetic retirement failure');}
+   return store.put(name,value,options);
+  }};
+  await assert.rejects(()=>completePrivacyIntent(interrupted,db,intent),/synthetic retirement failure/);checks++;
+  assert.equal((await readJournalControl(store)).value.pending.length,1);checks++;
+  if(corrupt){
+   const name='receipts/'+intent.id+'.json',receipt=await store.get(name);
+   await store.put(name,JSON.stringify({...JSON.parse(await receipt.text()),generation:randomUUID()}),{onlyIf:{etagMatches:receipt.etag}});
+  }
+  const realNow=Date.now;Date.now=()=>realNow()+130000;
+  try{
+   if(corrupt){await assert.rejects(()=>assertJournalReadable(store,db),/INVALID_JOURNAL_RECEIPT/);assert.equal((await readJournalControl(store)).value.pending.length,1);}
+   else {await assertJournalReadable(store,db);assert.deepEqual((await readJournalControl(store)).value.pending,[]);}
+   checks++;
+  }finally{Date.now=realNow;}
+ }
  console.log(JSON.stringify({checks,batchBytes,passed:true,runtime:'local workerd SQLite',hostedLatencyEvidence:false}));
 }finally{await mf?.dispose();await rm(dir,{recursive:true,force:true});}
