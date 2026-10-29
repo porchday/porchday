@@ -1,0 +1,120 @@
+{
+  "environment": "staging",
+  "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "toolingSource": "aa15a868bb756acfc61a2585bb85e93255df2a16",
+  "toolingVerifyRun": 40832001643,
+  "toolingSecretScanRun": 40832001671,
+  "runtimeVerifyRun": 40821631462,
+  "runtimeSecretScanRun": 40821631389,
+  "operationId": "d1422d72-5f99-4a91-99af-f8248f0a530a",
+  "baselineVersion": "c6be8a43-f2aa-41f1-900b-814767a1f29f",
+  "candidateVersion": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+  "uploadOutcome": "verified-inactive",
+  "activationOutcome": "complete",
+  "finalizationOutcome": "finalized",
+  "historicalResume": "already-finalized",
+  "journey": {
+    "at": "2026-10-29T07:00:19.836Z",
+    "status": "healthy",
+    "checks": [
+      {
+        "name": "protected_readiness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "anonymous_session",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "monitor_freshness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "login",
+        "ok": true
+      },
+      {
+        "name": "authorized_profile",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "authorized_feed",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "revocation",
+        "ok": true,
+        "status": 401
+      },
+      {
+        "name": "logout",
+        "ok": true,
+        "status": 200
+      }
+    ],
+    "logoutReconciled": false,
+    "authenticatedAt": "2026-10-29T07:00:20.882Z",
+    "authenticatedChecksReused": false
+  },
+  "assets": {
+    "healthy": true,
+    "passed": 29
+  },
+  "acceptance": {
+    "at": "2026-10-29T07:05:04.146Z",
+    "passed": true,
+    "environment": "staging",
+    "version": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+    "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+    "checks": [
+      "normal_logout_denial_cookie_clear_exact_sql_cleanup",
+      "lock_timeout_denies_cookie_preserves_unrelated_member",
+      "scheduled_cleanup_recovered_exact_session",
+      "global_privacy_active_no_pending_intents"
+    ],
+    "scheduledCleanupMs": 25224,
+    "remainingFixtureRows": 0,
+    "stagingWriterEnabled": true,
+    "stagingCleanupEnabled": true,
+    "productionWriterEnabled": false,
+    "productionCleanupEnabled": false,
+    "providerUnchangedDuringAcceptance": true
+  },
+  "normalLogout": {
+    "at": "2026-10-29T07:02:05.010Z",
+    "status": 200,
+    "durationMs": 709
+  },
+  "contendedLogout": {
+    "at": "2026-10-29T07:04:29.086Z",
+    "status": 503,
+    "durationMs": 5691
+  },
+  "finalReadiness": {
+    "at": "2026-10-29T07:05:32.255Z",
+    "status": 200,
+    "healthy": true,
+    "issues": []
+  },
+  "temporaryOperatorRemoved": true,
+  "denialRecordsRetained": true,
+  "leaseReleased": true,
+  "productionVersionUnchanged": "3ee85699-feef-4b0c-b264-d5ff13ab6e94",
+  "scope": "Only staging writer and cleanup flags enabled; runtime, assets, schema and other bindings preserved. Two synthetic accounts and three sessions; no destructive production test.",
+  "limitations": [
+    "Hosted lost-write reply, late-publication and Worker termination remain untested in this rehearsal; local tests cover related boundaries.",
+    "Concurrent password/session mutations, rollback with an uncleaned denial and physical-device acceptance remain open.",
+    "Scan-growth threshold and production enablement remain open.",
+    "Does not establish monthly availability."
+  ],
+  "cleanupObservation": {
+    "pollIntervalMs": 5000,
+    "observedWithinMs": 25224,
+    "exactDeletionTimeMeasured": false
+  }
+}

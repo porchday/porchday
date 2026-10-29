@@ -1,6 +1,8 @@
 # Independent session denial: validation gates
 
-The logout writer and cleanup flags remain disabled in staging and production.
+The logout writer and cleanup flags are enabled on staging as of October 29,
+2026, 07:05 UTC, and remain disabled in production. The scoped staging rehearsal
+below passed; production enablement remains gated.
 Reader enforcement has hosted API evidence and a scoped staging push rehearsal.
 Writer and cleanup interruption cases, concurrent behavior, device behavior and
 storage-cost acceptance remain open. This work must not weaken the independent privacy journal
@@ -182,3 +184,42 @@ Before wider writer rollout, measure hosted sweep latency and concurrent traffic
 set an operational history/backlog threshold and demonstrate cleanup discovery
 within the chosen bound. Historical rechecks and full-pass delay remain scaling
 work tracked in #1. Never expire authoritative denials to solve that problem.
+
+## Hosted staging writer and scheduled recovery — October 29, 2026
+
+[Hosted evidence](evidence/session-denial-writer-staging-2026-10-29.json) records
+staging version `57a5c9f2-7d32-447c-bad8-2fc6130163c1`, runtime `ebc567a4`,
+with `SESSION_DENIAL_WRITER_V1` and `SESSION_DENIAL_CLEANUP_V1` enabled. Production
+retains version `3ee85699-feef-4b0c-b264-d5ff13ab6e94` with both flags disabled.
+
+The maintained inactive-upload and activation commands verified exact executable
+and map provenance, unchanged schema and 29 retained public assets. Only the two
+staging plain-text flags changed. The dry run caught an overriding metadata block
+that initially omitted the flags; the corrected candidate was verified before
+upload. Exact runtime/tooling CI passed. Activation completed its synthetic journey
+and durable finalization; historical resume reports already finalized.
+
+Two new synthetic members exercised normal logout and an identity-lock timeout.
+Normal logout returned 200 in 709 ms, cleared the SDK session cookie, persisted the
+canonical denial and removed its exact SQL row. A separate login was then logged
+out while its member identity lock was held. The route returned 503, its SQL row
+remained, and its cookie was rejected while the other member could still read their
+profile. After lock release, polling observed the existing scheduled cleanup remove the
+denied row within 25.224 seconds (five-second polling), without a manually
+dispatched sweep or deletion. Global privacy
+control was active with no pending intents.
+
+An initial verification read through the REST adapter lacked a usable strong ETag.
+The completed logout was not repeated. A scoped read-only temporary native-R2
+operator reconciled the exact immutable bytes, and the SQL state was checked before
+continuing. The strict REST adapter was not weakened. All synthetic accounts and
+sessions were removed; their immutable denials remain. Temporary operator removal,
+unchanged application state during acceptance, and released deployment lease were
+verified. Final staging readiness returned 200/healthy and production monitoring
+remained healthy.
+
+This proves the normal hosted writer and one real lock-contention/scheduled-recovery
+path. Hosted lost replies, late publication/Worker termination, concurrent password
+and session changes, rollback with an uncleaned denial, physical devices and larger
+history bounds remain separate gates. Staging enablement is not production
+acceptance or evidence that the monthly availability objective has been achieved.
