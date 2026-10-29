@@ -3,13 +3,20 @@ import {JOURNAL_PHASES} from '../apps/api/src/journal-phases';
 import {FEED_PHASES,DENIAL_CLEANUP_PHASES} from '../apps/api/src/telemetry';
 import {metricsQuery,parseAggregates,securitySignals} from '../apps/monitor/src/metrics';
 const environment=process.argv[2],view=process.argv[3]??'summary';
-if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','logout-phases','security','trace-store','connections','db-snapshot','denial-cleanup-phases'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
+if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','logout-phases','security','trace-store','connections','db-snapshot','denial-cleanup-phases','denial-cleanup-authority'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
 if(view==='feed-phases'&&environment!=='staging')throw Error('FEED_PHASES_STAGING_ONLY');
-if(view==='denial-cleanup-phases'&&environment!=='staging')throw Error('DENIAL_CLEANUP_PHASES_STAGING_ONLY');
+if(['denial-cleanup-phases','denial-cleanup-authority'].includes(view)&&environment!=='staging')throw Error('DENIAL_CLEANUP_PHASES_STAGING_ONLY');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_ANALYTICS_READ_TOKEN??process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
 if(!account||!/^[a-f0-9]{32}$/.test(account)||!token)throw Error('ANALYTICS_READ_CREDENTIALS_REQUIRED');
 const dataset='porchday_'+environment+'_operations_v1';
 const queries={
+ 'denial-cleanup-authority':`SELECT count() AS observed_points,sum(_sample_interval) AS events,
+  sum(double2*_sample_interval) AS available_slot_ms,
+  sum(double4*_sample_interval) AS occupied_slot_ms,
+  sum(double3*_sample_interval) AS observed_reads
+  FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '15' MINUTE
+  AND blob1='porchday_metrics_v1' AND blob2='staging' AND blob3='denial_cleanup_authority'
+  AND double2>=0 AND double4>=0 AND double4<=double2 AND double3>0 FORMAT JSON`,
  'denial-cleanup-phases':`SELECT blob6 AS phase,count() AS observed_points,sum(_sample_interval) AS events,
   sum(double2*_sample_interval) AS total_ms,sum(double3*_sample_interval) AS attempts,
   sum(double2*_sample_interval)/sum(_sample_interval) AS mean_ms,

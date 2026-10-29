@@ -35,6 +35,52 @@ test('measures concurrent authority batches as wall time and preserves sweep res
   timing.flush({ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
   const points=writeDataPoint.mock.calls.map(call=>call[0]);
   expect(points.find(point=>point.blobs[5]==='authority_batches').doubles).toEqual([0,40,2]);
-  expect(points.map(point=>point.blobs[5])).toEqual(['progress_read','sql_list','authority_batches','progress_write']);
+  expect(points.filter(point=>point.blobs[2]==='denial_cleanup_phase').map(point=>point.blobs[5])).toEqual(['progress_read','sql_list','authority_batches','progress_write']);
+  expect(points.filter(point=>point.blobs[2]==='denial_cleanup_authority')).toHaveLength(1);
  }finally{clock.mockRestore();}
+});
+
+test('pairs slot capacity and occupied time for unequal and partial successful batches',async()=>{
+ vi.useFakeTimers();
+ try{
+  const timing=new CandidateTimings(),writeDataPoint=vi.fn();
+  const work=(ms:number,value:string)=>()=>new Promise<string>(resolve=>setTimeout(()=>resolve(value),ms));
+  const first=timing.authorityBatch([work(10,'fast'),work(60,'slow')]);
+  await vi.advanceTimersByTimeAsync(60);expect(await first).toEqual(['fast','slow']);
+  const partial=timing.authorityBatch([work(20,'partial')]);
+  await vi.advanceTimersByTimeAsync(20);expect(await partial).toEqual(['partial']);
+  timing.flush({ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
+  const point=writeDataPoint.mock.calls.map(call=>call[0]).find(point=>point.blobs[2]==='denial_cleanup_authority');
+  expect(point).toEqual({indexes:['denial_cleanup_authority:none'],blobs:['porchday_metrics_v1','staging','denial_cleanup_authority','none','none','none','none'],doubles:[0,140,3,90]});
+  const count=writeDataPoint.mock.calls.length;timing.flush({ENVIRONMENT:'staging',METRICS:{writeDataPoint}});expect(writeDataPoint).toHaveBeenCalledTimes(count);
+ }finally{vi.useRealTimers();}
+});
+
+test('failed batches retain phase timing but late reads cannot publish occupancy',async()=>{
+ vi.useFakeTimers();
+ try{
+  const timing=new CandidateTimings(),writeDataPoint=vi.fn();
+  const failure=new Error('private-failure');
+  const pending=timing.authorityBatch([
+   ()=>new Promise((_,reject)=>setTimeout(()=>reject(failure),10)),
+   ()=>new Promise(resolve=>setTimeout(()=>resolve('private-session'),100)),
+  ]);
+  const rejected=expect(pending).rejects.toBe(failure);
+  await vi.advanceTimersByTimeAsync(10);await rejected;
+  timing.flush({ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
+  await vi.advanceTimersByTimeAsync(100);timing.flush({ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
+  expect(writeDataPoint).toHaveBeenCalledTimes(1);
+  expect(writeDataPoint.mock.calls[0][0].blobs[5]).toBe('authority_batches');
+  expect(writeDataPoint.mock.calls[0][0].doubles).toEqual([0,10,1]);
+ }finally{vi.useRealTimers();}
+});
+
+test('authority occupancy telemetry is staging-only, bounded and strips dimensions',()=>{
+ const writeDataPoint=vi.fn(),valid={durationMs:120,detailMs:70,count:2};
+ for(const ENVIRONMENT of ['production','development'] as const)event('denial_cleanup_authority',valid,{ENVIRONMENT,METRICS:{writeDataPoint}});
+ for(const fields of [{...valid,detailMs:121},{...valid,durationMs:Infinity},{...valid,detailMs:NaN},{...valid,count:0},{...valid,count:1.5},{...valid,detailMs:-1}])event('denial_cleanup_authority',fields,{ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
+ expect(writeDataPoint).not.toHaveBeenCalled();
+ event('denial_cleanup_authority',{...valid,route:'/health',code:'private-session',status:500,message:'private-token'} as never,{ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
+ expect(writeDataPoint.mock.calls[0][0]).toEqual({indexes:['denial_cleanup_authority:none'],blobs:['porchday_metrics_v1','staging','denial_cleanup_authority','none','none','none','none'],doubles:[0,120,2,70]});
+ expect(()=>event('denial_cleanup_authority',valid,{ENVIRONMENT:'staging',METRICS:{writeDataPoint(){throw Error('failure');}}})).not.toThrow();
 });

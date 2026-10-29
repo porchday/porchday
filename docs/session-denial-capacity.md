@@ -55,3 +55,15 @@ randomized comparison. Six reads alone have not demonstrated substantial,
 repeatable capacity margin. Authority batches remain the largest measured
 per-page cost; per-read latency distribution and the contribution of batch
 barriers remain unmeasured. Keep the broader capacity and recovery gates open.
+
+
+## Next measurement: paired batch occupancy
+
+The next diagnostic change measures occupied and available read-slot time in the
+same staging-only aggregate point. This avoids dividing independently sampled
+phase totals and tests whether batch barriers leave substantial unused capacity.
+Successful batches alone contribute; failures remain in the existing phase timing.
+Read concurrency, deadlines, SQL deletion ordering, checkpoints and health thresholds
+stay unchanged. Local tests exercise unequal read latencies, partial batches and
+late completion after failure. Hosted occupancy and any resulting throughput change
+are not yet measured. Do not infer a capacity improvement from instrumentation.
