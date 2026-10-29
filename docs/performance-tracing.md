@@ -190,3 +190,44 @@ Phases may overlap: nested R2/database durations must not be added to their pare
 phases. The existing request trace span cap also applies; omitted phases are
 missing evidence, not zero duration. Phase tracing does not bypass journal
 registration, durable completion, original error handling or disconnect retention.
+
+#### October 29 staging write diagnostic
+
+Exact-runtime candidate `75c92e1` passed CI run 40793155412 and ran briefly as
+staging API `fb844261-1ad6-46e8-b229-8e45c965361b`. One synthetic self-only post,
+one edit and one reaction succeeded, each with independent signature/decryption
+read-back. Measurements started at 00:23:08.738, 00:23:11.135 and 00:23:15.933 UTC.
+
+| Operation | Action to acknowledged response | Including verification read-back | Mutation server duration |
+| --- | ---: | ---: | ---: |
+| Post | 1191.6 ms | 2396.2 ms | 531 ms |
+| Edit | 4039.8 ms | 4796.4 ms | 3006 ms |
+| Reaction | 1036.3 ms | 1534.9 ms | 445 ms |
+
+The edit's non-overlapping journal phases were guard 66 ms, registration 704 ms,
+wrapped work 257 ms, checkpoint 1054 ms, receipt 257 ms, retirement 420 ms and
+close 0 ms (rounded). Journal phases excluding wrapped work totaled 2501 ms;
+248 ms preceded the guard. This identifies the awaited journal as the dominant
+cost in this observation, not a reason to bypass its durability requirements.
+New posts and reaction additions do not traverse this privacy-mutation wrapper;
+absence of their journal spans is expected, not a zero-cost journal measurement.
+
+The private collector's phase regex omitted names containing digits, so nested
+`privacy_r2_read`/`privacy_r2_write` timings were not retained. Do not infer absent
+R2 work or attribute parent-phase time to specific storage calls from this run.
+A corrected collector and another bounded diagnostic are needed for that detail.
+No raw response headers or private content were retained in the numeric evidence.
+
+This is one observation per operation on a desktop runner, with tracing enabled,
+unverified region/network and a small self-only audience. All acknowledged times
+exceeded one second; none establishes p99, regional or phone performance. There
+were no measured failures, timeouts or retries. A Node module-resolution failure
+occurred before any test intent/network traffic; the collector then ran once via
+`tsx`. No uncertain mutation was repeated.
+
+The owned post was deleted and returned 404; the session was signed out and its
+saved cookie returned 401. Original staging API
+`f504e9c9-04ab-414f-9a75-daeed914144d` was restored. Provider verification preserved
+all 24 web assets, runtime settings and production state. The canonical provider
+record was reconciled and the deployment lock released. Evidence is archived in
+the primary checkout's `artifacts/private/p99-write-tracing-20261029/`.
