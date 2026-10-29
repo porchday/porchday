@@ -696,5 +696,7 @@ warnings still resolve when the operation completes. A separate durable command
 failure marker keeps a later failure actionable even if an earlier overdue event
 already occupies the immutable outbox; delivery retains the original event body
 and identity. The marker also survives interruption before outbox creation.
-The installed Mac watcher
-requires a separately verified bundle update before this source fix is live.
+The Mac watcher was updated to `7d7ee36` after all six CI checks passed. Live
+verification confirmed the previously suppressed alert's exact bot comment,
+persisted delivery and two clean polls, with application state unchanged. See the
+[installation and staging rehearsal evidence](evidence/frontend-browser-roundtrip-staging-2026-10-29.md).

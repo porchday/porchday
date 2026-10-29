@@ -334,11 +334,13 @@ Synthetic sessions were revoked, all fixture rows were removed, and the lease
 was released. This is successful stop-drill acceptance, not successful release
 continuity acceptance and not proof of hosted rollback.
 
-The pinned release-watch bundle at `75f57c1` is installed on the Mac mini. A
+The pinned release-watch bundle at `75f57c1` was installed for this drill. A
 separate notification-only drill verified that a late failure after a terminal
 local journal still produces an exact GitHub Actions bot comment on issue #3.
 No provider writes were part of that notification drill. Owner inbox receipt
-remains an outstanding check.
+remains an outstanding check. The later
+[update to `7d7ee36`](evidence/frontend-browser-roundtrip-staging-2026-10-29.md)
+also preserves explicit failure alerts after completion, rollback or cancellation.
 
 
 ## Hosted candidate-failure rollback drill — October 29, 17:06 UTC

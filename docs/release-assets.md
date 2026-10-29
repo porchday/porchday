@@ -231,8 +231,11 @@ closure after its check is expected and does not cancel rollback or the remainin
 authenticated continuity samples.
 
 The earlier wrapper commit collected browser acceptance after finalization; this
-revision moves it before the recovery decision. It is not yet adopted by scheduled
-releases or verified across a new hosted deployment. Local recovery tests with
+revision moves it before the recovery decision. The
+[hosted retained-build round trip](evidence/frontend-browser-roundtrip-staging-2026-10-29.md)
+passed with eleven and twelve continuity samples, no observed failures, clean
+old/new browser checks and exact fixture cleanup. Scheduled releases have not yet
+adopted this entry point. Local recovery tests with
 real Chromium and synthetic transport demonstrate both successful completion and
 rollback on a fresh-client exception; they do not mutate a provider or establish
 hosted rollback timing. The 45-second candidate-verification limit is unchanged.
