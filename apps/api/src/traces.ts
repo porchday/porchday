@@ -111,6 +111,52 @@ export async function readTrace(env:Pick<Env,'TRACES'>&MetricsEnv,memberId:strin
   return {...meta.results[0],spans:spans.results.map(row=>({...row,attrs:typeof row.attrs==='string'?JSON.parse(row.attrs):null}))};
  }catch(error){report(env,'trace_read_failed',started);throw error;}
 }
+/** Bounds one summary read; at most 14 days of one member's traces. */
+export const MAX_SUMMARY_ROWS=20_000;
+const uuidSegment=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+function percentile(sorted:number[],p:number):number|null {return sorted.length?sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))]:null;}
+type RequestRow={name:string;route:string|null;duration_ms:number;server_total:number|null;status:number|null;error:string|null};
+/** Route and server step percentiles across a member's retained traces.
+ * Times are for successful requests; failures are counted separately. */
+export function summarizeTraces(requests:RequestRow[],steps:{name:string;duration_ms:number}[]) {
+ const routes=new Map<string,RequestRow[]>();
+ for(const row of requests){
+  const [method,path='']=row.name.split(' ',2);
+  const key=method+' '+(row.route??path.replace(uuidSegment,':id'));
+  routes.set(key,[...(routes.get(key)??[]),row]);
+ }
+ const phases=new Map<string,number[]>();
+ for(const step of steps)phases.set(step.name,[...(phases.get(step.name)??[]),Number(step.duration_ms)]);
+ const sorted=(values:number[])=>values.slice().sort((x,y)=>x-y);
+ return {
+  routes:[...routes].map(([route,rows])=>{
+   const ok=rows.filter(row=>row.error===null&&(row.status===null||row.status<400));
+   const durations=sorted(ok.map(row=>Number(row.duration_ms))),server=sorted(ok.flatMap(row=>row.server_total===null?[]:[Number(row.server_total)]));
+   return {route,count:rows.length,failed:rows.length-ok.length,p50_ms:percentile(durations,0.5),p95_ms:percentile(durations,0.95),max_ms:durations.at(-1)??null,server_p50_ms:percentile(server,0.5)};
+  }).sort((x,y)=>(y.p95_ms??-1)-(x.p95_ms??-1)),
+  phases:[...phases].map(([phase,values])=>{const v=sorted(values);return {phase,count:v.length,p50_ms:percentile(v,0.5)!,p95_ms:percentile(v,0.95)!,max_ms:v.at(-1)!};})
+   .sort((x,y)=>y.p95_ms-x.p95_ms),
+ };
+}
+export async function traceSummary(env:Pick<Env,'TRACES'>&MetricsEnv,memberId:string) {
+ const started=Date.now(),db=env.TRACES!;
+ try{
+  // Two bounded reads; percentiles are computed here because SQLite has none.
+  const [requests,steps]=await db.batch<Record<string,unknown>>([
+   db.prepare(`SELECT s.name,json_extract(s.attrs,'$.route') AS route,s.duration_ms,json_extract(s.attrs,'$.server_total') AS server_total,
+     json_extract(s.attrs,'$.status') AS status,json_extract(s.attrs,'$.error') AS error
+    FROM trace_spans s JOIN traces t ON t.trace_id=s.trace_id
+    WHERE t.member_id=?1 AND s.kind='resource' AND s.name GLOB '[A-Z]* /api/*' LIMIT ?2`).bind(memberId,MAX_SUMMARY_ROWS),
+   db.prepare(`SELECT c.name,c.duration_ms FROM trace_spans c
+    JOIN trace_spans p ON p.trace_id=c.trace_id AND p.seq=c.parent_seq
+    JOIN traces t ON t.trace_id=c.trace_id
+    WHERE t.member_id=?1 AND c.kind='server' AND c.name NOT IN ('server total','worker')
+     AND json_extract(p.attrs,'$.error') IS NULL AND coalesce(json_extract(p.attrs,'$.status'),0)<400 LIMIT ?2`).bind(memberId,MAX_SUMMARY_ROWS),
+  ]);
+  report(env,'trace_read_ok',started,[requests,steps]);
+  return summarizeTraces(requests.results as RequestRow[],steps.results as {name:string;duration_ms:number}[]);
+ }catch(error){report(env,'trace_read_failed',started);throw error;}
+}
 export async function deleteMemberTraces(env:Pick<Env,'TRACES'>&MetricsEnv,memberId:string):Promise<void> {
  const db=env.TRACES;if(!db)return;
  const started=Date.now();
@@ -158,6 +204,7 @@ export function createTraceRoutes() {
   return c.json({ok:true},202);
  });
  app.get('/traces',async c=>c.json({items:await listTraces(c.env,c.get('memberId'))}));
+ app.get('/traces/summary',async c=>c.json(await traceSummary(c.env,c.get('memberId'))));
  app.get('/traces/:id',async c=>{
   const id=c.req.param('id');
   if(!hex32.test(id))return c.json({error:{code:'NOT_FOUND'}},404);

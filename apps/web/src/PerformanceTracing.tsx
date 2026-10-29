@@ -1,14 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { ApiError, del, get, localDate, type Json } from "./api";
 import { Alert, Button, useAction } from "./ui";
-import { currentTraceId, flushTraces, setTracingEnabled, traceReport, tracingEnabled } from "./tracing";
+import { currentTraceId, flushTraces, setTracingEnabled, tracingEnabled } from "./tracing";
 
 /** Settings → My data. Opt-in performance traces for this browser. */
 export function PerformanceTracing() {
   const [enabled, setEnabled] = useState(tracingEnabled());
   const [traces, setTraces] = useState<Json[] | null>(null);
   const [unavailable, setUnavailable] = useState(false);
-  const [report, setReport] = useState<{ id: string; text: string } | null>(null);
   const action = useAction();
   async function load() {
     try {
@@ -21,10 +20,6 @@ export function PerformanceTracing() {
   useEffect(() => {
     if (enabled) void action.run(load);
   }, [enabled]);
-  async function open(id: string) {
-    const trace = await get<Parameters<typeof traceReport>[0]>(`/traces/${id}`);
-    setReport({ id, text: traceReport(trace) });
-  }
   return (
     <section className="panel form-stack">
       <h2>Performance tracing</h2>
@@ -45,7 +40,6 @@ export function PerformanceTracing() {
           onChange={(e) => {
             setTracingEnabled(e.target.checked);
             setEnabled(e.target.checked);
-            if (!e.target.checked) setReport(null);
           }}
         />
         <span>Share performance traces from this browser</span>
@@ -58,12 +52,13 @@ export function PerformanceTracing() {
             upload once a minute and when you leave the page.
           </p>
           <div className="button-row">
+            <a className="button compact" href="/app/performance">Open the performance inspector</a>
             <Button variant="outline compact" busy={action.busy}
               onClick={() => action.run(async () => { await flushTraces(true); await load(); }, "Sent.")}>
               Send now
             </Button>
             <Button variant="quiet compact" busy={action.busy}
-              onClick={() => action.run(async () => { await del("/traces"); setTraces([]); setReport(null); }, "Your traces were deleted.")}>
+              onClick={() => action.run(async () => { await del("/traces"); setTraces([]); }, "Your traces were deleted.")}>
               Delete my traces
             </Button>
           </div>
@@ -74,20 +69,9 @@ export function PerformanceTracing() {
                 {localDate(new Date(t.started_at).toISOString())} · {t.page} · {t.span_count} spans
                 {t.trace_id === currentTraceId() ? " · this visit" : ""}
               </span>
-              <Button variant="outline compact" busy={action.busy} onClick={() => action.run(() => open(t.trace_id))}>
-                View
-              </Button>
+              <a className="button outline compact" href={`/app/performance?trace=${t.trace_id}`}>View</a>
             </div>
           ))}
-          {report && (
-            <>
-              <pre className="trace-report" aria-label="Trace waterfall">{report.text}</pre>
-              <Button variant="outline compact"
-                onClick={() => action.run(() => navigator.clipboard.writeText(report.text), "Copied. Paste it into builder chat.")}>
-                Copy for builder chat
-              </Button>
-            </>
-          )}
         </>
       )}
       <Alert>{action.error}</Alert>

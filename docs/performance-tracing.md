@@ -103,8 +103,27 @@ D1 rather than executing queries.
 
 ## Reading traces
 
-Members: **Settings → My data → Performance tracing → View**, then **Copy for
-builder chat** to paste a plain-text waterfall.
+Members open the performance inspector at `/app/performance`, linked from
+**Settings → My data → Performance tracing**. It shows only the member's own
+traces and has:
+
+- a picker for one page load, with tiles for feed loaded, first photo shown,
+  API requests, failed requests and median server time;
+- a timeline of that page load. Each request is split into time queued in
+  the browser, waiting on the server and downloading. Selecting a request shows
+  the server's own steps inside it, and dashed lines mark milestones;
+- **Where server time goes**: the median and 95th percentile of each server
+  step across all retained traces, for successful requests only;
+- **Slowest requests by route**: count, failures, and median, 95th percentile
+  and maximum times per route, with photo requests grouped by route pattern;
+- **Copy for builder chat**, which copies a plain-text waterfall to paste.
+
+The two summaries come from `GET /api/v1/traces/summary`. It runs two bounded
+D1 reads of at most 20,000 rows each, and computes the percentiles in the
+Worker because SQLite has no percentile function. Like every other trace read,
+it reports a `trace_read_ok` or `trace_read_failed` point. The inspector's
+code loads only when the page is opened, so it adds nothing to the main
+bundle.
 
 Operators and builders, using wrangler's own Cloudflare login:
 
@@ -166,10 +185,12 @@ The Node, Hono and SQLite tests do not establish hosted browser behavior.
 After staging, and again after production, verify with a member account:
 
 1. Turn tracing on, load the feed and open a photo.
-2. **Send now**, then confirm the visit appears and **View** shows the
-   request, its server spans (`journal_check`, `auth_session`,
-   `social_query`, `r2_media_get`) and a non-`headers_only` photo request.
-3. **Copy for builder chat** produces the waterfall text.
+2. **Send now**, then confirm the visit appears in the inspector and its
+   timeline shows the request, its server spans (`journal_check`,
+   `auth_session`, `social_query`, `r2_media_get`) and a photo request split
+   into waiting and downloading (not `headers_only`).
+3. The inspector's summaries list the feed and photo routes, and **Copy for
+   builder chat** produces the waterfall text.
 4. Turn tracing off and confirm requests no longer carry `traceparent`.
 5. **Delete my traces** and confirm the list is empty.
 6. `npx tsx scripts/query-metrics.ts staging trace-store` shows
