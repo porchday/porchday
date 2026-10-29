@@ -1,7 +1,9 @@
 import {describe,it,expect,vi} from 'vitest';
 import {persistSessionDenial} from '../src/session-denial';
-import {candidateProgressKey,parseCandidateProgress,candidateProgressHealth,sweepSessionCandidates} from '../src/session-denial-candidates';
-import {denialProgressKey} from '../src/session-denial-progress';
+import {candidateProgressKey,parseCandidateProgress,candidateProgressHealth,sweepSessionCandidates,cleanupDeniedSessionCandidates,readCandidateCleanupHealth} from '../src/session-denial-candidates';
+import {denialProgressKey,readDenialCleanupHealth} from '../src/session-denial-progress';
+import {sweepSessionDenials} from '../src/session-denial-cleanup';
+import type {Env} from '../src/types';
 const id=(n:number)=>'11111111-1111-4111-8111-'+n.toString(16).padStart(12,'0');
 async function fixture(count=1){
  const records=new Map<string,{etag:string;text:string}>(),sessions=new Set<string>();let version=0;
@@ -94,5 +96,56 @@ describe('SQL candidate denial discovery',()=>{
    const f=await fixture();f.list.mockResolvedValue(page);await expect(f.sweep()).rejects.toThrow();expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);
   }
   const f=await fixture();f.list.mockRejectedValue(Error('listing failed'));await expect(f.sweep()).rejects.toThrow();expect(f.cleanup).not.toHaveBeenCalled();
+ });
+});
+
+describe('scheduled candidate health and version transition',()=>{
+ const env=(f:Awaited<ReturnType<typeof fixture>>)=>({SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:f.store}) as unknown as Env;
+ it('keeps disabled cleanup and monitoring inert, and rejects enabled cleanup without authority',async()=>{
+  const f=await fixture();
+  expect(await cleanupDeniedSessionCandidates({} as Env)).toEqual({seen:0,deleted:0,invalid:0,advanced:false});
+  expect(await readCandidateCleanupHealth({...env(f),SESSION_DENIAL_CLEANUP_V1:undefined})).toEqual({issues:[],snapshot:null});
+  expect(f.store.get).not.toHaveBeenCalled();
+  await expect(cleanupDeniedSessionCandidates({SESSION_DENIAL_CLEANUP_V1:'true'} as Env)).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
+ });
+ it('requires real progress per version, including when rolling back after the old sweep stops',async()=>{
+  const f=await fixture(0),legacy={...f.store,list:async()=>({objects:[],truncated:false})};vi.useFakeTimers();
+  try{
+   await sweepSessionDenials(legacy,f.cleanup);
+   expect((await readDenialCleanupHealth(env(f))).issues).toEqual([]);
+   expect((await readCandidateCleanupHealth(env(f))).issues).toEqual(['session_denial_cleanup_missing']);
+   await f.sweep();expect((await readCandidateCleanupHealth(env(f))).issues).toEqual([]);
+   const old=f.records.get(denialProgressKey);await vi.advanceTimersByTimeAsync(181000);await f.sweep();
+   expect((await readCandidateCleanupHealth(env(f))).issues).toEqual([]);
+   expect(f.records.get(denialProgressKey)).toEqual(old);
+   expect((await readDenialCleanupHealth(env(f))).issues).toEqual(['session_denial_cleanup_stale']);
+   await sweepSessionDenials(legacy,f.cleanup);
+   expect((await readDenialCleanupHealth(env(f))).issues).toEqual([]);
+  }finally{vi.useRealTimers();}
+ });
+ it('reports missing, corrupt, future and stalled candidate evidence without exposing IDs',async()=>{
+  const f=await fixture(1);
+  expect((await readCandidateCleanupHealth(env(f))).issues).toEqual(['session_denial_cleanup_missing']);
+  f.records.set(candidateProgressKey,{etag:'bad',text:'invalid'});
+  expect((await readCandidateCleanupHealth(env(f))).issues).toEqual(['session_denial_cleanup_unavailable']);
+  f.records.delete(candidateProgressKey);vi.useFakeTimers();
+  try{
+   await f.sweep();const now=Date.now();vi.setSystemTime(now-1);
+   expect((await readCandidateCleanupHealth(env(f))).issues).toEqual(['session_denial_cleanup_unavailable']);
+   vi.setSystemTime(now+300001);const health=await readCandidateCleanupHealth(env(f));
+   expect(health.issues).toEqual(['session_denial_cleanup_stale','session_denial_pass_stale']);
+   expect(JSON.stringify(health)).not.toMatch(/cursor|11111111|session-denials/);
+   await f.sweep();expect((await readCandidateCleanupHealth(env(f))).issues).toEqual([]);
+  }finally{vi.useRealTimers();}
+ });
+ it('bounds stalled progress bodies and ignores late completion without writes',async()=>{
+  const f=await fixture(0);await f.sweep();const progress=f.records.get(candidateProgressKey)!;
+  let release!:(text:string)=>void;f.store.get.mockResolvedValue({etag:'held',text:()=>new Promise<string>(resolve=>{release=resolve;})});
+  f.store.put.mockClear();vi.useFakeTimers();
+  try{
+   const pending=readCandidateCleanupHealth(env(f));await vi.advanceTimersByTimeAsync(2000);
+   expect((await pending).issues).toEqual(['session_denial_cleanup_unavailable']);
+   release(progress.text);await vi.advanceTimersByTimeAsync(0);expect(f.store.put).not.toHaveBeenCalled();expect(vi.getTimerCount()).toBe(0);
+  }finally{vi.useRealTimers();}
  });
 });

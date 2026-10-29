@@ -1,8 +1,10 @@
 import type {Pool} from 'pg';
 import type {JournalStore} from './privacy-journal';
 import {sessionDenied,SessionDenialError} from './session-denial';
-import {DenialCleanupError} from './session-denial-cleanup';
+import {DenialCleanupError,deleteDeniedSession} from './session-denial-cleanup';
 import {parseDenialProgress,type DenialProgress,denialProgressHealth} from './session-denial-progress';
+import {authPool} from './auth';
+import type {Env} from './types';
 
 // Separate discovery strategy and progress namespace. Never write v2 health:
 // a SQL candidate pass does not prove that the historical R2 list was scanned.
@@ -47,8 +49,7 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
  }catch{failed=true;await query('ROLLBACK').catch(()=>{});throw new DenialCleanupError();}
  finally{client.release(failed);}
 }
-/** Candidate discovery only; not yet selected by the scheduled runtime.
- * Cost follows remaining SQL sessions, never the immutable logout history.
+/** Cost follows remaining SQL sessions, never the immutable logout history.
  * Each deletion still needs canonical R2 authority and the existing identity
  * lock. A restored/inserted row behind the cursor is found on the next pass.
  * Stop starting work after 20s; an in-flight bounded SQL operation can finish
@@ -90,4 +91,26 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
   lastPass:next?(previous?.lastPass??null):{completedAt,durationMs:completedAt-passStartedAt,seen,invalid}};
  const updated=await boundedIO(()=>store.put(candidateProgressKey,JSON.stringify(progress),{onlyIf:saved?{etagMatches:saved.etag}:{etagDoesNotMatch:'*'}}));
  result.advanced=!!updated&&next!==cursor;return result;
+}
+
+export async function cleanupDeniedSessionCandidates(env:Env){
+ if(env.SESSION_DENIAL_CLEANUP_V1!=='true')return {seen:0,deleted:0,invalid:0,advanced:false};
+ if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
+ const pool=authPool(env);
+ try{return await sweepSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id));}
+ finally{await pool.end();}
+}
+
+/** No fallback to v2: a fresh history scan cannot prove candidate progress.
+ * This is read-only and exposes aggregates, never internal session IDs. */
+export async function readCandidateCleanupHealth(env:Pick<Env,'SESSION_DENIAL_CLEANUP_V1'|'RECOVERY_JOURNAL'>){
+ if(env.SESSION_DENIAL_CLEANUP_V1!=='true')return {issues:[] as string[],snapshot:null};
+ try{
+  if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
+  const progress=await boundedIO(async()=>{
+   const object=await env.RECOVERY_JOURNAL!.get(candidateProgressKey);
+   return object?parseCandidateProgress(await object.text()):null;
+  });
+  return progress?candidateProgressHealth(progress):{issues:['session_denial_cleanup_missing'],snapshot:null};
+ }catch{return {issues:['session_denial_cleanup_unavailable'],snapshot:null};}
 }

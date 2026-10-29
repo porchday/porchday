@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env,Variables} from './types';
 import {trackPostgres} from './connection-metrics';
-import {readDenialCleanupHealth} from './session-denial-progress';
+import {readCandidateCleanupHealth as readDenialCleanupHealth} from './session-denial-candidates';
 
 const count=z.number().int().nonnegative();
 export const operationalSnapshotSchema=z.object({

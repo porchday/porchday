@@ -265,7 +265,7 @@ restoration must preserve the namespace until an independently verified policy
 proves a recorded session can never become valid again. R2 object lifecycle rules
 or a seven-day session setting alone are not a pruning proof.
 
-## SQL candidate discovery (implemented locally, not selected by runtime)
+## SQL candidate discovery (wired in source, not deployed)
 
 The history scan cannot remain the default indefinitely. At one logout every 20
 seconds, the production monitor alone would create 4,320 immutable denials per
@@ -308,9 +308,15 @@ At these counts one 100-session page is sufficient if it completes within the
 work budget. Large live-session populations still require measured full-pass
 capacity; the strategy removes history growth, not all scaling limits.
 
-Before selecting this strategy in scheduled cleanup, wire its own health reader,
-verify the hosted auth role, native-R2 CAS and actual queue throughput, then deploy
-from an isolated runtime source. Bootstrap v3 from real work. Rehearse rollback:
+The current source selects this strategy for scheduled cleanup and protected
+readiness together, retaining the existing cleanup enable flag. Disabled cleanup
+reads no progress and creates no SQL pool. Missing v3 evidence cannot fall back
+to fresh v2 evidence. Local subprocess tests now kill the writer after native R2
+publication, then recover in a fresh process using SQL candidate discovery and
+verify the denied session is removed while another session remains usable.
+
+Before deployment, verify native-R2 CAS and actual hosted queue throughput, then
+release from an isolated runtime source. Bootstrap v3 from real work. Rehearse rollback:
 an old v2 binary reads v2 progress, which becomes stale if v2 scans stop. A late
 rollback therefore needs an actual fresh v2 pass or an independently verified
 compatible baseline; copying v3 timestamps into v2 would fabricate evidence.

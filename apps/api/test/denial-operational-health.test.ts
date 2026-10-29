@@ -6,12 +6,12 @@ vi.mock('postgres',()=>({default:()=>Object.assign(async()=>[{
  backup:{last_complete_age_seconds:0,unfinished_runs:0,oldest_unfinished_age_seconds:0,failed_runs:0},
 }],{end:mock.end})}));
 import {readOperationalHealth} from '../src/operations-health';
-import {denialProgressKey} from '../src/session-denial-progress';
+import {candidateProgressKey as denialProgressKey} from '../src/session-denial-candidates';
 it('healthy ordinary cleanup cannot hide stalled denial cleanup, and fresh denial progress recovers health',async()=>{
  let age=181000;
  const store={get:async(key:string)=>{
   expect(key).toBe(denialProgressKey);const at=Date.now()-age;
-  return {etag:'progress',text:async()=>JSON.stringify({v:2,cursor:null,pageCompletedAt:at,passStartedAt:null,passSeen:0,passInvalid:0,lastPass:{completedAt:at,durationMs:0,seen:0,invalid:0}})};
+  return {etag:'progress',text:async()=>JSON.stringify({v:3,strategy:'sql-session-keyset',cursor:null,pageCompletedAt:at,passStartedAt:null,passSeen:0,passInvalid:0,lastPass:{completedAt:at,durationMs:0,seen:0,invalid:0}})};
  }};
  const env={HYPERDRIVE_JOBS:{connectionString:'postgres://not-connected'},SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:store} as unknown as Env;
  const stale=await readOperationalHealth(env);expect(stale.snapshot.cleanup_age_seconds).toBe(0);

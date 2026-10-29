@@ -1,0 +1,42 @@
+{
+  "date": "2026-10-29",
+  "scope": "Scheduled SQL candidate cleanup and matching protected readiness, isolated release source",
+  "deployed": false,
+  "runtimeChanges": [
+    "session-denial-candidates.ts implementation with flag-gated entry point and bounded v3 health reader",
+    "index.ts routes the existing scheduled cleanup message to the candidate entry point",
+    "operations-health.ts reads v3 candidate progress with no fallback to v2 evidence"
+  ],
+  "isolatedRuntimeValidation": {
+    "cryptoPassed": 20,
+    "generalPassed": 706,
+    "generalSkipped": 192,
+    "separatePostgresAuthSessionPassed": 39,
+    "separateQueueDiagnosticPassed": 14,
+    "nativeLocalR2ProcessLoss": "SIGKILL after denial publication, fresh-process SQL candidate discovery, exact denied-row deletion, unrelated session usable; repeat cleanup deletes zero",
+    "typecheck": "passed",
+    "formatting": "passed",
+    "secretScan": "passed",
+    "diffCheck": "passed"
+  },
+  "developmentValidation": {
+    "cryptoPassed": 22,
+    "generalPassed": 1078,
+    "generalSkipped": 193,
+    "candidateAndOperationalHealthTests": 16
+  },
+  "transitionEvidence": [
+    "fresh v2 progress cannot mask missing v3 progress",
+    "v3 scans never write v2 evidence",
+    "v2 health becomes stale after v2 scanning stops, even when v3 is healthy",
+    "an actual v2 pass restores v2 health for rollback",
+    "disabled candidate cleanup opens no pool and disabled health reads nothing",
+    "malformed, future or late-read progress cannot appear healthy"
+  ],
+  "remaining": [
+    "source-pinned release artifact and required CI",
+    "real hosted v3 bootstrap and scheduled full-pass throughput",
+    "monitoring-release rollback with correct v2 progress handling",
+    "remaining production writer acceptance gates"
+  ]
+}
