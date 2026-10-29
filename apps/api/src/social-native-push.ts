@@ -251,6 +251,29 @@ async function providerToken(sql: postgres.Sql, env: NativePushEnv) {
   return saved.token as string;
 }
 
+/** Delivery must come from app.prepare_native_push_delivery under its jobs-role lease.
+ * This path does not claim jobs or obtain provider credentials.
+ */
+export async function deliverNativePush(env:Pick<Env,'ENVIRONMENT'|'RECOVERY_JOURNAL'> & NativePushEnv,delivery:{sessionId:string;subscription:Subscription},attempts:number,token:string,send:typeof fetch=fetch){
+  let result: Awaited<ReturnType<typeof nativePushOutcome>> = {
+    outcome: "retry",
+    delay: Math.min(3600, 15 * 2 ** Math.min(attempts, 8)),
+  };
+  try {
+    if(await runtimeSessionDenied(env,delivery.sessionId)){result.outcome="failed";}
+    else {
+      const request = nativePushRequest(delivery.subscription, env, token);
+      result = await nativePushOutcome(
+        await send(request.url, request.init),
+        attempts,
+      );
+    }
+  } catch {
+    /* Network failures retry under a lease, with no token-bearing errors logged. */
+  }
+  return result;
+}
+
 /** Jobs role only. Every attempt repeats notification, recipient, session and content-access checks. */
 export async function processNativePush(
   env: Pick<Env, "HYPERDRIVE_JOBS"|"ENVIRONMENT"|"RECOVERY_JOURNAL"> & NativePushEnv,
@@ -277,22 +300,7 @@ export async function processNativePush(
             counts.skipped++;
             return;
           }
-          let result: Awaited<ReturnType<typeof nativePushOutcome>> = {
-            outcome: "retry",
-            delay: Math.min(3600, 15 * 2 ** Math.min(Number(job.attempts), 8)),
-          };
-          try {
-            if(await runtimeSessionDenied(env,row.delivery.sessionId)){result.outcome="failed";}
-            else {
-              const request = nativePushRequest(row.delivery.subscription, env, token);
-              result = await nativePushOutcome(
-                await send(request.url, request.init),
-                Number(job.attempts),
-              );
-            }
-          } catch {
-            /* Network failures retry under a lease, with no token-bearing errors logged. */
-          }
+          const result=await deliverNativePush(env,row.delivery,Number(job.attempts),token,send);
           await sql`select app.finish_native_push(${job.id},${job.lease},${result.outcome},${result.delay})`;
           if (result.outcome === "sent") counts.sent++;
           else if (result.outcome === "retry") counts.retried++;
