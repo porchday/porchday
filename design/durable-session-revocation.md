@@ -265,6 +265,57 @@ restoration must preserve the namespace until an independently verified policy
 proves a recorded session can never become valid again. R2 object lifecycle rules
 or a seven-day session setting alone are not a pruning proof.
 
+## SQL candidate discovery (implemented locally, not selected by runtime)
+
+The history scan cannot remain the default indefinitely. At one logout every 20
+seconds, the production monitor alone would create 4,320 immutable denials per
+day after writers are enabled. Ten objects per minute would need at least 432
+pages for that day's records alone, exceeding the five-minute full-pass gate.
+
+`session-denial-candidates.ts` implements an alternative: page existing SQL
+session IDs using the primary-key index, then consult each ID's canonical R2
+denial before calling the existing identity-locked exact deletion. Completed
+logouts with no SQL row consume no discovery reads, regardless of retained R2
+history. Expired sessions are included. A restored or newly inserted row behind
+the cursor is discovered on the next pass; the always-on denial readers continue
+to reject it immediately. SQL is only candidate discovery, never denial authority.
+
+Each page selects at most 100 sessions plus one lookahead row. SQL transactions
+end before R2 reads; the auth role needs no new privileges or migration. At most
+five authority reads run concurrently, each with a two-second deadline including
+the body. Deletions run serially. The sweep stops starting work after 20 seconds
+and checkpoints only completed candidates. An already-started SQL operation may
+finish later under its existing query/lock deadlines; 20 seconds is not a hard
+end-to-end timeout. Unknown SQL results do not advance progress. Invalid authority
+is counted and skipped without deleting its session; health remains unhealthy
+until a clean full pass completes.
+
+Progress uses `session-denial-maintenance/v3/sql-sessions.json` with an explicit
+SQL-discovery strategy. V1/v2 evidence is untouched. Local tests cover a 10,000
+object history with only three candidate lookups, pagination, restored rows,
+expired rows through the restricted PostgreSQL role, time-budget checkpoints,
+late R2 reads, corruption, concurrent CAS winners, and lost SQL/progress replies.
+The keyset query can use the existing primary-key index; the test does not claim
+the production planner will always select that plan.
+
+Read-only counts at 08:22 UTC on October 29 found 3 staging and 26 production
+sessions, none expired. The actual candidate-list implementation then read both
+environments through their auth roles without writes: one page each, 367 ms in
+staging and 332 ms in production. These are single SQL-list observations, not R2
+or full-sweep throughput. [Capacity evidence](../docs/evidence/session-denial-candidate-capacity-2026-10-29.json).
+Counts can change and do not establish hosted throughput.
+At these counts one 100-session page is sufficient if it completes within the
+work budget. Large live-session populations still require measured full-pass
+capacity; the strategy removes history growth, not all scaling limits.
+
+Before selecting this strategy in scheduled cleanup, wire its own health reader,
+verify the hosted auth role, native-R2 CAS and actual queue throughput, then deploy
+from an isolated runtime source. Bootstrap v3 from real work. Rehearse rollback:
+an old v2 binary reads v2 progress, which becomes stale if v2 scans stop. A late
+rollback therefore needs an actual fresh v2 pass or an independently verified
+compatible baseline; copying v3 timestamps into v2 would fabricate evidence.
+Production writers remain disabled pending these and the other acceptance gates.
+
 ## Availability, cost and remaining scope
 
 Normal logout should replace several shared-control writes with one write to a

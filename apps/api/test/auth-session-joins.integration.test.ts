@@ -16,6 +16,7 @@ import {authRoutes} from '../src/auth-routes';
 import {persistSessionDenial} from '../src/session-denial';
 import {cleanupDeniedSessions,deleteDeniedSession} from '../src/session-denial-cleanup';
 import {denialProgressKey,readDenialCleanupHealth} from '../src/session-denial-progress';
+import {listSessionCandidates,sweepSessionCandidates,candidateProgressKey,parseCandidateProgress} from '../src/session-denial-candidates';
 import type {Env,Variables} from '../src/types';
 
 const base=process.env.TEST_DATABASE_URL;
@@ -249,6 +250,38 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
   expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[other.sessionId])).rowCount).toBe(1);
   expect((await cleanupDeniedSessions(guardedEnv)).deleted).toBe(0);expect(records.size).toBe(2);
   expect((await readDenialCleanupHealth(guardedEnv)).issues).toEqual([]);
+ });
+ it('discovers expired and restored SQL sessions through the restricted role with indexed keyset pages',async()=>{
+  const actor=await person(),other=await person(),{pool}=runtimePool(),records=new Map<string,{etag:string;text:string}>();let version=0;
+  const store={get:async(key:string)=>{const row=records.get(key);return row?{etag:row.etag,text:async()=>row.text}:null;},
+   put:async(key:string,text:string,options?:{onlyIf?:{etagDoesNotMatch?:string;etagMatches?:string}})=>{
+    const old=records.get(key),condition=options?.onlyIf;
+    if(condition?.etagDoesNotMatch==='*'&&old||condition?.etagMatches&&condition.etagMatches!==old?.etag)return null;
+    const etag=String(++version);records.set(key,{etag,text});return {etag};
+   }};
+  // More than one page, all synthetic and owned by this disposable database.
+  await owner.query('INSERT INTO public.auth_session(id,"expiresAt",token,"userId") SELECT gen_random_uuid()::text,now()-interval\'1 day\',gen_random_uuid()::text,$1 FROM generate_series(1,110)',[actor.memberId]);
+  await owner.query('UPDATE public.auth_session SET "expiresAt"=now()-interval\'1 day\' WHERE id=$1',[actor.sessionId]);
+  const expected=(await owner.query('SELECT id FROM public.auth_session ORDER BY id')).rows.map(row=>row.id);
+  const first=await listSessionCandidates(pool,null),second=await listSessionCandidates(pool,first.ids.at(-1)!);
+  expect(first.ids).toHaveLength(100);expect(first.more).toBe(true);expect(second.more).toBe(false);
+  expect([...first.ids,...second.ids]).toEqual(expected);expect(expected).toContain(actor.sessionId);
+  await persistSessionDenial(store,actor.sessionId);
+  const sweep=()=>sweepSessionCandidates(store,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id));
+  let deleted=0;
+  do{deleted+=(await sweep()).deleted;}while(parseCandidateProgress(records.get(candidateProgressKey)!.text).cursor!==null);
+  expect(deleted).toBe(1);expect((await pool.query('SELECT 1 FROM public.auth_session WHERE id=$1',[other.sessionId])).rowCount).toBe(1);
+  await owner.query('INSERT INTO public.auth_session(id,"expiresAt",token,"userId") VALUES($1,now()-interval\'1 day\',$2,$3)',[actor.sessionId,actor.token,actor.memberId]);
+  deleted=0;do{deleted+=(await sweep()).deleted;}while(parseCandidateProgress(records.get(candidateProgressKey)!.text).cursor!==null);
+  expect(deleted).toBe(1);expect((await pool.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(0);
+  // Confirm the keyset can use the existing primary-key index. Disabling a
+  // sequential scan here tests index eligibility, not production planner cost.
+  const client=await pool.connect();
+  try{
+   await client.query('BEGIN');await client.query('SET LOCAL enable_seqscan=off');
+   const plan=await client.query('EXPLAIN (FORMAT JSON) SELECT id FROM public.auth_session WHERE id>$1 ORDER BY id LIMIT 101',[first.ids.at(-1)]);
+   expect(JSON.stringify(plan.rows[0]['QUERY PLAN'])).toContain('auth_session_pkey');await client.query('ROLLBACK');
+  }finally{client.release();}
  });
  it('orders exact cleanup behind an existing identity operation and can retry a lost commit reply',async()=>{
   const actor=await person(),other=await person(),{pool}=runtimePool(),lock=await owner.connect();

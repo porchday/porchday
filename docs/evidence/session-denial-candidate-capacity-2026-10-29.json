@@ -1,0 +1,56 @@
+{
+  "date": "2026-10-29",
+  "scope": "Locally implemented SQL candidate discovery; scheduled runtime still uses v2 history discovery",
+  "deployed": false,
+  "localValidation": {
+    "candidateTestsPassed": 10,
+    "legacyCleanupTestsPassed": 20,
+    "restrictedPostgresSessionTestsPassed": 15,
+    "generalTestsPassed": 1074,
+    "generalTestsSkipped": 193,
+    "cryptoTestsPassed": 22,
+    "historyFixtureObjects": 10000,
+    "remainingSqlCandidates": 3,
+    "readsIncludingProgress": 4,
+    "historyFixtureNote": "In-memory synthetic historical objects prove absence of history enumeration; not a native R2 throughput benchmark",
+    "cases": [
+      "canonical denial required for exact deletion; unrelated sessions preserved",
+      "restored SQL row behind cursor found after wrap",
+      "expired sessions included through restricted PostgreSQL role",
+      "100-session keyset page plus lookahead; existing primary-key index eligible",
+      "20-second work budget checkpoints completed candidates only",
+      "late authority read cannot dispatch SQL cleanup",
+      "unknown SQL commit repeats discovery without broader mutation replay",
+      "invalid authority counted without deletion and health clears after clean pass",
+      "concurrent CAS loser cannot overwrite newer progress",
+      "lost progress reply reconciled on subsequent read",
+      "v2 progress remains untouched"
+    ]
+  },
+  "hostedReadOnlyListChecks": [
+    {
+      "environment": "staging",
+      "observedAt": "2026-10-29T08:24:29.459Z",
+      "firstPageCandidates": 3,
+      "more": false,
+      "durationMs": 367,
+      "writes": 0
+    },
+    {
+      "environment": "production",
+      "observedAt": "2026-10-29T08:24:29.793Z",
+      "firstPageCandidates": 26,
+      "more": false,
+      "durationMs": 332,
+      "writes": 0
+    }
+  ],
+  "hostedReadOnlyMethod": "Actual listSessionCandidates via environment-pinned auth credentials, verified TLS, read-only transactions and bounded statements; no session IDs retained in evidence",
+  "remaining": [
+    "wire independent v3 health reader and select scheduled strategy",
+    "native R2 and scheduled hosted throughput with a real v3 bootstrap",
+    "rollback drill accounting for stale v2 progress",
+    "larger live-session capacity and latency evidence",
+    "remaining writer acceptance gates before production enablement"
+  ]
+}
