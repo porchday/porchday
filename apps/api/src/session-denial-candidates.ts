@@ -1,4 +1,4 @@
-import {deleteDeniedSessionBatch} from './session-denial-batch';
+import {deleteDeniedSessionBatch,type DenialBatchResult} from './session-denial-batch';
 import {CandidateTimings} from './session-denial-timing';
 import type {Pool} from 'pg';
 import type {JournalStore} from './privacy-journal';
@@ -86,7 +86,7 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
  * Stop starting work after 20s; an in-flight bounded SQL operation can finish
  * later. Failed/unknown SQL leaves progress unchanged and is safely repeated.
  */
-export type CandidateBatchCleanup=(ids:readonly string[],deadline:number)=>Promise<Set<string>>;
+export type CandidateBatchCleanup=(ids:readonly string[],deadline:number)=>Promise<DenialBatchResult>;
 export interface CandidateSweepResult{seen:number;deleted:number;invalid:number;advanced:boolean;continuation?:string}
 export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,workDeadline?:number,timing=new CandidateTimings(),batchCleanup?:CandidateBatchCleanup):Promise<CandidateSweepResult>{
  const startedAt=Date.now(),deadline=workDeadline??startedAt+20000;
@@ -112,11 +112,17 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
    const denied=batch.slice(0,authority.length).filter((_,i)=>authority[i]===true);
    // All authority reads have settled before SQL. A failed or unknown batch
    // throws before publishing any page progress, even after partial commits.
-   const deleted=denied.length?await timing.run('sql_delete',()=>batchCleanup(denied,deadline)):new Set<string>();
-   if(!(deleted instanceof Set)||[...deleted].some(id=>!denied.includes(id)))throw new DenialCleanupError();
-   result.deleted+=deleted.size;result.invalid+=authority.filter(value=>value==='invalid').length;
-   result.seen+=authority.length;
-   if(authority.length<batch.length||Date.now()>=deadline)stopped=true;
+   const cleanupResult=denied.length?await timing.run('sql_delete',()=>batchCleanup(denied,deadline)):{completed:0,deleted:new Set<string>()};
+   if(!Number.isInteger(cleanupResult.completed)||cleanupResult.completed<0||cleanupResult.completed>denied.length||!(cleanupResult.deleted instanceof Set)||[...cleanupResult.deleted].some(id=>!denied.slice(0,cleanupResult.completed).includes(id)))throw new DenialCleanupError();
+   const completedDenials=new Set(denied.slice(0,cleanupResult.completed));
+   let prefix=0;
+   for(;prefix<authority.length;prefix++){
+    if(authority[prefix]===true&&!completedDenials.has(batch[prefix]))break;
+    if(authority[prefix]==='invalid')result.invalid++;
+    if(cleanupResult.deleted.has(batch[prefix]))result.deleted++;
+    result.seen++;
+   }
+   if(prefix<batch.length||Date.now()>=deadline)stopped=true;
    if(stopped)break;
    continue;
   }

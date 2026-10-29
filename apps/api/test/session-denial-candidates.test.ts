@@ -329,7 +329,7 @@ describe('batched candidate cleanup checkpoints',()=>{
   for(let n=1;n<=51;n+=2)await persistSessionDenial(f.store,id(n));
   const batch=vi.fn(async(ids:readonly string[],deadline:number)=>{
    expect(ids.length).toBeLessThanOrEqual(24);expect(deadline).toBeGreaterThan(Date.now());
-   return new Set(ids.filter(value=>f.sessions.delete(value)));
+   return {completed:ids.length,deleted:new Set(ids.filter(value=>f.sessions.delete(value)))};
   });
   const result=await sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,batch);
   expect(result).toMatchObject({seen:51,deleted:26,invalid:0});expect(batch).toHaveBeenCalledTimes(3);
@@ -340,7 +340,7 @@ describe('batched candidate cleanup checkpoints',()=>{
   const f=await fixture(30);for(let n=1;n<=30;n++)await persistSessionDenial(f.store,id(n));
   let calls=0;const batch=vi.fn(async(ids:readonly string[])=>{
    const deleted=new Set(ids.filter(value=>f.sessions.delete(value)));
-   if(++calls===2)throw Error('unknown commit');return deleted;
+   if(++calls===2)throw Error('unknown commit');return {completed:ids.length,deleted};
   });
   await expect(sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,batch)).rejects.toThrow('unknown commit');
   expect(f.records.has(candidateProgressKey)).toBe(false);expect(f.sessions.size).toBe(0);
@@ -350,7 +350,7 @@ describe('batched candidate cleanup checkpoints',()=>{
  it('checkpoints a complete group when its final commit consumes the work budget',async()=>{
   const f=await fixture(30);for(let n=1;n<=30;n++)await persistSessionDenial(f.store,id(n));
   vi.useFakeTimers();try{
-   const batch=vi.fn(async(ids:readonly string[])=>{vi.setSystemTime(Date.now()+20000);return new Set(ids.filter(value=>f.sessions.delete(value)));});
+   const batch=vi.fn(async(ids:readonly string[])=>{vi.setSystemTime(Date.now()+20000);return {completed:ids.length,deleted:new Set(ids.filter(value=>f.sessions.delete(value)))};});
    expect(await sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,batch)).toMatchObject({seen:24,deleted:24});
    expect(f.progress().cursor).toBe(id(24));expect(batch).toHaveBeenCalledTimes(1);
   }finally{vi.useRealTimers();}
@@ -365,7 +365,34 @@ describe('batched candidate cleanup checkpoints',()=>{
  });
  it('refuses a batch result outside the independently verified authority set',async()=>{
   const f=await fixture(2);await persistSessionDenial(f.store,id(1));
-  await expect(sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,async()=>new Set([id(2)]))).rejects.toThrow();
+  await expect(sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,async()=>({completed:1,deleted:new Set([id(2)])}))).rejects.toThrow();
   expect(f.records.has(candidateProgressKey)).toBe(false);
+ });
+});
+
+
+describe('known budget exhaustion differs from uncertain SQL outcomes',()=>{
+ it('checkpoints the completed ordered prefix, retains unchecked denials and emits a continuation',async()=>{
+  const f=await fixture(6);for(const n of [1,3,5])await persistSessionDenial(f.store,id(n));
+  vi.useFakeTimers();try{
+   const batch=vi.fn(async(ids:readonly string[])=>{expect(ids).toEqual([id(1),id(3),id(5)]);f.sessions.delete(id(1));vi.setSystemTime(Date.now()+20000);return {completed:1,deleted:new Set([id(1)])};});
+   const result=await sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,batch);
+   expect(result).toEqual({seen:2,deleted:1,invalid:0,advanced:true,continuation:expect.any(String)});
+   expect(f.progress().cursor).toBe(id(2));expect(f.progress().passSeen).toBe(2);expect(f.sessions.has(id(3))).toBe(true);expect(f.sessions.has(id(5))).toBe(true);
+  }finally{vi.useRealTimers();}
+ });
+ it('preserves earlier groups when the next group starts no SQL work before its deadline',async()=>{
+  const f=await fixture(30);for(let n=1;n<=30;n++)await persistSessionDenial(f.store,id(n));let calls=0;
+  vi.useFakeTimers();try{
+   const batch=async(ids:readonly string[])=>{if(++calls===1)return {completed:ids.length,deleted:new Set(ids.filter(x=>f.sessions.delete(x)))};vi.setSystemTime(Date.now()+20000);return {completed:0,deleted:new Set<string>()};};
+   const result=await sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,batch);
+   expect(result).toMatchObject({seen:24,deleted:24,continuation:expect.any(String)});expect(f.progress().cursor).toBe(id(24));expect(f.sessions.size).toBe(6);
+  }finally{vi.useRealTimers();}
+ });
+ it('rejects completion claims outside the checked prefix',async()=>{
+  const f=await fixture(4);for(let n=1;n<=4;n++)await persistSessionDenial(f.store,id(n));
+  for(const result of [{completed:-1,deleted:new Set<string>()},{completed:5,deleted:new Set<string>()},{completed:1.5,deleted:new Set<string>()},{completed:1,deleted:new Set([id(2)])}]){
+   await expect(sweepSessionCandidates(f.store,f.list,f.cleanup,undefined,undefined,undefined,async()=>result)).rejects.toThrow();expect(f.records.has(candidateProgressKey)).toBe(false);
+  }
  });
 });

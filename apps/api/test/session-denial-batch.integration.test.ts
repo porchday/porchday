@@ -22,7 +22,7 @@ describe('denial batch bounds',()=>{
  it('refuses oversized, duplicate or malformed authority lists before SQL',async()=>{
   const connect=vi.fn();const pool={connect} as unknown as Pool,id=randomUUID();
   for(const ids of [Array.from({length:denialDeleteBatchLimit+1},()=>randomUUID()),[id,id],['not-a-session']])await expect(deleteDeniedSessionBatch(pool,ids)).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
-  expect(connect).not.toHaveBeenCalled();expect(await deleteDeniedSessionBatch(pool,[])).toEqual(new Set());
+  expect(await deleteDeniedSessionBatch(pool,[id],Date.now()-1)).toEqual({completed:0,deleted:new Set()});expect(connect).not.toHaveBeenCalled();expect(await deleteDeniedSessionBatch(pool,[])).toEqual({completed:0,deleted:new Set()});
  });
 });
 
@@ -41,14 +41,14 @@ describe('denial batch bounds',()=>{
  it('amortizes a same-member backlog while retaining unrelated sessions and idempotence',async()=>{
   const member=await person(),ids=await sessions(member,24),unrelated=await sessions(member,1);calls=0;
   for(const id of ids)expect(await deleteDeniedSession(runtime,id)).toBe(true);const scalarCalls=calls;
-  await restore(member,ids);calls=0;expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual(new Set(ids));const batchCalls=calls;
+  await restore(member,ids);calls=0;expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual({completed:ids.length,deleted:new Set(ids)});const batchCalls=calls;
   expect(batchCalls).toBeLessThanOrEqual(scalarCalls/4);expect(await remaining(ids)).toBe(0);expect(await remaining(unrelated)).toBe(1);
-  expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual(new Set());
+  expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual({completed:ids.length,deleted:new Set()});
   console.log(JSON.stringify({denialBatchComparison:{sessions:24,members:1,scalarSqlCalls:scalarCalls,batchSqlCalls:batchCalls,networkLatencyInjected:false}}));
  });
  it('bounds round trips for a backlog spread across 24 distinct members',async()=>{
   const ids:string[]=[];for(let n=0;n<24;n++)ids.push(...await sessions(await person(),1));
-  calls=0;expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual(new Set(ids));
+  calls=0;expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual({completed:ids.length,deleted:new Set(ids)});
   expect(calls).toBe(148);expect(await remaining(ids)).toBe(0);
  });
  it('drains real SQL candidates using verified authority and leaves live sessions intact',async()=>{
@@ -78,20 +78,38 @@ describe('denial batch bounds',()=>{
   const members=[await person(),await person()].sort(),first=await sessions(members[0],4),second=await sessions(members[1],4);let commits=0;
   after=async sql=>{if(sql==='COMMIT'&&++commits===2)throw Error('lost commit reply');};
   await expect(deleteDeniedSessionBatch(runtime,[...first,...second])).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');after=undefined;
-  expect(await remaining(first)).toBe(0);expect(await remaining(second)).toBe(4);expect(await deleteDeniedSessionBatch(runtime,[...first,...second])).toEqual(new Set(second));
+  expect(await remaining(first)).toBe(0);expect(await remaining(second)).toBe(4);expect(await deleteDeniedSessionBatch(runtime,[...first,...second])).toEqual({completed:8,deleted:new Set(second)});
  });
  it('rechecks the captured owner after waiting for its identity lock',async()=>{
   const member=await person(),other=await person(),ids=await sessions(member,4),entered=deferred(),lock=await owner.connect();await lock.query('BEGIN');await lock.query("SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",[member]);
   before=async sql=>{if(sql.includes('pg_advisory_xact_lock'))entered.resolve();};
-  const pending=deleteDeniedSessionBatch(runtime,ids);try{await entered.promise;await lock.query('UPDATE public.auth_session SET "userId"=$1 WHERE id=$2',[other,ids[0]]);await lock.query('COMMIT');expect(await pending).toEqual(new Set(ids.slice(1)));expect(await remaining([ids[0]])).toBe(1);}finally{await lock.query('ROLLBACK');lock.release();await pending.catch(()=>{});}
+  const pending=deleteDeniedSessionBatch(runtime,ids);try{await entered.promise;await lock.query('UPDATE public.auth_session SET "userId"=$1 WHERE id=$2',[other,ids[0]]);await lock.query('COMMIT');expect(await pending).toEqual({completed:ids.length,deleted:new Set(ids.slice(1))});expect(await remaining([ids[0]])).toBe(1);}finally{await lock.query('ROLLBACK');lock.release();await pending.catch(()=>{});}
  });
  it('releases each member lock before waiting for another member',async()=>{
   const members=[await person(),await person()].sort(),first=await sessions(members[0],4),second=await sessions(members[1],4),entered=deferred(),lock=await owner.connect();await lock.query('BEGIN');await lock.query("SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",[members[1]]);let locks=0;
   before=async sql=>{if(sql.includes('pg_advisory_xact_lock')&&++locks===2)entered.resolve();};
-  const pending=deleteDeniedSessionBatch(runtime,[...first,...second]);try{await entered.promise;expect(await remaining(first)).toBe(0);const check=await owner.connect();try{await check.query('BEGIN');expect((await check.query("SELECT pg_try_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0)) AS acquired",[members[0]])).rows[0].acquired).toBe(true);await check.query('ROLLBACK');}finally{check.release();}await lock.query('COMMIT');expect((await pending).size).toBe(8);}finally{await lock.query('ROLLBACK');lock.release();await pending.catch(()=>{});}
+  const pending=deleteDeniedSessionBatch(runtime,[...first,...second]);try{await entered.promise;expect(await remaining(first)).toBe(0);const check=await owner.connect();try{await check.query('BEGIN');expect((await check.query("SELECT pg_try_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0)) AS acquired",[members[0]])).rows[0].acquired).toBe(true);await check.query('ROLLBACK');}finally{check.release();}await lock.query('COMMIT');expect((await pending).deleted.size).toBe(8);}finally{await lock.query('ROLLBACK');lock.release();await pending.catch(()=>{});}
+ });
+ it('acknowledges already-absent IDs without starting an owner transaction after the deadline',async()=>{
+  const ids=Array.from({length:4},()=>randomUUID());let now=Date.now();const deadline=now+20000;vi.spyOn(Date,'now').mockImplementation(()=>now);
+  after=async sql=>{if(sql==='COMMIT')now=deadline;};calls=0;
+  expect(await deleteDeniedSessionBatch(runtime,ids,deadline)).toEqual({completed:4,deleted:new Set()});expect(calls).toBe(4);
+ });
+ it('keeps scalar fallback progress when its first confirmed commit exhausts the budget',async()=>{
+  const ids=await sessions(await person(),3);let now=Date.now();const deadline=now+20000;vi.spyOn(Date,'now').mockImplementation(()=>now);
+  after=async sql=>{if(sql==='COMMIT')now=deadline;};
+  expect(await deleteDeniedSessionBatch(runtime,ids,deadline)).toEqual({completed:1,deleted:new Set([ids[0]])});after=undefined;vi.restoreAllMocks();expect(await remaining(ids)).toBe(2);
+ });
+ it('reports only the committed input prefix when owners are interleaved and the budget ends',async()=>{
+  const members=[await person(),await person()].sort().reverse(),first=await sessions(members[0],4),second=await sessions(members[1],4),ids=[first[0],second[0],...first.slice(1),...second.slice(1)];
+  let now=Date.now(),commits=0;const deadline=now+20000;vi.spyOn(Date,'now').mockImplementation(()=>now);
+  after=async sql=>{if(sql==='COMMIT'&&++commits===2)now=deadline;};
+  expect(await deleteDeniedSessionBatch(runtime,ids,deadline)).toEqual({completed:1,deleted:new Set([first[0]])});
+  after=undefined;vi.restoreAllMocks();expect(await remaining(first)).toBe(0);expect(await remaining(second)).toBe(4);
+  expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual({completed:8,deleted:new Set(second)});
  });
  it('starts no new member transaction after the work deadline and safely repeats partial progress',async()=>{
   const members=[await person(),await person()].sort(),first=await sessions(members[0],4),second=await sessions(members[1],4);let now=Date.now(),commits=0;const deadline=now+20000;vi.spyOn(Date,'now').mockImplementation(()=>now);
-  after=async sql=>{if(sql==='COMMIT'&&++commits===2)now=deadline;};await expect(deleteDeniedSessionBatch(runtime,[...first,...second],deadline)).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');after=undefined;vi.restoreAllMocks();expect(await remaining(first)).toBe(0);expect(await remaining(second)).toBe(4);expect(await deleteDeniedSessionBatch(runtime,[...first,...second])).toEqual(new Set(second));
+  after=async sql=>{if(sql==='COMMIT'&&++commits===2)now=deadline;};expect(await deleteDeniedSessionBatch(runtime,[...first,...second],deadline)).toEqual({completed:4,deleted:new Set(first)});after=undefined;vi.restoreAllMocks();expect(await remaining(first)).toBe(0);expect(await remaining(second)).toBe(4);expect(await deleteDeniedSessionBatch(runtime,[...first,...second])).toEqual({completed:8,deleted:new Set(second)});
  });
 });
