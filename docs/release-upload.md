@@ -361,10 +361,34 @@ permit promotion before the result is reviewed.
 the state/controller composition. It rechecks review bytes and supporting files
 before activation/rollback and around journeys, including resume after an uncertain
 write. Callers supply the narrow provider transport and journey verifier, not a
-replacement compatibility callback. Finalization and the operator CLI remain to
-be integrated.
+replacement compatibility callback. Finalization is composed below; the operator CLI remains to be integrated.
 
 These checks establish review scope and evidence integrity. An operator must still
 inspect the actual test coverage and conclusions: a hash does not authenticate a
 test's claims, and a generic passing test log cannot establish client compatibility.
 The module does not fabricate acceptance evidence from CI or schema equality.
+
+### Terminal proof collection and interruption-safe finalization
+
+`finalizePreparedActivation` in `scripts/release-activation-finalize.ts` requires a
+matching terminal controller journal. It performs no deployment or authenticated
+journey. It checks the exact deployment ID and operation annotation, fresh schema
+and full provider inventory, and public asset hashes; it repeats state and identity
+checks after asset reads. Only then does it durably save provider and asset proofs,
+call the lease's canonical finalization, and archive the lease. A failure before
+receipt persistence leaves canonical state and the owned lease intact.
+
+A crash after the durable finalization receipt uses `resumeFinalization` to finish
+that same receipt and archive locally. The receipt, journal, canonical bytes and
+retained proof digests must still agree. This path deliberately returns
+`resumed-historical-finalization`: it completes historical bookkeeping without
+claiming newly observed health, invoking a user journey, or repeating a provider
+request. Callers must check `FileDeploymentLease.completed` before acquiring an
+already archived operation. The operator command still needs to wire these paths
+together and provide the durable authenticated-journey resume behavior.
+
+Local validation covers successful activation and rollback finalization, failed
+assets, changed provider identity/inventory, changed journal/review, and resume
+after canonical replacement but before archive without remote calls. Existing
+real-process crash tests now exercise the resume method before and after canonical
+replacement. No new hosted rollout is claimed by these tests.

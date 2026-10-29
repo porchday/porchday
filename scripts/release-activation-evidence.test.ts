@@ -1,3 +1,4 @@
+import {finalizePreparedActivation} from './release-activation-finalize.ts';
 import {activationReviewHash,verifyActivationReview,createReviewedActivationPorts,compatibilityChecks,type ActivationReviewEvidence,type CompatibilityReview} from './release-activation-review.ts';
 import {publicAssetManifestHash} from './release-assets-verify.ts';
 import {describe,it,expect,vi} from 'vitest';
@@ -12,7 +13,7 @@ import {comparableReleaseResources,uploadReconciliationEvidenceHash} from './rel
 import {releaseSettings} from './cloudflare-release-reader.ts';
 import {readCompletedUpload,assertActivationInventory} from './release-activation-evidence.ts';
 import type {UploadManifest} from './release-upload-cli.ts';
-import {recoverDeployment,type DeploymentPlan,type RecoveryState,type DeploymentPorts} from './deployment-recovery.ts';
+import {recoverDeployment,deploymentPlanHash,rollbackOperationId,type DeploymentPlan,type RecoveryState,type DeploymentPorts} from './deployment-recovery.ts';
 const id=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const hash=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
 async function fixture(options:{complete?:boolean;frontend?:boolean;production?:boolean;mutate?:(proof:any)=>void}={}){
@@ -185,4 +186,46 @@ describe('staging acceptance ordering',()=>{
   f.review.checks.stagingAcceptance={status:'scheduled',basis:'Run hosted acceptance after this staging activation.',evidence:[]};f.save();if(production)expect(f.verify).toThrow('COMPATIBILITY_INCOMPLETE');else expect(f.verify().pendingChecks).toEqual(['stagingAcceptance']);
   f.review.checks.webClientOverlap={status:'scheduled',basis:'Not checked yet',evidence:[]};f.save();expect(f.verify).toThrow('COMPATIBILITY_INCOMPLETE');
  }finally{f.close();}});
+});
+
+async function finalizationFixture(rollback=false){
+ const f=await reviewFixture();f.evidence.assets.candidate.files['app.js']=hash('candidate');f.evidence.assets.baseline.files['app.js']=hash('baseline');
+ f.review.publicAssets={candidate:publicAssetManifestHash(f.evidence.assets.candidate),baseline:publicAssetManifestHash(f.evidence.assets.baseline)};f.save();f.plan.assetManifests={...f.review.publicAssets};
+ const lease=FileDeploymentLease.acquire(f.root,f.plan),version=rollback?id(1):id(2),deploymentId=rollback?id(8):id(7),operationId=rollback?rollbackOperationId(f.plan.operationId):f.plan.operationId;
+ const inventory=structuredClone(f.proof.inventory);inventory.workers[f.key].active=version;inventory.workers[f.key].resources=rollback?f.manifest.evidence.resources:f.proof.candidate.resources;
+ const state:RecoveryState={v:1,revision:rollback?5:4,planHash:deploymentPlanHash(f.plan),phase:rollback?'rolled-back':'complete',candidateDeploymentId:id(7),...(rollback?{rollbackDeploymentId:id(8)}:{})};
+ const journal={read:vi.fn(async()=>structuredClone(state)),write:async()=>{throw Error('FINALIZATION_MUST_NOT_CHANGE_JOURNAL');}};
+ const reader={snapshot:vi.fn(async()=>structuredClone(inventory))},client={observe:vi.fn(async()=>({version,deploymentId,operationId}))};
+ const request=vi.fn(async(_input:any,init:any)=>{expect(init?.method??'GET').toBe('GET');return new Response(rollback?'baseline':'candidate',{headers:{'content-type':'text/javascript'}});}) as any;
+ const checks={tooling:async()=>{throw Error('UNEXPECTED_TOOLING');},ci:async()=>{throw Error('UNEXPECTED_CI');},schema:vi.fn(async()=>structuredClone(f.manifest.evidence.schema))};
+ const options={workspace:f.root,plan:f.plan,manifest:f.manifest,proofPath:f.proofPath,review:f.evidence,lease,journal,reader,client,database:{connection:'synthetic',branchId:'synthetic'},checks,directory:f.root,fetch:request};
+ return{...f,lease,state,journal,reader,client,request,checks,options,close:()=>{lease.close();f.close();}};
+}
+describe('read-only terminal finalization orchestration',()=>{
+ it.each([false,true])('retains fresh provider/assets proofs and finalizes the terminal outcome (rollback=%s)',async rollback=>{const f=await finalizationFixture(rollback);try{
+  const result=await finalizePreparedActivation(f.options,AbortSignal.timeout(5000));expect(result.status).toBe('finalized');
+  const canonical=await FileDeploymentLease.completed(f.root,f.plan,f.journal);expect(canonical?.stagingVersion).toBe(rollback?id(1):id(2));expect(canonical?.stagingAssetsSource).toBe(rollback?'b'.repeat(40):'a'.repeat(40));
+  expect(f.request).toHaveBeenCalledTimes(1);expect(f.reader.snapshot).toHaveBeenCalledTimes(2);expect(f.client.observe).toHaveBeenCalledTimes(2);
+ }finally{f.close();}});
+ it.each(['unresolved','assets','identity','inventory','journal','review'])('retains the lease and canonical baseline on %s failure',async kind=>{const f=await finalizationFixture();try{
+  if(kind==='unresolved')f.journal.read.mockResolvedValue({...f.state,phase:'candidate-observed'});
+  if(kind==='assets')f.request.mockResolvedValue(new Response('wrong',{headers:{'content-type':'text/javascript'}}));
+  if(kind==='identity')f.client.observe.mockResolvedValue({version:id(2),deploymentId:id(9),operationId:f.plan.operationId});
+  if(kind==='inventory')f.reader.snapshot.mockImplementation(async()=>{const x=structuredClone(f.proof.inventory);x.workers.production.latest=id(9);return x;});
+  if(kind==='journal')f.journal.read.mockResolvedValueOnce(f.state).mockResolvedValue({...f.state,revision:99});
+  if(kind==='review')writeFileSync(f.testPath,'changed');
+  await expect(finalizePreparedActivation(f.options,AbortSignal.timeout(5000))).rejects.toThrow();
+  expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(id(1));expect(()=>f.lease.assert(f.plan)).not.toThrow();
+ }finally{f.close();}});
+ it('resumes a durable receipt after failure to archive, with no remote reads or user writes',async()=>{const f=await finalizationFixture();let resumed:FileDeploymentLease|undefined;try{
+  f.lease.release=async()=>{throw Error('SIMULATED_ARCHIVE_INTERRUPTION');};
+  await expect(finalizePreparedActivation(f.options,AbortSignal.timeout(5000))).rejects.toThrow('SIMULATED_ARCHIVE_INTERRUPTION');f.lease.close();
+  resumed=FileDeploymentLease.acquire(f.root,f.plan);
+  await expect(finalizePreparedActivation({...f.options,lease:resumed,plan:{...f.plan,candidateSource:'e'.repeat(40)}},AbortSignal.timeout(5000))).rejects.toThrow('OUTCOME_UNRESOLVED');
+  f.client.observe.mockRejectedValue(Error('NO_REMOTE_READ'));f.reader.snapshot.mockRejectedValue(Error('NO_REMOTE_READ'));f.request.mockRejectedValue(Error('NO_REMOTE_READ'));f.checks.schema.mockRejectedValue(Error('NO_REMOTE_READ'));
+  const calls=[f.client.observe.mock.calls.length,f.reader.snapshot.mock.calls.length,f.request.mock.calls.length,f.checks.schema.mock.calls.length];
+  expect(await finalizePreparedActivation({...f.options,lease:resumed},AbortSignal.timeout(5000))).toEqual({status:'resumed-historical-finalization'});
+  expect([f.client.observe.mock.calls.length,f.reader.snapshot.mock.calls.length,f.request.mock.calls.length,f.checks.schema.mock.calls.length]).toEqual(calls);
+  expect((await FileDeploymentLease.completed(f.root,f.plan,f.journal))?.stagingVersion).toBe(id(2));
+ }finally{resumed?.close();f.close();}});
 });

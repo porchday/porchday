@@ -130,6 +130,15 @@ export class FileDeploymentLease{
   if(current!==receipt.before&&current!==receipt.after)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');
   this.assertOwner();if(current!==receipt.after)atomicText(path,receipt.after,this.root);
  }
+ /** Finish an already durable finalization receipt without re-running provider or user writes.
+  * Returns false when fresh terminal proof collection is still required.
+  * Success is historical bookkeeping, not a new assertion of provider health.
+  */
+ async resumeFinalization(journal:RecoveryJournal):Promise<boolean>{
+  this.assertOwner();
+  if(!readFinalization(join(this.root,'deployment-lock'),this.plan,this.owner))return false;
+  await this.finalize(journal);await this.release(journal);return true;
+ }
  /** Archive the intact lock atomically; never leave an ownerless lock directory on crash. */
  async release(journal:RecoveryJournal):Promise<void>{
   this.assertOwner();const state=await journal.read();terminalState(state,this.owner.planHash);this.assertOwner();

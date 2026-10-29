@@ -117,7 +117,7 @@ it.each(['before-replace','after-replace','after-release'])('resumes finalizatio
   const exited=once(child,'exit');child.kill('SIGKILL');await exited;
   if(boundary==='before-replace')expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
   if(boundary!=='after-release'){
-   lease=FileDeploymentLease.acquire(f.root,plan);expect(()=>lease!.assert(plan)).toThrow('FINALIZATION_IN_PROGRESS');await lease.finalize(journal('complete'));await lease.release(journal('complete'));
+   lease=FileDeploymentLease.acquire(f.root,plan);expect(()=>lease!.assert(plan)).toThrow('FINALIZATION_IN_PROGRESS');expect(await lease.resumeFinalization(journal('complete'))).toBe(true);
   }
   expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
   const completed=await FileDeploymentLease.completed(f.root,plan,journal('complete'));
