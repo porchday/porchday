@@ -1,0 +1,48 @@
+{
+  "v": 1,
+  "date": "2026-10-28",
+  "environment": "staging",
+  "result": "automatic-live-rollback-verified; operator-assisted-finalization",
+  "controllerSource": "b424808ed86e520f7c4bc2ea9864981ebed0bbd2",
+  "runtimeSource": "52949ef0c02f0a1aefa6e81a14e14e1c233eaa87",
+  "baselineVersion": "f504e9c9-04ab-414f-9a75-daeed914144d",
+  "failedCandidateVersion": "eb1e4264-0a6a-4f45-920b-fb90143f9619",
+  "finalSafeInactiveVersion": "243d476e-5092-4b92-af04-8bc5eeb99b6c",
+  "fault": "Only APP_URL changed to a reserved .invalid hostname; candidate sign-in returned 403",
+  "activationDispatchAt": "2026-10-28T23:54:16.043Z",
+  "rollbackDispatchAt": "2026-10-28T23:54:18.592Z",
+  "rollbackVerifiedAt": "2026-10-28T23:54:23.589Z",
+  "activationDispatchToVerifiedRollbackMs": 7546,
+  "activationDispatchToFailureProbeCompletionMs": 1722,
+  "deploymentPostCount": 2,
+  "inactiveUploads": 2,
+  "additionalActivationForSettingsRepair": false,
+  "assetsVerifiedAfterCorrection": 24,
+  "schemaMigrationsRetained": 56,
+  "syntheticFixtureRemoved": true,
+  "canonicalSnapshotPinnedAndLeaseArchived": true,
+  "productionWatch": {
+    "from": "2026-10-28T23:54:00.000Z",
+    "through": "2026-10-28T23:59:31.150783+00:00",
+    "samples": 17,
+    "failedSamples": 0,
+    "scope": "existing login, authorized reads, logout/revocation and readiness probe; bounded sampled coverage"
+  },
+  "alerts": {
+    "outage": "https://github.com/porchday/porchday/issues/52#issuecomment-6483852859",
+    "recovery": "https://github.com/porchday/porchday/issues/52#issuecomment-6483866595",
+    "botCommentsReadBack": true,
+    "humanDeviceReceipt": "not verified",
+    "approximateObservationToCommentSeconds": {
+      "outage": 12.1,
+      "recovery": 11.4
+    }
+  },
+  "providerFinding": "After rollback, active-version resources were correct while Worker-level settings retained the inactive failed candidate APP_URL. Finalization stopped. A separately recorded corrective inactive upload restored safe future-upload settings without activating another version.",
+  "limits": [
+    "Not a normal no-downtime feature rollout test.",
+    "Operator-assisted correction was required after automatic rollback.",
+    "No deliberate production fault or new paid service.",
+    "No claim of achieved monthly SLO or guaranteed recovery time."
+  ]
+}
