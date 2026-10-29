@@ -247,3 +247,30 @@ Workers request ownership. Previously the shared test queue could make completed
 logout wait for a deliberately paused password-change request. This was a harness
 deadlock, not evidence of a deployed application defect. Hosted concurrency,
 rollback with retained SQL rows and the remaining production gates stay open.
+
+## Hosted logout / other-session revocation overlap — October 29, 2026
+
+[Scoped hosted evidence](evidence/session-denial-concurrency-staging-2026-10-29.json)
+records overlapping requests on staging version `57a5c9f2`, runtime `ebc567a4`.
+Two isolated synthetic members and three sessions were used. The primary member's
+logout and `revoke-other-sessions` requests started one millisecond apart and were
+both in flight for over one second. Logout returned 200; the competing revocation
+returned 401. The primary cookie was denied and its exact SQL row removed. Native
+R2 readback confirmed the canonical denial.
+
+Because the competing revocation did not complete, the primary member's secondary
+session correctly remained usable. A separate member's profile also remained
+usable. Both remaining sessions were then logged out and verified revoked before
+exact fixture cleanup. Global privacy control was active with zero pending intents.
+No password-change or other email-generating action was requested.
+
+The temporary read-only operator was restricted to the three synthetic denial keys,
+control readback and disposable CAS probes. Its removal, zero remaining fixture
+rows, unchanged deployment/configuration snapshots and released lease were verified.
+Final staging readiness was 200/healthy. Production flags were unchanged and off.
+
+This is one observed hosted ordering, not exhaustive concurrency or evidence of
+particular server scheduling. The hosted revocation-first success case and hosted
+password-change races remain unverified; controlled password-change orderings have
+separate local PostgreSQL coverage. Rollback, hosted interruption, device and
+history-growth acceptance remain open.
