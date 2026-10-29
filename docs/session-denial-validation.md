@@ -1,5 +1,13 @@
 # Independent session denial: validation gates
 
+Current staging update, 2026-10-29 13:02 UTC: runtime `770071b` / Worker
+`c0b3699a` adds only gated pre-journal logout diagnostics to `8634c17`. Writer
+and cleanup remain enabled in staging; production remains `f613874a` /
+`ebc567a4` with both disabled. Fourteen healthy existing-session continuity
+samples bracketed the staged code activation; exact fixtures are removed.
+[Scoped evidence](evidence/logout-prejournal-continuity-staging-2026-10-29.json).
+Earlier validation below remains scoped to its recorded versions.
+
 As of October 29, 2026, 12:48 UTC, staging version `2120ff4c` runs isolated
 runtime `8634c17` with logout writer and cleanup enabled. Production `f613874a`
 retains server runtime `ebc567a4`, with both flags disabled. Current frontend

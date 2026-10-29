@@ -75,3 +75,19 @@ Exact fixture cleanup verified zero rows, the provider was restored and the leas
 released. Production Workers were unchanged. This proves the stated sampled
 flag-only rollback scope; normal feature rollout, old/new browser/native clients,
 compatible schema changes and production continuity still require evidence.
+
+## Hosted staging code activation — October 29, 13:01 UTC
+
+Diagnostic runtime `770071b` was activated as `c0b3699a`, replacing `2120ff4c`
+without changing schema, frontend assets or protocol. The existing allowed
+session and revoked cookie spanned the code change. Fourteen samples were healthy
+from 13:01:25.789 through 13:01:52.392 UTC; maximum start gap was 2,003 milliseconds.
+One baseline completed before dispatch, candidate-phase samples were retained,
+and two samples began after command exit in complete state. Release journeys,
+provider/schema/artifacts and 31 retained assets passed; exact fixture cleanup
+left zero rows and released the lease. Production Workers were unchanged.
+[Evidence](evidence/logout-prejournal-continuity-staging-2026-10-29.json).
+
+This adds actual backend code activation coverage to the separate flag-only
+rollback rehearsal. It does not establish frontend/native client or schema
+overlap, unsampled continuity, production rollout or the monthly SLO.
