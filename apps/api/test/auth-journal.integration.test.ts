@@ -161,7 +161,7 @@ suite("Authenticated account privacy journal boundary", () => {
   beforeAll(async () => {
     if (
       !base ||
-      !new URL(base).pathname.endsWith("/porchday_auth_journal_test")
+      !(["localhost","127.0.0.1"].includes(new URL(base).hostname) && /^\/porchday(?:_[a-z0-9]+)*_auth_journal_test$/.test(new URL(base).pathname))
     )
       throw Error("Dedicated disposable auth_journal_test database required");
     owner = new Pool({ connectionString: base });
@@ -706,5 +706,52 @@ suite("Authenticated account privacy journal boundary", () => {
     expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
     expect(store.rows.get('control.json')!.value).toBe(control);
   }));
+
+  it('recovers a denial committed after the real HTTP publication deadline without a global intent',async()=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(p.id),control=store.rows.get('control.json')!.value;
+    const put=store.put.bind(store);let release!:()=>void,entered!:()=>void,committed!:()=>void;
+    const gate=new Promise<void>(resolve=>{release=resolve;});
+    const started=new Promise<void>(resolve=>{entered=resolve;});
+    const finished=new Promise<void>(resolve=>{committed=resolve;});let writes=0;
+    store.put=async(...args)=>{
+      if(!args[0].startsWith('session-denials/v1/'))return put(...args);
+      writes++;entered();await gate;const result=await put(...args);committed();return result;
+    };
+    try{
+      const request=call('sign-out',{},p.cookie);await started;
+      expect((await request).response.status).toBe(503);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(1);
+      expect((await(await call('get-session',undefined,p.cookie)).response.json()).user.id).toBe(p.id);
+      release();await finished;
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      // The timed-out HTTP path must not resume SQL cleanup after the late write.
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(1);
+      expect(writes).toBe(1);expect(store.rows.get('control.json')!.value).toBe(control);
+      expect((await cleanupDeniedSessions(env)).deleted).toBe(1);
+      expect((await cleanupDeniedSessions(env)).deleted).toBe(0);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+      expect(store.rows.get('control.json')!.value).toBe(control);
+      expect(writes).toBe(1);
+    }finally{release();}
+  }),15000);
+  it('bounds real identity-lock contention during logout and recovers through the independent sweep',async()=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(),control=store.rows.get('control.json')!.value;
+    const lock=await owner.connect();
+    try{
+      await lock.query('BEGIN');
+      await lock.query("SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",[p.id]);
+      expect((await call('sign-out',{},p.cookie)).response.status).toBe(503);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(1);
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      expect(store.rows.get('control.json')!.value).toBe(control);
+    }finally{await lock.query('ROLLBACK');lock.release();}
+    expect((await cleanupDeniedSessions(env)).deleted).toBe(1);
+    expect((await cleanupDeniedSessions(env)).deleted).toBe(0);
+    expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+    expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+    expect(store.rows.get('control.json')!.value).toBe(control);
+  }),15000);
 
 });

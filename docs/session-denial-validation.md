@@ -75,3 +75,23 @@ writer/cleanup flags were unchanged.
 This completes the scoped hosted push-enforcement check. It does not demonstrate
 physical-device delivery, a production queue end-to-end test, writer/cleanup
 interruption recovery, or the monthly availability objective.
+
+## Local logout-route interruption checks — October 29, 2026
+
+The real Hono logout route and restricted PostgreSQL auth connection now cover a
+write committing after the four-second publication deadline and cleanup timing out
+behind an actual PostgreSQL identity advisory lock. The full auth-journal suite
+passed 18 tests against a newly created loopback database, removed afterward.
+
+In the late-write case, the HTTP response is 503 and SQL remains untouched. Once
+the immutable denial commits, the old cookie becomes anonymous while the separate
+member remains authenticated. The expired HTTP path does not resume cleanup or
+repeat publication. The independent sweep deletes the exact session once, then
+returns zero deletions on another pass. The global control record stays unchanged.
+
+In the lock-contention case, publication succeeds but SQL cleanup fails within its
+configured timeout. The retained SQL row cannot authorize the denied cookie, the
+separate member remains authenticated, and releasing the lock permits sweep
+recovery. Global control again stays unchanged. These tests exercise real SQL and
+HTTP route behavior with an injected in-memory denial store; they do not establish
+hosted writer behavior, process-crash durability, or device acceptance.
