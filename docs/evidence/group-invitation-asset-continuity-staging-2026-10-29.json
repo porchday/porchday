@@ -1,0 +1,139 @@
+{
+  "rollbackReady": {
+    "at": "2026-10-29T16:27:06.740Z",
+    "passed": true,
+    "environment": "staging",
+    "version": "b8d1a024-69b2-42c5-b5ff-eab805423b34",
+    "runtimeSource": "005454607c98ffdb7c430a947bedb4586a14a45b",
+    "backendVersion": "93259d5e-7407-484e-858b-7e72a7c85595",
+    "assetsSource": "b2b3a069a44e8b9d41feb266671863c23bafa310",
+    "checks": [
+      "existing_allowed_session_and_revoked_cookie_across_asset_activation",
+      "existing_session_reads_and_denial_observed_across_asset_activation"
+    ],
+    "candidate": "b8d1a024-69b2-42c5-b5ff-eab805423b34",
+    "baseline": "a693b2cb-6d30-4deb-ace5-82d457fa6c3a",
+    "remainingFixtureRows": 0,
+    "stagingWriterEnabled": true,
+    "stagingCleanupEnabled": true,
+    "productionWriterEnabled": false,
+    "productionCleanupEnabled": false,
+    "candidateVerifiedAndCleanupInventoryUnchanged": true,
+    "continuity": {
+      "at": "2026-10-29T16:26:59.669Z",
+      "status": "complete",
+      "samples": 13,
+      "failedSamples": 0,
+      "postCommandSamples": 2,
+      "maxStartGapMs": 2004.2374999999993
+    },
+    "browser": {
+      "at": "2026-10-29T16:27:06.712Z",
+      "origin": "https://staging.porchday.com",
+      "passed": true,
+      "oldDocumentRetained": true,
+      "newDocumentMatches": true,
+      "newTabRendered": true,
+      "lazyModules": [
+        "/assets/TraceInspector-DpIta2v8.js"
+      ],
+      "loadedModules": 1,
+      "assets": [
+        {
+          "path": "/assets/TraceInspector-DpIta2v8.js",
+          "status": 200,
+          "contentType": "text/javascript",
+          "matchesBaseline": true
+        }
+      ],
+      "pageErrors": 0,
+      "moduleMimeErrors": 0,
+      "htmlComparison": "Exact canonical hash after optional removal of one Cloudflare external analytics element at closing body; no other normalization.",
+      "scope": "Unauthenticated open login tab retained across hosted activation, with cold lazy module imports afterward and a fresh separate browser context; no login or form submission."
+    },
+    "limitations": [
+      "Rollback-ready preparation retains the old UI; it is not the new feature activation.",
+      "Continuity is sampled approximately every two seconds, not proof of every request.",
+      "Browser test is unauthenticated; signed-in feature UI and physical native clients remain separate gates.",
+      "No production change or monthly SLO claim."
+    ]
+  },
+  "candidate": {
+    "environment": "staging",
+    "version": "bab1d2c1-0627-4abe-b05d-cf512ebbd511",
+    "runtimeSource": "005454607c98ffdb7c430a947bedb4586a14a45b",
+    "assetsSource": "d6fd3faca61d2d5c350d62f4e8ad5bcd50cc8f32",
+    "backendVersion": "93259d5e-7407-484e-858b-7e72a7c85595",
+    "deploymentOutcome": "complete",
+    "continuityAcceptancePassed": false,
+    "samples": 12,
+    "failedSamples": 1,
+    "postCommandSamples": 2,
+    "maxObservedSampleStartGapMs": 2004,
+    "failedObservations": [
+      {
+        "kind": "sample",
+        "index": 1,
+        "phaseAtStart": "command-running",
+        "sample": {
+          "at": "2026-10-29T16:29:16.819Z",
+          "completedAt": "2026-10-29T16:29:17.314Z",
+          "healthy": false,
+          "checks": [
+            {
+              "name": "authorized_profile",
+              "status": 200,
+              "ok": true,
+              "durationMs": 376
+            },
+            {
+              "name": "authorized_feed",
+              "status": 200,
+              "ok": true,
+              "durationMs": 493
+            },
+            {
+              "name": "denied_profile",
+              "status": 401,
+              "ok": true,
+              "durationMs": 274
+            },
+            {
+              "name": "protected_readiness",
+              "ok": false,
+              "failure": "transport_or_response",
+              "durationMs": 70
+            }
+          ],
+          "scope": "existing_session_reads_denial_and_readiness"
+        },
+        "planHash": "1673d5cef8802af2e42c39932d9c97da80982326a221296276cf1faf844c152f",
+        "providerPhaseAtStart": "prepared",
+        "providerPhase": "prepared"
+      }
+    ],
+    "terminalEvent": {
+      "kind": "command-terminal",
+      "at": "2026-10-29T16:29:33.664Z",
+      "status": "complete",
+      "planHash": "1673d5cef8802af2e42c39932d9c97da80982326a221296276cf1faf844c152f",
+      "providerPhase": "complete"
+    },
+    "cleanup": {
+      "at": "2026-10-29T16:30:29.682Z",
+      "passed": false,
+      "remainingFixtureRows": 0,
+      "providerUnchanged": true,
+      "activationCompleted": true,
+      "continuityAcceptancePassed": false,
+      "disposition": "activation complete but a prepared-phase readiness sample failed; no replay"
+    },
+    "browserAcrossActivation": "not collected: continuity acceptance threw; browser closed in finally",
+    "limitations": [
+      "Prepared-phase readiness failure is transport_or_response with no recorded HTTP status; cause is unproven.",
+      "Deployment completion and later passing samples do not erase the failed observation.",
+      "Observer rejects acceptance after a failed in-command sample; it currently does not interlock provider dispatch or trigger rollback from that sample.",
+      "No production deployment or monthly SLO claim."
+    ]
+  }
+}

@@ -224,3 +224,41 @@ replayed. This fresh release used corrected verification configuration and the
 tested preflight gate. Production writer/cleanup remain disabled. This adds
 sampled backend code continuity, not frontend/native/schema overlap or the
 monthly SLO. The earlier logout latency cause remains an investigation.
+
+## Hosted frontend asset transition — October 29, 16:27–16:30 UTC
+
+[Evidence](evidence/group-invitation-asset-continuity-staging-2026-10-29.json)
+records two separate staging activations. The rollback-ready version retained
+the old UI and added the candidate immutable assets. It passed 13 continuity
+samples with zero failures, two post-command samples, and a maximum sample-start
+gap of 2,004.24 ms. A real browser tab stayed open across that activation,
+retained its form state and loaded its old cold module with the expected hash
+and MIME type; a separate fresh context rendered the retained UI. The browser
+HTML comparison removes only the observed external Cloudflare analytics element
+at the closing body before requiring exact canonical bytes. Public asset
+verification itself remains byte-exact.
+
+The subsequent feature frontend activation completed, but its continuity
+acceptance **failed**. At 16:29:16.819 UTC, while the durable controller was still
+`prepared`, protected readiness failed with `transport_or_response` and no HTTP
+status. Authorized profile/feed reads and denied-cookie rejection passed in that
+sample. The controller later completed its own verification and finalized the
+new staging version. The observer retained the failure and threw
+`CONTINUITY_SAMPLES_FAILED`; it did not collect the post-activation browser check.
+This is not a successful zero-failure feature rollout. The failure cause is
+unproven, and no deployment or logout mutation was replayed.
+
+This exposes a remaining integration gap: in-command unhealthy observations
+currently reject acceptance after the command finishes, but do not themselves
+interlock provider dispatch or request compatible rollback. A failure observed
+while preparation is still running must prevent subsequent candidate dispatch;
+after dispatch, recovery must use the existing durable operation and verified
+rollback target. Do not implement this by blindly restarting a deployment or
+using a fresh operation ID to hide the failed attempt. Post-terminal failures
+also need explicit disposition rather than rewriting successful journal history.
+
+The candidate remains active only in staging, with the verified rollback-ready
+version retained. Read-only reconciliation and exact fixture cleanup completed;
+zero synthetic rows remain, canonical/provider state agrees, and the shared lease
+is released. Production is unchanged. Signed-in feature UI, supported native
+clients, production continuity and the remaining reliability gates remain open.
