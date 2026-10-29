@@ -12,7 +12,7 @@ export class JournalStoreProbe extends DurableObject<Record<string, never>> {
   if(!['/get','/put'].includes(path))return new Response(null,{status:404});
   const reader=request.body?.getReader();if(!reader)return new Response(null,{status:400});
   const chunks:Uint8Array[]=[];let size=0;
-  try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>65536){await reader.cancel();return new Response(null,{status:413});}chunks.push(value);}}
+  try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2*1024*1024){await reader.cancel();return new Response(null,{status:413});}chunks.push(value);}}
   catch{return new Response(null,{status:400});}
   const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
   const text=new TextDecoder().decode(bytes);
@@ -25,7 +25,7 @@ export class JournalStoreProbe extends DurableObject<Record<string, never>> {
    return Response.json(row??null);
    }catch{return new Response(null,{status:503});}
   }
-  if(Object.keys(input).some(k=>!['key','value','onlyIf'].includes(k))||typeof input.value!=='string'||new TextEncoder().encode(input.value).length>32768)return new Response(null,{status:400});
+  if(Object.keys(input).some(k=>!['key','value','onlyIf'].includes(k))||typeof input.value!=='string'||new TextEncoder().encode(input.value).length>256*1024)return new Response(null,{status:400});
   const condition=input.onlyIf;
   if(!condition||typeof condition!=='object'||Array.isArray(condition)||Object.keys(condition).length!==1||
    !(condition.etagDoesNotMatch==='*'||typeof condition.etagMatches==='string'&&/^[a-f0-9-]{36}$/.test(condition.etagMatches)))return new Response(null,{status:400});

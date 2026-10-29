@@ -18,6 +18,7 @@ try{
  assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);checks++;
  const result=await responses.find(r=>r.status===200).json();
  assert.equal(result.outcome,'success');assert.equal(result.acceptanceClaim,false);assert.equal(result.shapeOnly,true);
+ assert.ok(result.recordBytes.batch>32768&&result.recordBytes.registered>20000);checks++;
  assert.equal(result.spans.length,11);assert.equal(result.spans.filter(s=>s.operation==='write').length,6);assert.equal(result.spans.filter(s=>s.operation==='read').length,5);checks++;
  assert.ok(result.spans.every(s=>s.outcome==='success'&&Number.isFinite(s.durationMs)&&s.durationMs>=0));checks++;
  assert.equal((await request(mf)).status,409);checks++;

@@ -1,3 +1,4 @@
+import {syntheticJournalRecords} from './records';
 /** Isolated single-use diagnostic controller. Never an application entry point. */
 export {JournalStoreProbe} from './worker';
 type Env={PROBE:DurableObjectNamespace;PROBE_TOKEN:string;PROBE_RUN:string;PROBE_EXPIRES:string};
@@ -27,28 +28,28 @@ export default {async fetch(request:Request,env:Env):Promise<Response>{
   // Durable latch precedes setup and all measured work. Never retry an unknown run.
   const lease=await io('put','lease','started');if(!lease)return new Response(null,{status:409});
   const spans:Span[]=[];const startedAt=new Date().toISOString();let outcome='error',setupMs:number|null=null;
-  const start=performance.now();
+  const start=performance.now();let recordBytes:Record<string,number>|null=null;
   try{
-   const setup=performance.now();let control=await io('put','control','root');if(!control)throw Error('PROBE_CONFLICT');setupMs=performance.now()-setup;
+   const setup=performance.now();const {records,bytes}=await syntheticJournalRecords();recordBytes=bytes;let expectedControl=records.root;let control=await io('put','control',records.root);if(!control)throw Error('PROBE_CONFLICT');setupMs=performance.now()-setup;
    const measured=async(kind:'get'|'put',key:string,value?:string,etag?:string)=>{
     const begin=performance.now();let result:Awaited<ReturnType<typeof io>>;let ok=false;
-    try{result=await io(kind,key,value,etag);if(!result)throw Error('PROBE_CONFLICT');ok=true;return result;}
+    try{result=await io(kind,key,value,etag);if(!result)throw Error('PROBE_CONFLICT');if(key==='control'){if(kind==='get'&&result.value!==expectedControl)throw Error('PROBE_BYTES_CHANGED');if(kind==='put')expectedControl=value!;}ok=true;return result;}
     finally{spans.push({operation:kind==='get'?'read':'write',durationMs:performance.now()-begin,outcome:ok?'success':'error'});}
    };
    await measured('get','control');
-   await measured('put','intent','synthetic intent');
+   await measured('put','intent',records.intent);
    control=await measured('get','control');
-   control=await measured('put','control','registered',control.etag);
+   control=await measured('put','control',records.registered,control.etag);
    control=await measured('get','control');
-   await measured('put','batch','synthetic batch');
-   control=await measured('put','control','checkpointed',control.etag);
+   await measured('put','batch',records.batch);
+   control=await measured('put','control',records.checkpointed,control.etag);
    control=await measured('get','control');
-   await measured('put','receipt','synthetic receipt');
+   await measured('put','receipt',records.receipt);
    control=await measured('get','control');
-   await measured('put','control','retired',control.etag);
+   await measured('put','control',records.retired,control.etag);
    outcome='success';
   }catch{/* Preserve bounded numeric failure evidence, not provider diagnostics. */}
-  const result={startedAt,endedAt:new Date().toISOString(),outcome,setupMs,totalWithSetupMs:performance.now()-start,spans,acceptanceClaim:false,shapeOnly:true};
+  const result={startedAt,endedAt:new Date().toISOString(),outcome,setupMs,recordBytes,totalWithSetupMs:performance.now()-start,spans,acceptanceClaim:false,shapeOnly:true};
   if(!await io('put','result',JSON.stringify(result)))throw Error('PROBE_RESULT_CONFLICT');
   return Response.json(result,{status:outcome==='success'?200:503,headers:{'cache-control':'no-store'}});
  }catch{return new Response(null,{status:503});}

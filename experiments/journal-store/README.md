@@ -10,7 +10,7 @@ an absent-key precondition; updates require the current token. A synchronous SQL
 transaction encloses each check/write, followed by an awaited storage sync before
 success. Conflicts return null. Storage failures return 503; callers must reconcile
 an uncertain write by reading, never assume rollback or replay application work.
-Only synthetic key prefixes are accepted, with 64 records and 32 KiB per value.
+Only synthetic key prefixes are accepted, with 64 records and 256 KiB per value with a 2 MiB streamed request cap.
 These deliberately small probe limits are not production journal capacity limits.
 
 Run locally with the repository's locked dependencies:
@@ -107,3 +107,21 @@ separately in the primary checkout's private `journal-store-hosted-20261029` and
 `journal-store-browser-20261029` artifact directories; credentials were not copied
 into either archive. Hosted crash durability, restore/migration/rollback compatibility,
 realistic payload/concurrency performance and all original acceptance gates remain open.
+
+## Larger-record compatibility checks
+
+A 200-event reaction-deletion checkpoint generated from the current SQL decision
+shape was rejected by the original 32 KiB/64 KiB prototype limits. After increasing
+the bounded value/request capacities, the unchanged journal algorithm verifies
+that 78,800-byte batch, concurrent completions and its immutable chain locally.
+Boundary checks preserve exact 256 KiB NUL/escaped and multibyte strings and reject
+an over-limit UTF-8 value without overwriting committed data. This does not prove
+that every possible journal record fits: the prototype remains deliberately bounded,
+and production migration still requires a complete record-size/capacity policy.
+
+The next hosted controller uses a synthetic 200-event batch and control documents
+with 255 existing/256 registered pending intents, plus schema-shaped intents and
+receipts. It retains the same five-read/six-write budget, verifies control read-back
+bytes, and reports numeric record sizes. These shapes exercise payload cost, not
+255 live concurrent operations or the full production protocol. The tiny-string
+measurements above remain labeled as such; larger-record hosted evidence is pending.
