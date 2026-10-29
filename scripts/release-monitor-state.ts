@@ -15,14 +15,25 @@ export function parseMonitorSnapshot(environment:MonitorSnapshot['environment'],
  if(a.observed_percent!==Math.round((passed+failed)/expected*100000)/1000||a.conservative_pass_percent!==Math.round(passed/expected*100000)/1000)return fail();
  return{environment,at,checkedAt,status:value.status as MonitorSnapshot['status'],metrics:value.metrics_monitoring as MonitorSnapshot['metrics'],history:{first,expected,passed,failed,unknown}};
 }
-export function assertMonitorContinuity(baseline:MonitorSnapshot,current:MonitorSnapshot){
+function continuity(baseline:MonitorSnapshot,current:MonitorSnapshot,recovery:boolean){
  if(current.environment!==baseline.environment||current.at<baseline.at||current.checkedAt<baseline.checkedAt||current.history.first!==baseline.history.first)throw Error('MONITOR_RELEASE_HISTORY_CHANGED');
  const elapsedMinutes=Math.floor(current.at/60000)-Math.floor(baseline.at/60000);
  // Long pauses require a new review; otherwise all old samples could fall out
  // of the rolling window and this check would say nothing about preservation.
- if(elapsedMinutes>30)throw Error('MONITOR_RELEASE_BASELINE_EXPIRED');
+ if(elapsedMinutes>(recovery?360:30))throw Error('MONITOR_RELEASE_BASELINE_EXPIRED');
  const expected=Math.min(windowMinutes,baseline.history.expected+elapsedMinutes),expired=Math.max(0,baseline.history.expected+elapsedMinutes-windowMinutes);
+ if(recovery&&expired!==0)throw Error('MONITOR_RECOVERY_HISTORY_EXPIRED');
  if(current.history.expected!==expected||current.history.passed<baseline.history.passed-expired||current.history.failed<baseline.history.failed-expired)throw Error('MONITOR_RELEASE_HISTORY_CHANGED');
  if(baseline.metrics==='ready'&&current.metrics!=='ready')throw Error('MONITOR_RELEASE_METRICS_REGRESSED');
  return{elapsedMinutes,expiredMinutes:expired,scope:'public_aggregate_history' as const};
+}
+
+export function assertMonitorContinuity(baseline:MonitorSnapshot,current:MonitorSnapshot){return continuity(baseline,current,false);}
+/** Explicit incident recovery only: at most six hours, and no old observations
+ * may have expired. Historical evidence is never relabeled as a fresh read. */
+export function assertMonitorRecoveryContinuity(baseline:MonitorSnapshot,current:MonitorSnapshot){return continuity(baseline,current,true);}
+export function assertMonitorUnavailable(status:number,body:unknown):void{
+ if(status!==503||!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).sort().join(',')!=='last_checked_at,metrics_monitoring,status')throw Error('MONITOR_RECOVERY_FAILURE_INVALID');
+ const value=body as Record<string,unknown>;
+ if(value.status!=='unknown'||value.last_checked_at!==null||value.metrics_monitoring!=='unavailable')throw Error('MONITOR_RECOVERY_FAILURE_INVALID');
 }

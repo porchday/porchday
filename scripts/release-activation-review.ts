@@ -1,4 +1,4 @@
-import {parseMonitorSnapshot} from './release-monitor-state.ts';
+import {parseMonitorSnapshot,assertMonitorUnavailable} from './release-monitor-state.ts';
 import {constants,closeSync,fstatSync,openSync,readFileSync,realpathSync} from 'node:fs';
 import {isAbsolute} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -13,7 +13,7 @@ export const compatibilityChecks=['schemaRollback','denialReaders','webClientOve
 type EvidenceFile={path:string;sha256:string};
 export type CompatibilityReview={version:1;worker:string;candidate:{version:string;source:string};baseline:{version:string;source:string};schema:ReleaseSchemaFingerprint;publicAssets:{candidate:string;baseline:string};checks:Record<typeof compatibilityChecks[number],{status:'passed'|'scheduled';basis:string;evidence:EvidenceFile[]}>};
 export type ActivationExecution={root:string;workspace:string;uploadManifest:EvidenceFile;proofPath:string;probe:EvidenceFile;journalDirectory:string;proofDirectory:string;journeyDirectory:string};
-export type ActivationReviewEvidence={monitor?:{baseline:EvidenceFile;storageCompatibility:EvidenceFile};execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
+export type ActivationReviewEvidence={monitor?:{baseline:EvidenceFile;storageCompatibility:EvidenceFile;incidentRecovery?:EvidenceFile};execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
 function canonical(value:unknown):string{
  if(value===null||typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))return JSON.stringify(value);
@@ -86,7 +86,7 @@ export function readMonitorReview(plan:DeploymentPlan,evidence:ActivationReviewE
  const target=recoveryTarget(plan.worker);
  if(!target.monitor){if(evidence.monitor!==undefined)throw Error('ACTIVATION_MONITOR_SCOPE_CHANGED');return null;}
  if(!evidence.monitor)throw Error('ACTIVATION_MONITOR_EVIDENCE_REQUIRED');
- keys(evidence.monitor,['baseline','storageCompatibility']);
+ keys(evidence.monitor,['baseline','storageCompatibility',...(evidence.monitor.incidentRecovery===undefined?[]:['incidentRecovery'])]);
  const raw=JSON.parse(readEvidence(evidence.monitor.baseline).toString());keys(raw,['environment','at','status','body']);
  if(raw.environment!==target.environment)throw Error('ACTIVATION_MONITOR_SCOPE_CHANGED');
  const baseline=parseMonitorSnapshot(raw.environment,raw.status,raw.body,raw.at);
@@ -94,5 +94,22 @@ export function readMonitorReview(plan:DeploymentPlan,evidence:ActivationReviewE
  keys(storage,['version','baselineSource','candidateSource','compatible','evidence']);
  if(storage.version!==1||storage.baselineSource!==evidence.state.baseline.source||storage.candidateSource!==plan.candidateSource||storage.compatible!==true||!Array.isArray(storage.evidence)||storage.evidence.length<1||storage.evidence.length>20)throw Error('ACTIVATION_MONITOR_COMPATIBILITY_REQUIRED');
  let bytes=0;for(const file of storage.evidence){bytes+=readEvidence(file).length;if(bytes>64*1024*1024)throw Error('ACTIVATION_REVIEW_TOO_LARGE');}
+ readMonitorRecovery(plan,evidence,baseline.at);
  return baseline;
+}
+
+/** Evidence pin for an explicit unavailable-baseline recovery. This is separate
+ * from normal releases and never treats an unavailable endpoint as healthy. */
+export function readMonitorRecovery(plan:DeploymentPlan,evidence:ActivationReviewEvidence,baselineAt:number){
+ if(evidence.monitor?.incidentRecovery===undefined)return null;
+ if(!recoveryTarget(plan.worker).monitor)throw Error('ACTIVATION_MONITOR_SCOPE_CHANGED');
+ const value=JSON.parse(readEvidence(evidence.monitor.incidentRecovery).toString());
+ keys(value,['version','mode','baselineVersion','baselineSource','candidateSource','failure','evidence']);
+ if(value.version!==1||value.mode!=='unavailable-baseline'||value.baselineVersion!==plan.baselineVersion||value.baselineSource!==evidence.state.baseline.source||value.candidateSource!==plan.candidateSource)throw Error('MONITOR_RECOVERY_SCOPE_CHANGED');
+ keys(value.failure,['environment','at','status','body']);
+ if(value.failure.environment!==recoveryTarget(plan.worker).environment||!Number.isSafeInteger(value.failure.at)||value.failure.at<baselineAt)throw Error('MONITOR_RECOVERY_FAILURE_INVALID');
+ assertMonitorUnavailable(value.failure.status,value.failure.body);
+ if(!Array.isArray(value.evidence)||value.evidence.length<1||value.evidence.length>20)throw Error('MONITOR_RECOVERY_EVIDENCE_REQUIRED');
+ let size=0;for(const file of value.evidence){size+=readEvidence(file).length;if(size>64*1024*1024)throw Error('ACTIVATION_REVIEW_TOO_LARGE');}
+ return{mode:'unavailable-baseline' as const,failureAt:value.failure.at};
 }

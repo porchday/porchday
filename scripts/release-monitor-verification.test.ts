@@ -10,9 +10,58 @@ function fixture(){
  const storageCompatibility=file('compatibility.json',{version:1,baselineSource:'c'.repeat(40),candidateSource:'a'.repeat(40),compatible:true,evidence:[proof]});
  const review={state:{baseline:{source:'c'.repeat(40)}},monitor:{baseline,storageCompatibility}} as ActivationReviewEvidence;
  const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-monitor-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
- const fetch=vi.fn(async()=>Response.json(body)),assertScope=vi.fn();return{directory,body,review,plan,fetch,assertScope,options:{directory,plan,review,version:plan.candidateVersion,fetch:fetch as typeof globalThis.fetch,assertScope}};
+ const fetch=vi.fn(async()=>Response.json(body)),assertScope=vi.fn();return{directory,body,review,plan,fetch,assertScope,file,now,options:{directory,plan,review,version:plan.candidateVersion,fetch:fetch as typeof globalThis.fetch,assertScope}};
 }
 it('uses only the fixed status GET and retains aggregate history proof',async()=>{const f=fixture();try{await verifyMonitorRead(f.options,new AbortController().signal);expect(f.fetch).toHaveBeenCalledTimes(1);expect(f.fetch.mock.calls[0]).toMatchObject(['https://staging-status.porchday.com/status',{redirect:'error',cache:'no-store'}]);expect(f.assertScope).toHaveBeenCalledTimes(2);const records=readdirSync(f.directory).filter(x=>!['baseline.json','overlap.json','compatibility.json'].includes(x));expect(records).toHaveLength(1);const record=JSON.parse(readFileSync(join(f.directory,records[0]),'utf8'));expect(record).toMatchObject({kind:'monitor-history',version:f.plan.candidateVersion,detail:{current:{history:{passed:7,failed:2}}}});}finally{rmSync(f.directory,{recursive:true,force:true});}});
 it.each(['missing','tampered','wrong-source','wrong-environment'] as const)('rejects %s pinned evidence before network',async kind=>{const f=fixture();try{if(kind==='missing')delete f.review.monitor;if(kind==='tampered')writeFileSync(f.review.monitor!.storageCompatibility.path,'{}');if(kind==='wrong-source')f.plan.candidateSource='d'.repeat(40);if(kind==='wrong-environment')f.plan.worker='porchday-monitor-production';await expect(verifyMonitorRead(f.options,new AbortController().signal)).rejects.toThrow();expect(f.fetch).not.toHaveBeenCalled();}finally{rmSync(f.directory,{recursive:true,force:true});}});
 it.each(['stale','history-reset','failed-count','http','oversized'] as const)('cannot accept %s status as successful verification',async kind=>{const f=fixture();try{const body=structuredClone(f.body);if(kind==='stale')body.last_checked_at=new Date(Date.now()-90001).toISOString();if(kind==='history-reset')body.availability.first_observation_at=new Date(Date.now()-60000).toISOString();if(kind==='failed-count')body.availability.failed_minutes=0;f.fetch.mockImplementation(async()=>kind==='oversized'?new Response('x'.repeat(16385)):Response.json(body,{status:kind==='http'?503:200}));await expect(verifyMonitorRead(f.options,new AbortController().signal)).rejects.toThrow();expect(readdirSync(f.directory)).toHaveLength(3);}finally{rmSync(f.directory,{recursive:true,force:true});}});
 it('does not allow monitor evidence to be applied to an application release',()=>{const f=fixture();try{expect(()=>readMonitorReview({...f.plan,worker:'porchday-staging'},f.review)).toThrow('MONITOR_SCOPE_CHANGED');}finally{rmSync(f.directory,{recursive:true,force:true});}});
+
+function recoveryFixture(){
+ const f=fixture(),at=f.now-120*60000,body=structuredClone(f.body);
+ body.last_checked_at=new Date(at).toISOString();body.availability.first_observation_at=new Date(at-9*60000).toISOString();
+ f.review.monitor!.baseline=f.file('baseline.json',{environment:'staging',at,status:200,body});
+ const incident={version:1,mode:'unavailable-baseline',baselineVersion:f.plan.baselineVersion,baselineSource:'c'.repeat(40),candidateSource:f.plan.candidateSource,failure:{environment:'staging',at:Date.now()-1000,status:503,body:{status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'}},evidence:[f.file('historical-origin.json',{at,body})]};
+ f.review.monitor!.incidentRecovery=f.file('incident.json',incident);
+ const current=structuredClone(body);current.last_checked_at=new Date(f.now).toISOString();current.availability.expected_minutes=130;current.availability.unknown_minutes=121;current.availability.observed_percent=Math.round(9/130*100000)/1000;current.availability.conservative_pass_percent=Math.round(7/130*100000)/1000;
+ return{...f,incident,current,at};
+}
+it('records a fresh unavailable baseline only for explicit pre-activation recovery; never declares it healthy after deployment',async()=>{
+ const f=recoveryFixture();try{
+  f.fetch.mockImplementation(async()=>Response.json(f.incident.failure.body,{status:503}));
+  expect(await verifyMonitorRead({...f.options,version:f.plan.baselineVersion,phase:'before-activation'},new AbortController().signal)).toBe(null);
+  const records=readdirSync(f.directory).map(n=>JSON.parse(readFileSync(join(f.directory,n),'utf8'))).filter(v=>v.kind);
+  expect(records).toHaveLength(1);expect(records[0]).toMatchObject({kind:'monitor-unavailable-baseline',detail:{status:503,historicalBaseline:{at:f.at}}});
+  for(const version of [f.plan.candidateVersion,f.plan.baselineVersion])await expect(verifyMonitorRead({...f.options,version},new AbortController().signal)).rejects.toThrow('STATUS_INVALID');
+  await expect(verifyMonitorRead({...f.options,phase:'before-activation'},new AbortController().signal)).rejects.toThrow('SCOPE_CHANGED');
+ }finally{rmSync(f.directory,{recursive:true,force:true});}
+});
+it('requires fresh recovered history with no lost observations and keeps ordinary release age checks',async()=>{
+ const f=recoveryFixture();try{
+  f.fetch.mockImplementation(async()=>Response.json(f.current));
+  expect((await verifyMonitorRead(f.options,new AbortController().signal))?.history).toMatchObject({expected:130,passed:7,failed:2});
+  delete f.review.monitor!.incidentRecovery;await expect(verifyMonitorRead(f.options,new AbortController().signal)).rejects.toThrow('BASELINE_EXPIRED');
+ }finally{rmSync(f.directory,{recursive:true,force:true});}
+});
+it.each(['wrong-version','wrong-source','stale-failure','future-failure','old-history','missing-proof','tampered-proof'] as const)('rejects invalid recovery evidence before network: %s',async kind=>{
+ const f=recoveryFixture();try{
+  if(kind==='wrong-version')f.incident.baselineVersion=uuid(20);
+  if(kind==='wrong-source')f.incident.candidateSource='f'.repeat(40);
+  if(kind==='stale-failure')f.incident.failure.at=Date.now()-31*60000;
+  if(kind==='future-failure')f.incident.failure.at=Date.now()+60000;
+  if(kind==='old-history'){const b=JSON.parse(readFileSync(f.review.monitor!.baseline.path,'utf8'));b.at-=5*60*60000;b.body.last_checked_at=new Date(b.at).toISOString();b.body.availability.first_observation_at=new Date(b.at-9*60000).toISOString();f.review.monitor!.baseline=f.file('baseline.json',b);}
+  if(kind==='missing-proof')f.incident.evidence=[];
+  if(kind==='tampered-proof')writeFileSync(f.incident.evidence[0].path,'changed');
+  f.review.monitor!.incidentRecovery=f.file('incident.json',f.incident);
+  await expect(verifyMonitorRead(f.options,new AbortController().signal)).rejects.toThrow();expect(f.fetch).not.toHaveBeenCalled();
+ }finally{rmSync(f.directory,{recursive:true,force:true});}
+});
+it.each(['origin','lost-failures','metrics','other-error'] as const)('recovery never permits %s',async kind=>{
+ const f=recoveryFixture();try{
+  if(kind==='origin')f.current.availability.first_observation_at=new Date(f.now).toISOString();
+  if(kind==='lost-failures'){f.current.availability.failed_minutes=1;f.current.availability.unknown_minutes=122;f.current.availability.observed_percent=Math.round(8/130*100000)/1000;}
+  if(kind==='metrics')f.current.metrics_monitoring='unavailable';
+  f.fetch.mockImplementation(async()=>kind==='other-error'?Response.json({error:'not monitor failure'},{status:502}):Response.json(f.current));
+  await expect(verifyMonitorRead({...f.options,...(kind==='other-error'?{version:f.plan.baselineVersion,phase:'before-activation' as const}:{})},new AbortController().signal)).rejects.toThrow();
+ }finally{rmSync(f.directory,{recursive:true,force:true});}
+});
