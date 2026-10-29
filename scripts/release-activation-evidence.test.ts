@@ -1,10 +1,13 @@
+import {readActivationManifest,executeActivationManifest,type ActivationManifest} from './release-activation-cli.ts';
+import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
+import {spawnSync} from 'node:child_process';
 import {finalizePreparedActivation} from './release-activation-finalize.ts';
 import {activationReviewHash,verifyActivationReview,createReviewedActivationPorts,compatibilityChecks,type ActivationReviewEvidence,type CompatibilityReview} from './release-activation-review.ts';
 import {publicAssetManifestHash} from './release-assets-verify.ts';
 import {describe,it,expect,vi} from 'vitest';
 import {createActivationStateVerifier,createPreparedActivationPorts} from './release-activation-state.ts';
 import {FileDeploymentLease} from './deployment-recovery-lease.ts';
-import {mkdtempSync,writeFileSync,readFileSync,realpathSync,rmSync,chmodSync,symlinkSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,realpathSync,rmSync,chmodSync,symlinkSync,mkdirSync,existsSync,readdirSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createHash} from 'node:crypto';
@@ -229,3 +232,92 @@ describe('read-only terminal finalization orchestration',()=>{
   expect((await FileDeploymentLease.completed(f.root,f.plan,f.journal))?.stagingVersion).toBe(id(2));
  }finally{resumed?.close();f.close();}});
 });
+
+async function cliFixture(){
+ const f=await reviewFixture(),uploadPath=join(f.root,'upload-manifest.json'),probePath=join(f.root,'probe.json'),path=join(f.root,'activation-manifest.json');
+ const uploadBytes=JSON.stringify(f.manifest),probeBytes=JSON.stringify({environment:'staging',healthToken:'h'.repeat(32),synthetic:{id:id(90),email:id(90)+'@example.test',password:'p'.repeat(32)}});
+ writeFileSync(uploadPath,uploadBytes,{mode:0o600});writeFileSync(probePath,probeBytes,{mode:0o600});
+ const execution={root:f.root,workspace:realpathSync(process.cwd()),uploadManifest:{path:uploadPath,sha256:hash(uploadBytes)},proofPath:f.proofPath,probe:{path:probePath,sha256:hash(probeBytes)},journalDirectory:join(f.root,'journal'),proofDirectory:join(f.root,'final-proofs'),journeyDirectory:join(f.root,'journeys')};
+ for(const directory of [execution.journalDirectory,execution.proofDirectory,execution.journeyDirectory])mkdirSync(directory,{mode:0o700});
+ f.evidence.execution=execution;f.save();const manifest:ActivationManifest={version:1,plan:f.plan,review:{...f.evidence,execution}};writeFileSync(path,JSON.stringify(manifest),{mode:0o600});
+ const journal=new FileRecoveryJournal(execution.journalDirectory);
+ async function advance(phase:'prepared'|'activation-intent'|'candidate-observed'|'complete'){
+  const previous=await journal.read();await journal.write(previous,{v:1,revision:(previous?.revision??0)+1,phase,planHash:deploymentPlanHash(manifest.plan),...(['candidate-observed','complete'].includes(phase)?{candidateDeploymentId:id(7)}:{})});
+ }
+ return{...f,path,cli:manifest,journal,advance};
+}
+describe('activation operator command',()=>{
+ it('pins paths and private probe/config evidence, rejecting overlapping state directories',async()=>{const f=await cliFixture();try{
+  expect(readActivationManifest(f.path)).toEqual(f.cli);f.cli.review.execution.journeyDirectory=f.cli.review.execution.journalDirectory;f.cli.plan.evidenceDigest=activationReviewHash(f.cli.review);writeFileSync(f.path,JSON.stringify(f.cli));expect(()=>readActivationManifest(f.path)).toThrow('DIRECTORY_OVERLAP');
+  chmodSync(f.path,0o644);expect(()=>readActivationManifest(f.path)).toThrow('PERMISSIONS');
+ }finally{f.close();}});
+ it('fails invalid credentials before acquiring an activation marker',async()=>{const f=await cliFixture();try{
+  await expect(executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).rejects.toThrow('SCHEMA_TARGET_INVALID');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+ }finally{f.close();}});
+ it('rejects probe-byte drift before any activation lease',async()=>{const f=await cliFixture();try{
+  writeFileSync(f.cli.review.execution.probe.path,'{}');await expect(executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).rejects.toThrow('FILE_CHANGED');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+ }finally{f.close();}});
+ it.each([false,true])('archives pre-intent cancellation without credentials (prepared=%s)',async prepared=>{const f=await cliFixture();try{
+  const lease=FileDeploymentLease.acquire(f.root,f.cli.plan);if(prepared)await f.advance('prepared');lease.close();
+  expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000),'cancel')).toMatchObject({status:'cancelled-before-intent'});
+  expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(existsSync(join(f.root,'deployment-recovery-cancelled-'+f.cli.plan.operationId))).toBe(true);
+  expect(()=>FileDeploymentLease.acquire(f.root,f.cli.plan)).toThrow('ALREADY_CANCELLED');
+ }finally{f.close();}});
+ it('refuses cancellation after a durable activation intent',async()=>{const f=await cliFixture();try{
+  const lease=FileDeploymentLease.acquire(f.root,f.cli.plan);await f.advance('prepared');await f.advance('activation-intent');lease.close();
+  await expect(executeActivationManifest(f.cli,{},AbortSignal.timeout(5000),'cancel')).rejects.toThrow('CANCELLATION_UNSAFE');expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);
+ }finally{f.close();}});
+ it.each([false,true])('finishes retained finalization or reports archived history without credentials (archived=%s)',async archived=>{const f=await cliFixture();try{
+  const lease=FileDeploymentLease.acquire(f.root,f.cli.plan);for(const phase of ['prepared','activation-intent','candidate-observed','complete'] as const)await f.advance(phase);
+  await lease.finalize(f.journal);if(archived)await lease.release(f.journal);else lease.close();
+  const expected=archived?'already-finalized':'resumed-historical-finalization';expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:expected,historical:true});expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+  expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:'already-finalized'});
+ }finally{f.close();}});
+ it('cannot redirect a resumed operation to a fresh journey directory',async()=>{const f=await cliFixture();try{
+  const lease=FileDeploymentLease.acquire(f.root,f.cli.plan);await f.advance('prepared');lease.close();
+  f.cli.review.execution.journeyDirectory=join(f.root,'replacement');mkdirSync(f.cli.review.execution.journeyDirectory,{mode:0o700});f.cli.plan.evidenceDigest=activationReviewHash(f.cli.review);
+  await expect(executeActivationManifest(f.cli,{},AbortSignal.timeout(5000),'cancel')).rejects.toThrow('LEASE_HELD');expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);
+ }finally{f.close();}});
+ it('prints a fixed error from an actual native invocation without exposing input',()=>{
+  const child=spawnSync(process.execPath,['scripts/release-activation-cli.ts','invalid','synthetic-private-input'],{encoding:'utf8'});expect(child.status).toBe(1);expect(child.stdout).toBe('');expect(child.stderr).toContain('RELEASE_ACTIVATION_FAILED');expect(child.stderr).not.toContain('synthetic-private-input');
+ });
+});
+
+describe('complete activation command composition',()=>{
+ it.each([false,true])('uses the real journals and lease through synthetic provider execution (lostLogin=%s)',async lostLogin=>{
+  const f=await cliFixture();
+  const preparation=await import('./release-upload-preparation.ts'),ci=await import('./release-ci.ts'),schema=await import('./release-schema.ts'),provider=await import('./cloudflare-deployment-client.ts'),inventoryModule=await import('./cloudflare-release-reader.ts');
+  try{
+   f.manifest.queues={staging:{id:'1'.repeat(32),name:'porchday-staging-jobs'},production:{id:'2'.repeat(32),name:'porchday-production-jobs'}};
+   const bytes=JSON.stringify(f.manifest);writeFileSync(f.cli.review.execution.uploadManifest.path,bytes);f.cli.review.execution.uploadManifest.sha256=hash(bytes);
+   for(const item of Object.values(f.evidence.assets))item.files['app.js']=hash('module');
+   f.review.publicAssets={candidate:publicAssetManifestHash(f.evidence.assets.candidate),baseline:publicAssetManifestHash(f.evidence.assets.baseline)};f.save();f.cli.plan.assetManifests={...f.review.publicAssets};
+   const inventory=structuredClone(f.proof.inventory);let observed={version:id(1),deploymentId:id(5),operationId:null as string|null},revoked=false,logins=0;
+   vi.spyOn(preparation,'verifyUploadTooling').mockImplementation(async(_workspace,source)=>({source}));vi.spyOn(ci,'verifyReleaseCi').mockImplementation(async o=>({source:o.source,repository:'porchday/porchday',runs:[]}));vi.spyOn(schema,'captureReleaseSchema').mockImplementation(async()=>structuredClone(f.manifest.evidence.schema));
+   vi.spyOn(inventoryModule.CloudflareReleaseReader.prototype,'snapshot').mockImplementation(async()=>structuredClone(inventory) as any);
+   vi.spyOn(provider.CloudflareDeploymentClient.prototype,'observe').mockImplementation(async()=>({...observed}));
+   const deploy=vi.spyOn(provider.CloudflareDeploymentClient.prototype,'deploy').mockImplementation(async(version,operationId)=>{inventory.workers[f.key].active=version;inventory.workers[f.key].resources=f.proof.candidate.resources;observed={version,operationId,deploymentId:id(7)};throw Error('LOST_PROVIDER_REPLY');});
+   const request=vi.fn(async(input:any)=>{const path=new URL(String(input)).pathname;
+    if(path.endsWith('/health'))return Response.json({status:'ok',issues:[]});
+    if(path.endsWith('/get-session'))return Response.json(null);
+    if(path.endsWith('/status'))return Response.json({last_checked_at:new Date().toISOString()});
+    if(path.endsWith('/sign-in/email')){logins++;if(lostLogin)throw Error('LOST_LOGIN_REPLY');return Response.json({user:{id:id(90)}},{headers:{'set-cookie':'better-auth.session_token=synthetic-token; HttpOnly'}});}
+    if(path.endsWith('/sign-out')){revoked=true;return Response.json({success:true});}
+    if(path.endsWith('/me'))return revoked?Response.json({}, {status:401}):Response.json({id:id(90)},{headers:{'cache-control':'no-store'}});
+    if(path.endsWith('/feed'))return Response.json({items:[]},{headers:{'cache-control':'no-store'}});
+    if(path.endsWith('.js'))return new Response('module',{headers:{'content-type':'text/javascript'}});
+    throw Error('UNEXPECTED_NETWORK_REQUEST');
+   });vi.stubGlobal('fetch',request);
+   const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'t'.repeat(32),PORCHDAY_STAGING_DATABASE_MIGRATION_URL:'postgres://test.synthetic:synthetic@host.pg.psdb.cloud:5432/database?sslmode=verify-full'};
+   const result=await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000));expect(result.status).toBe(lostLogin?'attention-required':'finalized');expect(deploy).toHaveBeenCalledTimes(1);expect(logins).toBe(1);
+   if(lostLogin){expect(await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000))).toMatchObject({status:'attention-required',outcome:'verification-unavailable'});expect(logins).toBe(1);expect(deploy).toHaveBeenCalledTimes(1);expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);}
+   else{const count=request.mock.calls.length;expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:'already-finalized'});expect(request.mock.calls.length).toBe(count);expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'))).toMatchObject({stagingVersion:id(2),stagingAssetsSource:'a'.repeat(40)});}
+  }finally{vi.restoreAllMocks();vi.unstubAllGlobals();f.close();}
+ });
+});
+
+it('retains a sanitized private failure code on a native command failure',async()=>{const f=await cliFixture();try{
+ const child=spawnSync(process.execPath,['scripts/release-activation-cli.ts','activate',f.path],{encoding:'utf8',env:{...process.env,PORCHDAY_STAGING_DATABASE_MIGRATION_URL:''}});
+ expect(child.status).toBe(1);expect(child.stdout).toBe('');expect(child.stderr).toContain('RELEASE_ACTIVATION_FAILED');
+ const files=readdirSync(f.cli.review.execution.proofDirectory);expect(files).toHaveLength(1);const record=JSON.parse(readFileSync(join(f.cli.review.execution.proofDirectory,files[0]),'utf8'));expect(record).toMatchObject({operationId:f.cli.plan.operationId,code:'RELEASE_SCHEMA_TARGET_INVALID'});expect(JSON.stringify(record)).not.toContain('p'.repeat(32));expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+}finally{f.close();}});

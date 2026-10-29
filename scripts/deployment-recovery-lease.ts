@@ -87,6 +87,7 @@ export class FileDeploymentLease{
   try{
    const canonical=privateText(join(root,'latest-verified-deployment.json')),directory=join(root,'deployment-lock'),ownerPath=join(directory,'owner.json');let created=false;
    if(existsSync(archivePath(root,plan)))throw new RecoveryError('DEPLOYMENT_ALREADY_FINALIZED');
+   if(existsSync(join(root,'deployment-recovery-cancelled-'+plan.operationId)))throw new RecoveryError('DEPLOYMENT_ALREADY_CANCELLED');
    if(!existsSync(directory))checkCanonical(plan,canonical);
    try{mkdirSync(directory,{mode:0o700});created=true;syncDirectory(root);}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
    privateDirectory(directory);let owner:Owner;
@@ -129,6 +130,17 @@ export class FileDeploymentLease{
   }
   if(current!==receipt.before&&current!==receipt.after)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');
   this.assertOwner();if(current!==receipt.after)atomicText(path,receipt.after,this.root);
+ }
+ /** Explicitly abandon preparation only before any durable activation intent.
+  * Keep the journal and archive the marker; the cancelled operation ID cannot recur.
+  */
+ async cancelBeforeIntent(journal:RecoveryJournal):Promise<void>{
+  this.assert(this.plan);const state=await journal.read();
+  if(state){validateRecoveryState(state);if(state.planHash!==this.owner.planHash||state.phase!=='prepared')throw new RecoveryError('DEPLOYMENT_CANCELLATION_UNSAFE');}
+  this.assert(this.plan);const directory=join(this.root,'deployment-lock');
+  if(JSON.stringify(readdirSync(directory).sort())!==JSON.stringify(['owner.json']))throw new RecoveryError('DEPLOYMENT_CANCELLATION_UNSAFE');
+  const archive=join(this.root,'deployment-recovery-cancelled-'+this.plan.operationId);if(existsSync(archive))throw new RecoveryError('DEPLOYMENT_ALREADY_CANCELLED');
+  renameSync(directory,archive);syncDirectory(this.root);this.close();
  }
  /** Finish an already durable finalization receipt without re-running provider or user writes.
   * Returns false when fresh terminal proof collection is still required.

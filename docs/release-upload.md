@@ -221,7 +221,8 @@ failed reconciliation retains its lease marker; resuming the same operation does
 not authorize or send again. Successful reconciliation archives the inactive-upload
 receipt without changing active canonical state. No activation is performed.
 The operator CLI below invokes this maintained entry point. A hosted rollout has passed using a private activation adapter around the
-maintained deployment controller. The general activation command remains unfinished. Failed authorization before intent
+maintained deployment controller. The activation command below now composes the
+maintained modules; hosted acceptance of that new command remains outstanding. Failed authorization before intent
 leaves the same-plan marker, which can be explicitly cancelled through the owned
 lease only when no upload intent exists; never remove it by age.
 
@@ -304,7 +305,7 @@ settings. Frontend plans also pin the active backend. Upload and activation shar
 the same resource comparison, ignoring binding/property order and provider etags
 while preserving binding values and runtime configuration.
 
-The normal activation command must still compose this handoff with a newly acquired
+The activation command below composes this handoff with a newly acquired
 deployment lease, fresh CI/schema/provider authorization, compatibility checks,
 single-attempt activation, interruption reconciliation and journey/asset verification.
 Do not treat these historical helpers as permission to activate a saved candidate
@@ -335,8 +336,8 @@ Local tests compose the real deployment lease with synthetic provider responses:
 failed compatibility authorizes no send; a committed activation with a lost reply
 is observed without replay; unhealthy candidate verification rolls back once; and
 drift during the journey prevents completion. These tests do not constitute a new
-hosted rollout or replace client compatibility acceptance. The operator manifest and complete activation CLI remain to be finished.
-The reviewed compatibility contract is described below.
+hosted rollout or replace client compatibility acceptance. The operator manifest and activation CLI are described below; their hosted
+validation remains outstanding.
 
 ### Reviewed compatibility contract
 
@@ -361,7 +362,7 @@ permit promotion before the result is reviewed.
 the state/controller composition. It rechecks review bytes and supporting files
 before activation/rollback and around journeys, including resume after an uncertain
 write. Callers supply the narrow provider transport and journey verifier, not a
-replacement compatibility callback. Finalization is composed below; the operator CLI remains to be integrated.
+replacement compatibility callback. Finalization and the operator CLI are composed below.
 
 These checks establish review scope and evidence integrity. An operator must still
 inspect the actual test coverage and conclusions: a hash does not authenticate a
@@ -384,8 +385,8 @@ retained proof digests must still agree. This path deliberately returns
 `resumed-historical-finalization`: it completes historical bookkeeping without
 claiming newly observed health, invoking a user journey, or repeating a provider
 request. Callers must check `FileDeploymentLease.completed` before acquiring an
-already archived operation. The operator command still needs to wire these paths
-together and provide the durable authenticated-journey resume behavior.
+already archived operation. The operator command below wires these paths together with the durable
+authenticated-journey resume behavior.
 
 Local validation covers successful activation and rollback finalization, failed
 assets, changed provider identity/inventory, changed journal/review, and resume
@@ -418,8 +419,73 @@ then converge without repeating login/logout.
 
 Pass `journey: {directory, assertLease}` to `createReleaseVerifier` to use this
 path. The existing monitor probe remains available for independent recurring
-monitoring; the forthcoming activation CLI must require the durable journey option.
+monitoring; the activation CLI requires the durable journey option.
 Local tests cover uncertain replies, retained-cookie cleanup, input/evidence drift,
 a new verifier instance, and real SIGKILL after durable logout intent. Hosted
 journey interruption validation and operator escalation for unknown login remain
 outstanding.
+
+## Activation operator command
+
+Prepare an owner-only `ActivationManifest` matching
+`scripts/release-activation-cli.ts`: version 1, the deployment plan, and reviewed
+`ActivationReviewEvidence`. The review's required `execution` field pins the shared
+private root, current tooling workspace, upload-manifest path/hash, upload-proof
+path, private probe-config path/hash, and separate existing private directories for
+the controller journal, proofs, and durable journeys. The controller journal,
+proofs, journeys and shared deployment lock must not overlap. Compute the plan's
+`evidenceDigest` with `activationReviewHash(review)` after all these values are
+fixed. Changing a session or journal directory changes the plan; it cannot bypass
+an existing operation's intents. The probe config contains synthetic credentials
+and must remain private.
+
+The candidate, baseline, exact-source CI pins, compatible rollback floor, schema,
+reviewed compatibility evidence and asset manifests must already be established.
+Use `plan.assetManifests` when this Worker is the public asset target. A backend
+behind a retained edge still verifies public assets but must not claim the edge's
+asset provenance as its own canonical update. The tooling workspace must be the
+clean pinned checkout executing this command.
+
+Activate or resume the **same** reviewed operation:
+
+```sh
+python3 scripts/with-secrets.py node scripts/release-activation-cli.ts activate /absolute/private/activation-manifest.json
+```
+
+The command validates private inputs and credentials before a new lease, composes
+the reviewed state gates with the one-shot deployment controller, requires durable
+authenticated journeys, and collects fresh terminal evidence before canonical
+finalization. It uses the same provider/database environment variables as the
+inactive upload command. SIGINT/SIGTERM and a 15-minute outer deadline propagate
+to the bounded inner operations. Authorization and journey deadlines remain
+unchanged; hosted timing is not yet validated.
+
+`already-finalized` and `resumed-historical-finalization` complete or report saved
+bookkeeping without credentials or remote requests. They do not assert current
+health. `attention-required` exits with code 2 and retains the owned lease and
+journal; inspect the exact outcome and private journey evidence before resuming.
+Thrown failures exit with code 1 and, where the planned proof directory is writable,
+retain an operation-scoped fixed error code in a private `failure-*.json` record.
+Raw exceptions, credentials and response bodies are not printed or copied there.
+Never substitute another operation ID to retry an uncertain write.
+
+If preparation or authorization failed **before** durable activation intent, an
+explicit cancellation is available without credentials:
+
+```sh
+node scripts/release-activation-cli.ts cancel /absolute/private/activation-manifest.json
+```
+
+Cancellation requires the exact owned plan, unchanged canonical state, a missing
+or `prepared` journal, and an intact owner-only lock marker. It archives the marker
+and preserves all evidence. The cancelled operation ID cannot be acquired again.
+Any activation intent, ambiguous outcome, incompatible journal or unexpected lock
+file prevents cancellation. It never deletes a provider version or steals a lock.
+
+Local command tests use real upload archives, leases and journals with simulated
+provider/CI/schema responses. They cover full activation through canonical
+finalization, lost provider replies, unknown login across resume without replay,
+pre-intent cancellation/refusal after intent, private input drift, historical
+readback without credentials, and sanitized failure output from native CLI runs.
+Hosted command acceptance, failure escalation, old-client coverage and measured
+availability remain separate open requirements.

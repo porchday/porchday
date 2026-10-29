@@ -11,7 +11,8 @@ import {publicAssetManifestHash,type PublicAssetManifest} from './release-assets
 export const compatibilityChecks=['schemaRollback','denialReaders','webClientOverlap','nativeClientOverlap','retainedAssets','stagingAcceptance'] as const;
 type EvidenceFile={path:string;sha256:string};
 export type CompatibilityReview={version:1;worker:string;candidate:{version:string;source:string};baseline:{version:string;source:string};schema:ReleaseSchemaFingerprint;publicAssets:{candidate:string;baseline:string};checks:Record<typeof compatibilityChecks[number],{status:'passed'|'scheduled';basis:string;evidence:EvidenceFile[]}>};
-export type ActivationReviewEvidence={version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
+export type ActivationExecution={root:string;workspace:string;uploadManifest:EvidenceFile;proofPath:string;probe:EvidenceFile;journalDirectory:string;proofDirectory:string;journeyDirectory:string};
+export type ActivationReviewEvidence={execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
 function canonical(value:unknown):string{
  if(value===null||typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))return JSON.stringify(value);
@@ -37,7 +38,7 @@ function readEvidence(file:EvidenceFile){
 export function verifyActivationReview(plan:DeploymentPlan,manifest:UploadManifest,proofPath:string,input:ActivationReviewEvidence){
  const evidence=structuredClone(input);deploymentPlanHash(plan);
  if(plan.evidenceDigest!==activationReviewHash(evidence))throw Error('ACTIVATION_REVIEW_PLAN_CHANGED');
- keys(evidence,['version','state','compatibility','assets']);keys(evidence.assets,['candidate','baseline']);
+ keys(evidence,['version','state','compatibility','assets',...(evidence.execution===undefined?[]:['execution'])]);keys(evidence.assets,['candidate','baseline']);
  if(evidence.version!==1)throw Error('ACTIVATION_REVIEW_INVALID');
  const upload=readCompletedUpload(manifest,proofPath);
  if(evidence.state.version!==1||evidence.state.uploadPlanHash!==upload.uploadPlanHash||evidence.state.uploadProofSha256!==upload.proofSha256||upload.worker!==plan.worker||upload.source!==plan.candidateSource||upload.candidateVersion!==plan.candidateVersion||upload.baselineVersion!==plan.baselineVersion)throw Error('ACTIVATION_REVIEW_UPLOAD_CHANGED');
