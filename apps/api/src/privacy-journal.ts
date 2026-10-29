@@ -1,3 +1,4 @@
+import {ConfirmedTransactionRollback} from './confirmed-rollback';
 import {logoutJournalTiming,measureJournalPhase,type JournalTiming} from './journal-timing';
 import {phaseTiming, measureJournalRead, type RequestTiming} from './request-timing';
 import postgres from 'postgres';
@@ -311,7 +312,7 @@ export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables
 });
 function knownRollback(error:unknown):boolean {
   const e=error as {code?:string;status?:number;name?:string};
-  return !!(e.status&&e.status>=400&&e.status<500)||e.name==='ZodError'
+  return error instanceof ConfirmedTransactionRollback || !!(e.status&&e.status>=400&&e.status<500)||e.name==='ZodError'
     || !!e.code&&(/^(22|23|40)/.test(e.code)||['P0001','42501'].includes(e.code));
 }
 /** Mount only after verified member/staff authentication. Unknown routes do not

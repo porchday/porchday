@@ -1,0 +1,20 @@
+name: Post detail browser checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: node scripts/check-post-detail-loads.mjs
+      - run: TEST_BROWSER=webkit node scripts/check-post-detail-loads.mjs
+      - run: node scripts/check-feed-saves.mjs
