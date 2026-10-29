@@ -16,6 +16,16 @@ function fixture(){
  return{root,plan,canonical,target,baselinePath,before,snapshot,acquire,signal:AbortSignal.timeout(10000)};
 }
 describe('queue creation with provider-assigned identity',()=>{
+ it('retains an omitted optional pause field verbatim through interrupted finalization',async()=>{
+  const f=fixture(),actual=structuredClone(f.snapshot);delete (actual.queues['staging-denial-0'].settings as {delivery_paused?:boolean}).delivery_paused;
+  let lease=f.acquire();await lease.dispatchOnce(async()=>{},async()=>{},f.signal);await lease.reconcile(async()=>({snapshot:actual,evidenceDigest:'d'.repeat(64)}),f.signal);lease.close();lease=f.acquire();
+  await lease.finalize(f.target,async()=>actual,f.signal);lease.release();const proof=JSON.parse(readFileSync(queueSnapshotPath(f.root,f.plan.operationId),'utf8'));
+  expect(proof).toEqual(actual);expect(proof.queues['staging-denial-0'].settings).not.toHaveProperty('delivery_paused');
+ });
+ it.each([true,null,'false'])('rejects an explicit unsupported pause value %s',async value=>{
+  const f=fixture(),actual=structuredClone(f.snapshot),lease=f.acquire();(actual.queues['staging-denial-0'].settings as any).delivery_paused=value;
+  await lease.dispatchOnce(async()=>{},async()=>{},f.signal);await expect(lease.reconcile(async()=>({snapshot:actual,evidenceDigest:'d'.repeat(64)}),f.signal)).rejects.toThrow('PROVIDER_CHANGED');
+ });
  it('reconciles a lost reply without another send and finalizes the actual ID',async()=>{
   const f=fixture(),send=vi.fn(async()=>{throw Error('lost reply');});let lease=f.acquire();
   expect(JSON.parse(readFileSync(join(f.root,'deployment-lock/owner.json'),'utf8')).protocol).toBe('porchday-queue-creation-v1');

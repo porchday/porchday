@@ -81,7 +81,12 @@ export class QueueAdmissionLease{
   if(!this.plan.creation){if(queueSnapshotHash(value)!==this.plan.expectedSnapshotSha256)throw Error('QUEUE_ADMISSION_PROVIDER_CHANGED');return;}
   const {before,expected}=this.creationBaseline(),creation=this.plan.creation,snapshot=object(value),queues=object(snapshot.queues),created=object(queues[creation.key]),id=created.queue_id;
   if(typeof id!=='string'||!/^[a-f0-9]{32}$/.test(id)||Object.values(object(before.queues)).some(q=>object(q).queue_id===id))throw Error('QUEUE_CREATION_ID_INVALID');
-  const normalized={...snapshot,queues:{...queues,[creation.key]:{...created,queue_id:'provider-assigned'}}};
+  // The create API can omit an unset optional pause field. This is acceptable
+  // only for the otherwise exact, unattached creation shape. Keep the omission
+  // in the real proof/canonical snapshot; do not invent observed settings.
+  // Explicit pause is a separate settings operation before consumer attachment.
+  const settings=object(created.settings),comparisonSettings=Object.hasOwn(settings,'delivery_paused')?settings:{...settings,delivery_paused:false};
+  const normalized={...snapshot,queues:{...queues,[creation.key]:{...created,settings:comparisonSettings,queue_id:'provider-assigned'}}};
   if(!isDeepStrictEqual(normalized,expected))throw Error('QUEUE_ADMISSION_PROVIDER_CHANGED');
  }
  async dispatchOnce(authorize:()=>Promise<void>,send:()=>Promise<void>,signal:AbortSignal):Promise<'dispatched'|'reconcile'>{
