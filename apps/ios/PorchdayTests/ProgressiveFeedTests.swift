@@ -43,4 +43,40 @@ import XCTest
         let completed = await task.value
         XCTAssertFalse(completed)
     }
+    func testFirstPostRemainsAvailableWhileLaterDecodeSuspendsAndCancellationDiscardsIt() async {
+        let gate = DecodeGate()
+        var published: [[Int]] = []
+        let task = Task { @MainActor in
+            await ProgressiveFeed.decode([1, 2, 3], isCurrent: { true }, open: { value in
+                if value == 2 { await gate.wait() }
+                return value
+            }, publish: { published.append($0) })
+        }
+        await gate.untilWaiting()
+        XCTAssertEqual(published, [[1]])
+        task.cancel()
+        gate.release()
+        let completed = await task.value
+        XCTAssertFalse(completed)
+        XCTAssertEqual(published, [[1]])
+    }
+
+}
+
+
+@MainActor private final class DecodeGate {
+    private var waiting: CheckedContinuation<Void, Never>?
+    private var observer: CheckedContinuation<Void, Never>?
+    func wait() async {
+        await withCheckedContinuation { continuation in
+            waiting = continuation
+            observer?.resume()
+            observer = nil
+        }
+    }
+    func untilWaiting() async {
+        if waiting != nil { return }
+        await withCheckedContinuation { observer = $0 }
+    }
+    func release() { waiting?.resume(); waiting = nil }
 }
