@@ -373,6 +373,31 @@ cost and compatible rollback remain required before production promotion. No sch
 format change is needed; old queue consumers ignore the optional token, but
 rollback to one-page-per-minute code is unsuitable for a large live population.
 
+## Shared budget across a bounded page batch
+
+The subsequent [10,000-session staging test](../docs/evidence/session-denial-10k-capacity-staging-2026-10-29.json)
+failed the full-pass freshness deadline: 9,000 observations at 302 seconds since
+the previous full pass, despite two-second page age and healthy unrelated checks.
+The 253-session result must not be extrapolated into pilot acceptance.
+
+The next local change processes at most five existing 100-candidate pages in one
+invocation, sharing the original 20-second work-start deadline. Page size, five
+concurrent authority reads, individual I/O/SQL deadlines and exact locked deletion
+are unchanged. Each page is conditionally checkpointed before the next begins.
+A later failure leaves earlier checkpoints intact; the next cron discovers the
+persisted cursor. A CAS loser stops, and a completed pass never starts another
+pass within the same batch. The last confirmed token continues a bounded partial
+batch through the existing queue path. These constraints limit work to 500
+candidates per invocation while reducing queue handoffs and pool setup.
+
+This is a proposed throughput correction, not proof of the specific cause of all
+observed latency. Hosted repeat measurement, queue overlap, denied-backlog behavior
+and compatible rollback remain required. A shared work-start budget is not a hard
+20-second termination guarantee: already-started bounded I/O/SQL may finish later.
+No provider quota, scheduling configuration, health threshold or paid commitment
+is changed. [Cloudflare queue batching documentation](https://developers.cloudflare.com/queues/configuration/batching-retries/)
+describes batching tradeoffs; actual performance must be measured here.
+
 ## Availability, cost and remaining scope
 
 Normal logout should replace several shared-control writes with one write to a

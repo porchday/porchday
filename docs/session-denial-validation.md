@@ -592,3 +592,30 @@ denied backlog, concurrent-user load or overlapping release traffic. Queue
 scheduling and per-page work still contribute to full-pass duration. Larger-load
 measurement and compatible rollback of the continuation change remain gates,
 along with the other writer acceptance requirements. Production writers stay off.
+
+
+## 10,000 live-session deadline failure — October 29, 09:42 UTC
+
+The [larger staging observation](evidence/session-denial-10k-capacity-staging-2026-10-29.json)
+failed on continuation runtime `2ab27b5`. With 10,000 unexpired non-denied fixture
+sessions, twelve journey samples passed before protected readiness returned 503
+with `session_denial_pass_stale`. At failure, page age was two seconds, last full
+pass age 302 seconds, current pass count 9,000 and invalid count zero. Ordinary
+cleanup age was one second; every other journey check passed. All 10,000 fixture
+rows remained intact. This demonstrates that fresh pages alone do not establish
+acceptable full-pass throughput at the planned population.
+
+The bounded test removed only its fixture and verified zero remaining rows.
+Scheduled cleanup recovered without manual sweeping; three healthy observations
+followed, including a fresh one-second pass over the remaining three sessions.
+The intervening 9,200-observation completion after fixture removal is not a
+successful 10,000-session scan. Provider state was unchanged, production was not
+mutated and the lease was released. The failed sample remains in the evidence;
+no health threshold or probe deadline was increased.
+
+A local follow-up batches at most five existing 100-session pages within one
+shared 20-second work-start budget, checkpointing each page before proceeding.
+It stops on full-pass completion, stale token or CAS loss, and returns the last
+confirmed continuation when the page/time bound is reached. Each SQL/R2 deadline
+and denial-authority check remains in place. Native process-recovery tests now
+exercise this batch helper. This change is not yet deployed or hosted-validated.
