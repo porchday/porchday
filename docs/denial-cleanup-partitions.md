@@ -48,8 +48,10 @@ does not establish sufficient hosted capacity.
 
 ## Runtime integration and required deployment admission
 
-1. Bound queue consumer concurrency before enabling parallel partitions. The
-   staging queue has batch size one and a verified concurrency cap of four.
+1. Bound queue consumer concurrency before enabling parallel partitions. Staging
+   now uses one ordinary consumer and one per isolated range, each with batch
+   size one and concurrency one. The earlier shared-queue cap of four failed the
+   combined workload.
    Production still has no explicit cap; its partition mode remains absent.
    Both Wrangler source configs specify four, but source settings alone do not
    establish deployed state.
@@ -311,5 +313,23 @@ snapshot reference. Recovery tests cover lost replies, both sides of canonical
 replacement, changed provider IDs, unexpected consumers/producers/settings,
 unrelated drift and exclusion of concurrent uploads. The creation, settings,
 upload and deployment lease suites passed 56 tests, with tooling typecheck,
-formatting and secret checks passing. No queue has been created by these tests;
-the actual operator workflow and staged admission remain to be exercised.
+formatting and secret checks passing. These local tests do not create queues;
+the subsequent hosted admission is recorded below.
+
+## Hosted isolated admission and capacity, October 29
+
+The three range queues were created, paused, bound and assigned cap-one consumers
+through durable once-only operations. Ordinary concurrency was reduced to one
+before range delivery was enabled. All complete catalogue/detail comparisons
+matched canonical state. Isolated topology then passed twelve continuity samples
+with zero failures and exact synthetic cleanup.
+
+The [isolated combined trial](evidence/denial-isolated-combined-staging-2026-10-29.md)
+drained all 400 denied sessions in 184,093 ms while retaining all 10,000 live
+sessions and healthy journeys. Freshness limits were unchanged. Ordinary cleanup
+continued; connection sampling, post-cleanup journal publication and fresh range
+passes were verified. A controlled shared return and isolated restoration also
+passed continuity/session checks. This does not constitute a new automatic
+fault-injection test or production writer acceptance. The earlier failed trials
+remain preserved; broader pilot load, costs and remaining failure/device gates
+remain open under #9 and #42.

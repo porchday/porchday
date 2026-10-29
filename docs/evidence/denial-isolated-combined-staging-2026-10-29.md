@@ -96,9 +96,27 @@ fixture compatibility. The first idle test used an invalid zero timestamp; the
 test fixture was corrected to a positive timestamp without relaxing the runtime
 gate. Exact runtime and tooling CI had passed before deployment.
 
+## Controlled return and restoration
+
+After workload cleanup and recovery, a configuration-only return to shared
+delivery completed at 22:49:26 UTC as
+`118692ca-14b7-444d-9ada-c2d6d552374a`. Its eleven continuity samples had zero
+failures, including two post-terminal samples. Allowed/revoked sessions behaved
+correctly and exact fixture cleanup reached zero.
+
+The exact isolated configuration was restored at 22:51:40 UTC as
+`91a0bea2-1327-4806-9c46-dddc1e8133d4`, again using runtime `4ef4237`.
+Twelve continuity samples passed with zero failures and two post-terminal
+samples. All queue identities, bindings and cap-one settings remained unchanged;
+fixtures reached zero and provider/canonical reconciliation released the lease.
+Production remained unchanged throughout both transitions.
+
+This demonstrates a controlled compatible return and restoration. It is not a
+new fault-injected automatic rollback test. The workload was not repeated merely
+to obtain another passing result after restoring identical code/configuration.
+
 This result establishes one successful bounded idle-to-burst rehearsal. It does
 not certify arbitrary load, sustained throughput, provider failover, physical
-devices or production rollout. Controlled return to shared delivery, restoration
-of isolated delivery and the remaining concurrency/security/device gates remain
+devices or production rollout. Remaining concurrency/security/device gates are
 separate acceptance work. Keep #9 open and PR #90 draft until their full criteria
 are verified. Tracks #9, #42 and #55.
