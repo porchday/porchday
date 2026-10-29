@@ -49,7 +49,7 @@ struct FeedView: View {
         loadID = attempt
         busy = true
         defer { if loadID == attempt { busy = false } }
-        @MainActor func current() -> Bool {
+        let current: @MainActor @Sendable () -> Bool = {
             loadID == attempt && model.member?.id == memberID && vault.unlocked && !Task.isCancelled
         }
         await model.perform {
