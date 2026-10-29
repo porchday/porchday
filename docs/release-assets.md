@@ -143,3 +143,48 @@ during and after activation. Then verify the same controlled production rollout
 with continuous authenticated journeys. API/schema compatibility, native clients,
 feature flags, configuration and capacity remain separate release gates. Static
 packaging tests do not establish zero downtime or the monthly availability SLO.
+
+## Maintained hosted observer
+
+`beginHostedAssetTransition` in `scripts/release-assets-hosted.ts` replaces the
+one-off open-tab observation logic for future rehearsals. It accepts the canonical
+staging or production origin and reviewed baseline/candidate public manifests.
+It clones and hashes those manifests, verifies baseline HTML/entry bytes and
+requires every discovered cold lazy entrypoint to be retained with its old hash.
+Only an optional single previously observed Cloudflare analytics element at the
+closing body boundary can be removed for HTML comparison. Other changes fail.
+
+Prepare the observer before the maintained activation command, then persist its
+`baselineReceipt` before dispatch. Run the existing durable command exactly once.
+Only after that command reconciles the expected candidate should the caller run
+`finish()`, persist the complete returned report, and require `passed === true`.
+A failed/rolled-back/unknown command is not permission to claim the candidate
+transition or replay deployment. Keep its original journal and reconciliation
+path. A rollback observation needs manifests matching that actual transition.
+Always call `close()` in `finally`, including if receipt persistence fails.
+
+The observer opens fresh ephemeral Chromium contexts, blocks service workers,
+and permits only same-origin GET browser requests. It never logs in or submits
+the typed synthetic form value. The entry fetch rejects redirects and streams
+at most 25 MiB; browser response buffers are checked after receipt. Error messages
+are not copied into reports, only error counts. `finish()` can start once, closes
+the browser afterward, and checks both old and fresh contexts. Cancellation and
+a five-minute default lifetime also close it; the configurable lifetime cannot
+exceed ten minutes. Timing out never produces a passing report.
+
+Twelve tests include real Chromium with synthetic response bytes, negative
+controls for fresh exceptions/MIME errors, changed old bytes, stale candidate
+HTML, missing retention, cancellation, lifetime expiry, manifest mutation, and
+blocked off-origin GET/same-origin POST requests. The browser CI job runs these
+alongside the local transition tests. A first test invocation exposed test-runner
+rewriting of a browser dynamic import; the import now executes as an encoded
+browser expression, and the positive and negative controls pass.
+
+A read-only smoke on staging at **23:08:41 UTC October 29** passed with the same
+manifest as baseline and candidate: one cold lazy entrypoint loaded, old form
+state remained, fresh HTML matched, both contexts had zero page/MIME errors,
+and all 33 public HTTP asset checks passed. Canonical state was unchanged and
+there were no provider writes. The same-version smoke establishes hosted
+observer operation, not a new deployment transition. Existing-session API
+continuity, signed-in UI, installed service workers, native clients and scheduled
+release adoption remain separate acceptance requirements under #3.
