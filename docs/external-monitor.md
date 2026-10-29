@@ -97,7 +97,15 @@ outage comment is verified, the queued recovery event can be dispatched immediat
 
 These intervals are scheduling targets, not delivery guarantees. Slow requests,
 GitHub availability and recipient preferences still apply. The source correction
-has local tests; installation and a live bot-delivery drill remain to be verified.
+passes 54 combined monitor/report tests. A separate, explicitly labeled drill
+outbox exercised the new drainer at source `b2a8bf2` without changing production
+monitor state. The [outage comment](https://github.com/porchday/porchday/issues/52#issuecomment-6484026838)
+was posted by the Actions bot 10.781 seconds after event creation; the
+[recovery comment](https://github.com/porchday/porchday/issues/52#issuecomment-6484031045)
+followed its event by 8.726 seconds. The drainer reconciled both exact bot bodies
+and emptied its private outbox. Installation into the continuously running Mac
+service remains pending full CI. No production outage was induced, and this drill
+does not establish human receipt or a delivery-time bound.
 
 ## Reproducible availability reports
 
