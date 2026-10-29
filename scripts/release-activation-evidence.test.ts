@@ -1,3 +1,5 @@
+import {activationReviewHash,verifyActivationReview,createReviewedActivationPorts,compatibilityChecks,type ActivationReviewEvidence,type CompatibilityReview} from './release-activation-review.ts';
+import {publicAssetManifestHash} from './release-assets-verify.ts';
 import {describe,it,expect,vi} from 'vitest';
 import {createActivationStateVerifier,createPreparedActivationPorts} from './release-activation-state.ts';
 import {FileDeploymentLease} from './deployment-recovery-lease.ts';
@@ -13,8 +15,8 @@ import type {UploadManifest} from './release-upload-cli.ts';
 import {recoverDeployment,type DeploymentPlan,type RecoveryState,type DeploymentPorts} from './deployment-recovery.ts';
 const id=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const hash=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
-async function fixture(options:{complete?:boolean;frontend?:boolean;mutate?:(proof:any)=>void}={}){
- const root=realpathSync(mkdtempSync(join(tmpdir(),'porchday-activation-evidence-'))),source='a'.repeat(40),worker=options.frontend?'porchday-staging-edge':'porchday-staging',key=options.frontend?'staging-edge':'staging',entry=options.frontend?'edge.js':'index.js';
+async function fixture(options:{complete?:boolean;frontend?:boolean;production?:boolean;mutate?:(proof:any)=>void}={}){
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'porchday-activation-evidence-'))),source='a'.repeat(40),environment=options.production?'production':'staging',worker='porchday-'+environment+(options.frontend?'-edge':''),key=environment+(options.frontend?'-edge':''),entry=options.frontend?'edge.js':'index.js';
  const canonical=JSON.stringify({stagingVersion:id(1),stagingRuntimeSource:'b'.repeat(40),compatibleRollbackVersions:{staging:id(1)},edgeRouting:{stagingEnabled:!!options.frontend,stagingFrontendVersion:id(1),stagingFrontendSource:'b'.repeat(40)}});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});
  const settings=releaseSettings({bindings:[]}),resources={script:{etag:'baseline',handlers:['fetch']},script_runtime:{compatibility_date:'2026-10-24'},bindings:[]};
  const before={workers:Object.fromEntries(['staging','staging-edge','production','production-edge','monitor-staging','monitor-production'].map(k=>[k,{active:id(1),latest:id(1),settings,resources}])),domains:[],queues:{},schedules:{}};
@@ -125,4 +127,62 @@ describe('prepared activation controller composition',()=>{
    expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(id(1));
   }finally{f.close();}
  });
+});
+
+async function reviewFixture(production=false){
+ const f=await fixture({production}),upload=readCompletedUpload(f.manifest,f.proofPath),path=join(f.root,'compatibility.json'),testPath=join(f.root,'test-result.json');
+ const result=JSON.stringify({synthetic:true,passed:true});writeFileSync(testPath,result,{mode:0o600});
+ const assets={candidate:{source:'a'.repeat(40),files:{'app.js':'1'.repeat(64)}},baseline:{source:'b'.repeat(40),files:{'app.js':'2'.repeat(64)}}};
+ const review:CompatibilityReview={version:1,worker:f.deployment.worker,candidate:{source:'a'.repeat(40),version:id(2)},baseline:{source:'b'.repeat(40),version:id(1)},schema:f.manifest.evidence.schema,publicAssets:{candidate:publicAssetManifestHash(assets.candidate),baseline:publicAssetManifestHash(assets.baseline)},checks:Object.fromEntries(compatibilityChecks.map(name=>[name,{status:'passed',basis:'Synthetic fixture for '+name,evidence:[{path:testPath,sha256:hash(result)}]}])) as CompatibilityReview['checks']};
+ const evidence:ActivationReviewEvidence={version:1,state:{version:1,uploadPlanHash:upload.uploadPlanHash,uploadProofSha256:upload.proofSha256,tooling:{source:'d'.repeat(40),ci:f.manifest.evidence.ci},baseline:{source:'b'.repeat(40),ci:f.manifest.evidence.ci}},compatibility:{path,sha256:''},assets};
+ const plan={...f.deployment};
+ function save(){const bytes=JSON.stringify(review);writeFileSync(path,bytes,{mode:0o600});evidence.compatibility.sha256=hash(bytes);plan.evidenceDigest=activationReviewHash(evidence);}
+ save();return{...f,review,evidence,plan,save,testPath,verify:()=>verifyActivationReview(plan,f.manifest,f.proofPath,evidence)};
+}
+describe('reviewed compatibility evidence binding',()=>{
+ it('binds scope, all required checks, retained files and asset manifests without provider access',async()=>{const f=await reviewFixture();try{expect(f.verify()).toEqual({evidenceDigest:f.plan.evidenceDigest,reviewSha256:f.evidence.compatibility.sha256,files:1,checks:[...compatibilityChecks],pendingChecks:[]});const reordered={...f.evidence,assets:{baseline:f.evidence.assets.baseline,candidate:f.evidence.assets.candidate}};expect(activationReviewHash(reordered)).toBe(f.plan.evidenceDigest);}finally{f.close();}});
+ it.each(['pending','missing','empty','no-files','source','version','schema','assets','upload','tooling'])('rejects %s review drift or missing evidence',async kind=>{const f=await reviewFixture();try{
+  if(kind==='pending')(f.review.checks.schemaRollback as any).status='pending';
+  if(kind==='missing')delete (f.review.checks as any).nativeClientOverlap;
+  if(kind==='empty')f.review.checks.webClientOverlap.basis=' ';
+  if(kind==='no-files')f.review.checks.retainedAssets.evidence=[];
+  if(kind==='source')f.review.baseline.source='c'.repeat(40);
+  if(kind==='version')f.review.candidate.version=id(9);
+  if(kind==='schema')f.review.schema={...f.review.schema,functionsSha256:'9'.repeat(64)};
+  if(kind==='assets')f.review.publicAssets.candidate='9'.repeat(64);
+  if(kind==='upload')f.evidence.state.uploadProofSha256='9'.repeat(64);
+  f.save();if(kind==='tooling')f.evidence.state.tooling.source='c'.repeat(40);
+  expect(f.verify).toThrow();
+ }finally{f.close();}});
+ it.each(['changed','public','symlink','conflicting-hash'])('rejects %s supporting evidence',async kind=>{const f=await reviewFixture();try{
+  if(kind==='changed')writeFileSync(f.testPath,'changed');
+  if(kind==='public')chmodSync(f.testPath,0o644);
+  if(kind==='symlink'){const link=join(f.root,'linked.json');symlinkSync(f.testPath,link);f.review.checks.schemaRollback.evidence[0].path=link;f.save();}
+  if(kind==='conflicting-hash'){f.review.checks.nativeClientOverlap.evidence[0].sha256='e'.repeat(64);f.save();}
+  expect(f.verify).toThrow();
+ }finally{f.close();}});
+ it('rejects altered review bytes or asset proof pins even with unchanged candidate',async()=>{const f=await reviewFixture();try{
+  f.plan.assetManifests={candidate:'e'.repeat(64),baseline:f.review.publicAssets.baseline};expect(f.verify).toThrow('ASSETS_CHANGED');delete f.plan.assetManifests;
+  writeFileSync(f.evidence.compatibility.path,'{}');expect(f.verify).toThrow('FILE_CHANGED');
+ }finally{f.close();}});
+});
+
+describe('reviewed activation composition',()=>{
+ it.each([false,true])('enforces retained compatibility evidence through lost-reply recovery (tamper=%s)',async tamper=>{
+  const f=await reviewFixture(),lease=FileDeploymentLease.acquire(f.root,f.plan);try{
+   let state:RecoveryState|null=null,observed={version:id(1),deploymentId:id(5),operationId:null as string|null};
+   const inventory=structuredClone(f.proof.inventory),journal={read:async()=>structuredClone(state),write:async(previous:RecoveryState|null,next:RecoveryState)=>{expect(previous).toEqual(state);state=structuredClone(next);}};
+   const deploy=vi.fn(async(version:string,operationId:string)=>{inventory.workers[f.key].active=version;inventory.workers[f.key].resources=f.proof.candidate.resources;observed={version,operationId,deploymentId:id(7)};if(tamper)writeFileSync(f.testPath,'altered');throw Error('LOST_REPLY');});
+   const ports=createReviewedActivationPorts({workspace:f.root,plan:f.plan,manifest:f.manifest,proofPath:f.proofPath,review:f.evidence,lease,journal,reader:{snapshot:async()=>structuredClone(inventory)},database:{connection:'synthetic',branchId:'synthetic'},checks:{tooling:async()=>({source:'d'.repeat(40)}),ci:async(input)=>({source:input.source,repository:'porchday/porchday',runs:[]}),schema:async()=>structuredClone(f.manifest.evidence.schema)},ports:{observe:async()=>({...observed}),deploy,verify:async()=> 'healthy'}});
+   expect(await recoverDeployment(f.plan,journal,ports)).toBe(tamper?'verification-unavailable':'complete');
+   expect(await recoverDeployment(f.plan,journal,ports)).toBe(tamper?'verification-unavailable':'complete');expect(deploy).toHaveBeenCalledTimes(1);
+  }finally{lease.close();f.close();}
+ });
+});
+
+describe('staging acceptance ordering',()=>{
+ it.each([false,true])('allows scheduled hosted acceptance only before staging activation (production=%s)',async production=>{const f=await reviewFixture(production);try{
+  f.review.checks.stagingAcceptance={status:'scheduled',basis:'Run hosted acceptance after this staging activation.',evidence:[]};f.save();if(production)expect(f.verify).toThrow('COMPATIBILITY_INCOMPLETE');else expect(f.verify().pendingChecks).toEqual(['stagingAcceptance']);
+  f.review.checks.webClientOverlap={status:'scheduled',basis:'Not checked yet',evidence:[]};f.save();expect(f.verify).toThrow('COMPATIBILITY_INCOMPLETE');
+ }finally{f.close();}});
 });

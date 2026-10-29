@@ -335,5 +335,36 @@ Local tests compose the real deployment lease with synthetic provider responses:
 failed compatibility authorizes no send; a committed activation with a lost reply
 is observed without replay; unhealthy candidate verification rolls back once; and
 drift during the journey prevents completion. These tests do not constitute a new
-hosted rollout or replace client compatibility acceptance. The operator manifest,
-compatibility evidence contract, and complete activation CLI remain to be finished.
+hosted rollout or replace client compatibility acceptance. The operator manifest and complete activation CLI remain to be finished.
+The reviewed compatibility contract is described below.
+
+### Reviewed compatibility contract
+
+`ActivationReviewEvidence` in `scripts/release-activation-review.ts` binds the
+fresh-state evidence, candidate/baseline public asset manifests and a private
+compatibility review into the deployment plan's evidence digest. The review names
+the exact Worker, candidate and rollback versions/sources, schema fingerprint and
+asset hashes. Each required assessment records a rationale and SHA-256-pinned,
+owner-only supporting files: schema rollback, denial readers, old web-client
+compatibility, supported native clients, retained assets and staging acceptance.
+Missing, pending or mismatched assessments fail closed. Files are read without
+following symlinks, with bounded size and total evidence volume.
+
+The first staging activation necessarily precedes hosted staging acceptance.
+Only its `stagingAcceptance` check may therefore be explicitly `scheduled` with
+an explanation and no result files. The verification result reports that pending
+check. Production requires completed staging acceptance evidence; other checks
+cannot use this exception. This does not make staging acceptance complete or
+permit promotion before the result is reviewed.
+
+`createReviewedActivationPorts` supplies the concrete compatibility authorizer to
+the state/controller composition. It rechecks review bytes and supporting files
+before activation/rollback and around journeys, including resume after an uncertain
+write. Callers supply the narrow provider transport and journey verifier, not a
+replacement compatibility callback. Finalization and the operator CLI remain to
+be integrated.
+
+These checks establish review scope and evidence integrity. An operator must still
+inspect the actual test coverage and conclusions: a hash does not authenticate a
+test's claims, and a generic passing test log cannot establish client compatibility.
+The module does not fabricate acceptance evidence from CI or schema equality.
