@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadStats, milestones, seconds, shortLabel, ticks, waterfall, type StoredSpan, type StoredTrace } from "../src/trace-inspector";
+import { latestTrace, loadStats, milestones, seconds, shortLabel, ticks, waterfall, type StoredSpan, type StoredTrace } from "../src/trace-inspector";
 
 const span = (seq: number, kind: string, name: string, start_ms: number, duration_ms: number, attrs: StoredSpan["attrs"] = null, parent_seq: number | null = null): StoredSpan =>
   ({ seq, parent_seq, kind, name, start_ms, duration_ms, attrs });
@@ -58,5 +58,37 @@ describe("trace inspector", () => {
     expect(shortLabel(photo)).toBe("GET /api/v1/media/…fb22/bytes");
     expect(ticks(0, 2_400, 6)).toEqual([0, 500, 1_000, 1_500, 2_000]);
     expect(ticks(0, 90, 4)).toEqual([0, 50]);
+  });
+});
+
+describe("selected trace loading", () => {
+  const deferred = () => { let resolve!: (t: StoredTrace) => void, reject!: (e: unknown) => void; const promise = new Promise<StoredTrace>((y, n) => { resolve = y; reject = n; }); return { promise, resolve, reject }; };
+  const named = (id: string): StoredTrace => ({ ...trace, trace_id: id });
+
+  it("shows only the newest selection when answers arrive out of order", async () => {
+    const pending = new Map<string, ReturnType<typeof deferred>>();
+    const shown: (string | null)[] = [];
+    const loader = latestTrace((id) => { const d = deferred(); pending.set(id, d); return d.promise; }, (t) => shown.push(t?.trace_id ?? null));
+    const b = loader.select("b"), c = loader.select("c");
+    pending.get("c")!.resolve(named("c"));
+    await c;
+    pending.get("b")!.resolve(named("b"));
+    await b;
+    expect(shown).toEqual([null, null, "c"]);
+    // A stale failure is dropped too, rather than shown as an error.
+    const d = loader.select("d"), e = loader.select("e");
+    pending.get("d")!.reject(Error("slow failure"));
+    pending.get("e")!.resolve(named("e"));
+    await expect(Promise.all([d, e])).resolves.toBeDefined();
+    expect(shown.at(-1)).toBe("e");
+  });
+
+  it("re-reads the selected trace on refresh without clearing it first", async () => {
+    const reads: string[] = [], shown: (string | null)[] = [];
+    const loader = latestTrace(async (id) => { reads.push(id); return named(id); }, (t) => shown.push(t?.trace_id ?? null));
+    await loader.select("a");
+    await loader.refresh();
+    expect(reads).toEqual(["a", "a"]);
+    expect(shown).toEqual([null, "a", "a"]);
   });
 });

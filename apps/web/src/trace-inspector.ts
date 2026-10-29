@@ -94,3 +94,26 @@ export function loadStats(trace: StoredTrace) {
 }
 
 export const seconds = (ms: number | null) => ms === null ? "—" : `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`;
+
+/** Loads the selected trace so that only the newest request is shown. A
+ * slower answer for a page load the member has already moved away from is
+ * dropped, along with its error. Selecting clears the old trace while the new
+ * one loads; refreshing (after Send now) keeps it until the update arrives. */
+export function latestTrace(read: (id: string) => Promise<StoredTrace>, show: (trace: StoredTrace | null) => void) {
+  let generation = 0, selected: string | null = null;
+  async function load(id: string | null, clear: boolean): Promise<void> {
+    const mine = ++generation;
+    if (clear) show(null);
+    if (!id) return;
+    try {
+      const trace = await read(id);
+      if (mine === generation) show(trace);
+    } catch (error) {
+      if (mine === generation) throw error;
+    }
+  }
+  return {
+    select: (id: string | null) => { selected = id; return load(id, true); },
+    refresh: () => load(selected, false),
+  };
+}

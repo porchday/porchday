@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ApiError, get, localDate, type Json } from "./api";
 import { Alert, Button, Loading, useAction } from "./ui";
 import { currentTraceId, flushTraces, traceReport, tracingEnabled } from "./tracing";
-import { loadStats, seconds, shortLabel, ticks, waterfall, type StoredSpan, type StoredTrace, type WaterfallRow } from "./trace-inspector";
+import { latestTrace, loadStats, seconds, shortLabel, ticks, waterfall, type StoredSpan, type StoredTrace, type WaterfallRow } from "./trace-inspector";
 
 type Summary = {
   routes: { route: string; count: number; failed: number; p50_ms: number | null; p95_ms: number | null; max_ms: number | null; server_p50_ms: number | null }[];
@@ -21,6 +21,7 @@ export default function TraceInspector() {
   const [selected, setSelected] = useState<string | null>(() => new URLSearchParams(location.search).get("trace"));
   const [trace, setTrace] = useState<StoredTrace | null>(null);
   const action = useAction();
+  const loader = useMemo(() => latestTrace((id) => get<StoredTrace>(`/traces/${id}`), setTrace), []);
   async function load() {
     try {
       const [list, totals] = await Promise.all([get("/traces"), get<Summary>("/traces/summary")]);
@@ -34,9 +35,8 @@ export default function TraceInspector() {
   }
   useEffect(() => { void action.run(load); }, []);
   useEffect(() => {
-    if (!selected) return setTrace(null);
-    history.replaceState(history.state, "", `/app/performance?trace=${selected}`);
-    void action.run(async () => setTrace(await get<StoredTrace>(`/traces/${selected}`)));
+    if (selected) history.replaceState(history.state, "", `/app/performance?trace=${selected}`);
+    void action.run(() => loader.select(selected));
   }, [selected]);
 
   if (unavailable) return <section className="panel"><h1>Performance</h1><Alert>Trace storage is not set up on this server yet.</Alert></section>;
@@ -61,7 +61,7 @@ export default function TraceInspector() {
             </select>
             <div className="button-row">
               <Button variant="outline compact" busy={action.busy} disabled={!tracingEnabled()}
-                onClick={() => action.run(async () => { await flushTraces(true); await load(); }, "Sent.")}>
+                onClick={() => action.run(async () => { await flushTraces(true); await Promise.all([load(), loader.refresh()]); }, "Sent.")}>
                 Send now
               </Button>
               {trace && (
@@ -77,6 +77,7 @@ export default function TraceInspector() {
         <Alert success>{action.notice}</Alert>
       </section>
       {trace && <LoadTiles trace={trace} />}
+      {selected && !trace && <Loading />}
       {trace && <Waterfall key={trace.trace_id} trace={trace} />}
       {summary && !!traces?.length && (
         <div className="trace-grid">
@@ -142,36 +143,38 @@ function Waterfall({ trace }: { trace: StoredTrace }) {
         <li><i className="trace-failed" />Failed</li>
       </ul>
       <div className="trace-rows">
-        <div className="trace-row trace-axis" aria-hidden="true">
-          <span />
-          <div className="trace-track">
-            {ticks(start, end, 6).filter((tick) => (tick - start) / (end - start) < 0.94).map((tick) => <span key={tick} style={{ left: at(tick) }}>{seconds(tick)}</span>)}
-          </div>
-        </div>
-        {rows.map((row) => {
-          const label = (row.children ? (expanded.has(row.span.seq) ? "▾ " : "▸ ") : "") + shortLabel(row.span.name);
-          const bars = (
+        <div className="trace-canvas">
+          <div className="trace-row trace-axis" aria-hidden="true">
+            <span />
             <div className="trace-track">
-              {row.segments.map((segment, i) => (
-                <span key={i} className={`trace-${segment.kind}${row.api ? "" : " trace-asset"}`}
-                  style={{ left: at(segment.start), width: width(segment.dur) }} />
-              ))}
+              {ticks(start, end, 6).filter((tick) => (tick - start) / (end - start) < 0.94).map((tick) => <span key={tick} style={{ left: at(tick) }}>{seconds(tick)}</span>)}
             </div>
-          );
-          const className = `trace-row${row.depth ? " trace-child" : ""}`;
-          return row.children ? (
-            <button type="button" key={row.span.seq} className={className} title={describe(row.span)}
-              aria-expanded={expanded.has(row.span.seq)} onClick={() => toggle(row)}>
-              <span className="trace-label">{label}</span>{bars}
-            </button>
-          ) : (
-            <div key={row.span.seq} className={className} title={describe(row.span)}>
-              <span className="trace-label">{label}</span>{bars}
-            </div>
-          );
-        })}
-        <div className="trace-marks" aria-hidden="true">
-          {marks.map((mark) => <span key={mark.name} style={{ left: at(mark.at) }} title={`${mark.name} at ${seconds(mark.at)}`} />)}
+          </div>
+          {rows.map((row) => {
+            const label = (row.children ? (expanded.has(row.span.seq) ? "▾ " : "▸ ") : "") + shortLabel(row.span.name);
+            const bars = (
+              <div className="trace-track">
+                {row.segments.map((segment, i) => (
+                  <span key={i} className={`trace-${segment.kind}${row.api ? "" : " trace-asset"}`}
+                    style={{ left: at(segment.start), width: width(segment.dur) }} />
+                ))}
+              </div>
+            );
+            const className = `trace-row${row.depth ? " trace-child" : ""}`;
+            return row.children ? (
+              <button type="button" key={row.span.seq} className={className} title={describe(row.span)}
+                aria-expanded={expanded.has(row.span.seq)} onClick={() => toggle(row)}>
+                <span className="trace-label">{label}</span>{bars}
+              </button>
+            ) : (
+              <div key={row.span.seq} className={className} title={describe(row.span)}>
+                <span className="trace-label">{label}</span>{bars}
+              </div>
+            );
+          })}
+          <div className="trace-marks" aria-hidden="true">
+            {marks.map((mark) => <span key={mark.name} style={{ left: at(mark.at) }} title={`${mark.name} at ${seconds(mark.at)}`} />)}
+          </div>
         </div>
       </div>
       {!!marks.length && (
