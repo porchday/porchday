@@ -78,3 +78,19 @@ A passing build is not a security audit. Broader launch also requires independen
 ## Licenses and rebuilds
 
 The About screen contains bundled third-party notices. From the repository root, regenerate them with `python3 scripts/build-third-party-notices.py`. Original Porchday source is Apache-2.0; dependencies retain their own licenses. Source packaging and replacement-build details are in [third-party notices](../../THIRD_PARTY_NOTICES.md).
+
+### Progressive feed opening
+
+The feed publishes each verified post as it opens, in server order, rather than
+waiting for the entire page to decrypt. Vault operations remain sequential on the
+main actor. A cancellation, account change, locked vault, or newer refresh stops
+stale results from publishing; pagination remains disabled until the page is done.
+A refresh replaces the prior rows only after its server request succeeds.
+
+`ProgressiveFeedTests` checks publication before subsequent decoding, order,
+invalidation, empty pages and cancellation. The helper also passed four native
+Swift runtime assertions locally with strict Swift 6 concurrency checking.
+Full simulator/UI and physical-device latency validation remain separate gates.
+`Task.yield()` gives rendering an opportunity; it does not guarantee a frame or
+prove the warm/cold launch targets. No keys, verified payloads or network requests
+are cached or skipped by this change.

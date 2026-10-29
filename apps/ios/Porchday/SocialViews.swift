@@ -17,6 +17,7 @@ struct FeedView: View {
     @State private var busy = false
     @State private var compose = false
     @State private var loaded = false
+    @State private var loadID = UUID()
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
@@ -41,14 +42,29 @@ struct FeedView: View {
         .toolbar { NavigationLink { NotificationsView() } label: { Label("Notifications", systemImage: "bell") } }
         .sheet(isPresented: $compose) { NavigationStack { ComposerView(groupID: groupID) { Task { await load() } } } }
     }
-    private func load(more: Bool = false) async {
-        busy = true; defer { busy = false }
+    @MainActor private func load(more: Bool = false) async {
+        if more && busy { return }
+        guard let memberID = model.member?.id, vault.unlocked else { return }
+        let attempt = UUID()
+        loadID = attempt
+        busy = true
+        defer { if loadID == attempt { busy = false } }
+        func current() -> Bool {
+            loadID == attempt && model.member?.id == memberID && vault.unlocked && !Task.isCancelled
+        }
         await model.perform {
             let suffix = more ? "?cursor=" + (cursor ?? "").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)! : ""
             let result = try await model.api.social(endpoint + suffix)
-            var items: [SocialItem] = []; for raw in result["items"].array { items.append(await vault.item(raw)) }
-            rows = more ? rows + items.filter { next in !rows.contains { $0.id == next.id } } : items
-            cursor = result["next_cursor"].string; loaded = true
+            guard current() else { return }
+            let existing = more ? rows : []
+            if !more { rows = []; cursor = nil; loaded = false }
+            let complete = await ProgressiveFeed.decode(result["items"].array, isCurrent: current, open: { await vault.item($0) }, publish: { items in
+                rows = existing + items.filter { next in !existing.contains { $0.id == next.id } }
+                loaded = true
+            })
+            guard complete, current() else { return }
+            cursor = result["next_cursor"].string
+            loaded = true
         }
     }
 }
