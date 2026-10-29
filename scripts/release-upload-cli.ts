@@ -5,7 +5,7 @@ import {FileUploadLease,uploadPlanHash,type UploadPlan} from './release-upload-l
 import {runPreparedUpload,type PreparedUploadEvidence} from './release-upload.ts';
 import {uploadReconciliationEvidenceHash} from './release-upload-reconcile.ts';
 import {CloudflareReleaseReader} from './cloudflare-release-reader.ts';
-import {deploymentTarget} from './deployment-recovery.ts';
+import {uploadTarget} from './release-upload-target.ts';
 import {validateReleaseDatabaseTarget} from './release-schema.ts';
 
 export type UploadManifest={version:1;root:string;workspace:string;proofDirectory:string;privateLogDirectory:string;plan:UploadPlan;evidence:PreparedUploadEvidence;queues:Record<'staging'|'production',{id:string;name:string}>};
@@ -29,7 +29,7 @@ export async function executeUploadManifest(manifest:UploadManifest,action:'uplo
   try{lease.cancelBeforeDispatch();return{status:'cancelled-before-dispatch',operationId:manifest.plan.operationId};}finally{lease.close();}
  }
  if(manifest.workspace!==realpathSync(dirname(fileURLToPath(new URL('../package.json',import.meta.url)))))throw Error('UPLOAD_TOOLING_WORKSPACE_CHANGED');
- const environment=deploymentTarget(manifest.plan.worker).environment;
+ const environment=uploadTarget(manifest.plan.worker).environment;
  const accountId=env.CLOUDFLARE_ACCOUNT_ID??'',apiToken=env.CLOUDFLARE_API_TOKEN??'',connection=env[environment==='staging'?'PORCHDAY_STAGING_DATABASE_MIGRATION_URL':'PORCHDAY_PRODUCTION_DATABASE_MIGRATION_URL']??'';
  validateReleaseDatabaseTarget(connection,manifest.evidence.databaseBranchId);
  const reader=new CloudflareReleaseReader({accountId,apiToken,queues:manifest.queues});

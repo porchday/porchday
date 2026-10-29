@@ -10,9 +10,9 @@ import {createUploadReconciler,uploadReconciliationEvidenceHash,type UploadRecon
 const id=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
 const signal=()=>AbortSignal.timeout(10000);
-function fixture(){
+function fixture(application:'api'|'monitor'='api'){
  const root=realpathSync(mkdtempSync(join(tmpdir(),'porchday-reconcile-'))),artifactDirectory=join(root,'artifacts'),proofDirectory=join(root,'proofs');
- mkdirSync(artifactDirectory,{mode:0o700});mkdirSync(proofDirectory,{mode:0o700});mkdirSync(join(root,'apps/api/src'),{recursive:true});writeFileSync(join(root,'apps/api/src/index.ts'),'reviewed source');
+ mkdirSync(artifactDirectory,{mode:0o700});mkdirSync(proofDirectory,{mode:0o700});mkdirSync(join(root,'apps/'+application+'/src'),{recursive:true});writeFileSync(join(root,'apps/'+application+'/src/index.ts'),'reviewed source');
  const git=(args:string[])=>execFileSync('git',args,{cwd:root,encoding:'utf8',stdio:['ignore','pipe','pipe']}).trim();
  git(['init','-q']);git(['config','user.name','Synthetic Test']);git(['config','user.email','synthetic@example.invalid']);git(['add','apps']);git(['commit','-qm','fixture']);const source=git(['rev-parse','HEAD']);
  const modules={'index.js':Buffer.from('synthetic reviewed executable'),'index.js.map':Buffer.from(JSON.stringify({version:3,sources:['src/index.ts'],sourcesContent:['reviewed source'],names:[],mappings:'AAAA'}))};
@@ -20,9 +20,9 @@ function fixture(){
  const canonical=JSON.stringify({stagingVersion:id(3),stagingRuntimeSource:source});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});
  const settings=releaseSettings({bindings:[]}),resources={script:{etag:'baseline',handlers:['fetch']},script_runtime:{compatibility_date:'2026-10-24'},bindings:[]};
  const before={workers:Object.fromEntries(['staging','staging-edge','production','production-edge','monitor-staging','monitor-production'].map(key=>[key,{active:id(3),latest:id(4),settings,resources}])),domains:[],queues:{},schedules:{}};
- const after=structuredClone(before);after.workers.staging.latest=id(2);
+ const after=structuredClone(before);after.workers[application==='monitor'?'monitor-staging':'staging'].latest=id(2);
  const schema={version:1 as const,migrations:['000_initial.sql'],functionsSha256:'a'.repeat(64),columnsSha256:'b'.repeat(64)};
- const evidence:UploadReconciliationEvidence={version:1,worker:'porchday-staging',source,before,settings,resources,databaseBranchId:'synthetic',schema,ci:{verify:{runId:1,attempt:1,workflowSha256:'a'.repeat(64)},history:{runId:2,attempt:1,workflowSha256:'b'.repeat(64)}},artifacts:{directory:artifactDirectory,entry:'index.js',hashes:Object.fromEntries(Object.entries(modules).map(([name,bytes])=>[name,hash(bytes)])),sourcePaths:['apps/api/src/index.ts']}};
+ const evidence:UploadReconciliationEvidence={version:1,worker:application==='monitor'?'porchday-monitor-staging':'porchday-staging',source,before,settings,resources,databaseBranchId:'synthetic',schema,ci:{verify:{runId:1,attempt:1,workflowSha256:'a'.repeat(64)},history:{runId:2,attempt:1,workflowSha256:'b'.repeat(64)}},artifacts:{directory:artifactDirectory,entry:'index.js',hashes:Object.fromEntries(Object.entries(modules).map(([name,bytes])=>[name,hash(bytes)])),sourcePaths:['apps/'+application+'/src/index.ts']}};
  const plan:UploadPlan={operationId:id(1),worker:evidence.worker,source,canonicalSha256:hash(canonical),evidenceDigest:uploadReconciliationEvidenceHash(evidence)},lease=FileUploadLease.acquire(root,plan);
  const candidate={version:id(2),resources:{...resources,script:{...resources.script,etag:'candidate'}}};
  const reader={uploadedVersion:vi.fn(async()=>structuredClone(candidate)),snapshot:vi.fn(async()=>structuredClone(after)),script:vi.fn(async()=>structuredClone(modules))};
@@ -32,8 +32,8 @@ function fixture(){
  return{root,canonical,plan,lease,options,reader,checks,after,candidate,proofPath};
 }
 describe('composed inactive-upload reconciliation',()=>{
- it('verifies every gate, durably records proof, resumes deterministically and archives without changing active state',async()=>{
-  const f=fixture();try{
+ it.each(['api','monitor'] as const)('verifies every %s upload gate, records proof, resumes and preserves active state',async application=>{
+  const f=fixture(application);try{
    await f.lease.dispatchOnce(async()=>{},async()=>{},signal());const reconcile=createUploadReconciler(f.options);
    await f.lease.reconcile(reconcile,signal());await f.lease.reconcile(reconcile,signal());
    const bytes=readFileSync(f.proofPath),proof=JSON.parse(bytes.toString());expect(proof.provenance.source).toBe(f.plan.source);expect(proof.artifacts.hashes['index.js']).toBe(f.options.evidence.artifacts.hashes['index.js']);
@@ -41,8 +41,8 @@ describe('composed inactive-upload reconciliation',()=>{
    expect(f.lease.release().evidenceDigest).toBe(hash(bytes));expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
   }finally{f.lease.close();rmSync(f.root,{recursive:true,force:true});}
  });
- it.each(['ci','schema','resources','artifact','inventory','identity','canonical'] as const)('retains the unresolved intent and writes no success proof on %s failure',async kind=>{
-  const f=fixture();try{
+ it.each((['api','monitor'] as const).flatMap(application=>(['ci','schema','resources','artifact','inventory','identity','canonical'] as const).map(kind=>({application,kind}))))('retains unresolved $application intent and writes no success proof on $kind failure',async({application,kind})=>{
+  const f=fixture(application);try{
    if(kind==='ci')f.checks.ci.mockRejectedValue(Error('CI failed'));
    if(kind==='schema')f.checks.schema.mockResolvedValue({...f.options.evidence.schema,columnsSha256:'f'.repeat(64)});
    if(kind==='resources')f.reader.uploadedVersion.mockResolvedValue({...f.candidate,resources:{...f.candidate.resources,script_runtime:{compatibility_date:'other'}}});

@@ -2,14 +2,14 @@ import {DatabaseSync} from 'node:sqlite';
 import {constants,closeSync,existsSync,fsyncSync,lstatSync,mkdirSync,openSync,readFileSync,readdirSync,renameSync,writeFileSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {deploymentTarget} from './deployment-recovery.ts';
+import {uploadTarget} from './release-upload-target.ts';
 
 export type UploadPlan={operationId:string;worker:string;source:string;canonicalSha256:string;evidenceDigest:string};
 const protocol='porchday-release-upload-sqlite-v1';
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const sha=(text:string)=>createHash('sha256').update(text).digest('hex');
 export function uploadPlanHash(plan:UploadPlan):string{
- deploymentTarget(plan.worker);
+ uploadTarget(plan.worker);
  if(!uuid.test(plan.operationId)||!/^[a-f0-9]{40}$/.test(plan.source)||![plan.canonicalSha256,plan.evidenceDigest].every(value=>/^[a-f0-9]{64}$/.test(value))||Object.keys(plan).sort().join(',')!=='canonicalSha256,evidenceDigest,operationId,source,worker')throw Error('UPLOAD_PLAN_INVALID');
  return sha(JSON.stringify({operationId:plan.operationId,worker:plan.worker,source:plan.source,canonicalSha256:plan.canonicalSha256,evidenceDigest:plan.evidenceDigest}));
 }

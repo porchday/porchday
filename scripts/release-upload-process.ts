@@ -5,7 +5,7 @@ import {dirname,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyReleaseWrangler,type ReleaseWranglerReceipt} from './release-wrangler.ts';
 import {verifyReleaseUploadInputs,type ReleaseUploadInputs} from './release-upload-inputs.ts';
-import {deploymentTarget} from './deployment-recovery.ts';
+import {uploadTarget} from './release-upload-target.ts';
 
 const guard=fileURLToPath(new URL('./release-process-guard.mjs',import.meta.url));
 const sha=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
@@ -37,7 +37,7 @@ export async function runReleaseProcess(options:{args:string[];cwd:string;env:No
 export type WranglerUploadProcessOptions={workspace:string;inputs:ReleaseUploadInputs;receipt:ReleaseWranglerReceipt;configPath:string;configSha256:string;worker:string;accountId:string;apiToken:string;privateLogDirectory:string};
 /** Supply this callback only to FileUploadLease.dispatchOnce after full authorization. */
 export function createWranglerUploadProcess(options:WranglerUploadProcessOptions):(operationId:string,signal:AbortSignal)=>Promise<void>{
- const pinned=structuredClone(options);deploymentTarget(pinned.worker);
+ const pinned=structuredClone(options);uploadTarget(pinned.worker);
  if(!/^[a-f0-9]{32}$/.test(pinned.accountId)||!pinned.apiToken||!/^[a-f0-9]{64}$/.test(pinned.configSha256))throw Error('UPLOAD_PROCESS_CONFIGURATION_INVALID');
  return async(operationId,signal)=>{
   signal.throwIfAborted();if(!uuid.test(operationId))throw Error('UPLOAD_PROCESS_OPERATION_INVALID');
