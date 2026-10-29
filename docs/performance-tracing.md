@@ -215,7 +215,9 @@ absence of their journal spans is expected, not a zero-cost journal measurement.
 The private collector's phase regex omitted names containing digits, so nested
 `privacy_r2_read`/`privacy_r2_write` timings were not retained. Do not infer absent
 R2 work or attribute parent-phase time to specific storage calls from this run.
-A corrected collector and another bounded diagnostic are needed for that detail.
+The tested `scripts/privacy-write-timing.ts` parser now retains every emitted
+journal phase, including repeated R2 spans, without summing nested durations.
+Another bounded diagnostic using it is still needed for that missing detail.
 No raw response headers or private content were retained in the numeric evidence.
 
 This is one observation per operation on a desktop runner, with tracing enabled,
