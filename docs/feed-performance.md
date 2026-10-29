@@ -426,3 +426,51 @@ Tests cover both routes, guard denial, schema failure and unchanged unrelated
 routes. The measured difference motivates the candidate, but does not prove its
 benefit. Deployment, paired staging measurement and rollback validation remain
 required before treating it as an accepted performance improvement.
+
+### October 29 staged feed experiment and verified rollback
+
+The exact runtime candidate `ef13001f94c0c546826506075f66f1e88b97c8bd`
+contains only the feed schema-preparation source change on verified runtime
+`52949ef0c02f0a1aefa6e81a14e14e1c233eaa87`, plus its tests. Its full CI
+passed in run 40791134229. The PR branch was not deployed wholesale, because it
+does not contain every current runtime change.
+
+Under exclusive deployment ownership, three sequential runs each made ten
+bootstrap and ten feed reads at one-second minimum spacing, using fresh sessions
+for the same surviving synthetic account and existing owned post. Every measured
+read returned 200 and passed assertions; there were no failed, timed-out or
+missing measured attempts. Each session was signed out and rejected afterward.
+
+| Phase (UTC October 29) | API version | Feed runner mean / max | Feed server mean / max | Feed auth mean |
+| --- | --- | ---: | ---: | ---: |
+| Before, 00:04:03.402–00:04:22.880 | `f504e9c9-04ab-414f-9a75-daeed914144d` | 431.0 / 724.9 ms | 297.2 / 334 ms | 145.4 ms |
+| Candidate, 00:05:42.422–00:06:01.965 | `f527cb84-973e-430e-a61d-f5ff15b46626` | 377.0 / 495.1 ms | 270.8 / 392 ms | 101.6 ms |
+| Rollback, 00:06:20.330–00:06:39.904 | `f504e9c9-04ab-414f-9a75-daeed914144d` | 477.1 / 977.4 ms | 308.5 / 350 ms | 156.4 ms |
+
+Bootstrap runner means were 441.2, 461.5 and 338.7 ms, with server means
+270.1, 202.9 and 241.3 ms respectively. Logout through completed old-session
+rejection took 2783.0, 2582.1 and 2569.5 ms. Those logout observations exceed the
+one-second target; they are retained rather than hidden behind read performance.
+
+Feed means improved during the candidate run, but its highest server duration
+was worse than either baseline's maximum. This small desktop sample supports
+further investigation, not a tail-latency improvement, regional/phone result,
+capacity claim or p99 acceptance. Geography and network conditions remain
+unverified; tracing was enabled, and cold/warm variance is visible in bootstrap.
+
+Provider snapshots verified the actual API version around each phase. Public
+`/health` reports the separate staging edge version, so the earlier October 28
+health UUID must not be read as an API deployment identity. All 24 public assets,
+worker bindings/runtime settings, topology and production state were preserved.
+An inactive-upload verification initially stopped on source-map byte inequality;
+read-only reconciliation verified byte-identical executable code, identical
+mappings/names/source lists and all 45 first-party sources. The only map changes
+were provider serialization of source-root/file metadata and four null dependency
+source entries as empty strings. No upload was retried and no uncertain mutation
+was repeated.
+
+The experiment ended on the original staging API version. The final provider
+snapshot and canonical deployment record were reconciled, synthetic sessions
+were revoked, and the deployment lock was released. Private evidence is retained
+at the primary checkout's `artifacts/private/p99-feed-preparation-20261028/`.
+Production promotion and all p99 acceptance gates remain outstanding.
