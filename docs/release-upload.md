@@ -624,8 +624,11 @@ exit. A separate SQLite delivery store persists the notification dispatch timest
 before the request, enforces a 60-second dispatch cooldown across restart, and saves
 confirmed delivery. Reads reconcile uncertain dispatches during cooldown. Bot-side
 operation concurrency and exact-comment checks deduplicate repeated workflow
-dispatches. Completed and cancelled records suppress stale pending notifications;
-registrations are retained as evidence. The registry is bounded to 1,000 entries;
+dispatches. Completed and cancelled records suppress stale pending warnings such
+as an automatic overdue alert. Explicit `command-failed` and `notification-drill`
+events remain eligible for delivery after finalization or cancellation; successful
+recovery does not erase a failed candidate notification. Delivery receipts and
+cooldown still prevent duplicate dispatches. Registrations remain as evidence. The registry is bounded to 1,000 entries;
 rotation requires deliberate archival. Malformed entries increment an error count
 without suppressing other valid registrations.
 
@@ -678,3 +681,20 @@ of provider identity, canonical state and retained evidence; it does not authori
 a new deployment ID or rewriting the terminal journal. A verified rollback still
 requires its own healthy baseline verification. Never clear the marker or discard
 the failed observation to make a later run green.
+
+
+### Explicit failure alerts after recovery
+
+The frontend browser wrapper can finish a compatible rollback and then queue a
+`command-failed` alert. The watcher previously treated that terminal archive as
+completed before reading the alert, so the relay could suppress it. Three local
+regressions reproduced this for completed, rolled-back and cancelled operations.
+The watcher now validates an existing explicit failure/drill event before returning
+a terminal disposition. It preserves canonical state, journals and cancellation
+archives, and keeps delivery cooldown/deduplication intact. Stale automatic overdue
+warnings still resolve when the operation completes. A separate durable command
+failure marker keeps a later failure actionable even if an earlier overdue event
+already occupies the immutable outbox; delivery retains the original event body
+and identity. The marker also survives interruption before outbox creation.
+The installed Mac watcher
+requires a separately verified bundle update before this source fix is live.
