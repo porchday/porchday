@@ -5,9 +5,10 @@ export function observeVisibleMilestone(element: HTMLElement, valid: () => boole
   if (typeof IntersectionObserver === 'undefined' || typeof element.checkVisibility !== 'function') return () => {};
   let stopped = false, intersecting = false, frame = 0;
   const img = element instanceof HTMLImageElement ? element : null;
-  let decoded = !img;
+  let decoded = !img, decodedSource = "";
   const visible = () => {
     if (stopped || !intersecting || !decoded || !element.isConnected || document.visibilityState !== 'visible' || !valid()) return false;
+    if (img && (!img.complete || !img.naturalWidth || img.currentSrc !== decodedSource)) return false;
     const rect = element.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 && rect.bottom > 0 && rect.right > 0 && rect.top < innerHeight && rect.left < innerWidth &&
       element.checkVisibility({checkOpacity: true, checkVisibilityCSS: true});
@@ -38,6 +39,7 @@ export function observeVisibleMilestone(element: HTMLElement, valid: () => boole
     decoded = false;
     void img.decode().then(() => {
       if (stopped || img.currentSrc !== source) return;
+      decodedSource = source;
       decoded = true;
       schedule();
     }).catch(() => { /* A failed decode is not a successful visible photo. */ });

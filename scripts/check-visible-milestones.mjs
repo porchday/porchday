@@ -20,6 +20,18 @@ try {
  await page.evaluate(()=>window.dispatchEvent(new Event('visibilitychange')));await page.waitForTimeout(100);assert.equal(await page.evaluate(()=>window.marks),1);checks++;
  await scene(`<img id="target" width="100" height="100" src="${png}">`);
  await page.waitForFunction(()=>window.marks===1);assert.equal(await page.locator('#target').evaluate(img=>img.complete&&img.naturalWidth>0),true);checks++;
+ // A previously decoded offscreen image must not certify a pending replacement.
+ let releaseReplacement;
+ const replacementReady=new Promise(resolve=>{releaseReplacement=resolve;});
+ await page.route('https://milestone.invalid/replacement.png',async route=>{
+  await replacementReady;
+  await route.fulfill({status:200,contentType:'image/png',body:Buffer.from(png.split(',')[1],'base64')});
+ });
+ await scene(`<img id="target" style="position:absolute;top:1800px" width="100" height="100" src="${png}">`);
+ await absent();
+ await page.evaluate(()=>{const img=document.querySelector('#target');img.src='https://milestone.invalid/replacement.png';img.style.top='0px';document.dispatchEvent(new Event('visibilitychange'));});
+ try{await absent();}finally{releaseReplacement();}
+ await page.waitForFunction(()=>window.marks===1);checks++;
  await scene('<img id="target" width="100" height="100" src="data:image/png;base64,broken">');await absent();
  await scene('<p id="target" style="position:absolute;top:1800px">Expired synthetic post</p>');
  await page.evaluate(()=>window.valid=false);await page.locator('#target').scrollIntoViewIfNeeded();await absent();
