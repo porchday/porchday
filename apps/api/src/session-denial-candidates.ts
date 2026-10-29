@@ -56,8 +56,9 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
  * later. Failed/unknown SQL leaves progress unchanged and is safely repeated.
  */
 export interface CandidateSweepResult{seen:number;deleted:number;invalid:number;advanced:boolean;continuation?:string}
-export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string):Promise<CandidateSweepResult>{
- const startedAt=Date.now();
+export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,workDeadline?:number):Promise<CandidateSweepResult>{
+ const startedAt=Date.now(),deadline=workDeadline??startedAt+20000;
+ if(!Number.isSafeInteger(deadline)||deadline<=startedAt||deadline>startedAt+20000)throw new DenialCleanupError();
  if(expectedProgressEtag!==undefined&&(typeof expectedProgressEtag!=='string'||!expectedProgressEtag||expectedProgressEtag.length>256))throw new DenialCleanupError();
  const saved=await boundedIO(async()=>{const object=await store.get(candidateProgressKey);return object?{etag:object.etag,text:await object.text()}:null;});
  // A delayed/duplicate continuation cannot restart a completed pass or fan out.
@@ -71,7 +72,7 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
  const result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
  let stopped=false;
  for(let offset=0;offset<page.ids.length;offset+=5){
-  if(Date.now()-startedAt>=20000){stopped=true;break;}
+  if(Date.now()>=deadline){stopped=true;break;}
   // Only reads run concurrently. Late reads cannot dispatch a SQL deletion.
   const batch=page.ids.slice(offset,offset+5);
   const authority=await Promise.all(batch.map(async id=>{
@@ -79,7 +80,7 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
    catch(error){if(error instanceof SessionDenialError&&['SESSION_DENIAL_INVALID','SESSION_DENIAL_ID_INVALID'].includes(error.code))return 'invalid' as const;throw new DenialCleanupError();}
   }));
   for(let i=0;i<batch.length;i++){
-   if(Date.now()-startedAt>=20000){stopped=true;break;}
+   if(Date.now()>=deadline){stopped=true;break;}
    if(authority[i]==='invalid')result.invalid++;
    else if(authority[i]&&await cleanup(batch[i]))result.deleted++;
    result.seen++;
@@ -102,11 +103,28 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
  return result;
 }
 
+/** Amortize queue delivery overhead without growing individual SQL/R2 pages.
+ * At most five pages share one 20-second work-start budget and pool. Every page
+ * commits its own CAS checkpoint before another page begins. Stop on a lost CAS,
+ * stale token or full-pass completion; never start another pass in this batch. */
+export async function drainSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string):Promise<CandidateSweepResult>{
+ const deadline=Date.now()+20000,result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
+ let token=expectedProgressEtag;
+ for(let page=0;page<5&&Date.now()<deadline;page++){
+  const current=await sweepSessionCandidates(store,list,cleanup,token,deadline);
+  result.seen+=current.seen;result.deleted+=current.deleted;result.invalid+=current.invalid;result.advanced ||= current.advanced;
+  delete result.continuation;
+  if(!current.continuation)return result;
+  token=current.continuation;result.continuation=token;
+ }
+ return result;
+}
+
 export async function cleanupDeniedSessionCandidates(env:Env,expectedProgressEtag?:string):Promise<CandidateSweepResult>{
  if(env.SESSION_DENIAL_CLEANUP_V1!=='true')return {seen:0,deleted:0,invalid:0,advanced:false};
  if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
  const pool=authPool(env);
- try{return await sweepSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id),expectedProgressEtag);}
+ try{return await drainSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id),expectedProgressEtag);}
  finally{await pool.end();}
 }
 

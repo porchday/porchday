@@ -1,6 +1,6 @@
 import {describe,it,expect,vi} from 'vitest';
 import {persistSessionDenial} from '../src/session-denial';
-import {candidateProgressKey,parseCandidateProgress,candidateProgressHealth,sweepSessionCandidates,cleanupDeniedSessionCandidates,readCandidateCleanupHealth} from '../src/session-denial-candidates';
+import {candidateProgressKey,parseCandidateProgress,candidateProgressHealth,sweepSessionCandidates,drainSessionCandidates,cleanupDeniedSessionCandidates,readCandidateCleanupHealth} from '../src/session-denial-candidates';
 import {denialProgressKey,readDenialCleanupHealth} from '../src/session-denial-progress';
 import {sweepSessionDenials} from '../src/session-denial-cleanup';
 import type {Env} from '../src/types';
@@ -129,6 +129,52 @@ describe('SQL candidate denial discovery',()=>{
    const f=await fixture();f.list.mockResolvedValue(page);await expect(f.sweep()).rejects.toThrow();expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);
   }
   const f=await fixture();f.list.mockRejectedValue(Error('listing failed'));await expect(f.sweep()).rejects.toThrow();expect(f.cleanup).not.toHaveBeenCalled();
+ });
+});
+
+describe('bounded multiple-page candidate batches',()=>{
+ it('checks at most 500 candidates per invocation and completes 10000 without beginning another pass',async()=>{
+  const f=await fixture(10000);let token:string|undefined,total=0,invocations=0;
+  do{
+   const result=await drainSessionCandidates(f.store,f.list,f.cleanup,token);
+   expect(result.seen).toBeLessThanOrEqual(500);expect(result.seen).toBeGreaterThan(0);
+   total+=result.seen;invocations++;token=result.continuation;
+  }while(token&&invocations<21);
+  expect(invocations).toBe(20);expect(total).toBe(10000);expect(token).toBeUndefined();
+  expect(f.list).toHaveBeenCalledTimes(100);expect(f.progress().lastPass?.seen).toBe(10000);expect(f.cleanup).not.toHaveBeenCalled();
+ });
+ it('shares the time budget across pages and resumes only from the last completed candidate',async()=>{
+  const f=await fixture(201),list=f.list.getMockImplementation()!;vi.useFakeTimers();
+  try{
+   let page=0;f.list.mockImplementation(async after=>{page++;if(page===2)vi.setSystemTime(Date.now()+19000);return list(after);});
+   await persistSessionDenial(f.store,id(101));f.cleanup.mockImplementationOnce(async value=>{vi.setSystemTime(Date.now()+1000);return f.sessions.delete(value);});
+   const first=await drainSessionCandidates(f.store,f.list,f.cleanup);
+   expect(first).toMatchObject({seen:101,deleted:1,continuation:expect.any(String)});expect(f.list).toHaveBeenCalledTimes(2);expect(f.progress().cursor).toBe(id(101));
+   const next=await drainSessionCandidates(f.store,f.list,f.cleanup,first.continuation);
+   expect(next.seen).toBe(100);expect(next.continuation).toBeUndefined();expect(f.progress().lastPass?.seen).toBe(201);
+  }finally{vi.useRealTimers();}
+ });
+ it('keeps earlier checkpoints after a later page fails; cron resumes without replaying deletions',async()=>{
+  const f=await fixture(201);await persistSessionDenial(f.store,id(1));const list=f.list.getMockImplementation()!;
+  f.list.mockImplementationOnce(list).mockRejectedValueOnce(Error('listing unavailable'));
+  await expect(drainSessionCandidates(f.store,f.list,f.cleanup)).rejects.toThrow();
+  expect(f.progress().cursor).toBe(id(100));expect(f.cleanup).toHaveBeenCalledTimes(1);
+  const next=await drainSessionCandidates(f.store,f.list,f.cleanup);expect(next.seen).toBe(101);expect(next.deleted).toBe(0);expect(next.continuation).toBeUndefined();
+ });
+ it('stops a batch when another worker wins its second checkpoint',async()=>{
+  const f=await fixture(1000),list=f.list.getMockImplementation()!;let concurrent=false,winner:string|undefined;
+  f.list.mockImplementation(async after=>{
+   if(after===id(100)&&!concurrent){concurrent=true;winner=(await f.sweep()).continuation;}
+   return list(after);
+  });
+  const loser=await drainSessionCandidates(f.store,f.list,f.cleanup);
+  expect(loser.continuation).toBeUndefined();expect(f.progress().cursor).toBe(id(200));expect(f.list).toHaveBeenCalledTimes(3);
+  expect(winner).toBeTruthy();expect((await drainSessionCandidates(f.store,f.list,f.cleanup,winner)).seen).toBe(500);
+ });
+ it('stops before any page work for a stale delivery and leaves the winner responsible for continuation',async()=>{
+  const f=await fixture(1000),first=await drainSessionCandidates(f.store,f.list,f.cleanup);
+  await f.sweep();f.list.mockClear();
+  expect(await drainSessionCandidates(f.store,f.list,f.cleanup,first.continuation)).toEqual({seen:0,deleted:0,invalid:0,advanced:false});expect(f.list).not.toHaveBeenCalled();
  });
 });
 
