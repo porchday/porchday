@@ -17,7 +17,7 @@ const SNAPSHOT_CODES=[...[...CONNECTION_ROLES,'other'].flatMap(role=>SNAPSHOT_ST
 const ROUTE_PATTERN=/^\/api(?:\/(?:v[0-9]{1,2}|[a-z]+(?:[-_][a-z]+)*|:[a-zA-Z_]+))+$/;
 export const TRACE_STORE_CODES=['trace_write_ok','trace_write_failed','trace_write_throttled','trace_read_ok','trace_read_failed','trace_cleanup_ok','trace_cleanup_failed'] as const;
 export type TraceStoreCode=typeof TRACE_STORE_CODES[number];
-export const FEED_PHASES=['journal_check','journal_close','auth_session','auth_status','social_connect_begin','social_actor','social_query','social_commit','social_close'] as const;
+export const FEED_PHASES=['journal_check','journal_close','auth_session','auth_status','social_first_parameter','social_connect_begin','social_actor','social_query','social_commit','social_close'] as const;
 export type FeedPhase=typeof FEED_PHASES[number];
 export const JOURNAL_FAILURE_CODES=['journal_begin_failed','journal_work_failed','journal_completion_failed','journal_close_failed'] as const;
 export const CLEANUP_FAILURE_CODES=['cleanup_journal_failed','cleanup_expiry_failed','cleanup_identity_failed','cleanup_auth_metadata_failed','cleanup_web_push_failed','cleanup_native_push_failed','cleanup_email_failed','cleanup_heartbeat_failed','cleanup_ack_failed'] as const;
