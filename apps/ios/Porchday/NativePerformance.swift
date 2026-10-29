@@ -4,7 +4,7 @@ import OSLog
 /// Only these fixed labels may reach Instruments. Never emit a URL, identifier,
 /// error description, request body, credential, or response content.
 enum NativeRequestOperation: String, Sendable {
-    case bootstrap, feed, postRead, postCreate, postEdit, reactionWrite, mediaRead
+    case bootstrap, feed, groupFeed, wall, postRead, postCreate, postEdit, reactionWrite, mediaRead
     case logoutRequest, otherRead, otherWrite
 
     static func classify(path: String, method: String) -> Self {
@@ -15,7 +15,8 @@ enum NativeRequestOperation: String, Sendable {
         guard parts.count >= 3, parts[0] == "api", parts[1] == "v1" else { return read ? .otherRead : .otherWrite }
         if read, parts == ["api", "v1", "me"], URLComponents(string: path)?.queryItems?.contains(where: { $0.name == "bootstrap" && $0.value == "1" }) == true { return .bootstrap }
         if read, parts == ["api", "v1", "feed"] { return .feed }
-        if read, parts.count == 5, parts[2] == "groups", UUID(uuidString: parts[3]) != nil, parts[4] == "feed" { return .feed }
+        if read, parts.count == 5, parts[2] == "groups", UUID(uuidString: parts[3]) != nil, parts[4] == "posts" { return .groupFeed }
+        if read, parts.count == 4, parts[2] == "walls", UUID(uuidString: parts[3]) != nil { return .wall }
         if parts == ["api", "v1", "posts"], method == "POST" { return .postCreate }
         if parts.count >= 4, UUID(uuidString: parts[3]) != nil {
             if parts[2] == "posts", parts.count == 4 {
@@ -23,7 +24,7 @@ enum NativeRequestOperation: String, Sendable {
                 if method == "PUT" { return .postEdit }
             }
             if ["posts", "comments"].contains(parts[2]), parts.count == 6, parts[4] == "reactions", ["PUT", "DELETE"].contains(method) { return .reactionWrite }
-            if read, parts[2] == "media" { return .mediaRead }
+            if read, parts[2] == "media", parts.count == 5, parts[4] == "bytes" { return .mediaRead }
         }
         return read ? .otherRead : .otherWrite
     }
