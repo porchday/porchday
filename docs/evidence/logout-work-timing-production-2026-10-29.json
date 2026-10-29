@@ -1,0 +1,102 @@
+{
+  "source": "a4d5a0f353e3703cf6b95a6dcafc0f2df9bd9340",
+  "version": "048cd033-4855-4100-9fc2-d1d179fe398b",
+  "baseline": "ce179b25-6d3e-4170-b3b2-c6d66a773a74",
+  "activationOperation": "f214c8b5-8620-4bd4-9496-aa87328dc877",
+  "at": "2026-10-29T19:18:18.279Z",
+  "passed": true,
+  "continuity": {
+    "status": "complete",
+    "samples": 15,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "maxStartGapMs": 2003.800374999999
+  },
+  "remainingFixtureRows": 0,
+  "postActivationLogout": {
+    "at": "2026-10-29T19:18:15.418Z",
+    "status": 200,
+    "durationMs": 3015
+  },
+  "productionWriterBinding": "absent",
+  "productionCleanupBinding": "absent",
+  "stagingVersion": "40443794-69fe-4ffa-92d5-06e9d811905f",
+  "sourceCi": {
+    "pushVerify": 40934638895,
+    "prVerify": 40934649308,
+    "conclusion": "success"
+  },
+  "toolingSource": "f92bc4a6a0d8b107b611842c66671b5e6549c5a9",
+  "runtimeScope": [
+    "apps/api/src/auth-routes.ts",
+    "apps/api/src/journal-phases.ts"
+  ],
+  "ingestion": {
+    "at": "2026-10-29T19:21:58.263206+00:00",
+    "passed": true,
+    "expectedSuccessPhases": [
+      "work_begin",
+      "work_commit",
+      "work_handler",
+      "work_identity_lock",
+      "work_pool_acquire",
+      "work_reauthorization"
+    ],
+    "observedPhases": [
+      {
+        "phase": "work_begin",
+        "observed_points": 2,
+        "events": 6,
+        "mean_ms": 140.5,
+        "p50_ms": 140,
+        "p95_ms": 141
+      },
+      {
+        "phase": "work_commit",
+        "observed_points": 2,
+        "events": 6,
+        "mean_ms": 39,
+        "p50_ms": 38,
+        "p95_ms": 40
+      },
+      {
+        "phase": "work_handler",
+        "observed_points": 1,
+        "events": 4,
+        "mean_ms": 398,
+        "p50_ms": 398,
+        "p95_ms": 398
+      },
+      {
+        "phase": "work_identity_lock",
+        "observed_points": 2,
+        "events": 7,
+        "mean_ms": 58.42857142857143,
+        "p50_ms": 70,
+        "p95_ms": 70
+      },
+      {
+        "phase": "work_pool_acquire",
+        "observed_points": 1,
+        "events": 4,
+        "mean_ms": 0,
+        "p50_ms": 0,
+        "p95_ms": 0
+      },
+      {
+        "phase": "work_reauthorization",
+        "observed_points": 5,
+        "events": 17,
+        "mean_ms": 368.4117647058824,
+        "p50_ms": 366,
+        "p95_ms": 485
+      }
+    ],
+    "baselineHadNewPhases": false,
+    "scope": "Bounded sampled production aggregates after activation; independent points cannot reconstruct one request.",
+    "hostedRollbackFailureInjected": false
+  },
+  "latencyRootCauseEstablished": false,
+  "latencyImprovementDemonstrated": false,
+  "monthlySloAchieved": false
+}

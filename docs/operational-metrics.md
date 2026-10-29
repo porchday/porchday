@@ -313,3 +313,56 @@ Analytics Engine accepts at most [250 points per Worker invocation](https://deve
 Repeated I/O observations during extreme journal contention can consume that
 budget. Bound or aggregate these diagnostics before using them for stress-test
 acceptance; missing phases are unknown, not zero-duration successes.
+
+### Correlated logout operation summary
+
+The diagnostic source also emits one `porchday_logout_summary_v1` point when an
+opted-in hosted logout auth handler settles. This is a separate schema and index
+(`logout_summary:/api/auth/sign-out`); existing `porchday_metrics_v1` consumers
+and individual phase points are unchanged. It is not deployed merely by merging
+or testing the source.
+
+The five blobs are the schema, environment, fixed `logout_summary` event, fixed
+`/api/auth/sign-out` route and `POST`. No request/member/session IDs, URL values,
+headers, SQL, error strings or journal keys are included. The numeric columns are:
+
+| Column | Meaning |
+| --- | --- |
+| double1 | Auth-handler elapsed milliseconds, starting before rate limiting |
+| double2 | Handler reached its existing `committedAndConfirmed` branch: 1 or 0 |
+| double3–double4 | Rate limit; initial authorization |
+| double5–double7 | Journal guard; registration; application work |
+| double8–double11 | Checkpoint; receipt; retirement; journal connection close |
+| double12–double15 | Nested R2 reads; R2 writes; database status; database pages |
+
+Phase values accumulate within this operation; `-1` means no valid measurement,
+including a phase that was not reached. Zero means measured and rounded to zero.
+All durations are finite and bounded to one hour. Nested I/O overlaps enclosing
+phases: do not sum all columns. These values can be compared within the same
+sampled point without joining unrelated aggregate maxima. Analytics sampling
+still prevents conclusions about every logout. The confirmation bit is not an
+HTTP status, old-cookie verification result or proof of successful revocation.
+
+This interval excludes the earlier outer read guard, network transfer and the
+full synthetic journey. It also excludes auth-pool shutdown scheduled afterward.
+The observer cannot change an operation result, retry a mutation, wait for the
+metrics sink or log a failed sink's payload. A terminated invocation may emit no
+summary; absence is unknown, not a successful or fast logout.
+
+
+Read correlated production summaries with the fixed read-only query:
+
+```sh
+python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production logout-summaries
+```
+
+Use `staging` for the staging dataset. The command selects at most the 50 slowest
+observed summary points in the last 15 minutes, with each point's sampling weight.
+It validates every numeric field, preserves missing phases as `-1`, and prints no
+identifiers or provider diagnostics. This is a bounded slow-request view, not a
+representative latency distribution or availability denominator. Do not calculate
+p95 or success rate from these selected rows. Compare enclosing phases within a
+row; R2/database columns overlap them. An empty view means no observed summary
+points, not healthy logout. Use external journey evidence to confirm outcomes.
+
+The [October 29 production transaction diagnostic rollout](evidence/logout-work-timing-production-2026-10-29.md) verified all six successful transaction subphases and retained the existing correlated-summary schema. This is deployed observability evidence, not a latency correction.
