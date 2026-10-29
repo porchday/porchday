@@ -489,3 +489,29 @@ pre-intent cancellation/refusal after intent, private input drift, historical
 readback without credentials, and sanitized failure output from native CLI runs.
 Hosted command acceptance, failure escalation, old-client coverage and measured
 availability remain separate open requirements.
+
+### October 29 hosted preflight evidence
+
+The [sanitized preflight record](evidence/activation-command-preflight-2026-10-29.json)
+contains a live read-only timing sample and staging journey acceptance. The checks
+corresponding to authorization took 4,446 ms: current tooling checks, three
+exact-source CI checks, and schema/inventory checks repeated afterward. All passed
+and canonical bytes stayed unchanged. The tooling CI reference was a prior passing
+source, so this was a timing exercise, not authorization of the executing release.
+One sample does not establish tail latency or guarantee the 10-second deadline.
+
+An empty synthetic staging fixture was provisioned and retained for future release
+checks. The normal durable journey passed with one login and one logout; resume
+performed only safe reads. A separate rehearsal discarded the real logout response
+locally after receiving it, then verified revocation with a read. Logout was not
+resent, the report identified reconciliation without inventing an HTTP status,
+and a second invocation again performed only reads. Both rehearsals finished with
+zero sessions for the fixture, unchanged provider/canonical state and released
+serialization leases. No Worker was uploaded or activated, and no production fault
+was induced. Full hosted activation/rollback command acceptance remains open.
+
+The executing commit's full Verify CI reached its final secret scan, which rejected
+a literal dummy remote database URL in the command integration test. The fixture
+now constructs that synthetic URL through URL fields; the scanner rule is unchanged.
+Local scanning, the 74-test activation suite and TypeScript passed after the fix.
+A fresh hosted CI result is still required before release authorization.

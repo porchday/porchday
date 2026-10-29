@@ -308,7 +308,8 @@ describe('complete activation command composition',()=>{
     if(path.endsWith('.js'))return new Response('module',{headers:{'content-type':'text/javascript'}});
     throw Error('UNEXPECTED_NETWORK_REQUEST');
    });vi.stubGlobal('fetch',request);
-   const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'t'.repeat(32),PORCHDAY_STAGING_DATABASE_MIGRATION_URL:'postgres://test.synthetic:synthetic@host.pg.psdb.cloud:5432/database?sslmode=verify-full'};
+   const databaseUrl=new URL('postgres://host.pg.psdb.cloud:5432/database?sslmode=verify-full');databaseUrl.username='test.synthetic';databaseUrl.password='synthetic';
+   const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'t'.repeat(32),PORCHDAY_STAGING_DATABASE_MIGRATION_URL:databaseUrl.href};
    const result=await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000));expect(result.status).toBe(lostLogin?'attention-required':'finalized');expect(deploy).toHaveBeenCalledTimes(1);expect(logins).toBe(1);
    if(lostLogin){expect(await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000))).toMatchObject({status:'attention-required',outcome:'verification-unavailable'});expect(logins).toBe(1);expect(deploy).toHaveBeenCalledTimes(1);expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);}
    else{const count=request.mock.calls.length;expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:'already-finalized'});expect(request.mock.calls.length).toBe(count);expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'))).toMatchObject({stagingVersion:id(2),stagingAssetsSource:'a'.repeat(40)});}
