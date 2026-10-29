@@ -17,23 +17,22 @@ export class CandidateTimings{
    this.totals.set(phase,value);
   }
  }
- /** Successful batches only: failed batches can leave bounded observations in
-  * flight. Their late completions must never mutate an already flushed record.
-  * Pair available and occupied slot time in one point so sampling weights match.
-  * Partial batches count only their actual reads, not hypothetical unused slots. */
- async authorityBatch<T>(work:Array<()=>Promise<T>>):Promise<T[]>{
+ /** Measure a successful bounded read group. Scheduling stays with the caller.
+  * Available time is group wall time times its configured worker count; occupied
+  * time sums individual reads. Both share one point and sampling weight.
+  * A failed group's late reads only touch local counters, never flushed totals. */
+ async authorityBatch<T>(slots:number,work:(measure:<R>(read:()=>Promise<R>)=>Promise<R>)=>Promise<T>):Promise<T>{
+  if(!Number.isInteger(slots)||slots<1||slots>6)throw Error('AUTHORITY_TIMING_SLOTS_INVALID');
   return this.run('authority_batches',async()=>{
-   const observations:Array<{start:number;duration:number}>=[];
-   const result=await Promise.all(work.map(async(run,index)=>{
+   const started=Date.now();let busyMs=0,reads=0;
+   const result=await work(async read=>{
     const start=Date.now();
-    try{return await run();}
-    finally{observations[index]={start,duration:Math.max(0,Date.now()-start)};}
-   }));
-   const end=Date.now();
-   for(const observation of observations){
-    this.authority.slotsMs+=Math.max(observation.duration,end-observation.start,0);
-    this.authority.busyMs+=observation.duration;
-    this.authority.reads++;
+    try{return await read();}
+    finally{busyMs+=Math.max(0,Date.now()-start);reads++;}
+   });
+   if(reads){
+    this.authority.slotsMs+=Math.max(busyMs,Math.max(0,Date.now()-started)*slots);
+    this.authority.busyMs+=busyMs;this.authority.reads+=reads;
    }
    return result;
   });

@@ -13,8 +13,33 @@ export const candidateProgressKey='session-denial-maintenance/v3/sql-sessions.js
 export const candidatePageSize=100;
 // Workers allow six requests waiting for response headers per invocation.
 // Discovery has finished before these reads; deletion and checkpoint I/O wait
-// for the entire read batch. Do not exceed the platform ceiling or overlap SQL.
+// for the entire read group. Do not exceed the platform ceiling or overlap SQL.
 const authorityReadConcurrency=6;
+// Refill slots within bounded groups, then stop all reads for serial SQL work.
+// Four nominal waves retain intermediate prefix progress within the 20s budget;
+// prefetching the entire page could consume that budget before any row is counted.
+const authorityGroupSize=24;
+type Authority=boolean|'invalid';
+async function readAuthorityGroup(store:JournalStore,ids:string[],deadline:number,timing:CandidateTimings):Promise<Authority[]>{
+ let next=0,failed=false;const results:Authority[]=[];
+ return timing.authorityBatch(Math.min(authorityReadConcurrency,ids.length),async measure=>{
+  await Promise.all(Array.from({length:Math.min(authorityReadConcurrency,ids.length)},async()=>{
+   while(!failed&&next<ids.length&&Date.now()<deadline){
+    const index=next++;
+    try{
+     results[index]=await measure(async()=>{
+      try{return await boundedIO(()=>sessionDenied(store,ids[index]));}
+      catch(error){if(error instanceof SessionDenialError&&['SESSION_DENIAL_INVALID','SESSION_DENIAL_ID_INVALID'].includes(error.code))return 'invalid' as const;throw new DenialCleanupError();}
+     });
+    }catch(error){failed=true;throw error;}
+   }
+  }));
+  // Indices are assigned before dispatch and all started reads settled. This is
+  // a contiguous ordered prefix even when completion order differs. Rejection
+  // stops refilling; late reads cannot reach SQL or publish a checkpoint.
+  return results;
+ });
+}
 type CandidateProgress=Omit<DenialProgress,'v'>&{v:3;strategy:'sql-session-keyset'};
 export function parseCandidateProgress(text:string):CandidateProgress{
  if(text.length>16384)throw new DenialCleanupError();
@@ -76,20 +101,18 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
   page.ids.some(id=>typeof id!=='string'||!id||id.length>8192||id===cursor)||new Set(page.ids).size!==page.ids.length)throw new DenialCleanupError();
  const result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
  let stopped=false;
- for(let offset=0;offset<page.ids.length;offset+=authorityReadConcurrency){
+ for(let offset=0;offset<page.ids.length;offset+=authorityGroupSize){
   if(Date.now()>=deadline){stopped=true;break;}
   // Only reads run concurrently. Late reads cannot dispatch a SQL deletion.
-  const batch=page.ids.slice(offset,offset+authorityReadConcurrency);
-  const authority=await timing.authorityBatch(batch.map(id=>async()=>{
-   try{return await boundedIO(()=>sessionDenied(store,id));}
-   catch(error){if(error instanceof SessionDenialError&&['SESSION_DENIAL_INVALID','SESSION_DENIAL_ID_INVALID'].includes(error.code))return 'invalid' as const;throw new DenialCleanupError();}
-  }));
-  for(let i=0;i<batch.length;i++){
+  const batch=page.ids.slice(offset,offset+authorityGroupSize);
+  const authority=await readAuthorityGroup(store,batch,deadline,timing);
+  for(let i=0;i<authority.length;i++){
    if(Date.now()>=deadline){stopped=true;break;}
    if(authority[i]==='invalid')result.invalid++;
    else if(authority[i]&&await timing.run('sql_delete',()=>cleanup(batch[i])))result.deleted++;
    result.seen++;
   }
+  if(authority.length<batch.length)stopped=true;
   if(stopped)break;
  }
  if(stopped&&result.seen===0)throw new DenialCleanupError();

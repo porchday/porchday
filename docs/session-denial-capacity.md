@@ -67,3 +67,30 @@ Read concurrency, deadlines, SQL deletion ordering, checkpoints and health thres
 stay unchanged. Local tests exercise unequal read latencies, partial batches and
 late completion after failure. Hosted occupancy and any resulting throughput change
 are not yet measured. Do not infer a capacity improvement from instrumentation.
+
+
+## Bounded read-slot refill experiment
+
+The next runtime keeps six reads active by refilling a slot as soon as its read
+settles, within groups of at most 24 candidates. It waits for all started reads
+in that group before processing candidates in SQL keyset order. SQL cleanup
+remains serial and does not overlap authority reads; the next group starts only
+after that processing finishes. No page size, schema, progress format or health
+threshold changes.
+
+The two-second bound on each read and the shared 20-second work-start deadline
+remain. A failure stops refilling, rejects the group and prevents its SQL work or
+checkpoint; late completions cannot resume it. Completed earlier groups can
+still provide a processed prefix when a later group reaches the deadline.
+Read-ahead IDs that were not processed never advance the checkpoint. Bounded
+groups avoid prefetching an entire page before any prefix can make progress.
+
+This is an experiment motivated by the measured 32.96% waiting time, not a
+predicted throughput improvement. Validate native storage/SQL behavior and the
+new exact full-pass interval verifier before hosted acceptance. Keep the full
+10,000-session fixture intact through two passes, capture paired occupancy and
+phase evidence in one pinned-runtime window, and reconcile exact cleanup.
+
+The measured occupancy evidence and exact completion verifier are maintained in
+[the release-tooling branch](https://github.com/porchday/porchday/tree/fc38b5ddd77a2d9f6465d4f97310cd18d9b89a6b).
+Use that reviewed tooling for hosted acceptance; this checkout isolates runtime code.

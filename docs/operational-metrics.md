@@ -302,3 +302,13 @@ an undefined ratio. Failed batches remain represented in `authority_batches` but
 are excluded from occupancy: some observations may still be pending after failure.
 Their late completions cannot add another occupancy point. This selection must be
 reported with any measurements; successful batches do not represent failure latency.
+
+
+For the bounded-refill runtime, `authority_batches` counts read groups of up to
+24 candidates, rather than fixed groups of up to six. Do not compare milliseconds
+per group across these runtimes as though the work units were equal. Paired
+occupancy retains actual read count and summed bounded-read observation time;
+available time is group wall time multiplied by the configured worker count,
+`min(6, group size)`. This includes idle worker tails at the group barrier. Failed
+groups are excluded from occupancy as before. Always pin the runtime/time window
+and report these definitions with a comparison.
