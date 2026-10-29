@@ -29,9 +29,9 @@ test('measures concurrent authority batches as wall time and preserves sweep res
  const timing=new CandidateTimings(),writeDataPoint=vi.fn();let now=Date.now(),reads=0;
  const clock=vi.spyOn(Date,'now').mockImplementation(()=>now);
  try{
-  const store={get:async(key:string)=>{if(key===candidateProgressKey)return null;if(reads++%5===0)now+=20;return null;},put:async()=>({etag:'confirmed'})};
-  const pending=sweepSessionCandidates(store,async()=>({ids:Array.from({length:6},(_,i)=>'11111111-1111-4111-8111-'+String(i).padStart(12,'0')),more:false}),async()=>{throw Error('must not delete');},undefined,undefined,timing);
-  expect(await pending).toEqual({seen:6,deleted:0,invalid:0,advanced:false});
+  const store={get:async(key:string)=>{if(key===candidateProgressKey)return null;if(reads++%6===0)now+=20;return null;},put:async()=>({etag:'confirmed'})};
+  const pending=sweepSessionCandidates(store,async()=>({ids:Array.from({length:7},(_,i)=>'11111111-1111-4111-8111-'+String(i).padStart(12,'0')),more:false}),async()=>{throw Error('must not delete');},undefined,undefined,timing);
+  expect(await pending).toEqual({seen:7,deleted:0,invalid:0,advanced:false});
   timing.flush({ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
   const points=writeDataPoint.mock.calls.map(call=>call[0]);
   expect(points.find(point=>point.blobs[5]==='authority_batches').doubles).toEqual([0,40,2]);

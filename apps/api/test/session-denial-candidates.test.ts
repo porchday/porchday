@@ -58,6 +58,45 @@ describe('SQL candidate denial discovery',()=>{
    expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);expect(vi.getTimerCount()).toBe(0);
   }finally{release();vi.useRealTimers();}
  });
+ it('bounds authority reads to six and keeps exact SQL deletions serial after the read batch',async()=>{
+  const f=await fixture(13);
+  for(let n=1;n<=13;n++)await persistSessionDenial(f.store,id(n));
+  const get=f.store.get.getMockImplementation()!;
+  let release!:()=>void,entered!:()=>void,activeReads=0,peakReads=0,readCount=0,activeDeletes=0,peakDeletes=0;
+  const gate=new Promise<void>(resolve=>{release=resolve;}),started=new Promise<void>(resolve=>{entered=resolve;});
+  f.store.get.mockImplementation(async key=>{
+   if(key===candidateProgressKey)return get(key);
+   activeReads++;readCount++;peakReads=Math.max(peakReads,activeReads);
+   if(activeReads===6)entered();
+   try{await gate;return await get(key);}finally{activeReads--;}
+  });
+  f.cleanup.mockImplementation(async value=>{
+   expect(activeReads).toBe(0);activeDeletes++;peakDeletes=Math.max(peakDeletes,activeDeletes);
+   try{await Promise.resolve();return f.sessions.delete(value);}finally{activeDeletes--;}
+  });
+  const pending=f.sweep();
+  try{
+   await started;expect(readCount).toBe(6);expect(f.cleanup).not.toHaveBeenCalled();release();
+   expect(await pending).toMatchObject({seen:13,deleted:13,invalid:0});
+   expect(peakReads).toBe(6);expect(peakDeletes).toBe(1);expect(f.progress().lastPass?.seen).toBe(13);
+  }finally{release();await pending;}
+ });
+ it('a failed sixth authority read cannot delete or checkpoint when other reads finish late',async()=>{
+  const f=await fixture(7);for(let n=1;n<=7;n++)await persistSessionDenial(f.store,id(n));
+  const get=f.store.get.getMockImplementation()!;let release!:()=>void,reads=0,active=0;
+  const gate=new Promise<void>(resolve=>{release=resolve;});
+  f.store.get.mockImplementation(async key=>{
+   if(key===candidateProgressKey)return get(key);
+   const ordinal=++reads;active++;
+   try{if(ordinal===6)throw Error('authority unavailable');await gate;return await get(key);}finally{active--;}
+  });
+  try{
+   await expect(f.sweep()).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
+   expect(reads).toBe(6);expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);
+   release();await vi.waitFor(()=>expect(active).toBe(0));
+   expect(reads).toBe(6);expect(f.cleanup).not.toHaveBeenCalled();expect(f.sessions.size).toBe(7);
+  }finally{release();}
+ });
  it('repeats discovery after an unknown SQL commit and preserves unrelated sessions',async()=>{
   const f=await fixture(3);await persistSessionDenial(f.store,id(1));await persistSessionDenial(f.store,id(2));
   f.cleanup.mockImplementationOnce(async value=>{f.sessions.delete(value);throw Error('lost commit reply');});
