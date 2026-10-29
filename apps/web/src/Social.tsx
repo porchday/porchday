@@ -458,6 +458,7 @@ export function Feed({
   canModerate?: boolean;
 }) {
   const [rows, setRows] = useState<SocialObject[]>([]);
+  const [singleDetails, setSingleDetails] = useState<Json | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [version, setVersion] = useState(0);
@@ -485,6 +486,7 @@ export function Feed({
       } catch (e) {
         if (attempt === loadVersion.current && accessLost(e)) {
           setRows([]);
+          setSingleDetails(null);
           setCursor(null);
           setLoaded(true);
         }
@@ -492,6 +494,7 @@ export function Feed({
       }
       if (attempt !== loadVersion.current) return;
       const next = singleId ? [r.post] : items<SocialObject>(r);
+      setSingleDetails(singleId ? r : null);
       setRows((old) =>
         more
           ? [...old, ...next.filter((n) => !old.some((o) => o.id === n.id))]
@@ -553,6 +556,7 @@ export function Feed({
               row={row}
               onChange={refresh}
               expanded={!!singleId}
+              initialDetails={singleId ? singleDetails : null}
               canModerate={canModerate}
             />
           ))
@@ -602,11 +606,13 @@ export function Feed({
 }
 export function PostCard({
   row,
+  initialDetails,
   onChange,
   expanded = false,
   canModerate = false,
 }: {
   row: SocialObject;
+  initialDetails?: Json | null;
   onChange: () => void;
   expanded?: boolean;
   canModerate?: boolean;
@@ -623,7 +629,15 @@ export function PostCard({
   const [editText, setEditText] = useState("");
   const [editTimer, setEditTimer] = useState("inherit");
   const { ref: cardRef, near: cardNear } = useNearViewport<HTMLElement>();
-  const [details, setDetails] = useState<Json | null>(null);
+  // Reuse only the matching response that already authorized this post view.
+  const seed = initialDetails?.post?.id === row.id &&
+    initialDetails.post.envelope?.ciphertext === row.envelope.ciphertext ? initialDetails : null;
+  const detailScope = vault.member.id + ":" + vault.device.id + ":" + row.id + ":" + row.envelope.ciphertext;
+  const [detailState, setDetailState] = useState<{ scope: string; value: Json | null }>(() => ({ scope: detailScope, value: seed }));
+  const details = detailState.scope === detailScope ? detailState.value : null;
+  const detailRequest = useRef<{ scope: string; generation: number; pending: Promise<void> | null }>({ scope: detailScope, generation: 0, pending: null });
+  if (detailRequest.current.scope !== detailScope)
+    detailRequest.current = { scope: detailScope, generation: 0, pending: null };
   const initialDetailsId = useRef("");
   const [unavailable, setUnavailable] = useState(false);
   const action = useAction();
@@ -644,25 +658,48 @@ export function PostCard({
       alive = false;
     };
   }, [row.id, row.envelope.ciphertext]);
-  async function loadDetails() {
-    try {
-      const d = await get(`/posts/${row.id}`);
-      setDetails(d);
-    } catch (e) {
-      if (accessLost(e)) {
-        setUnavailable(true);
-        setContent(null);
-        setDetails(null);
+  function loadDetails(fresh = true): Promise<void> {
+    const state = detailRequest.current;
+    // A completed mutation from an earlier render must not refresh a new post.
+    if (state.scope !== detailScope) return Promise.resolve();
+    // Initial visibility and opening comments may share a pending read. A read
+    // after a mutation must start after that mutation, never reuse an older one.
+    if (!fresh && state.pending) return state.pending;
+    const generation = ++state.generation;
+    const current = () => detailRequest.current === state && state.generation === generation;
+    const pending = (async () => {
+      try {
+        const d = await get(`/posts/${row.id}`);
+        if (current()) setDetailState({ scope: detailScope, value: d });
+      } catch (e) {
+        if (!current()) return;
+        if (accessLost(e)) {
+          setUnavailable(true);
+          setContent(null);
+          setDetailState({ scope: detailScope, value: null });
+        }
+        throw e;
+      } finally {
+        if (current()) state.pending = null;
       }
-      throw e;
-    }
+    })();
+    state.pending = pending;
+    return pending;
   }
   useEffect(() => {
-    if ((cardNear || expanded) && initialDetailsId.current !== row.id) {
-      initialDetailsId.current = row.id;
-      loadDetails().catch(() => {});
+    const state = detailRequest.current;
+    if (seed) {
+      initialDetailsId.current = detailScope;
+      setDetailState({ scope: detailScope, value: seed });
     }
-  }, [row.id, cardNear, expanded]);
+    return () => { state.generation++; state.pending = null; };
+  }, [detailScope, seed]);
+  useEffect(() => {
+    if ((cardNear || expanded) && initialDetailsId.current !== detailScope) {
+      initialDetailsId.current = detailScope;
+      loadDetails(false).catch(() => {});
+    }
+  }, [detailScope, cardNear, expanded]);
   const expiry = row.effective_expires_at || row.expires_at;
   const own = row.author_id === vault.member.id;
   async function remove() {
@@ -882,7 +919,7 @@ export function PostCard({
           className="text-button comment-toggle"
           onClick={() => {
             setShowComments(!showComments);
-            if (!details) loadDetails();
+            if (!showComments) void action.run(() => loadDetails(false));
           }}
         >
           <Icon name="comment" size={18} />
@@ -893,7 +930,7 @@ export function PostCard({
       {showComments && (
         <Comments
           postRow={row}
-          initial={details?.comments}
+          details={details}
           onChange={loadDetails}
           canModerate={canModerate}
         />
@@ -1195,40 +1232,30 @@ export function Reactions({
 }
 export function Comments({
   postRow,
-  initial,
+  details,
   onChange,
   canModerate = false,
 }: {
   postRow: SocialObject;
-  initial?: SocialObject[];
+  details: Json | null;
   onChange: () => Promise<void>;
   canModerate?: boolean;
 }) {
-  const [comments, setComments] = useState<SocialObject[]>(initial || []);
-  const [reactions, setReactions] = useState<Json[]>([]);
+  const comments = (details?.comments || []) as SocialObject[];
+  const reactions = (details?.comment_reactions || details?.reactions || []) as Json[];
   const [reply, setReply] = useState<SocialObject | null>(null);
   const [tick, setTick] = useState(0);
   const action = useAction();
   async function refresh() {
     await action.run(async () => {
-      try {
-        const r = await get(`/posts/${postRow.id}`);
-        setComments(r.comments || []);
-        setReactions(r.comment_reactions || r.reactions || []);
-      } catch (e) {
-        if (accessLost(e)) {
-          setComments([]);
-          setReactions([]);
-          setReply(null);
-          await onChange().catch(() => {});
-        }
+      try { await onChange(); }
+      catch (e) {
+        if (accessLost(e)) setReply(null);
         throw e;
       }
-      await onChange();
     });
   }
   useEffect(() => {
-    refresh();
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [postRow.id]);
