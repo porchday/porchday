@@ -53,6 +53,45 @@ rollout records a minimum version in each environment; it does not establish an
 alternate tested rollback target. Additive database migrations remain in place
 when application versions roll back.
 
+### Read-only provider inventory
+
+`CloudflareReleaseReader` in `scripts/cloudflare-release-reader.ts` replaces the
+private snapshot helper for six Worker components, custom domains, both job
+queues and the four scheduled Workers. `snapshot(signal)` retains each Worker's
+active version, latest uploaded version, normalized Worker settings and the
+active version's resources as separate fields. `version(worker, id, signal)`
+reads a named version's resources and checks its identity. Never infer active
+bindings from settings that describe a newer inactive upload.
+
+The reader exposes only GET operations. It allows four concurrent requests,
+five-second request deadlines, at most three attempts for transient read errors,
+and a 2 MiB response limit. It rejects mixed-version deployments, unexpected
+version/queue identities, malformed responses and secret binding representations
+containing values. Provider bodies and credentials do not enter errors. New
+secret-binding metadata shapes require explicit support rather than being copied.
+
+From the repository root, capture a snapshot with the established secret loader:
+
+```sh
+python3 scripts/with-secrets.py node scripts/cloudflare-release-reader.ts /private/release/provider-before.json
+```
+
+The parent must be an existing owner-only directory. The CLI creates a new 0600
+file, never overwrites an existing artifact, and prints only a completion summary.
+It uses the configured account credentials and queue identities from
+`infra/resources.json`. It neither acquires nor steals a deployment lease, updates
+the canonical record, uploads a version, nor activates one. Before treating the
+snapshot as a release baseline, compare it with the canonical snapshot and confirm
+that the canonical bytes and deployment ownership did not change during the read.
+
+The first live repository capture at 2026-10-29 00:33:50 UTC matched the canonical
+snapshot exactly, with unchanged canonical bytes and no deployment lock. All six
+Workers, domains, queues and schedules agreed. Seven tests cover the active/latest
+distinction, GET-only transport, concurrency, retry limits, cancellation, response
+bounds, identity checks and secret-value rejection. This is inventory evidence;
+source/schema/CI authorization and the complete upload/activation command remain
+separate requirements.
+
 `verify` must check required user journeys and deployed assets against the
 expected version. A shallow health response is insufficient. Return `unhealthy`
 for a confirmed candidate failure, `healthy` only after the required checks pass,

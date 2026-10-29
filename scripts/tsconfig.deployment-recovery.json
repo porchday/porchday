@@ -13,6 +13,7 @@
     "deployment-recovery-journal.ts",
     "cloudflare-deployment-client.ts",
     "deployment-recovery-lease.ts",
-    "release-verification.ts"
+    "release-verification.ts",
+    "cloudflare-release-reader.ts"
   ]
 }
