@@ -40,10 +40,15 @@ import Porchcrypto
         var value: [String: JSON] = ["public_key": keys["publicKey"], "fingerprint": keys["fingerprint"], "encrypted_private_key": keys["encryptedPrivateKey"]]
         if let id { value["id"] = .string(id) }; return .object(value)
     }
-    func load(member: Member) async throws {
+    func load(member: Member, startupDevices: [JSON]? = nil, isCurrent: () -> Bool = { true }) async throws {
+        guard isCurrent() else { throw CancellationError() }
         access = member.access
         guard access.managesData else { clear(); throw PorchError.message("Account data is unavailable while ownership is under review.") }
-        let result = try await social("/devices"); devices = try result["items"].array.map(Device.init)
+        let rows: [JSON]
+        if let startupDevices { rows = startupDevices }
+        else { rows = try await social("/devices")["items"].array }
+        guard isCurrent() else { throw CancellationError() }
+        devices = try rows.map(Device.init)
         if let current = device, let refreshed = availableDevice(member: member, preferredID: current.id) { device = refreshed; return }
         for session in sessions.values { session.close() }; sessions = [:]; device = nil
         guard let data = try readStored("device:\(member.id)"), let saved = try? JSONDecoder().decode(JSON.self, from: data), let activeID = saved["active"].string else { return }
