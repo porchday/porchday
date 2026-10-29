@@ -122,5 +122,9 @@ verified actual scheduled full-pass advancement over the current three-session
 population. V3 uses `session-denial-maintenance/v3/sql-sessions.json`; it never
 refreshes v2 progress. Before a delayed rollback to v2, perform and verify a real
 v2 pass under the deployment lease, or use a separately verified compatible v3
-baseline. Never copy progress timestamps between versions. The monitoring-release
-rollback rehearsal and larger live-session capacity checks remain open.
+baseline. Never copy progress timestamps between versions. The [v3-compatible monitoring rollback rehearsal](evidence/session-denial-candidate-rollback-staging-2026-10-29.json)
+passed: a failed local readiness observation triggered actual rollback, restored
+healthy v3 progress, and scheduled cleanup removed a locked synthetic denied row
+within 45.343 seconds after release. Larger live-session capacity and stale-job
+alert/recovery checks remain open. This does not validate every feature migration
+or a real provider outage.

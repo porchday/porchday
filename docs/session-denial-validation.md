@@ -476,3 +476,31 @@ writer or deployment change occurred. Hosted monitoring rollback, stale-job
 alert/recovery, larger live-session capacity, remaining interruption/concurrency
 and device gates remain open. Old v2 progress becomes stale when its sweep stops;
 a delayed v2 rollback needs actual fresh v2 work, never borrowed v3 timestamps.
+
+
+## V3 monitoring rollback rehearsal — October 29, 08:54 UTC
+
+[Hosted evidence](evidence/session-denial-candidate-rollback-staging-2026-10-29.json)
+records the automatic rollback from candidate `8acc78df` to `7469d433`, both using
+runtime `992d24c`. Only the candidate writer/cleanup flags changed to false; no
+application code, schema, frontend or production change occurred.
+
+A synthetic logout published its immutable denial while an identity lock kept its
+SQL session row present. Candidate and restored-baseline checks both rejected the
+denied cookie with 401, observed the retained row, and allowed another synthetic
+member with 200. A locally injected failed readiness observation triggered the
+controller's real provider rollback; this was not a hosted readiness outage.
+The restored baseline's actual readiness response had healthy, non-null v3 progress.
+Durable journey, schema/provider and all 29 asset checks passed before finalization.
+
+After lock release, scheduled cleanup removed the row within 45.343 seconds
+(five-second SQL polling), without manual session deletion. Actual scheduled v3
+full-pass completion followed, taking one second over five candidates, with no
+invalid records or issues. Exact synthetic fixture cleanup left zero user, member,
+account or session rows; immutable denials were retained and the lease was released.
+Production remained unchanged and its external monitor was healthy afterward.
+
+This closes the scoped v3-compatible monitoring rollback check. It does not cover
+every future feature/schema change or provider outage. Delayed rollback to v2 still
+requires actual fresh v2 progress. Stale-job alert/recovery, larger live-session
+capacity, remaining hosted interruption/concurrency and device gates stay open.

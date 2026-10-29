@@ -325,8 +325,14 @@ first-party files matched the isolated Git source. No production change occurred
 [Hosted evidence](../docs/evidence/session-denial-candidate-staging-2026-10-29.json).
 This is a small staging-population observation, not a larger-load guarantee.
 
-Rehearse rollback:
-an old v2 binary reads v2 progress, which becomes stale if v2 scans stop. A late
+A [hosted v3-compatible rollback rehearsal](../docs/evidence/session-denial-candidate-rollback-staging-2026-10-29.json)
+subsequently passed with a retained denied SQL row and an unrelated usable member.
+The controller rolled back after a local failed readiness observation; actual v3
+health survived restoration, and scheduled cleanup removed the row within 45.343
+seconds after lock release. This exercised a version/configuration transition with
+identical application code, not every future feature migration or provider outage.
+
+For a delayed legacy rollback, an old v2 binary reads v2 progress, which becomes stale if v2 scans stop. A late
 rollback therefore needs an actual fresh v2 pass or an independently verified
 compatible baseline; copying v3 timestamps into v2 would fabricate evidence.
 Production writers remain disabled pending these and the other acceptance gates.
