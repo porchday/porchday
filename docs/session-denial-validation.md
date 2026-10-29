@@ -130,3 +130,55 @@ compatible-reader rollback floor, preserve existing deployment settings, and avo
 silently bundling those unrelated features. Writer/cleanup flags remain disabled
 until their acceptance gates are met. Reconcile provider state against the canonical
 record immediately before any change; this document does not override newer state.
+
+## Capacity and cost checkpoint — October 29, 2026
+
+[Measurements and scoped hosted inventory](evidence/session-denial-capacity-2026-10-29.json)
+show three retained records / 246 bytes in staging and one / 82 bytes in production.
+Both buckets report Standard storage. Both deployed schedules include the
+one-minute cron; the daily backup cron does not enqueue denial cleanup. Inventory
+read metadata only, did not read denial bodies or mutate the namespace, and verified
+removal of the temporary operators and unchanged application configuration.
+
+Native local R2 measurements of the production sweep:
+
+| Retained records | Pages per full pass | GETs per pass | LISTs / cursor PUTs | Nominal full-pass minutes |
+| --- | --- | --- | --- | --- |
+| 1 | 1 | 2 | 1 / 0 | 1 |
+| 10 | 1 | 11 | 1 / 0 | 1 |
+| 11 | 2 | 13 | 2 / 2 | 2 |
+| 100 | 10 | 110 | 10 / 10 | 10 |
+| 1,000 | 100 | 1,100 | 100 / 100 | 100 |
+
+The test counts cleanup callbacks; it does not measure hosted SQL or queue latency.
+The minute column assumes uninterrupted one-minute scheduling, no retries and a
+stable record set. A new key behind the cursor may wait for the scan to wrap.
+Immediate reader denial is independent of this SQL-cleanup delay. Missed schedules,
+retrying pages and continuous growth can increase discovery time.
+
+For 30 days at one successful page per minute, the sweep executes 43,200 pages.
+With full pages, it uses at most 86,400 Class A operations (LIST plus cursor PUT),
+475,200 Class B GETs, and 432,000 cleanup callbacks. Each already-absent SQL session
+still costs five statements, yielding up to 2,160,000 SQL statements in this model.
+Current one-page histories require no cursor writes and fewer GETs/callbacks.
+Retries and duplicate queue deliveries are additional work, not included limits.
+
+Cloudflare's Standard rates checked October 29 are $0.015/GB-month, $4.50/million
+Class A operations and $0.36/million Class B operations. LIST/PUT are Class A;
+GET is Class B. Included monthly usage is 10 GB-month, one million A and ten million
+B operations; billing rounds to whole units. These allowances are shared with other
+account usage. [Official pricing](https://developers.cloudflare.com/r2/pricing/).
+
+The modeled full-page sweep is $0.559872/month at unrounded operation rates before
+shared allowances. This is a marginal usage estimate, not an invoice or spending
+cap. Add one Class A publication per logout, authorization denial GETs per verified
+session lookup, retries, Worker/Queue/database usage and storage. One million retained
+canonical records contain about 82 MB of body data; no retention pruning is enabled.
+Account-wide billing and non-R2 costs have not been verified here.
+
+The current four-record inventory fits one page per environment. This supports a
+bounded staging rehearsal, not unlimited production growth or a cost guarantee.
+Before wider writer rollout, measure hosted sweep latency and concurrent traffic;
+set an operational history/backlog threshold and demonstrate cleanup discovery
+within the chosen bound. Historical rechecks and full-pass delay remain scaling
+work tracked in #1. Never expire authoritative denials to solve that problem.
