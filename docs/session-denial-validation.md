@@ -536,3 +536,29 @@ This closes the scoped real-staleness/alert/scheduled-recovery check. It did not
 stop the scheduler or simulate a provider outage or Mac host loss. Owner inbox
 receipt remains unverified in #52. Larger live-session capacity, hosted
 interruption/concurrency, device checks and the other production gates remain open.
+
+
+## Multi-page live-session observation — October 29, 09:17 UTC
+
+[Hosted evidence](evidence/session-denial-live-capacity-staging-2026-10-29.json)
+records 250 unexpired, non-denied SQL sessions for one synthetic staging member
+on unchanged runtime `992d24c`. Two actual scheduled full passes covered 253
+sessions each and took 124 and 123 seconds. Intermediate progress was observed
+at 100 and 200 candidates; no manual sweep or progress write occurred. All 18
+external journey observations passed, all 250 fixture sessions remained present
+until exact cleanup, and maximum observed page/pass ages were 47/167 seconds.
+Observed logout median/max were 663/837 ms; these sparse samples are not a latency
+SLO or a concurrent-user benchmark.
+
+The fixture was removed with zero remaining rows, provider and production state
+were unchanged, and the deployment lease was released. One aggregate database
+snapshot during the run saw seven server connections against a configured limit
+of 25, zero idle-in-transaction connections; it does not measure peak headroom.
+
+This is evidence for multi-page discovery at this population. It does not test
+10,000 users, concurrent requests, a large denied-row backlog or provider failure.
+The current 100-candidate/minute cadence cannot satisfy the five-minute full-pass
+deadline at 10,000 live sessions. A bounded, checkpoint-token continuation change
+has local control-flow tests; hosted throughput and rollback verification for
+that change remain open before promotion. Do not loosen health thresholds to
+make a large-population scan appear healthy.
