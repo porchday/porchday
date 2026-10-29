@@ -1,0 +1,66 @@
+{
+  "pricingChecked": "2026-10-29",
+  "scope": "30-day constant-rate scenarios for recorded R2 and queue operations only; not a total bill or upper bound",
+  "assumptions": [
+    "Standard R2 and Workers Paid public pricing; account contract not verified.",
+    "All recorded GetObject requests, including 404, modeled as Class B; no assumed failed-request waiver.",
+    "Each window repeated at a constant rate for 30 days; short sampled analytics, not billing totals.",
+    "All R2 recovery-bucket operations and four staging queues included; not attributable solely to cleanup.",
+    "Isolated scenario allocates the entire shared monthly allowance to this workload; do not sum this scenario across environments.",
+    "CPU, storage, database, Analytics Engine, other queues/buckets, frontend traffic, monitoring hardware and network excluded."
+  ],
+  "windows": [
+    {
+      "name": "combined workload",
+      "durationSeconds": "191.208",
+      "components": {
+        "r2ClassA": {
+          "observed": 185,
+          "projected30DayOperations": "2507844.860047696749089996234",
+          "unroundedGrossUSD": "11.28530187021463537090498305",
+          "isolatedBillWithEntireAllowanceUSD": "9.00"
+        },
+        "r2ClassB": {
+          "observed": 12295,
+          "projected30DayOperations": "166670013.8069536839462783984",
+          "unroundedGrossUSD": "60.00120497050332622066022342",
+          "isolatedBillWithEntireAllowanceUSD": "56.52"
+        },
+        "queueOperations": {
+          "observed": 93,
+          "projected30DayOperations": "1260700.389105058365758754864",
+          "unroundedGrossUSD": "0.5042801556420233463035019456",
+          "isolatedBillWithEntireAllowanceUSD": "0.1042801556420233463035019456"
+        }
+      },
+      "unroundedGrossSubtotalUSD": "71.79078699635998493786870842",
+      "isolatedSubtotalWithEntireAllowanceUSD": "65.62428015564202334630350195"
+    },
+    {
+      "name": "idle staging",
+      "durationSeconds": "180.0",
+      "components": {
+        "r2ClassA": {
+          "observed": 18,
+          "projected30DayOperations": "2.5920E+5",
+          "unroundedGrossUSD": "1.166400",
+          "isolatedBillWithEntireAllowanceUSD": "0.00"
+        },
+        "r2ClassB": {
+          "observed": 45,
+          "projected30DayOperations": "6.4800E+5",
+          "unroundedGrossUSD": "0.23328",
+          "isolatedBillWithEntireAllowanceUSD": "0.00"
+        },
+        "queueOperations": {
+          "observed": 36,
+          "projected30DayOperations": "5.1840E+5",
+          "unroundedGrossUSD": "0.207360",
+          "isolatedBillWithEntireAllowanceUSD": "0.00"
+        }
+      },
+      "unroundedGrossSubtotalUSD": "1.607040",
+      "isolatedSubtotalWithEntireAllowanceUSD": "0.00"
+    }
+  ]
+}

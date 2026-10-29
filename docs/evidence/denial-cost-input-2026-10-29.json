@@ -1,0 +1,396 @@
+{
+  "pricingChecked": "2026-10-29",
+  "sources": [
+    "https://developers.cloudflare.com/r2/pricing/",
+    "https://developers.cloudflare.com/queues/platform/pricing/",
+    "https://developers.cloudflare.com/r2/platform/metrics-analytics/",
+    "https://developers.cloudflare.com/queues/observability/metrics/"
+  ],
+  "prices": {
+    "r2ClassA": {
+      "perMillionUSD": "4.50",
+      "monthlyAllowance": 1000000,
+      "roundMillionUnits": true
+    },
+    "r2ClassB": {
+      "perMillionUSD": "0.36",
+      "monthlyAllowance": 10000000,
+      "roundMillionUnits": true
+    },
+    "queueOperations": {
+      "perMillionUSD": "0.40",
+      "monthlyAllowance": 1000000,
+      "roundMillionUnits": false
+    }
+  },
+  "assumptions": [
+    "Standard R2 and Workers Paid public pricing; account contract not verified.",
+    "All recorded GetObject requests, including 404, modeled as Class B; no assumed failed-request waiver.",
+    "Each window repeated at a constant rate for 30 days; short sampled analytics, not billing totals.",
+    "All R2 recovery-bucket operations and four staging queues included; not attributable solely to cleanup.",
+    "Isolated scenario allocates the entire shared monthly allowance to this workload; do not sum this scenario across environments.",
+    "CPU, storage, database, Analytics Engine, other queues/buckets, frontend traffic, monitoring hardware and network excluded."
+  ],
+  "windows": [
+    {
+      "name": "combined workload",
+      "from": "2026-10-29T22:42:55.557Z",
+      "to": "2026-10-29T22:46:06.765Z",
+      "durationSeconds": "191.208",
+      "r2ClassA": 185,
+      "r2ClassB": 12295,
+      "queueOperations": 93,
+      "providerAggregates": {
+        "q0": [
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 51
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 51
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 51
+            }
+          }
+        ],
+        "q1": [
+          {
+            "count": 10,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 10,
+              "bytes": 996
+            }
+          },
+          {
+            "count": 9,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 9,
+              "bytes": 933
+            }
+          },
+          {
+            "count": 9,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 9,
+              "bytes": 933
+            }
+          }
+        ],
+        "q2": [
+          {
+            "count": 10,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 10,
+              "bytes": 1057
+            }
+          },
+          {
+            "count": 9,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 9,
+              "bytes": 933
+            }
+          },
+          {
+            "count": 9,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 9,
+              "bytes": 933
+            }
+          }
+        ],
+        "q3": [
+          {
+            "count": 10,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 10,
+              "bytes": 1057
+            }
+          },
+          {
+            "count": 9,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 9,
+              "bytes": 994
+            }
+          },
+          {
+            "count": 9,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 9,
+              "bytes": 994
+            }
+          }
+        ],
+        "r2": [
+          {
+            "dimensions": {
+              "actionType": "GetObject",
+              "responseStatusCode": 200
+            },
+            "sum": {
+              "requests": 1037
+            }
+          },
+          {
+            "dimensions": {
+              "actionType": "GetObject",
+              "responseStatusCode": 404
+            },
+            "sum": {
+              "requests": 11258
+            }
+          },
+          {
+            "dimensions": {
+              "actionType": "PutObject",
+              "responseStatusCode": 200
+            },
+            "sum": {
+              "requests": 185
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "idle staging",
+      "from": "2026-10-29T22:52:00.000Z",
+      "to": "2026-10-29T22:55:00.000Z",
+      "durationSeconds": "180.0",
+      "r2ClassA": 18,
+      "r2ClassB": 45,
+      "queueOperations": 36,
+      "providerAggregates": {
+        "q0": [
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 51
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 51
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 51
+            }
+          }
+        ],
+        "q1": [
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          }
+        ],
+        "q2": [
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          }
+        ],
+        "q3": [
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "WriteMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "ReadMessage",
+              "outcome": ""
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          },
+          {
+            "count": 3,
+            "dimensions": {
+              "actionType": "DeleteMessage",
+              "outcome": "success"
+            },
+            "sum": {
+              "billableOperations": 3,
+              "bytes": 189
+            }
+          }
+        ],
+        "r2": [
+          {
+            "dimensions": {
+              "actionType": "GetObject",
+              "responseStatusCode": 404
+            },
+            "sum": {
+              "requests": 9
+            }
+          },
+          {
+            "dimensions": {
+              "actionType": "GetObject",
+              "responseStatusCode": 200
+            },
+            "sum": {
+              "requests": 36
+            }
+          },
+          {
+            "dimensions": {
+              "actionType": "PutObject",
+              "responseStatusCode": 200
+            },
+            "sum": {
+              "requests": 18
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -40,6 +40,7 @@ jobs:
       - run: python3 scripts/check-format.py
       - run: python3 -m unittest discover -s scripts -p 'test_check_format.py'
       - run: python3 -m unittest discover -s scripts -p 'test_check_secrets.py'
+      - run: python3 scripts/test_denial_cost_estimate.py
       - run: node scripts/migrate.ts
       - run: npm run typecheck
       - run: npx tsc -p scripts/tsconfig.external-monitor.json
