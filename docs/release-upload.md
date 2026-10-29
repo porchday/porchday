@@ -309,3 +309,31 @@ deployment lease, fresh CI/schema/provider authorization, compatibility checks,
 single-attempt activation, interruption reconciliation and journey/asset verification.
 Do not treat these historical helpers as permission to activate a saved candidate
 after another release has changed the baseline.
+
+### Fresh state checks and controller composition
+
+`createActivationStateVerifier` in `scripts/release-activation-state.ts` checks
+fresh state under the deployment lease. It pins the baseline source to canonical
+state, rereads the archived upload proof, verifies the current clean tooling and
+exact-source CI for tooling/candidate/baseline, and compares schema and full
+provider inventory. It repeats schema/inventory after CI and settles independent
+reads before returning a failure. The activation tooling source may differ from
+the upload tooling source; each has its own evidence. Cancellation or failed CI
+never authorizes a write. The controller's existing deadline still applies;
+hosted timing of this new composition remains to be validated.
+
+`createPreparedActivationPorts` adds these checks to the existing controller and
+lease wrapper. A required caller authorizer must bind the complete activation
+evidence, including `ActivationStateEvidence`, to the plan's evidence digest and
+validate reviewed compatibility evidence. The module intentionally does not infer
+semantic compatibility from schema equality or successful CI. Journey verification
+is bracketed by fresh schema/inventory checks. A lost deployment reply follows the
+controller's observation-only recovery path, and canonical finalization remains a
+separate operation requiring a terminal journal and fresh retained proofs.
+
+Local tests compose the real deployment lease with synthetic provider responses:
+failed compatibility authorizes no send; a committed activation with a lost reply
+is observed without replay; unhealthy candidate verification rolls back once; and
+drift during the journey prevents completion. These tests do not constitute a new
+hosted rollout or replace client compatibility acceptance. The operator manifest,
+compatibility evidence contract, and complete activation CLI remain to be finished.

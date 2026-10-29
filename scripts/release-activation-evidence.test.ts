@@ -1,4 +1,6 @@
-import {describe,it,expect} from 'vitest';
+import {describe,it,expect,vi} from 'vitest';
+import {createActivationStateVerifier,createPreparedActivationPorts} from './release-activation-state.ts';
+import {FileDeploymentLease} from './deployment-recovery-lease.ts';
 import {mkdtempSync,writeFileSync,readFileSync,realpathSync,rmSync,chmodSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -8,12 +10,12 @@ import {comparableReleaseResources,uploadReconciliationEvidenceHash} from './rel
 import {releaseSettings} from './cloudflare-release-reader.ts';
 import {readCompletedUpload,assertActivationInventory} from './release-activation-evidence.ts';
 import type {UploadManifest} from './release-upload-cli.ts';
-import type {DeploymentPlan} from './deployment-recovery.ts';
+import {recoverDeployment,type DeploymentPlan,type RecoveryState,type DeploymentPorts} from './deployment-recovery.ts';
 const id=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const hash=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
 async function fixture(options:{complete?:boolean;frontend?:boolean;mutate?:(proof:any)=>void}={}){
  const root=realpathSync(mkdtempSync(join(tmpdir(),'porchday-activation-evidence-'))),source='a'.repeat(40),worker=options.frontend?'porchday-staging-edge':'porchday-staging',key=options.frontend?'staging-edge':'staging',entry=options.frontend?'edge.js':'index.js';
- const canonical='{}';writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});
+ const canonical=JSON.stringify({stagingVersion:id(1),stagingRuntimeSource:'b'.repeat(40),compatibleRollbackVersions:{staging:id(1)},edgeRouting:{stagingEnabled:!!options.frontend,stagingFrontendVersion:id(1),stagingFrontendSource:'b'.repeat(40)}});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});
  const settings=releaseSettings({bindings:[]}),resources={script:{etag:'baseline',handlers:['fetch']},script_runtime:{compatibility_date:'2026-10-24'},bindings:[]};
  const before={workers:Object.fromEntries(['staging','staging-edge','production','production-edge','monitor-staging','monitor-production'].map(k=>[k,{active:id(1),latest:id(1),settings,resources}])),domains:[],queues:{},schedules:{}};
  const schema={version:1 as const,migrations:['000_initial.sql'],functionsSha256:'b'.repeat(64),columnsSha256:'c'.repeat(64)},ci={verify:{runId:1,attempt:1,workflowSha256:'d'.repeat(64)},history:{runId:2,attempt:1,workflowSha256:'e'.repeat(64)}};
@@ -26,11 +28,11 @@ async function fixture(options:{complete?:boolean;frontend?:boolean;mutate?:(pro
  options.mutate?.(proof);const proofPath=join(root,'proof.json'),bytes=JSON.stringify(proof);writeFileSync(proofPath,bytes,{mode:0o600});
  const lease=FileUploadLease.acquire(root,plan);await lease.dispatchOnce(async()=>{},async()=>{},AbortSignal.timeout(5000));
  if(options.complete!==false){await lease.reconcile(async()=>({version:id(2),evidenceDigest:hash(bytes)}),AbortSignal.timeout(5000));lease.release();}else lease.close();
- const deployment:DeploymentPlan={operationId:id(4),worker,candidateVersion:id(2),candidateSource:source,baselineVersion:id(1),baselineDeploymentId:id(5),compatibleRollbackVersions:[id(1)],evidenceDigest:'4'.repeat(64),...(options.frontend?{backendVersion:id(1),backendReaderFloor:id(6)}:{})};
+ const deployment:DeploymentPlan={operationId:id(4),worker,candidateVersion:id(2),candidateSource:source,baselineVersion:id(1),baselineDeploymentId:id(5),compatibleRollbackVersions:[id(1)],evidenceDigest:'4'.repeat(64),...(options.frontend?{backendVersion:id(1),backendReaderFloor:id(1)}:{})};
  return{root,manifest,proofPath,proof,deployment,key,close:()=>{lease.close();rmSync(root,{recursive:true,force:true});}};
 }
 describe('verified inactive-upload handoff',()=>{
- it('reads a real archived lease without provider calls or a new lock',async()=>{const f=await fixture();try{const upload=readCompletedUpload(f.manifest,f.proofPath);expect(upload.candidateVersion).toBe(id(2));expect(upload.proofSha256).toBe(hash(readFileSync(f.proofPath)));expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe('{}');f.manifest.evidence.source='f'.repeat(40);expect(upload.source).toBe('a'.repeat(40));}finally{f.close();}});
+ it('reads a real archived lease without provider calls or a new lock',async()=>{const f=await fixture();try{const upload=readCompletedUpload(f.manifest,f.proofPath);expect(upload.candidateVersion).toBe(id(2));expect(upload.proofSha256).toBe(hash(readFileSync(f.proofPath)));expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(id(1));f.manifest.evidence.source='f'.repeat(40);expect(upload.source).toBe('a'.repeat(40));}finally{f.close();}});
  it('refuses an unresolved dispatch even with a plausible proof file',async()=>{const f=await fixture({complete:false});try{expect(()=>readCompletedUpload(f.manifest,f.proofPath)).toThrow('NOT_COMPLETED');}finally{f.close();}});
  it('rejects proof bytes changed after archive',async()=>{const f=await fixture();try{writeFileSync(f.proofPath,JSON.stringify({...f.proof,version:2}));expect(()=>readCompletedUpload(f.manifest,f.proofPath)).toThrow('PROOF_CHANGED');}finally{f.close();}});
  it.each(['version','source','schema','resources','inventory','files','tooling'])('rejects inconsistent archived %s evidence',async kind=>{const f=await fixture({mutate:p=>{if(kind==='version')p.candidate.version=id(9);if(kind==='source')p.provenance.source='9'.repeat(40);if(kind==='schema')p.schema={...p.schema,functionsSha256:'9'.repeat(64)};if(kind==='resources')p.candidate.resources={...p.candidate.resources,bindings:[{name:'unexpected',type:'plain_text',text:'true'}]};if(kind==='inventory')p.inventory.workers.production.active=id(9);if(kind==='files')p.provenance.files={};if(kind==='tooling')p.preparation.toolingCi.source='9'.repeat(40);}});try{expect(()=>readCompletedUpload(f.manifest,f.proofPath)).toThrow();}finally{f.close();}});
@@ -45,5 +47,82 @@ describe('shared resource comparison',()=>{
   expect(comparableReleaseResources(base)).toEqual(comparableReleaseResources(reordered));
   reordered.bindings[0].text='changed';
   expect(comparableReleaseResources(base)).not.toEqual(comparableReleaseResources(reordered));
+ });
+});
+
+async function stateFixture(frontend=false){
+ const f=await fixture({frontend}),lease=FileDeploymentLease.acquire(f.root,f.deployment);
+ let observed=structuredClone(f.proof.inventory);
+ const checks={tooling:vi.fn(async()=>({source:'d'.repeat(40)})),ci:vi.fn(async(input:any)=>({source:input.source,repository:'porchday/porchday',runs:[]})),schema:vi.fn(async()=>structuredClone(f.manifest.evidence.schema))};
+ const reader={snapshot:vi.fn(async()=>structuredClone(observed))};
+ const upload=readCompletedUpload(f.manifest,f.proofPath);
+ const evidence={version:1 as const,uploadPlanHash:upload.uploadPlanHash,uploadProofSha256:upload.proofSha256,tooling:{source:'d'.repeat(40),ci:f.manifest.evidence.ci},baseline:{source:'b'.repeat(40),ci:f.manifest.evidence.ci}};
+ const options={workspace:f.root,plan:f.deployment,manifest:f.manifest,proofPath:f.proofPath,evidence,lease,reader,database:{connection:'synthetic',branchId:'synthetic'},checks};
+ const gate=createActivationStateVerifier(options);
+ return{...f,lease,checks,reader,evidence,options,gate,active(version:string){observed.workers[f.key].active=version;observed.workers[f.key].resources=version===id(2)?upload.candidateResources:upload.baselineResources;},drift(){observed.workers.production.latest=id(9);},close:()=>{lease.close();f.close();}};
+}
+describe('fresh activation state under the real deployment lease',()=>{
+ it.each([false,true])('checks candidate, baseline and current tooling CI independently (frontend=%s)',async frontend=>{const f=await stateFixture(frontend);try{
+  await f.gate.authorizeState(f.deployment,'activate',AbortSignal.timeout(5000));
+  expect(f.checks.ci.mock.calls.map(([input])=>input.source).sort()).toEqual(['a'.repeat(40),'b'.repeat(40),'d'.repeat(40)]);
+  expect(f.checks.tooling).toHaveBeenCalledTimes(2);expect(f.reader.snapshot).toHaveBeenCalledTimes(2);
+  f.active(id(2));await f.gate.authorizeState(f.deployment,'rollback',AbortSignal.timeout(5000));
+  expect((await f.gate.verifyState(id(2),AbortSignal.timeout(5000))).inventory).toHaveProperty('workers.'+f.key+'.active',id(2));
+  f.active(id(1));await f.gate.verifyState(id(1),AbortSignal.timeout(5000));
+ }finally{f.close();}});
+ it.each(['ci','tooling','schema','inventory','proof','canonical','plan','cancel'])('rejects %s failure before authorization',async kind=>{const f=await stateFixture();try{
+  if(kind==='ci')f.checks.ci.mockRejectedValue(Error('CI_FAILED'));
+  if(kind==='tooling')f.checks.tooling.mockRejectedValue(Error('DIRTY'));
+  if(kind==='schema')f.checks.schema.mockResolvedValue({...f.manifest.evidence.schema,columnsSha256:'9'.repeat(64)});
+  if(kind==='inventory')f.drift();
+  if(kind==='proof')writeFileSync(f.proofPath,'{}');
+  if(kind==='canonical')writeFileSync(join(f.root,'latest-verified-deployment.json'),'{}');
+  const signal=new AbortController();if(kind==='cancel')signal.abort();
+  await expect(f.gate.authorizeState(kind==='plan'?{...f.deployment,evidenceDigest:'9'.repeat(64)}:f.deployment,'activate',signal.signal)).rejects.toThrow();
+ }finally{f.close();}});
+ it('rechecks schema and inventory after CI rather than trusting the early reads',async()=>{const f=await stateFixture();try{
+  f.checks.tooling.mockImplementationOnce(async()=>({source:'d'.repeat(40)})).mockImplementationOnce(async()=>{f.drift();return{source:'d'.repeat(40)};});
+  await expect(f.gate.authorizeState(f.deployment,'activate',AbortSignal.timeout(5000))).rejects.toThrow('INVENTORY_CHANGED');
+ }finally{f.close();}});
+ it('holds completion until all independent reads settle after a failed CI check',async()=>{const f=await stateFixture();try{
+  let release!:()=>void;const pending=new Promise<void>(resolve=>{release=resolve;});
+  f.checks.ci.mockRejectedValue(Error('CI_FAILED'));f.reader.snapshot.mockImplementation(async()=>{await pending;return structuredClone(f.proof.inventory);});
+  let finished=false;const result=f.gate.authorizeState(f.deployment,'activate',AbortSignal.timeout(5000)).then(()=>{finished=true;},()=>{finished=true;});
+  await vi.waitFor(()=>expect(f.reader.snapshot).toHaveBeenCalled());expect(finished).toBe(false);release();await result;expect(finished).toBe(true);
+ }finally{f.close();}});
+ it('snapshots inputs and rejects baseline-source or upload receipt mismatch',async()=>{const f=await stateFixture();try{
+  f.options.evidence.tooling.source='e'.repeat(40);f.options.manifest.evidence.source='e'.repeat(40);
+  await f.gate.authorizeState(f.deployment,'activate',AbortSignal.timeout(5000));expect(f.checks.tooling.mock.calls[0][1]).toBe('d'.repeat(40));
+  const fresh={...f.options,manifest:{...f.manifest,evidence:{...f.manifest.evidence,source:'a'.repeat(40)}}};
+  expect(()=>createActivationStateVerifier({...fresh,evidence:{...f.evidence,uploadProofSha256:'f'.repeat(64)}})).toThrow('EVIDENCE_CHANGED');
+  const bad=createActivationStateVerifier({...fresh,evidence:{...f.evidence,baseline:{...f.evidence.baseline,source:'e'.repeat(40)}}});
+  await expect(bad.authorizeState(f.deployment,'activate',AbortSignal.timeout(5000))).rejects.toThrow('BASELINE_SOURCE_CHANGED');
+ }finally{f.close();}});
+ it('refuses wrong active versions and changed resources when verifying a journey result',async()=>{const f=await stateFixture();try{
+  await expect(f.gate.verifyState(id(2),AbortSignal.timeout(5000))).rejects.toThrow('INVENTORY_CHANGED');
+  await expect(f.gate.verifyState(id(9),AbortSignal.timeout(5000))).rejects.toThrow('VERSION_CHANGED');
+  f.active(id(2));f.drift();await expect(f.gate.verifyState(id(2),AbortSignal.timeout(5000))).rejects.toThrow('INVENTORY_CHANGED');
+ }finally{f.close();}});
+});
+
+describe('prepared activation controller composition',()=>{
+ it.each(['healthy','rollback','compatibility-rejected','drift-during-journey'])('preserves lease/state gates and single dispatch (%s)',async scenario=>{
+  const f=await stateFixture();try{
+   let state:RecoveryState|null=null,observed={version:id(1),deploymentId:id(5),operationId:null as string|null};
+   const journal={read:async()=>structuredClone(state),write:async(previous:RecoveryState|null,next:RecoveryState)=>{expect(previous).toEqual(state);state=structuredClone(next);}};
+   const deploy=vi.fn(async(version:string,operationId:string)=>{f.active(version);observed={version,operationId,deploymentId:id(7)};throw Error('LOST_REPLY');});
+   const transport:DeploymentPorts={authorize:async()=>{if(scenario==='compatibility-rejected')throw Error('COMPATIBILITY_UNVERIFIED');},observe:async()=>({...observed}),deploy,verify:async(version)=>{if(scenario==='drift-during-journey')f.drift();return scenario==='rollback'&&version===id(2)?'unhealthy':'healthy';}};
+   const ports=createPreparedActivationPorts({...f.options,journal,ports:transport});
+   if(scenario==='compatibility-rejected'){
+    await expect(recoverDeployment(f.deployment,journal,ports)).rejects.toThrow('COMPATIBILITY_UNVERIFIED');expect(deploy).not.toHaveBeenCalled();
+   }else{
+    expect(await recoverDeployment(f.deployment,journal,ports)).toBe(scenario==='healthy'?'complete':scenario==='rollback'?'rolled-back':'verification-unavailable');
+    expect(deploy).toHaveBeenCalledTimes(scenario==='rollback'?2:1);
+    expect(await recoverDeployment(f.deployment,journal,ports)).toBe(scenario==='healthy'?'complete':scenario==='rollback'?'rolled-back':'verification-unavailable');
+    expect(deploy).toHaveBeenCalledTimes(scenario==='rollback'?2:1);
+   }
+   // The adapter never finalizes canonical state merely because a transport returned.
+   expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(id(1));
+  }finally{f.close();}
  });
 });

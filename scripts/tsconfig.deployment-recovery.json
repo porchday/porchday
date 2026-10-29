@@ -24,6 +24,7 @@
     "release-upload-reconcile.ts",
     "release-upload.ts",
     "release-upload-cli.ts",
-    "release-activation-evidence.ts"
+    "release-activation-evidence.ts",
+    "release-activation-state.ts"
   ]
 }
