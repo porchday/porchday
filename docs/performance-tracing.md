@@ -269,3 +269,40 @@ Rollback to the original version, provider/canonical reconciliation, all 24 asse
 and production preservation were verified, and the lock was released. Evidence,
 including the corrected parser, is archived in primary
 `artifacts/private/p99-write-tracing-r2-20261029/`.
+
+#### Storage-backend investigation after the R2 measurements
+
+The six writes preserve separate immutable intent, batch and receipt records plus
+conditional control updates. Existing recovery and receipt-reconciliation tests
+exercise those independent records. Removing receipts or retiring before durable
+completion would change the recovery contract and is not an accepted optimization.
+The read-only provider query reports the staging journal bucket as WNAM, Standard,
+default jurisdiction. That does not identify an exact data center, but gives no
+obvious configured cross-continent placement mistake to correct.
+
+Investigate an isolated SQLite-backed Durable Object journal-store benchmark
+before changing any active journal. Cloudflare documents transactional, strongly
+consistent storage and 30-day point-in-time recovery in its
+[storage API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/).
+These properties make it a candidate, not evidence of lower hosted latency or
+recovery equivalence. [Location hints](https://developers.cloudflare.com/durable-objects/reference/data-location/)
+are not a regional performance guarantee. Keep the existing R2 journal authoritative.
+
+The first prototype must implement only the existing get/conditional-put contract
+against synthetic keys, with no application binding or member route. Test immutable
+conflicts, compare-and-swap races, lost successful replies, restart persistence and
+failure propagation. Preserve exact bytes, fresh version tokens and atomic
+precondition checks; no deletion, public endpoint, unbounded retries or automatic
+fallback to an older backend. Await storage durability before a successful reply.
+Benchmark the same sequential operation shape and record failures and cold/warm
+conditions. Local/emulated speed is not hosted evidence. Stop this candidate if it
+does not materially reduce the measured round-trip cost.
+
+Promotion would separately require a restore/export tool, immutable-chain and
+receipt proofs, prohibition of restoring the journal behind acknowledged state,
+capacity/retention limits, old/new reader compatibility, and a rollback procedure
+that cannot expose a stale R2 journal after new writes. An asynchronous R2 mirror
+alone cannot authorize rollback. Any migration needs a verified frozen checkpoint
+and explicit authority handoff; dual writers or silent backend fallback are
+unacceptable. Preserve the existing journal as authoritative until every migration
+and recovery gate is demonstrated. No new backend has been provisioned or enabled.
