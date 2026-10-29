@@ -112,3 +112,21 @@ integration tests passed. The R2 service stays alive independently of the killed
 client, matching the relevant process-loss boundary. This is local native-R2 and
 PostgreSQL evidence, not a hosted Worker kill, a storage outage, or a complete
 HTTP-request process-kill test. Hosted writer and device gates remain open.
+
+## Integration with current main
+
+The denial branch incorporates main through `ae1d631`, including the confirmed
+pre-COMMIT rollback fix and maintained release activation/recovery tooling. The
+merge retains `commitAttempted` tracking: only an acknowledged rollback before a
+COMMIT attempt proves non-commit; unknown commit and rollback outcomes remain
+unresolved. The combined real-PostgreSQL auth-journal and restricted-session suites
+passed 36 tests after integration.
+
+This source integration is not deployment authorization for every feature on main.
+Compared with the verified live runtime `ebc567a4`, the merged tree also contains
+migration 052 and additional application/UI changes not present in that deployment.
+A hosted writer rehearsal must pin the actual runtime, asset manifest, schema and
+compatible-reader rollback floor, preserve existing deployment settings, and avoid
+silently bundling those unrelated features. Writer/cleanup flags remain disabled
+until their acceptance gates are met. Reconcile provider state against the canonical
+record immediately before any change; this document does not override newer state.

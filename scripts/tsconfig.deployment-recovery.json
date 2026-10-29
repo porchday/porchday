@@ -1,0 +1,40 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "files": [
+    "deployment-recovery.ts",
+    "deployment-recovery-journal.ts",
+    "cloudflare-deployment-client.ts",
+    "deployment-recovery-lease.ts",
+    "release-verification.ts",
+    "cloudflare-release-reader.ts",
+    "release-schema.ts",
+    "release-wrangler.ts",
+    "release-upload-lease.ts",
+    "release-upload-process.ts",
+    "release-worker-artifacts.ts",
+    "release-ci.ts",
+    "release-upload-reconcile.ts",
+    "release-upload.ts",
+    "release-upload-cli.ts",
+    "release-activation-evidence.ts",
+    "release-activation-state.ts",
+    "release-activation-review.ts",
+    "release-activation-finalize.ts",
+    "release-journey.ts",
+    "release-activation-cli.ts",
+    "release-alerts.ts",
+    "release-alert-relay.ts",
+    "release-alert-retry.ts",
+    "release-watch.ts",
+    "release-watch-delivery.ts",
+    "release-watch-cli.ts"
+  ]
+}

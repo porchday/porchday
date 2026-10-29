@@ -11,6 +11,7 @@ import Combine
     @Published var deletionPhase: AccountDeletionPhase = .idle
     @Published var deletionClearingLocalData = false
     private(set) var authenticationGeneration = 0
+    private var restoreGeneration = 0
     @Published private(set) var initialProfileVersion = 0
     private var profileInitialization: (id: UUID, memberID: String, task: Task<Bool, Never>)?
     @Published private(set) var historySharingBusy = false
@@ -22,13 +23,32 @@ import Combine
     let vault = CryptoVault()
     let api = API.shared
     var canWriteSocial: Bool { member?.access.writesSocial == true }
-    func restore() async {
+    func restore(bootstrapRequest: (@MainActor (String) async throws -> JSON)? = nil) async {
         #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { loading = false; return }
+        if bootstrapRequest == nil && (ProcessInfo.processInfo.arguments.contains("--ui-testing") || ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil) { loading = false; return }
         #endif
-        loading = true; defer { loading = false }
-        do { let session = try await api.auth("get-session", method: "GET"); guard session["user"]["id"].string != nil else { cancelHistoricalPostSharing(); member = nil; vault.clear(); return }; let member = try Member(try await api.social("/me")); if self.member?.id != member.id { acceptAuthenticatedMember(member) } else { self.member = member }; try await vault.load(member: member) }
-        catch { cancelHistoricalPostSharing(); member = nil; vault.clear(); self.error = error.localizedDescription }
+        restoreGeneration += 1
+        let attempt = restoreGeneration, generation = authenticationGeneration
+        var expectedGeneration = generation
+        loading = true; defer { if restoreGeneration == attempt { loading = false } }
+        do {
+            let bootstrap = try await NativeMemberBootstrap.fetch { path in
+                if let bootstrapRequest { return try await bootstrapRequest(path) }
+                return try await self.api.social(path)
+            }
+            guard restoreGeneration == attempt, authenticationGeneration == generation else { return }
+            if member?.id != bootstrap.member.id { acceptAuthenticatedMember(bootstrap.member) }
+            else { member = bootstrap.member }
+            let acceptedGeneration = authenticationGeneration
+            expectedGeneration = acceptedGeneration
+            try await vault.load(member: bootstrap.member, startupDevices: bootstrap.devices,
+                                 isCurrent: { self.restoreGeneration == attempt && self.authenticationGeneration == acceptedGeneration })
+        } catch is CancellationError { return }
+        catch {
+            guard restoreGeneration == attempt, authenticationGeneration == expectedGeneration else { return }
+            cancelHistoricalPostSharing(); member = nil; vault.clear()
+            self.error = NativeMemberBootstrap.isSignedOut(error) ? nil : error.localizedDescription
+        }
     }
     func signIn(email: String, password: String) async throws {
         let result = try await api.auth("sign-in/email", body: .object(["email": .string(email), "password": .string(password)]))
@@ -36,7 +56,15 @@ import Combine
         try await finishSignIn()
     }
     func acceptAuthenticatedMember(_ member: Member) { cancelHistoricalPostSharing(); historySharingNeedsRetry = false; historySharingNotice = nil; authenticationGeneration += 1; deletionPhase = .idle; self.member = member; needsTwoFactor = false }
-    func finishSignIn() async throws { let member = try Member(try await api.social("/me")); acceptAuthenticatedMember(member); try await vault.load(member: member) }
+    func finishSignIn() async throws {
+        let generation = authenticationGeneration
+        let bootstrap = try await NativeMemberBootstrap.fetch { try await self.api.social($0) }
+        guard authenticationGeneration == generation else { throw CancellationError() }
+        acceptAuthenticatedMember(bootstrap.member)
+        let acceptedGeneration = authenticationGeneration
+        try await vault.load(member: bootstrap.member, startupDevices: bootstrap.devices,
+                             isCurrent: { self.authenticationGeneration == acceptedGeneration })
+    }
     func verifySecondFactor(code:String,backup:Bool) async throws { _ = try await api.auth(backup ? "two-factor/verify-backup-code":"two-factor/verify-totp",body:.object(["code":.string(code),"trustDevice":.bool(false)])); try await finishSignIn() }
     func signOut() async {
         authenticationGeneration += 1

@@ -8,7 +8,7 @@ export type PreparedMemberAuth = {pool: ReturnType<typeof authPool>; auth: Retur
 /** Only read-only schema validation starts early. Session lookup/renewal and
  * current account status remain behind the fresh privacy guard. Request-local. */
 export const prepareMemberAuth=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
- if(c.req.method!=='GET'||c.req.path!=='/api/v1/me')return next();
+ if(c.req.method!=='GET'||!['/api/v1/me','/api/v1/feed'].includes(c.req.path))return next();
  const key=authSchemaGate.key(c.env),validate=authSchemaGate.needsValidation(key);
  const pool=authPool(c.env),auth=createAuth(c.env,pool,undefined,false,validate),started=performance.now();
  const ready=auth.$context.then(async context=>{

@@ -40,6 +40,8 @@ import { initColorScheme } from "./color-scheme";
 import { BuilderChat, builderChatAvailable } from "./BuilderChat";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import { installTracing } from "./tracing";
+// Loaded on first visit so the inspector adds nothing to the main bundle.
+const TraceInspector = React.lazy(() => import("./TraceInspector"));
 import "./styles.css";
 import "./retro.css";
 import "virtual:dark.css";
@@ -396,6 +398,8 @@ function AppShell({
   else if (path === "/app/notifications") content = <Notifications />;
   else if (path === "/app/features") content = <FeatureAdditions />;
   else if (path === "/app/builder-chat") content = <BuilderChat />;
+  else if (path === "/app/performance")
+    content = <React.Suspense fallback={<Loading />}><TraceInspector /></React.Suspense>;
   else if (path === "/app/integrations/authorize")
     content = <IntegrationConsent />;
   else if (path.startsWith("/app/settings"))

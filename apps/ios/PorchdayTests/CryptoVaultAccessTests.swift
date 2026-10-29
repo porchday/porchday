@@ -45,6 +45,46 @@ final class CryptoVaultAccessTests: XCTestCase {
         }
     }
 
+    @MainActor func testFreshBootstrapRosterRestoresSavedKeysWithoutDeviceReadAndLaterRefreshChecksRevocation() async throws {
+        let fixture = try Fixture(status: "restricted"), original = fixture.vault()
+        try await original.load(member: fixture.member)
+        try await original.unlock(member: fixture.member, secret: fixture.secret)
+        original.clear(); fixture.requests = []
+        let active = try Member(fixture.member.raw.replacing("status", with: .string("active")))
+        let restored = fixture.vault()
+        try await restored.load(member: active, startupDevices: fixture.roster)
+        XCTAssertTrue(restored.unlocked); XCTAssertTrue(fixture.requests.isEmpty)
+        fixture.roster[0] = fixture.roster[0].replacing("revoked_at", with: .string(PorchDate.string()))
+        try await restored.load(member: active)
+        XCTAssertFalse(restored.unlocked)
+        XCTAssertEqual(fixture.requests.map(\.0), ["/devices"])
+        restored.clear(); fixture.requests = []
+        let revoked = fixture.vault()
+        try await revoked.load(member: active, startupDevices: fixture.roster)
+        XCTAssertFalse(revoked.unlocked); XCTAssertTrue(fixture.requests.isEmpty)
+        revoked.clear()
+    }
+
+    @MainActor func testMalformedBootstrapDeviceFailsWithoutFallbackOrUnlock() async throws {
+        let fixture = try Fixture(status: "active"), vault = fixture.vault()
+        do { try await vault.load(member: fixture.member, startupDevices: [.object([:])]); XCTFail("Incomplete device must fail") }
+        catch { XCTAssertFalse(vault.unlocked); XCTAssertTrue(fixture.requests.isEmpty) }
+        vault.clear()
+    }
+
+    @MainActor func testStaleFallbackReadCannotPublishRosterOrReadSavedKeys() async throws {
+        let fixture = try Fixture(status: "active")
+        var current = true, storageReads = 0
+        let vault = CryptoVault(request: { _, _, _ in
+            current = false // Logout/account change while the response was pending.
+            return .object(["items": .array(fixture.roster)])
+        }, readStored: { _ in storageReads += 1; return nil })
+        do { try await vault.load(member: fixture.member, isCurrent: { current }); XCTFail("Stale response must be canceled") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertTrue(vault.devices.isEmpty); XCTAssertFalse(vault.unlocked); XCTAssertEqual(storageReads, 0)
+        vault.clear()
+    }
+
     @MainActor func testFreshRestrictedAndSuspendedRecoveryDecryptsExistingContentWithoutEnrollment() async throws {
         for status in ["restricted", "suspended"] {
             let fixture = try Fixture(status: status, revoked: true), vault = fixture.vault()

@@ -4531,13 +4531,241 @@ hr {
   font-size: 14px;
 }
 
-.trace-report {
-  max-height: 28rem;
-  overflow: auto;
+/* Performance inspector (/app/performance). */
+.trace-inspector {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+/* Wide content (the timeline, the routes table) scrolls inside its panel. */
+.trace-inspector > *,
+.trace-grid > * {
+  min-width: 0;
+}
+.trace-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.5rem;
+}
+.trace-picker select {
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  text-overflow: ellipsis;
+}
+.trace-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 0.75rem;
+}
+.trace-tile {
+  display: grid;
+  gap: 0.25rem;
   padding: 0.75rem;
-  border: 1px solid currentColor;
-  border-radius: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+}
+.trace-tile span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.trace-tile strong {
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.trace-bad {
+  color: var(--coral);
+}
+.trace-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.trace-legend i {
+  display: inline-block;
+  width: 0.8rem;
+  height: 0.5rem;
+  margin-right: 0.35rem;
+  border-radius: 2px;
+}
+.trace-rows {
+  overflow-x: auto;
+}
+/* Rows, axis and milestone lines share one minimum-width canvas, so their
+   percentages resolve against the same width when it scrolls on a phone. */
+.trace-canvas {
+  position: relative;
+  display: grid;
+  min-width: 34rem;
+  --trace-label: min(40%, 18rem);
+}
+.trace-row {
+  display: grid;
+  grid-template-columns: var(--trace-label) 1fr;
+  align-items: center;
+  min-height: 1.25rem;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
   font-size: 0.75rem;
-  line-height: 1.4;
-  white-space: pre;
+  text-align: left;
+}
+button.trace-row {
+  cursor: pointer;
+}
+button.trace-row:hover,
+button.trace-row:focus-visible {
+  background: var(--sage);
+}
+.trace-label {
+  overflow: hidden;
+  padding-right: 0.5rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trace-child .trace-label {
+  padding-left: 1rem;
+  color: var(--muted);
+}
+.trace-track {
+  position: relative;
+  height: 0.8rem;
+}
+.trace-track > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+}
+.trace-queue {
+  background: var(--line);
+}
+.trace-wait {
+  background: var(--pine);
+}
+.trace-download {
+  background: var(--coral);
+}
+.trace-step {
+  background: #8a6fb0;
+}
+.trace-failed {
+  background: #b3261e;
+}
+.trace-asset {
+  opacity: 0.45;
+}
+.trace-axis {
+  min-height: 1.4rem;
+}
+.trace-axis .trace-track > span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.trace-marks {
+  position: absolute;
+  inset: 0 0 0 var(--trace-label);
+  pointer-events: none;
+}
+.trace-marks > span {
+  position: absolute;
+  top: 1.4rem;
+  bottom: 0;
+  border-left: 1px dashed var(--muted);
+}
+.trace-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 24rem), 1fr));
+  gap: 1rem;
+}
+.trace-phases {
+  display: grid;
+  gap: 0.35rem;
+}
+.trace-phase {
+  display: grid;
+  grid-template-columns: minmax(6rem, 30%) 1fr auto;
+  gap: 0.5rem;
+  align-items: center;
+  font-size: 0.8rem;
+}
+.trace-phase > span:first-child {
+  overflow-wrap: anywhere;
+}
+.trace-phase-track {
+  position: relative;
+  height: 0.75rem;
+}
+.trace-phase-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  min-width: 1px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.trace-phase-bar.trace-worst {
+  background: var(--pine);
+}
+.trace-phase-tick {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: currentColor;
+}
+.trace-num {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trace-table-box {
+  max-height: 30rem;
+  overflow: auto;
+}
+.trace-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.trace-table th,
+.trace-table td {
+  padding: 0.25rem 0.5rem;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+.trace-table th:first-child,
+.trace-table td:first-child {
+  min-width: 12rem;
+  text-align: left;
+  white-space: normal;
+  word-break: break-all;
+}
+.trace-table th {
+  position: sticky;
+  top: 0;
+  background: var(--paper);
+}
+.trace-table th button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
 }
