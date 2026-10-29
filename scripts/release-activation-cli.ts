@@ -1,3 +1,4 @@
+import {waitForMonitorRecovery} from './release-monitor-recovery-wait.ts';
 import {verifyMonitorRead} from './release-monitor-verification.ts';
 import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync,realpathSync,existsSync,writeFileSync,fsyncSync} from 'node:fs';
 import {isDeepStrictEqual} from 'node:util';
@@ -102,13 +103,14 @@ async function executeScopedActivationManifest(input:ActivationManifest,env:Node
   const final=()=>finalizePreparedActivation({...common,client,directory:e.proofDirectory},signal);
   const state=await journal.read();if(state&&['complete','rolled-back'].includes(state.phase))return await final();
   const verify=createReleaseVerifier({plan,config,assets:review.assets,directory:e.proofDirectory,journey:{directory:e.journeyDirectory,assertLease:s=>{lease.assert(plan,s);}}});
-  const monitoredVerify:DeploymentPorts['verify']=async(v,s)=>{const result=await verify(v,s);if(result==='healthy'&&monitor)await verifyMonitorRead({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);return result;};
+  const incidentRecovery=monitor&&review.monitor?.incidentRecovery!==undefined;
+  const monitoredVerify:DeploymentPorts['verify']=async(v,s)=>{if(incidentRecovery&&v===plan.candidateVersion&&!await waitForMonitorRecovery({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s))return 'unhealthy';const result=await verify(v,s);if(result==='healthy'&&monitor)await verifyMonitorRead({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);return result;};
   const reviewed=createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>client.deploy(v,id,s),verify:monitoredVerify}});
   const authorized:DeploymentPorts={...reviewed,authorize:async(p,d,s)=>{await reviewed.authorize(p,d,s);if(monitor&&d==='activate')await verifyMonitorRead({plan,review,version:plan.baselineVersion,phase:'before-activation',directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);}};
   const ports=withReleaseProbePreflight(authorized,s=>verifyReleaseProbeFixture({...database,config,signal:s}));
   const combine=(s:AbortSignal)=>AbortSignal.any([signal,s]);
   const bounded:DeploymentPorts={authorize:(p,d,s)=>ports.authorize(p,d,combine(s)),observe:s=>ports.observe(combine(s)),deploy:(v,id,s)=>ports.deploy(v,id,combine(s)),verify:(v,s)=>ports.verify(v,combine(s))};
-  const outcome=await recoverDeployment(plan,journal,bounded);
+  const outcome=await recoverDeployment(plan,journal,bounded,incidentRecovery?{monitorRecoveryObservation:true}:{});
   if(!['complete','rolled-back'].includes(outcome))return{status:'attention-required' as const,outcome,operationId:plan.operationId};
   return await final();
  }finally{lease.close();}

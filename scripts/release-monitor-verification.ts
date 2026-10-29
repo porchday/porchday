@@ -4,7 +4,7 @@ import {readMonitorReview,readMonitorRecovery,type ActivationReviewEvidence} fro
 import {retainReleaseEvidence} from './release-verification.ts';
 /** Public GET only, with a fixed origin and bounded body. No synthetic login,
  * cron invocation, storage write or provider mutation is performed here. */
-export async function verifyMonitorRead(options:{plan:DeploymentPlan;review:ActivationReviewEvidence;version:string;phase?:'before-activation'|'verification';directory:string;assertScope:()=>void;fetch?:typeof fetch},signal:AbortSignal):Promise<MonitorSnapshot|null>{
+export async function verifyMonitorRead(options:{plan:DeploymentPlan;review:ActivationReviewEvidence;version:string;retainAttempt?:boolean;phase?:'before-activation'|'verification';directory:string;assertScope:()=>void;fetch?:typeof fetch},signal:AbortSignal):Promise<MonitorSnapshot|null>{
  const {plan,review,version}=options,target=recoveryTarget(plan.worker),baseline=readMonitorReview(plan,review);
  if(!target.monitor||!baseline||![plan.baselineVersion,plan.candidateVersion].includes(version))throw Error('MONITOR_RELEASE_SCOPE_CHANGED');
  const recovery=readMonitorRecovery(plan,review,baseline.at);
@@ -22,10 +22,20 @@ export async function verifyMonitorRead(options:{plan:DeploymentPlan;review:Acti
    finally{combined.removeEventListener('abort',cancel);await reader.cancel().catch(()=>{});}
    combined.throwIfAborted();const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
    const body=JSON.parse(new TextDecoder().decode(bytes));freshness();
+   if(options.retainAttempt){const raw=body?.last_checked_at,checked=typeof raw==='string'?Date.parse(raw):NaN;options.assertScope();combined.throwIfAborted();retainReleaseEvidence(options.directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash:deploymentPlanHash(plan),version,kind:'monitor-recovery-read',detail:{httpStatus:response.status,checkedAt:Number.isFinite(checked)?new Date(checked).toISOString():null,validCheckedAt:Number.isFinite(checked),ageMs:Number.isFinite(checked)?Date.now()-checked:null}});}
    if(recovery&&options.phase==='before-activation'&&response.status!==200){
     assertMonitorUnavailable(response.status,body);options.assertScope();combined.throwIfAborted();
     retainReleaseEvidence(options.directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash:deploymentPlanHash(plan),version,kind:'monitor-unavailable-baseline',detail:{historicalBaseline:baseline,status:response.status,body,recovery}});
     return null;
+   }
+   if(options.retainAttempt&&recovery){
+    if(response.status===503){assertMonitorUnavailable(response.status,body);throw Error('MONITOR_RECOVERY_NOT_READY');}
+    const checked=typeof body?.last_checked_at==='string'?Date.parse(body.last_checked_at):NaN;
+    if(response.status===200&&Number.isFinite(checked)&&checked<Date.now()-90000){
+     const historical=parseMonitorSnapshot(target.environment,response.status,body,checked);
+     assertMonitorRecoveryContinuity(baseline,{...historical,at:Date.now()});
+     throw Error('MONITOR_RECOVERY_NOT_READY');
+    }
    }
    const current=parseMonitorSnapshot(target.environment,response.status,body,Date.now());
    const continuity=recovery?assertMonitorRecoveryContinuity(baseline,current):assertMonitorContinuity(baseline,current);options.assertScope();combined.throwIfAborted();

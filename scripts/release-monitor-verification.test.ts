@@ -1,3 +1,4 @@
+import {waitForMonitorRecovery} from './release-monitor-recovery-wait';
 import {expect,it,vi} from 'vitest';
 import {realpathSync,mkdtempSync,writeFileSync,readdirSync,readFileSync,rmSync} from 'node:fs';import{join}from'node:path';import{tmpdir}from'node:os';import{createHash}from'node:crypto';
 import{verifyMonitorRead}from'./release-monitor-verification';import{readMonitorReview,type ActivationReviewEvidence}from'./release-activation-review';import type{DeploymentPlan}from'./deployment-recovery';
@@ -64,4 +65,43 @@ it.each(['origin','lost-failures','metrics','other-error'] as const)('recovery n
   f.fetch.mockImplementation(async()=>kind==='other-error'?Response.json({error:'not monitor failure'},{status:502}):Response.json(f.current));
   await expect(verifyMonitorRead({...f.options,...(kind==='other-error'?{version:f.plan.baselineVersion,phase:'before-activation' as const}:{})},new AbortController().signal)).rejects.toThrow();
  }finally{rmSync(f.directory,{recursive:true,force:true});}
+});
+
+it('waits only with public GETs until a natural observation is fresh and preserves its timestamp diagnostics',async()=>{
+ vi.useFakeTimers();const f=recoveryFixture();try{
+  let reads=0;f.fetch.mockImplementation(async()=>++reads<3?Response.json(f.incident.failure.body,{status:503}):Response.json(f.current));
+  const pending=waitForMonitorRecovery(f.options,new AbortController().signal);await vi.advanceTimersByTimeAsync(4001);expect(await pending).toBe(true);expect(reads).toBe(3);
+  expect(f.fetch.mock.calls.every(call=>String(call[0]).endsWith('/status'))).toBe(true);
+  const records=readdirSync(f.directory).map(n=>JSON.parse(readFileSync(join(f.directory,n),'utf8')));expect(records.filter(r=>r.kind==='monitor-recovery-read')).toHaveLength(3);expect(records.some(r=>r.kind==='monitor-observation-window'&&r.detail.ready===true)).toBe(true);
+ }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
+});
+it('retains a fixed75-second deadline across restarts and stops polling after expiration',async()=>{
+ vi.useFakeTimers();const f=recoveryFixture();try{
+  f.fetch.mockImplementation(async()=>Response.json(f.incident.failure.body,{status:503}));
+  const pending=waitForMonitorRecovery(f.options,new AbortController().signal);await vi.advanceTimersByTimeAsync(75001);expect(await pending).toBe(false);const reads=f.fetch.mock.calls.length;expect(reads).toBeLessThanOrEqual(38);
+  expect(await waitForMonitorRecovery(f.options,new AbortController().signal)).toBe(false);expect(f.fetch).toHaveBeenCalledTimes(reads);
+ }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
+});
+it('waits for stale but structurally valid history, but rejects history loss without spending the window',async()=>{
+ vi.useFakeTimers();const f=recoveryFixture();try{
+  const stale={...f.current,last_checked_at:new Date(f.now-3*60000).toISOString()};let calls=0;
+  f.fetch.mockImplementation(async()=>Response.json(++calls===1?stale:{...f.current,availability:{...f.current.availability,first_observation_at:new Date(f.now).toISOString()}}));
+  const pending=waitForMonitorRecovery(f.options,new AbortController().signal);const rejected=expect(pending).rejects.toThrow('HISTORY_CHANGED');await vi.advanceTimersByTimeAsync(2001);await rejected;expect(calls).toBe(2);
+ }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
+});
+it('cannot apply a recovery wait to normal releases and honors cancellation without another read',async()=>{
+ const f=recoveryFixture();try{
+  const aborted=new AbortController();aborted.abort();await expect(waitForMonitorRecovery(f.options,aborted.signal)).rejects.toThrow();expect(f.fetch).not.toHaveBeenCalled();
+  delete f.review.monitor!.incidentRecovery;await expect(waitForMonitorRecovery(f.options,new AbortController().signal)).rejects.toThrow('SCOPE_INVALID');expect(f.fetch).not.toHaveBeenCalled();
+ }finally{rmSync(f.directory,{recursive:true,force:true});}
+});
+
+it('resumes a previously ready window with one current read instead of another wait',async()=>{
+ vi.useFakeTimers();const f=recoveryFixture();try{
+  f.fetch.mockImplementation(async()=>Response.json(f.current));expect(await waitForMonitorRecovery(f.options,new AbortController().signal)).toBe(true);
+  await vi.advanceTimersByTimeAsync(76000);
+  const elapsed=Math.floor(Date.now()/60000)-Math.floor(f.now/60000);f.current.last_checked_at=new Date(Date.now()).toISOString();f.current.availability.expected_minutes+=elapsed;f.current.availability.passed_minutes+=elapsed;
+  f.current.availability.observed_percent=Math.round((9+elapsed)/(130+elapsed)*100000)/1000;f.current.availability.conservative_pass_percent=Math.round((7+elapsed)/(130+elapsed)*100000)/1000;
+  expect(await waitForMonitorRecovery(f.options,new AbortController().signal)).toBe(true);expect(f.fetch).toHaveBeenCalledTimes(2);
+ }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
 });

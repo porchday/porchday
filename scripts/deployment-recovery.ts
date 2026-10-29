@@ -82,7 +82,9 @@ export function rollbackOperationId(operationId:string):string{
 }
 
 /** Resume with the same plan/journal after interruption. An existing intent is never sent again. */
-export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>}={}):Promise<RecoveryResult>{
+export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>;monitorRecoveryObservation?:boolean}={}):Promise<RecoveryResult>{
+ if(options.monitorRecoveryObservation!==undefined&&(options.monitorRecoveryObservation!==true||!recoveryTarget(plan.worker).monitor))throw new RecoveryError('DEPLOYMENT_MONITOR_RECOVERY_SCOPE_INVALID');
+ const monitorRecoveryObservation=options.monitorRecoveryObservation===true;
  const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
  const rollbackId=rollbackOperationId(plan.operationId);
  let state=await journal.read();if(state){validateRecoveryState(state);if(state.planHash!==hash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');}
@@ -104,7 +106,7 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  }
  if(state!.phase==='candidate-observed'){
   const observed=await observe();if(!observed)return 'observation-unavailable';if(!candidate(observed)||observed.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
-  let health:'healthy'|'unhealthy'|'unknown';try{health=await bounded(45000,signal=>ports.verify(plan.candidateVersion,signal));}catch{health='unknown';}
+  let health:'healthy'|'unhealthy'|'unknown';try{health=await bounded(monitorRecoveryObservation?120000:45000,signal=>ports.verify(plan.candidateVersion,signal));}catch{health='unknown';}
   if(health!=='healthy'&&health!=='unhealthy')return 'verification-unavailable';
   if(health==='healthy'){
    const after=await observe();if(!after)return 'observation-unavailable';if(!candidate(after)||after.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
