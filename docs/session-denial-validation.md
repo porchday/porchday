@@ -716,3 +716,34 @@ Production was unchanged.
 This refreshes the scoped rollback evidence for the current runtime. It does not
 establish safety for arbitrary feature/schema changes, a provider outage, delayed
 legacy-reader rollback, physical devices or the monthly availability objective.
+
+## Hosted password-change lock contention — October 29, 16:18 UTC
+
+[Scoped API and SQL evidence](evidence/session-denial-password-contention-staging-2026-10-29.json)
+records a forced staging ordering on runtime `d6fd3fa` / version `93259d5e`.
+An isolated synthetic member's identity advisory lock was held by the test; a
+read-only PostgreSQL lock observation confirmed its password-change request was
+waiting. Logout was sent once while that lock remained held. Logout returned
+503 after 6,381 ms; releasing the lock allowed the password-change request to
+return 401 after 9,300 ms. Neither request was replayed.
+
+Read-only reconciliation at 16:19:06 verified old-cookie rejection (401), zero
+primary session rows, and an unchanged credential hash. The two remaining
+synthetic sessions were logged out normally, and exact fixture cleanup verified
+zero remaining rows. Full provider inventory was unchanged and the shared lease
+was released. No denial-object bytes were inspected by this test; the precise
+scheduled cleanup time and worker were not traced.
+
+The proposed successful-logout-under-lock expectation failed. This matches the
+existing conservative acknowledgement contract: immutable denial precedes SQL
+cleanup, but HTTP success still requires completion under the identity lock.
+The observation supports rejection of the blocked password change after denial;
+it does not demonstrate contention-free successful logout. Moving acknowledgement
+ahead of identity-lock drain would change the ordering contract and requires a
+separate design and validation, not merely swallowing the cleanup error.
+
+Two earlier setup attempts did not dispatch the password/logout race. One stopped
+before fixture creation completed and was reconciled to zero rows; the other
+failed at temporary inspector setup, after which all synthetic sessions/accounts
+were cleaned up and inspector removal was verified. Neither counts as acceptance
+evidence. Production writer/cleanup flags remain off.
