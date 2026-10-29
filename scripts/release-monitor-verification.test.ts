@@ -68,7 +68,7 @@ it.each(['origin','lost-failures','metrics','other-error'] as const)('recovery n
 });
 
 it('waits only with public GETs until a natural observation is fresh and preserves its timestamp diagnostics',async()=>{
- vi.useFakeTimers();const f=recoveryFixture();try{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));const f=recoveryFixture();try{
   let reads=0;f.fetch.mockImplementation(async()=>++reads<3?Response.json(f.incident.failure.body,{status:503}):Response.json(f.current));
   const pending=waitForMonitorRecovery(f.options,new AbortController().signal);await vi.advanceTimersByTimeAsync(4001);expect(await pending).toBe(true);expect(reads).toBe(3);
   expect(f.fetch.mock.calls.every(call=>String(call[0]).endsWith('/status'))).toBe(true);
@@ -76,14 +76,14 @@ it('waits only with public GETs until a natural observation is fresh and preserv
  }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
 });
 it('retains a fixed75-second deadline across restarts and stops polling after expiration',async()=>{
- vi.useFakeTimers();const f=recoveryFixture();try{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));const f=recoveryFixture();try{
   f.fetch.mockImplementation(async()=>Response.json(f.incident.failure.body,{status:503}));
   const pending=waitForMonitorRecovery(f.options,new AbortController().signal);await vi.advanceTimersByTimeAsync(75001);expect(await pending).toBe(false);const reads=f.fetch.mock.calls.length;expect(reads).toBeLessThanOrEqual(38);
   expect(await waitForMonitorRecovery(f.options,new AbortController().signal)).toBe(false);expect(f.fetch).toHaveBeenCalledTimes(reads);
  }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
 });
 it('waits for stale but structurally valid history, but rejects history loss without spending the window',async()=>{
- vi.useFakeTimers();const f=recoveryFixture();try{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));const f=recoveryFixture();try{
   const stale={...f.current,last_checked_at:new Date(f.now-3*60000).toISOString()};let calls=0;
   f.fetch.mockImplementation(async()=>Response.json(++calls===1?stale:{...f.current,availability:{...f.current.availability,first_observation_at:new Date(f.now).toISOString()}}));
   const pending=waitForMonitorRecovery(f.options,new AbortController().signal);const rejected=expect(pending).rejects.toThrow('HISTORY_CHANGED');await vi.advanceTimersByTimeAsync(2001);await rejected;expect(calls).toBe(2);
@@ -97,7 +97,7 @@ it('cannot apply a recovery wait to normal releases and honors cancellation with
 });
 
 it('resumes a previously ready window with one current read instead of another wait',async()=>{
- vi.useFakeTimers();const f=recoveryFixture();try{
+ vi.useFakeTimers();vi.setSystemTime(new Date('2026-01-01T12:00:00Z'));const f=recoveryFixture();try{
   f.fetch.mockImplementation(async()=>Response.json(f.current));expect(await waitForMonitorRecovery(f.options,new AbortController().signal)).toBe(true);
   await vi.advanceTimersByTimeAsync(76000);
   const elapsed=Math.floor(Date.now()/60000)-Math.floor(f.now/60000);f.current.last_checked_at=new Date(Date.now()).toISOString();f.current.availability.expected_minutes+=elapsed;f.current.availability.passed_minutes+=elapsed;
@@ -106,10 +106,16 @@ it('resumes a previously ready window with one current read instead of another w
  }finally{vi.useRealTimers();rmSync(f.directory,{recursive:true,force:true});}
 });
 
-it('waits for naturally aged unknown status and unavailable metrics, then requires both to recover',async()=>{
- vi.useFakeTimers();const f=recoveryFixture();try{
+it.each([0,59000])('waits for naturally aged unknown status and unavailable metrics across a %ims start offset',async offset=>{
+ vi.useFakeTimers();vi.setSystemTime(new Date(Date.parse('2026-01-01T12:00:00Z')+offset));const f=recoveryFixture();try{
   const aged={...f.current,status:'unknown',metrics_monitoring:'unavailable',last_checked_at:new Date(f.now-10*60000).toISOString()};let reads=0;
-  f.fetch.mockImplementation(async()=>Response.json(++reads===1?aged:f.current));
+  f.fetch.mockImplementation(async()=>{
+   if(++reads===1)return Response.json(aged);
+   // The public aggregate grows at minute boundaries even while no tick runs.
+   // Keep fixture history consistent with the simulated response time.
+   const elapsed=Math.floor(Date.now()/60000)-Math.floor(f.now/60000),expected=130+elapsed;
+   return Response.json({...f.current,last_checked_at:new Date(Date.now()).toISOString(),availability:{...f.current.availability,expected_minutes:expected,unknown_minutes:121+elapsed,observed_percent:Math.round(9/expected*100000)/1000,conservative_pass_percent:Math.round(7/expected*100000)/1000}});
+  });
   const pending=waitForMonitorRecovery(f.options,new AbortController().signal);await vi.advanceTimersByTimeAsync(2001);expect(await pending).toBe(true);expect(reads).toBe(2);
   const records=readdirSync(f.directory).map(n=>JSON.parse(readFileSync(join(f.directory,n),'utf8'))).filter(r=>r.kind==='monitor-recovery-read');// Evidence filenames are random UUIDs, so directory order is not observation order.
   expect(records).toHaveLength(2);expect(records.map(r=>r.detail)).toEqual(expect.arrayContaining([expect.objectContaining({status:'unknown',metrics:'unavailable',httpStatus:200}),expect.objectContaining({status:'operational',metrics:'ready',httpStatus:200})]));
