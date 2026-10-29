@@ -21,6 +21,7 @@
     "release-upload-process.ts",
     "release-worker-artifacts.ts",
     "release-ci.ts",
-    "release-upload-reconcile.ts"
+    "release-upload-reconcile.ts",
+    "release-upload.ts"
   ]
 }

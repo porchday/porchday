@@ -2,6 +2,7 @@ import {constants,closeSync,fsyncSync,lstatSync,openSync,readFileSync,realpathSy
 import {isAbsolute,join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {createHash} from 'node:crypto';
+import {verifyUploadPreparation,assertPreparationBundle,type UploadPreparation} from './release-upload-preparation.ts';
 import {deploymentTarget} from './deployment-recovery.ts';
 import {FileUploadLease,uploadPlanHash,type UploadPlan} from './release-upload-lease.ts';
 import {CloudflareReleaseReader,assertInactiveUploadSnapshot} from './cloudflare-release-reader.ts';
@@ -10,6 +11,7 @@ import {verifyReleaseCi,type ReleaseCiPin} from './release-ci.ts';
 import {verifyWorkerArtifacts,verifyWorkerSourceProvenance} from './release-worker-artifacts.ts';
 
 export type UploadReconciliationEvidence={
+ preparation?:UploadPreparation;
  version:1;worker:string;source:string;before:unknown;settings:unknown;
  resources:{script:Record<string,unknown>;script_runtime:Record<string,unknown>;bindings:unknown[]};
  databaseBranchId:string;schema:ReleaseSchemaFingerprint;ci:Record<'verify'|'history',ReleaseCiPin>;
@@ -47,6 +49,8 @@ export function createUploadReconciler(options:{workspace:string;proofDirectory:
  return async(plan:Readonly<UploadPlan>,signal:AbortSignal)=>{
   const assert=()=>lease.assertPlan(plan,signal);assert();
   if(plan.evidenceDigest!==digest||plan.worker!==evidence.worker||plan.source!==evidence.source)throw Error('UPLOAD_EVIDENCE_PLAN_CHANGED');
+  const preparation=evidence.preparation?await verifyUploadPreparation(workspace,evidence.preparation,signal):null;assert();
+  if(evidence.preparation)assertPreparationBundle(evidence.preparation,evidence.artifacts);
   const ci=await checks.ci({workspace,source:plan.source,pins:evidence.ci,signal});assert();
   const schema=async()=>{const observed=await checks.schema({...database,expectedMigrations:evidence.schema.migrations,signal});assertReleaseSchema(observed,evidence.schema);assert();return observed;};
   await schema();const candidate=await reader.uploadedVersion(key,plan.operationId,signal);assert();
@@ -61,7 +65,7 @@ export function createUploadReconciler(options:{workspace:string;proofDirectory:
   const artifacts=verifyWorkerArtifacts({...evidence.artifacts,expected,actual});
   const provenance=await verifyWorkerSourceProvenance({workspace,source:plan.source,application:'api',map:actual[evidence.artifacts.entry+'.map'],expectedPaths:evidence.artifacts.sourcePaths,signal});assert();
   const finalSchema=await schema();
-  const proof=canonical({version:1,planHash:uploadPlanHash(plan),candidate,inventory:after,artifacts,provenance,schema:finalSchema,ci})+'\n';
+  const proof=canonical({version:1,planHash:uploadPlanHash(plan),candidate,inventory:after,artifacts,provenance,schema:finalSchema,ci,...(preparation?{preparation}:{})})+'\n';
   if(Buffer.byteLength(proof)>16*1024*1024)throw Error('UPLOAD_PROOF_TOO_LARGE');
   assert();persist(proofDirectory,'upload-proof-'+plan.operationId+'.json',proof);assert();
   return{version:candidate.version,evidenceDigest:hash(proof)};

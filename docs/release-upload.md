@@ -199,3 +199,38 @@ duplicate, changed or unsafe sources. This verifies embedded source content; it
 does not prove by itself that arbitrary executable bytes were compiled from that
 content. The prepared executable/hash manifest still requires trusted build and
 exact-source CI authorization.
+
+## Prepared upload orchestration
+
+`createPreparedUpload` and `runPreparedUpload` in `scripts/release-upload.ts`
+compose authorization, transport and reconciliation from one cloned evidence
+object. `PreparedUploadEvidence` requires preparation containing the exact config
+hash/path, Wrangler receipt, bundle/asset manifests, tooling commit and reviewed
+CI pins for tooling and asset sources. The existing upload-plan digest covers
+this whole object. Its bundle must equal the bundle used for provider reconciliation.
+
+Before intent, authorization checks the clean tooling checkout and exact-source
+CI, prepared files, runtime CI, schema, embedded first-party source and full provider
+baseline. Tooling must be at the pinned HEAD with no tracked/untracked changes or
+skip-worktree/assume-unchanged index flags. The transport independently rechecks
+config, CLI and complete local inputs. Reconciliation repeats preparation checks
+and records their results alongside provider, runtime artifact and schema evidence.
+Historical reconciliation evidence without preparation remains readable; the new
+orchestration entry point requires it.
+
+Every dispatch outcome proceeds through reconciliation. An uncertain upload with
+failed reconciliation retains its lease marker; resuming the same operation does
+not authorize or send again. Successful reconciliation archives the inactive-upload
+receipt without changing active canonical state. No activation is performed.
+This is a maintained programmatic entry point; the operator CLI, activation handoff
+and hosted end-to-end rollout remain unfinished. A failed authorization before intent
+also leaves the same-plan marker, which must not be stolen or removed by age.
+
+Tests exercise the orchestration with a real durable lease and synthetic external
+gates: failed preparation/CI/schema/baseline gates send nothing; uncertain dispatch
+resumes through reconciliation only. Separate tests exercise real Git tooling
+checks, changed config after CI, required asset source pins and bundle mismatch.
+These are not hosted provider tests. Source/CI pins and hashes require reviewed
+build provenance; passing CI does not independently prove that asset bytes were
+built from the claimed source. Concurrent local mutation remains outside the
+filesystem preflight guarantee.
