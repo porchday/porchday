@@ -306,3 +306,19 @@ full synthetic journey. It also excludes auth-pool shutdown scheduled afterward.
 The observer cannot change an operation result, retry a mutation, wait for the
 metrics sink or log a failed sink's payload. A terminated invocation may emit no
 summary; absence is unknown, not a successful or fast logout.
+
+
+Read correlated production summaries with the fixed read-only query:
+
+```sh
+python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts production logout-summaries
+```
+
+Use `staging` for the staging dataset. The command selects at most the 50 slowest
+observed summary points in the last 15 minutes, with each point's sampling weight.
+It validates every numeric field, preserves missing phases as `-1`, and prints no
+identifiers or provider diagnostics. This is a bounded slow-request view, not a
+representative latency distribution or availability denominator. Do not calculate
+p95 or success rate from these selected rows. Compare enclosing phases within a
+row; R2/database columns overlap them. An empty view means no observed summary
+points, not healthy logout. Use external journey evidence to confirm outcomes.

@@ -77,3 +77,24 @@ test('connection views query only db_conn and db_snapshot points and return boun
  expect(snapshot.fetcher.mock.calls.at(-1)![1].body).toContain("blob3='db_snapshot'");
  expect(JSON.parse(snapshot.output.mock.calls.at(-1)![0]).data).toEqual([{minute:'2026-10-28 07:31:00',code:'jobs_idle_in_transaction',connections:3,oldest_ms:65000}]);
 });
+
+const summaryRow=()=>({elapsed_ms:'3173',confirmed_branch:'1',rate_limit:'44',initial_authorization:277,guard:77,registration:726,work:734,checkpoint:181,receipt:284,retirement:850,close:0,r2_read:381,r2_write:1653,database_status:187,database_page:-1,sample_weight:'4'});
+test('logout summary view retains correlated numeric phases and sampling weight without exposing extra data',async()=>{
+ const {fetcher,output,errors}=await invoke('logout-summaries',Response.json({data:[{...summaryRow(),member:'private',diagnostic:'private'}]}),'production');
+ const sql=fetcher.mock.calls[0][1].body;
+ expect(sql).toContain("blob1='porchday_logout_summary_v1' AND blob2='production'");
+ expect(sql).toContain("blob4='/api/auth/sign-out' AND blob5='POST'");
+ expect(sql).toContain('double15 AS database_page');expect(sql).toContain('ORDER BY elapsed_ms DESC LIMIT 50');
+ const report=JSON.parse(output.mock.calls[0][0]);
+ expect(report).toMatchObject({environment:'production',view:'logout-summaries',windowMinutes:15,selection:'slowest_50_observed_points'});
+ expect(report.data[0]).toEqual(Object.fromEntries(Object.entries(summaryRow()).map(([key,value])=>[key,Number(value)])));
+ expect(JSON.stringify(output.mock.calls)).not.toContain('private');expect(errors).not.toHaveBeenCalled();
+});
+test.each([{database_page:null},{database_page:-2},{work:3_600_001},{confirmed_branch:2},{sample_weight:0},{sample_weight:1.5},{receipt:'private'},{guard:undefined}])('logout summary view refuses incomplete or invalid numeric evidence: %j',async invalid=>{
+ const {output,errors}=await invoke('logout-summaries',Response.json({data:[{...summaryRow(),...invalid}]}));
+ expect(output).not.toHaveBeenCalled();expect(errors).toHaveBeenCalledExactlyOnceWith('ANALYTICS_RESPONSE_INVALID');expect(process.exitCode).toBe(1);
+});
+test('logout summary view refuses rows beyond its selected bound',async()=>{
+ const {output,errors}=await invoke('logout-summaries',Response.json({data:Array.from({length:51},summaryRow)}));
+ expect(output).not.toHaveBeenCalled();expect(errors).toHaveBeenCalledExactlyOnceWith('ANALYTICS_RESPONSE_INVALID');
+});

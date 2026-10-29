@@ -1,14 +1,21 @@
+import {LOGOUT_SUMMARY_PHASES} from '../apps/api/src/journal-timing';
 import {JOURNAL_PHASES} from '../apps/api/src/journal-phases';
 /** Fixed read-only aggregate queries. Credentials stay in the process environment. */
 import {FEED_PHASES} from '../apps/api/src/telemetry';
 import {metricsQuery,parseAggregates,securitySignals} from '../apps/monitor/src/metrics';
 const environment=process.argv[2],view=process.argv[3]??'summary';
-if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','logout-phases','security','trace-store','connections','db-snapshot'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
+if(!['staging','production'].includes(environment)||!['summary','counters','freshness','usage','feed-phases','logout-phases','logout-summaries','security','trace-store','connections','db-snapshot'].includes(view))throw Error('USE_QUERY_METRICS_ENVIRONMENT_AND_A_VIEW');
 if(view==='feed-phases'&&environment!=='staging')throw Error('FEED_PHASES_STAGING_ONLY');
 const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_ANALYTICS_READ_TOKEN??process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
 if(!account||!/^[a-f0-9]{32}$/.test(account)||!token)throw Error('ANALYTICS_READ_CREDENTIALS_REQUIRED');
 const dataset='porchday_'+environment+'_operations_v1';
+const logoutSummaryColumns=['elapsed_ms','confirmed_branch',...LOGOUT_SUMMARY_PHASES] as const;
 const queries={
+ 'logout-summaries':`SELECT ${logoutSummaryColumns.map((name,index)=>'double'+(index+1)+' AS '+name).join(',')},_sample_interval AS sample_weight
+  FROM ${dataset} WHERE timestamp>NOW()-INTERVAL '15' MINUTE
+  AND blob1='porchday_logout_summary_v1' AND blob2='${environment}' AND blob3='logout_summary'
+  AND blob4='/api/auth/sign-out' AND blob5='POST'
+  ORDER BY elapsed_ms DESC LIMIT 50 FORMAT JSON`,
  'logout-phases':`SELECT blob6 AS phase,count() AS observed_points,sum(_sample_interval) AS events,
   sum(double2*_sample_interval)/sum(_sample_interval) AS mean_ms,
   quantileExactWeighted(0.50)(double2,_sample_interval) AS p50_ms,
@@ -98,7 +105,20 @@ try{
   }
   return safe;
  }
- if(view==='security'){
+ if(view==='logout-summaries'){
+  if(result.data.length>50)throw Error('ANALYTICS_RESPONSE_INVALID');
+  const data=result.data.map((row:Record<string,unknown>)=>{
+   if(!row||typeof row!=='object'||Array.isArray(row))throw Error('ANALYTICS_RESPONSE_INVALID');
+   return Object.fromEntries([...logoutSummaryColumns,'sample_weight'].map(key=>{
+    const raw=row[key];
+    if(typeof raw!=='number'&&!(typeof raw==='string'&&/^-?\d+(?:\.\d+)?$/.test(raw)))throw Error('ANALYTICS_RESPONSE_INVALID');
+    const value=Number(raw);
+    if(!Number.isFinite(value)||(key==='sample_weight'?!Number.isSafeInteger(value)||value<1:key==='confirmed_branch'?![0,1].includes(value):key==='elapsed_ms'?value<0||value>3_600_000:(value<0&&value!==-1)||value>3_600_000))throw Error('ANALYTICS_RESPONSE_INVALID');
+    return [key,value];
+   }));
+  });
+  console.log(JSON.stringify({environment,view,windowMinutes:15,selection:'slowest_50_observed_points',data},null,2));
+ }else if(view==='security'){
   const rows=parseAggregates(result,Date.now());
   const data=rows.filter(row=>['/api/auth/sign-in/email','/api/auth/reset-password','/api/auth/verify-email','/api/auth/*','/api/account-recovery/*'].includes(row.route)).map(({route,requests,observations,failed_requests})=>({route,requests,observations,failed_requests}));
   console.log(JSON.stringify({environment,view,signals:securitySignals(rows),data},null,2));
