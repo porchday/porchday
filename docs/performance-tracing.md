@@ -176,3 +176,17 @@ After staging, and again after production, verify with a member account:
    `trace_write_ok` points and no `trace_write_failed`; `connections` shows the
    `/api/v1/traces` route's connection use.
 7. The next day, confirm a `trace_cleanup_ok` point from the `17 3 * * *` cron.
+
+### Privacy-write phase diagnostics
+
+Opted-in HTTP traces include fixed `privacy_` phase names for guard,
+registration, work, checkpoint, receipt, retirement, close and nested R2/database
+I/O. This allows an edit's durability overhead to be separated from handler work.
+The existing aggregate exporter remains limited to explicitly enabled logout
+requests. Ordinary untraced edits do not allocate a journal timing observer.
+Anonymous requests receive no internal Server-Timing details.
+
+Phases may overlap: nested R2/database durations must not be added to their parent
+phases. The existing request trace span cap also applies; omitted phases are
+missing evidence, not zero duration. Phase tracing does not bypass journal
+registration, durable completion, original error handling or disconnect retention.
