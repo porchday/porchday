@@ -6,7 +6,7 @@ import {JOURNAL_IO_CODES} from './journal-io';
  * No request/response objects, headers, URLs, identifiers, SQL or error objects.
  */
 const journalPhases=new Set<string>(JOURNAL_PHASES);
-const names=new Set(['journal_phase','request','job','email','error','feed_phase','trace_store','db_conn','db_snapshot','denial_cleanup_phase']);
+const names=new Set(['journal_phase','request','job','email','error','feed_phase','trace_store','db_conn','db_snapshot','denial_cleanup_phase','denial_cleanup_authority']);
 export const CONNECTION_ROLES=['auth','social','jobs'] as const;
 export type ConnectionRole=typeof CONNECTION_ROLES[number];
 const CONNECTION_CODES=[...CONNECTION_ROLES.flatMap(role=>[role+'_open',role+'_close',role+'_open_at_response']),'refused_53300','refused_53400','refused_hyperdrive','connect_timeout'];
@@ -32,12 +32,19 @@ const environments=new Set(['development','staging','production']);
 const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/v1/traces','/api/auth/*','/api/account-recovery/*','/api/*','/assets/*',
  ...['sign-in/email','sign-up/email','sign-out','get-session','verify-email','request-password-reset','reset-password','send-verification-email','change-password','list-sessions','revoke-session','revoke-sessions'].map(route=>'/api/auth/'+route)]);
 /** detailMs (double4): for trace_store, D1's own query duration; for db_conn
- * closes, how long the connection stayed open after the response. */
+ * closes, how long the connection stayed open after the response; for
+ * denial_cleanup_authority, cumulative occupied read-slot milliseconds. */
 type Fields={route?:string;method?:string;status?:number;durationMs?:number;code?:string;environment?:string;count?:number;detailMs?:number};
 type MetricsEnvironment=Pick<Env,'ENVIRONMENT'|'METRICS'|'FEED_PHASE_TIMING'|'LOGOUT_PHASE_TIMING'>;
-export function event(name:'journal_phase'|'request'|'job'|'email'|'error'|'feed_phase'|'trace_store'|'db_conn'|'db_snapshot'|'denial_cleanup_phase',fields:Fields={},env?:MetricsEnvironment):void{
+export function event(name:'journal_phase'|'request'|'job'|'email'|'error'|'feed_phase'|'trace_store'|'db_conn'|'db_snapshot'|'denial_cleanup_phase'|'denial_cleanup_authority',fields:Fields={},env?:MetricsEnvironment):void{
  try{
   if(!names.has(name))return;
+  if(name==='denial_cleanup_authority'){
+   if(env?.ENVIRONMENT!=='staging'||!Number.isInteger(fields.count)||fields.count!<=0||fields.count!>1_000_000)return;
+   if(typeof fields.durationMs!=='number'||!Number.isFinite(fields.durationMs)||fields.durationMs<0||fields.durationMs>3_600_000||
+    typeof fields.detailMs!=='number'||!Number.isFinite(fields.detailMs)||fields.detailMs<0||fields.detailMs>fields.durationMs)return;
+   fields={durationMs:fields.durationMs,detailMs:fields.detailMs,count:fields.count};
+  }
   if(name==='denial_cleanup_phase'){
    if(env?.ENVIRONMENT!=='staging'||!fields.code||!denialCleanupPhases.has(fields.code))return;
    if(typeof fields.durationMs!=='number'||!Number.isFinite(fields.durationMs)||fields.durationMs<0||fields.durationMs>3_600_000||!Number.isInteger(fields.count)||fields.count!<0||fields.count!>1_000_000)return;

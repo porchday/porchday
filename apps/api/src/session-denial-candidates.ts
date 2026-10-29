@@ -80,10 +80,10 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
   if(Date.now()>=deadline){stopped=true;break;}
   // Only reads run concurrently. Late reads cannot dispatch a SQL deletion.
   const batch=page.ids.slice(offset,offset+authorityReadConcurrency);
-  const authority=await timing.run('authority_batches',()=>Promise.all(batch.map(async id=>{
+  const authority=await timing.authorityBatch(batch.map(id=>async()=>{
    try{return await boundedIO(()=>sessionDenied(store,id));}
    catch(error){if(error instanceof SessionDenialError&&['SESSION_DENIAL_INVALID','SESSION_DENIAL_ID_INVALID'].includes(error.code))return 'invalid' as const;throw new DenialCleanupError();}
-  })));
+  }));
   for(let i=0;i<batch.length;i++){
    if(Date.now()>=deadline){stopped=true;break;}
    if(authority[i]==='invalid')result.invalid++;

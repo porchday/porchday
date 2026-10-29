@@ -283,3 +283,22 @@ send-observation latency, not queue delivery time. Missing telemetry does not
 prove zero work or healthy progress. These measurements diagnose the failed
 10,000-session capacity trials; they do not change the configured read concurrency,
 20-second work budget, CAS checkpoints or full-pass freshness requirements.
+
+
+`denial_cleanup_authority` adds one staging-only point per invocation that has
+successfully observed at least one complete authority batch. Double2 is available
+slot milliseconds (each launched read's start through batch completion), double3
+is the number of reads, and double4 is occupied slot milliseconds (the sum of
+individual bounded-read observation durations). Both durations share one sampled
+point. Partial batches include only actual reads; they do not count unused slots.
+The event carries no identifiers, errors, routes or arbitrary dimensions.
+
+Use `node --import tsx scripts/query-metrics.ts staging denial-cleanup-authority`.
+For the same pinned-runtime window, occupied / available slot milliseconds estimates
+observed batch occupancy; the remainder measures time after reads settle while
+waiting for the rest of their batch. It is not a predicted speedup, backend R2
+service time, or proof that a rolling pipeline is safe. Zero available time gives
+an undefined ratio. Failed batches remain represented in `authority_batches` but
+are excluded from occupancy: some observations may still be pending after failure.
+Their late completions cannot add another occupancy point. This selection must be
+reported with any measurements; successful batches do not represent failure latency.
