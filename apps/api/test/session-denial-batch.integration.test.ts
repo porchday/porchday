@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {Pool} from 'pg';
 import {deleteDeniedSession} from '../src/session-denial-cleanup';
+import {denialPartitions,listPartitionCandidates} from '../src/session-denial-partitions';
 import {persistSessionDenial} from '../src/session-denial';
 import {drainSessionCandidates,listSessionCandidates,candidateProgressKey,parseCandidateProgress} from '../src/session-denial-candidates';
 import {deleteDeniedSessionBatch,denialDeleteBatchLimit} from '../src/session-denial-batch';
@@ -40,6 +41,16 @@ describe('denial batch bounds',()=>{
  afterAll(async()=>{
   if(runtime)await runtime.end();if(owner)await owner.end();
   if(admin)try{for(let n=0;n<200;n++){if(Number((await admin.query('SELECT count(*) AS n FROM pg_stat_activity WHERE datname=$1',[database])).rows[0].n)===0)break;if(n===199)throw Error('DISPOSABLE_DATABASE_DID_NOT_DRAIN');await new Promise(r=>setTimeout(r,25));}await admin.query('DROP DATABASE IF EXISTS '+database);await admin.query('DROP ROLE IF EXISTS '+role);}finally{await admin.end();}
+ });
+ it('covers the SQL ordering exactly once across ranges and refuses foreign cursors',async()=>{
+  const member=await person();await sessions(member,400);await restore(member,['4z','5','9z','a','zz','é']);
+  const expected=(await owner.query('SELECT id FROM public.auth_session ORDER BY id')).rows.map(row=>row.id),seen:string[]=[];
+  for(const partition of denialPartitions){let after:string|null=null,pages=0;for(;;){const page=await listPartitionCandidates(runtime,partition,after);expect(page.ids.length).toBeLessThanOrEqual(100);seen.push(...page.ids);pages++;if(!page.more)break;after=page.ids.at(-1)!;expect(pages).toBeLessThan(10);}}
+  expect(seen).toEqual(expected);expect(new Set(seen).size).toBe(expected.length);
+  for(const [partition,after]of [[0,'5'],[1,'4z'],[1,'a'],[2,'9z']] as const)await expect(listPartitionCandidates(runtime,partition,after)).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
+  // Failed read-only transactions must be discarded; later valid work recovers.
+  expect((await listPartitionCandidates(runtime,2,'a')).ids).toEqual(expected.slice(expected.indexOf('a')+1,expected.indexOf('a')+101));
+  await owner.query('DELETE FROM public.auth_session WHERE "userId"=$1',[member]);await owner.query('DELETE FROM public.auth_user WHERE id=$1',[member]);
  });
  it('amortizes a same-member backlog while retaining unrelated sessions and idempotence',async()=>{
   const member=await person(),ids=await sessions(member,24),unrelated=await sessions(member,1);calls=0;
