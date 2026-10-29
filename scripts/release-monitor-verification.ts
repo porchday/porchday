@@ -1,4 +1,4 @@
-import {parseMonitorSnapshot,assertMonitorContinuity,assertMonitorRecoveryContinuity,assertMonitorUnavailable,type MonitorSnapshot} from './release-monitor-state.ts';
+import {parseMonitorSnapshot,assertMonitorContinuity,assertMonitorRecoveryContinuity,assertMonitorUnavailable,validatePendingMonitorHistory,type MonitorSnapshot} from './release-monitor-state.ts';
 import {deploymentPlanHash,recoveryTarget,type DeploymentPlan} from './deployment-recovery.ts';
 import {readMonitorReview,readMonitorRecovery,type ActivationReviewEvidence} from './release-activation-review.ts';
 import {retainReleaseEvidence} from './release-verification.ts';
@@ -22,7 +22,7 @@ export async function verifyMonitorRead(options:{plan:DeploymentPlan;review:Acti
    finally{combined.removeEventListener('abort',cancel);await reader.cancel().catch(()=>{});}
    combined.throwIfAborted();const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
    const body=JSON.parse(new TextDecoder().decode(bytes));freshness();
-   if(options.retainAttempt){const raw=body?.last_checked_at,checked=typeof raw==='string'?Date.parse(raw):NaN;options.assertScope();combined.throwIfAborted();retainReleaseEvidence(options.directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash:deploymentPlanHash(plan),version,kind:'monitor-recovery-read',detail:{httpStatus:response.status,checkedAt:Number.isFinite(checked)?new Date(checked).toISOString():null,validCheckedAt:Number.isFinite(checked),ageMs:Number.isFinite(checked)?Date.now()-checked:null}});}
+   if(options.retainAttempt){const raw=body?.last_checked_at,checked=typeof raw==='string'?Date.parse(raw):NaN;options.assertScope();combined.throwIfAborted();retainReleaseEvidence(options.directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash:deploymentPlanHash(plan),version,kind:'monitor-recovery-read',detail:{httpStatus:response.status,status:['operational','degraded','checking','unknown'].includes(body?.status)?body.status:null,metrics:['ready','checking','unavailable','not_configured'].includes(body?.metrics_monitoring)?body.metrics_monitoring:null,checkedAt:Number.isFinite(checked)?new Date(checked).toISOString():null,validCheckedAt:Number.isFinite(checked),ageMs:Number.isFinite(checked)?Date.now()-checked:null}});}
    if(recovery&&options.phase==='before-activation'&&response.status!==200){
     assertMonitorUnavailable(response.status,body);options.assertScope();combined.throwIfAborted();
     retainReleaseEvidence(options.directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash:deploymentPlanHash(plan),version,kind:'monitor-unavailable-baseline',detail:{historicalBaseline:baseline,status:response.status,body,recovery}});
@@ -32,8 +32,7 @@ export async function verifyMonitorRead(options:{plan:DeploymentPlan;review:Acti
     if(response.status===503){assertMonitorUnavailable(response.status,body);throw Error('MONITOR_RECOVERY_NOT_READY');}
     const checked=typeof body?.last_checked_at==='string'?Date.parse(body.last_checked_at):NaN;
     if(response.status===200&&Number.isFinite(checked)&&checked<Date.now()-90000){
-     const historical=parseMonitorSnapshot(target.environment,response.status,body,checked);
-     assertMonitorRecoveryContinuity(baseline,{...historical,at:Date.now()});
+     validatePendingMonitorHistory(baseline,response.status,body,Date.now());
      throw Error('MONITOR_RECOVERY_NOT_READY');
     }
    }

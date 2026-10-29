@@ -133,13 +133,13 @@ describe('prepared activation controller composition',()=>{
  });
 });
 
-async function reviewFixture(production=false,monitor=false){
+async function reviewFixture(production=false,monitor=false,historyMinutes=10){
  const f=await fixture({production,monitor}),upload=readCompletedUpload(f.manifest,f.proofPath),path=join(f.root,'compatibility.json'),testPath=join(f.root,'test-result.json');
  const result=JSON.stringify({synthetic:true,passed:true});writeFileSync(testPath,result,{mode:0o600});
  const assets={candidate:{source:'a'.repeat(40),files:{'app.js':'1'.repeat(64)}},baseline:{source:'b'.repeat(40),files:{'app.js':'2'.repeat(64)}}};
  const review:CompatibilityReview={version:1,worker:f.deployment.worker,candidate:{source:'a'.repeat(40),version:id(2)},baseline:{source:'b'.repeat(40),version:id(1)},schema:f.manifest.evidence.schema,publicAssets:{candidate:publicAssetManifestHash(assets.candidate),baseline:publicAssetManifestHash(assets.baseline)},checks:Object.fromEntries(compatibilityChecks.map(name=>[name,{status:'passed',basis:'Synthetic fixture for '+name,evidence:[{path:testPath,sha256:hash(result)}]}])) as CompatibilityReview['checks']};
  const evidence:ActivationReviewEvidence={version:1,state:{version:1,uploadPlanHash:upload.uploadPlanHash,uploadProofSha256:upload.proofSha256,tooling:{source:'d'.repeat(40),ci:f.manifest.evidence.ci},baseline:{source:'b'.repeat(40),ci:f.manifest.evidence.ci}},compatibility:{path,sha256:''},assets};
- const first=Math.floor(Date.now()/60000)*60000-9*60000;
+ const first=Math.floor(Date.now()/60000)*60000-(historyMinutes-1)*60000;
  const monitorBody=()=>{const now=Date.now(),expected=Math.floor(now/60000)-first/60000+1;return{status:'operational',last_checked_at:new Date(now).toISOString(),metrics_monitoring:'ready',availability:{status:'collecting',scope:'protected_readiness_checks',window_minutes:43200,first_observation_at:new Date(first).toISOString(),expected_minutes:expected,passed_minutes:expected-1,failed_minutes:1,unknown_minutes:0,observed_percent:100,conservative_pass_percent:Math.round((expected-1)/expected*100000)/1000}};};
  if(monitor){const pin=(name:string,value:unknown)=>{const path=join(f.root,name),bytes=JSON.stringify(value);writeFileSync(path,bytes,{mode:0o600});return{path,sha256:hash(bytes)};};evidence.monitor={baseline:pin('monitor-baseline.json',{environment:'staging',at:Date.now(),status:200,body:monitorBody()}),storageCompatibility:pin('monitor-overlap.json',{version:1,baselineSource:'b'.repeat(40),candidateSource:'a'.repeat(40),compatible:true,evidence:[{path:testPath,sha256:hash(result)}]})};}
  const plan={...f.deployment};
@@ -236,8 +236,8 @@ describe('read-only terminal finalization orchestration',()=>{
  }finally{resumed?.close();f.close();}});
 });
 
-async function cliFixture(monitor=false){
- const f=await reviewFixture(false,monitor),uploadPath=join(f.root,'upload-manifest.json'),probePath=join(f.root,'probe.json'),path=join(f.root,'activation-manifest.json');
+async function cliFixture(monitor=false,longHistory=false){
+ const f=await reviewFixture(false,monitor,longHistory?30:10),uploadPath=join(f.root,'upload-manifest.json'),probePath=join(f.root,'probe.json'),path=join(f.root,'activation-manifest.json');
  const uploadBytes=JSON.stringify(f.manifest),probeBytes=JSON.stringify({environment:'staging',healthToken:'h'.repeat(32),synthetic:{id:id(90),email:id(90)+'@example.test',password:'p'.repeat(32)}});
  writeFileSync(uploadPath,uploadBytes,{mode:0o600});writeFileSync(probePath,probeBytes,{mode:0o600});
  const execution={root:f.root,workspace:realpathSync(process.cwd()),uploadManifest:{path:uploadPath,sha256:hash(uploadBytes)},proofPath:f.proofPath,probe:{path:probePath,sha256:hash(probeBytes)},journalDirectory:join(f.root,'journal'),proofDirectory:join(f.root,'final-proofs'),journeyDirectory:join(f.root,'journeys')};
@@ -303,13 +303,13 @@ describe('activation operator command',()=>{
 
 describe('complete activation command composition',()=>{
  it.each([[false,false,false,false],[true,false,false,false],[false,true,false,false],[false,false,true,false],[false,true,true,false],[false,false,false,true],[false,false,true,true],[false,false,false,true,true],[false,false,false,true,false,true],[false,false,false,true,true,true],[false,false,true,true,false,true,true]])('uses the real journals and lease (lostLogin=%s, missingFixture=%s, observed=%s, monitor=%s)',async(lostLogin,missingFixture,withObservation,monitor,historyLost,incidentRecovery,delayedObservation)=>{
-  const f=await cliFixture(monitor);
+  const f=await cliFixture(monitor,delayedObservation);
   const probePreflight=await import('./release-probe-preflight.ts'),preparation=await import('./release-upload-preparation.ts'),ci=await import('./release-ci.ts'),schema=await import('./release-schema.ts'),provider=await import('./cloudflare-deployment-client.ts'),inventoryModule=await import('./cloudflare-release-reader.ts');
   try{
    f.manifest.queues={staging:{id:'1'.repeat(32),name:'porchday-staging-jobs'},production:{id:'2'.repeat(32),name:'porchday-production-jobs'}};
    const bytes=JSON.stringify(f.manifest);writeFileSync(f.cli.review.execution.uploadManifest.path,bytes);f.cli.review.execution.uploadManifest.sha256=hash(bytes);
    for(const item of Object.values(f.evidence.assets))item.files['app.js']=hash('module');
-   if(delayedObservation){const file=f.evidence.monitor!.baseline,value=JSON.parse(readFileSync(file.path,'utf8'));value.at-=180000;value.body.last_checked_at=new Date(value.at).toISOString();value.body.availability.expected_minutes-=3;value.body.availability.passed_minutes-=3;value.body.availability.conservative_pass_percent=Math.round(value.body.availability.passed_minutes/value.body.availability.expected_minutes*100000)/1000;const bytes=JSON.stringify(value);writeFileSync(file.path,bytes);file.sha256=hash(bytes);}
+   if(delayedObservation){const file=f.evidence.monitor!.baseline,value=JSON.parse(readFileSync(file.path,'utf8'));value.at-=1200000;value.body.last_checked_at=new Date(value.at).toISOString();value.body.availability.expected_minutes-=20;value.body.availability.passed_minutes-=20;value.body.availability.conservative_pass_percent=Math.round(value.body.availability.passed_minutes/value.body.availability.expected_minutes*100000)/1000;const bytes=JSON.stringify(value);writeFileSync(file.path,bytes);file.sha256=hash(bytes);}
    if(incidentRecovery){const value={version:1,mode:'unavailable-baseline',baselineVersion:f.cli.plan.baselineVersion,baselineSource:f.evidence.state.baseline.source,candidateSource:f.cli.plan.candidateSource,failure:{environment:'staging',at:Date.now(),status:503,body:{status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'}},evidence:[{path:f.testPath,sha256:hash(readFileSync(f.testPath))}]},path=join(f.root,'incident-recovery.json'),bytes=JSON.stringify(value);writeFileSync(path,bytes,{mode:0o600});f.evidence.monitor!.incidentRecovery={path,sha256:hash(bytes)};}
    f.review.publicAssets={candidate:publicAssetManifestHash(f.evidence.assets.candidate),baseline:publicAssetManifestHash(f.evidence.assets.baseline)};f.save();if(!monitor)f.cli.plan.assetManifests={...f.review.publicAssets};
    const inventory=structuredClone(f.proof.inventory);let observed={version:id(1),deploymentId:id(5),operationId:null as string|null},revoked=false,logins=0;
@@ -324,7 +324,7 @@ describe('complete activation command composition',()=>{
     if(init?.headers?.Cookie==='continuity-allowed'&&path.endsWith('/me'))return Response.json({id:id(91)},{headers:{'cache-control':'no-store'}});
     if(path.endsWith('/health'))return Response.json({status:'ok',issues:[]});
     if(path.endsWith('/get-session'))return Response.json(null);
-    if(path.endsWith('/status')){if(incidentRecovery&&observed.version===id(1))return Response.json({status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'},{status:503});const body=monitor?f.monitorBody():{last_checked_at:new Date().toISOString()};if(delayedObservation&&observed.version===id(2)&&++candidateStatusReads===1)(body as any).last_checked_at=new Date(Date.now()-120000).toISOString();if(historyLost&&observed.version===id(2))(body as any).availability.failed_minutes=0;return Response.json(body);}
+    if(path.endsWith('/status')){if(incidentRecovery&&observed.version===id(1))return Response.json({status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'},{status:503});const body=monitor?f.monitorBody():{last_checked_at:new Date().toISOString()};if(delayedObservation&&observed.version===id(2)&&++candidateStatusReads===1){(body as any).last_checked_at=new Date(Date.now()-600000).toISOString();(body as any).status='unknown';(body as any).metrics_monitoring='unavailable';}if(historyLost&&observed.version===id(2))(body as any).availability.failed_minutes=0;return Response.json(body);}
     if(path.endsWith('/sign-in/email')){logins++;if(lostLogin)throw Error('LOST_LOGIN_REPLY');return Response.json({user:{id:id(90)}},{headers:{'set-cookie':'better-auth.session_token=synthetic-token; HttpOnly'}});}
     if(path.endsWith('/sign-out')){revoked=true;return Response.json({success:true});}
     if(path.endsWith('/me'))return revoked?Response.json({}, {status:401}):Response.json({id:id(90)},{headers:{'cache-control':'no-store'}});

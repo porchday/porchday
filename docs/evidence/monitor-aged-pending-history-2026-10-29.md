@@ -1,0 +1,13 @@
+# Pending recovery evidence with aged public status
+
+Before the second production activation, source inspection found that `publicStatus` changes to `unknown` after180 seconds without an observation and `publicMetrics` becomes `unavailable` after seven minutes. The first natural-observation wait validated stale history with the normal status parser, which would reject these expected aging states immediately rather than wait. This was found before provider mutation.
+
+Prepared activation `a1b13655-d91b-4d2d-8f3d-570e5e578ca6` was cancelled through the maintained monitor command before any durable deployment intent or synthetic fixture creation. Its cancelled operation is archived and cannot replay. No new upload occurred. The verified inactive production candidate remains reusable by a new activation plan.
+
+`validatePendingMonitorHistory` now validates old aggregate history separately from successful status. It accepts `unknown` only with a checked-at timestamp older than the public status aging threshold; a configured monitor changing to `not_configured` remains invalid. It enforces the original history identity, expected count progression, no lost pass/fail observations, no expired historical samples, and the recovery evidence age bound. Metrics may be unavailable while waiting, but this path never returns a healthy/fresh snapshot. Normal verification and successful recovery still require fresh200, valid status and ready-metrics continuity.
+
+Read diagnostics now retain the public status and metrics classification alongside HTTP status and sanitized timestamp/age. No production tick is invoked, and the durable75-second polling budget, one-shot provider operations, ordinary release deadlines and90-second freshness requirement are unchanged.
+
+Validation:138 state/verifier/composition tests passed; after strengthening the composed case to start with a ten-minute-old `unknown`/`unavailable` response and a twenty-minute-old baseline, all89 activation composition tests and release-controller typecheck passed. That composed case waits for a fresh observation before one authenticated journey and records one deployment. Additional tests reject history loss and prove that normal verification still rejects the aged response. External boundaries in composition tests remain mocked.
+
+The preceding584b855 full CI passed, but production activation was cancelled rather than using that insufficient pending-status handling. This correction requires its own exact CI and a new activation plan. Production monitoring remains unhealthy; application checks continue to pass in recent independent samples.

@@ -1,5 +1,5 @@
 import {expect,it} from 'vitest';
-import {parseMonitorSnapshot,assertMonitorContinuity,assertMonitorRecoveryContinuity} from './release-monitor-state';
+import {parseMonitorSnapshot,assertMonitorContinuity,assertMonitorRecoveryContinuity,validatePendingMonitorHistory} from './release-monitor-state';
 const at=Date.UTC(2026,9,29,14,0),first=at-9*60000;
 const body=()=>({status:'operational',last_checked_at:new Date(at).toISOString(),metrics_monitoring:'ready',availability:{status:'collecting',scope:'protected_readiness_checks',window_minutes:43200,first_observation_at:new Date(first).toISOString(),expected_minutes:10,passed_minutes:7,failed_minutes:2,unknown_minutes:1,observed_percent:90,conservative_pass_percent:70}});
 const base=()=>parseMonitorSnapshot('staging',200,body(),at);
@@ -15,4 +15,13 @@ it('incident recovery preserves all observations and rejects expired evidence or
  expect(()=>assertMonitorContinuity(before,after)).toThrow('BASELINE_EXPIRED');
  expect(()=>assertMonitorRecoveryContinuity(before,{...after,at:at+361*60000})).toThrow('BASELINE_EXPIRED');
  before.history.expected=43200;expect(()=>assertMonitorRecoveryContinuity(before,after)).toThrow('HISTORY_EXPIRED');
+});
+
+it('pending aged history can lose freshness but cannot lose stored observations or change origin',()=>{
+ const before=base(),now=at+20*60000,value=body();value.status='unknown';value.metrics_monitoring='unavailable';value.availability.expected_minutes=30;value.availability.unknown_minutes=21;value.availability.observed_percent=30;value.availability.conservative_pass_percent=Math.round(7/30*100000)/1000;
+ expect(()=>validatePendingMonitorHistory(before,200,value,now)).not.toThrow();
+ expect(()=>parseMonitorSnapshot('staging',200,value,now)).toThrow('STATUS_INVALID');
+ const lost=structuredClone(value);lost.availability.failed_minutes=1;lost.availability.unknown_minutes=22;lost.availability.observed_percent=Math.round(8/30*100000)/1000;
+ expect(()=>validatePendingMonitorHistory(before,200,lost,now)).toThrow('HISTORY_CHANGED');
+ expect(()=>validatePendingMonitorHistory(before,200,{...value,last_checked_at:new Date(now-120000).toISOString()},now)).toThrow('STATUS_INVALID');
 });
