@@ -13,7 +13,11 @@ command. A failed baseline, lost scope or failed evidence write prevents that
 invocation. It captures each sample's phase at its start, so a sample that spans
 command completion cannot count toward the two required post-command samples.
 It retains the actual command-settlement time and fixed terminal status without
-raw command errors. Failed samples, sample exhaustion, interrupted observation,
+raw command errors. A rejected callback also retains `failureCode`: an exact
+allowlisted diagnostic (including reader-floor and CI rejection) or
+`COMMAND_ERROR_REDACTED`. Arbitrary messages, stacks, causes, credential-like
+values and message getters are not copied. This diagnostic does not authorize
+repeating the command. Failed samples, sample exhaustion, interrupted observation,
 failed retention and unverified command outcomes reject acceptance. A verified
 rollback returns `rolled-back`, distinctly from `complete` promotion.
 
@@ -28,9 +32,10 @@ failure after activation does not itself authorize another provider write.
 Retain the command's own provider/journal milestones as well. Healthy samples
 around command execution do not independently prove which version was serving,
 that a candidate was reached, or that browser/native/schema overlap worked. The
-wrapper is locally tested but has not yet replaced the dated harness in a hosted
-feature release. Its introduction does not alter the existing activation CLI or
-claim that all callers now enforce continuity. Adoption remains tracked in #3.
+wrapper has been used by the observed activation entry point in the
+[staging backend feature release](evidence/group-invitation-staging-continuity-2026-10-29.md)
+and monitor releases. That evidence does not establish browser/native overlap
+or adoption by every release caller. Remaining acceptance stays tracked in #3.
 
 Local validation on October 29: the full suite passed 1,161 general tests and
 22 crypto tests, with 193 environment-dependent tests skipped. Fifteen new

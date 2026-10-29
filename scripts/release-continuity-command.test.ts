@@ -110,3 +110,19 @@ test.each([{maxSamples:2},{intervalMs:999}])('rejects invalid observation bounds
  await expect(runCommandWithContinuity({...options,...bounds},signal())).rejects.toThrow('CONTINUITY_COMMAND_SCOPE');
  expect(fetch).not.toHaveBeenCalled();expect(options.runCommand).not.toHaveBeenCalled();
 });
+
+
+test.each(['DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED','RELEASE_CI_NOT_SUCCESSFUL'])('retains known rejection %s without replaying the command',async code=>{
+ const {options,events}=fixture();options.runCommand.mockRejectedValue(Error(code));
+ await expect(runCommandWithContinuity(options,signal())).rejects.toThrow('CONTINUITY_COMMAND_UNVERIFIED');
+ expect(options.runCommand).toHaveBeenCalledTimes(1);
+ expect(events).toContainEqual(expect.objectContaining({kind:'command-terminal',status:'failed',failureCode:code}));
+ expect(events.filter(e=>e.kind==='sample'&&e.phaseAtStart==='command-terminal')).toHaveLength(2);
+});
+test.each([Error('SECRET_TOKEN_ABC'),Error('DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED: secret'),{message:'DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED'},Object.defineProperty(new Error(),'message',{get(){throw Error('secret getter');}})])('redacts unknown or misleading diagnostic values',async error=>{
+ const {options,events}=fixture();options.runCommand.mockRejectedValue(error);
+ await expect(runCommandWithContinuity(options,signal())).rejects.toThrow('CONTINUITY_COMMAND_UNVERIFIED');
+ expect(options.runCommand).toHaveBeenCalledTimes(1);
+ expect(events).toContainEqual(expect.objectContaining({kind:'command-terminal',status:'failed',failureCode:'COMMAND_ERROR_REDACTED'}));
+ expect(JSON.stringify(events)).not.toMatch(/SECRET_TOKEN_ABC|secret getter|: secret/);
+});

@@ -6,7 +6,21 @@ export type ContinuityCommandStatus='complete'|'rolled-back'|'attention-required
 export type ContinuityCommandEvent=
  |{kind:'sample';index:number;phaseAtStart:'baseline'|'command-running'|'command-terminal';sample:ContinuitySample}
  |{kind:'command-intent';at:string}
- |{kind:'command-terminal';at:string;status:ContinuityCommandStatus|'failed'};
+ |{kind:'command-terminal';at:string;status:ContinuityCommandStatus|'failed';failureCode?:string};
+
+// Explicit public diagnostics only. Never retain arbitrary exception messages,
+// stacks, causes or code-like values supplied by a provider or caller.
+const diagnosticCodes=new Set([
+ 'DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED','DEPLOYMENT_CANONICAL_CHANGED',
+ 'DEPLOYMENT_LEASE_HELD','DEPLOYMENT_JOURNAL_CONFLICT',
+ 'RELEASE_CI_NOT_SUCCESSFUL','ACTIVATION_TOOLING_WORKSPACE_CHANGED',
+ 'MONITOR_RECOVERY_EVIDENCE_EXPIRED','MONITOR_RELEASE_HISTORY_CHANGED',
+]);
+function commandFailureCode(error:unknown):string{
+ try{const message=error instanceof Error?Object.getOwnPropertyDescriptor(error,'message')?.value:undefined;
+  return typeof message==='string'&&diagnosticCodes.has(message)?message:'COMMAND_ERROR_REDACTED';
+ }catch{return 'COMMAND_ERROR_REDACTED';}
+}
 
 /** Coordinates observation with ONE invocation of an existing durable release
  * command. This is not a provider transport, lease or replay authorization.
@@ -23,7 +37,7 @@ export async function runCommandWithContinuity(options:ProbeOptions & {
  if(!Number.isSafeInteger(interval)||interval<1000||interval>5000||!Number.isSafeInteger(limit)||limit<3||limit>120)throw Error('CONTINUITY_COMMAND_SCOPE');
  const controller=new AbortController(),combined=AbortSignal.any([signal,controller.signal]);
  let command:Promise<void>|undefined,terminal=false;
- const outcome:{status:ContinuityCommandStatus|'failed'}={status:'failed'};
+ const outcome:{status:ContinuityCommandStatus|'failed';failureCode?:string}={status:'failed'};
  let samples=0,failedSamples=0,postCommandSamples=0,maxStartGapMs=0,previous:number|undefined;
  let terminalRetained=false,terminalAt='';
  const assert=()=>{combined.throwIfAborted();options.assertScope();};
@@ -42,10 +56,10 @@ export async function runCommandWithContinuity(options:ProbeOptions & {
     // retried; its own durable journal remains the authority for reconciliation.
     command=Promise.resolve().then(()=>{assert();return options.runCommand(combined);}).then(value=>{
      outcome.status=['complete','rolled-back','attention-required'].includes(value)?value:'failed';
-    },()=>{outcome.status='failed';}).finally(()=>{terminalAt=new Date().toISOString();terminal=true;});
+    },error=>{outcome.status='failed';outcome.failureCode=commandFailureCode(error);}).finally(()=>{terminalAt=new Date().toISOString();terminal=true;});
    }
    if(terminal&&!terminalRetained){
-    await options.retain({kind:'command-terminal',at:terminalAt,status:outcome.status});terminalRetained=true;
+    await options.retain({kind:'command-terminal',at:terminalAt,status:outcome.status,...(outcome.failureCode?{failureCode:outcome.failureCode}:{})});terminalRetained=true;
    }
    if(phaseAtStart==='command-terminal')postCommandSamples++;
    if(postCommandSamples>=2){
