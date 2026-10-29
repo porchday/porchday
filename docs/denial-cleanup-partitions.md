@@ -41,8 +41,10 @@ all sessions at one instant.
 
 The core is now connected to cron, queue delivery and operational health through
 `session-denial-runtime.ts`. The mode binding is absent by default, preserving v3
-behavior. The integration is deployed to staging with the mode absent; it does
-not establish hosted partition throughput improvement.
+behavior. Staging has completed shadow, dual and active transitions. The
+[partitioned combined trial](evidence/denial-partition-combined-staging-2026-10-29.md)
+also failed freshness under load; partitioning with a shared queue cap of four
+does not establish sufficient hosted capacity.
 
 ## Runtime integration and required deployment admission
 
@@ -177,8 +179,8 @@ original intent and receipt; it never resends an unknown mutation. Tests cover l
 replies, crash boundaries, inventory drift, lock exclusion and proof corruption.
 The lease and existing upload/deployment suites passed 43 tests, with typecheck,
 formatting, secrets and diff checks passing. This is tooling validation only: the
-provider concurrency cap was subsequently applied to staging only; partition
-mode remains absent in both environments.
+provider concurrency cap was subsequently applied to staging only. Later staging
+mode transitions are recorded below; production partition mode remains absent.
 
 At 21:02:55 UTC, the queue settings operation completed after all six exact-source
 CI checks passed for `60b681eaea9fd3a83ddab2315c1c346a97a60a1a`. Full provider
@@ -189,10 +191,28 @@ production settings, retry policy and dead-letter routing were unchanged.
 [Provider update API](https://developers.cloudflare.com/api/resources/queues/subresources/consumers/methods/update/)
 was checked before the once-only request. This does not prove load capacity.
 
-The new dual transition mode is implemented locally after this queue change;
-it is not part of the currently deployed c570e74 runtime. The 53 focused tests
+The dual transition mode was implemented after this queue change in runtime
+`5bdf11fd74176175fce60b16b55c82c7f2d7b062`. The 53 focused tests
 and API typecheck/format/secret/diff checks passed. Its tests cover
 both queue namespaces, fixed scheduling, strict range health and bounded reads,
 including active-to-dual recovery with unavailable legacy progress. Stale or
-missing v4 ranges still fail readiness. Hosted mode transitions and rollback
-acceptance remain outstanding.
+missing v4 ranges still fail readiness. All six exact-source hosted CI checks
+passed. Guarded shadow activation passed 15 continuity samples, then dual and
+active each passed 11; all had zero failures and two post-terminal samples.
+Each transition verified existing allowed/revoked sessions, zero fixture rows,
+reconciled provider inventory and a released lease.
+
+Following the failed combined trial and verified cleanup/recovery, a controlled
+active-to-dual return completed at 21:28:18 UTC. Legacy v3 full-pass age was
+714,228 ms before activation. All 11 continuity samples passed, including two
+post-terminal samples; exact fixture cleanup and provider reconciliation passed.
+This demonstrates transition compatibility with stale legacy progress, not an
+injected failure or a newly triggered automatic rollback. It does not make the
+failed capacity trial acceptable. Production remains unchanged.
+
+A separate guarded restoration to active mode completed at 21:29:47 UTC as
+`bccd8e63-aa45-4af6-a125-328207f710a6`, using the same verified runtime bundle.
+All 10 continuity samples passed, including two post-terminal samples. Exact
+fixture cleanup verified zero rows, provider inventory was reconciled and the
+lease released. The controlled return and restoration are complete; capacity
+and the remaining failure/device gates are still open.
