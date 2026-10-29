@@ -176,3 +176,22 @@ After staging, and again after production, verify with a member account:
    `trace_write_ok` points and no `trace_write_failed`; `connections` shows the
    `/api/v1/traces` route's connection use.
 7. The next day, confirm a `trace_cleanup_ok` point from the `17 3 * * *` cron.
+
+### Builder navigation bootstrap hint
+
+The member bootstrap includes `builder_chat_available`, computed by the existing
+actor-scoped `app.builder_chat_allowed()` predicate in the same transaction as
+`/me`. The web shell uses either explicit boolean without fetching full builder
+conversation state. An older server that omits the field retains the existing
+`/builder-chat` discovery fallback. This flag controls navigation only; every
+builder endpoint still checks the current allowlist and member status.
+
+Apply migration `057_builder_bootstrap_hint.sql` before deploying the new API.
+It grants the social runtime execution of the existing zero-argument predicate;
+it adds no table access or new actor selector. Older application versions remain
+compatible with the grant, so application rollback does not require reversing it.
+A bootstrap must not read message bodies or run the retention deletion performed
+by `builder_chat_state()`. Real-session integration tests cover the current actor,
+a different actor, suspension, removed access, and preservation of an old message.
+This removes one startup HTTP request on compatible servers; a hosted latency
+improvement remains unverified until measured with the rollout candidate.

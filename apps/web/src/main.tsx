@@ -355,8 +355,12 @@ function AppShell({
   // Builder chat appears only for allowlisted members; see design/builder-chat.md.
   const [builderChat, setBuilderChat] = useState(false);
   useEffect(() => {
-    if (vault.member.status !== "suspended") builderChatAvailable().then(setBuilderChat);
-  }, []);
+    let current = true;
+    setBuilderChat(false);
+    if (vault.member.status !== "suspended")
+      builderChatAvailable(vault.member).then(value => { if (current) setBuilderChat(value); });
+    return () => { current = false; };
+  }, [vault.member.id, vault.member.status, vault.member.builder_chat_available]);
   const sidebarLinks = vault.member.status === "suspended" ? [links[5]] : builderChat ? [...links.slice(0, 5), builderChatLink, ["/app/features", "plus", "Feature additions"], links[5]] : links;
   async function logout() {
     if (hasPendingSaves()) return;

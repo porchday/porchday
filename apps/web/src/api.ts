@@ -19,6 +19,7 @@ export type Member = {
   profile?: { handle?: string; envelope?: EncryptedEnvelope | null };
   created_at?: string;
   connection_count?: number;
+  builder_chat_available?: boolean;
   startup_devices?: Device[];
 };
 export type SocialObject = {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ApiError, get, post, localDate, saveFile } from "./api";
+import { ApiError, get, post, localDate, saveFile, type Member } from "./api";
 import { Alert, Button, Empty, Icon, Loading, useAction } from "./ui";
 
 /** See design/builder-chat.md. Only allowlisted members can load this page. */
@@ -60,7 +60,10 @@ export function queueDetails(state: BuilderState, now = Date.now()): string | nu
 }
 
 /** Shows the navigation item only to allowlisted members; any error hides it. */
-export async function builderChatAvailable(): Promise<boolean> {
+export async function builderChatAvailable(member?: Pick<Member, "builder_chat_available">): Promise<boolean> {
+  // The bootstrap flag is only a navigation hint. Routes still authorize every
+  // operation. Older servers omit it and retain the existing discovery request.
+  if (typeof member?.builder_chat_available === "boolean") return member.builder_chat_available;
   try {
     await get("/builder-chat");
     return true;
