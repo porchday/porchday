@@ -336,7 +336,7 @@ type HttpJournalContext={req?:{method:string;path:string};env:RuntimeEnv&Pick<En
  * bounded waitUntil grace period. The observer never forwards private errors
  * to detached runtime logging; the original promise still rejects to its caller.
  */
-export async function withHttpPrivacyJournal<T>(context:HttpJournalContext,work:()=>Promise<T>):Promise<T> {
+export async function withHttpPrivacyJournal<T>(context:HttpJournalContext,work:()=>Promise<T>,timing?:JournalTiming):Promise<T> {
   let keepAlive:((promise:Promise<unknown>)=>void)|undefined;
   try {
     const execution=context.executionCtx;
@@ -346,7 +346,7 @@ export async function withHttpPrivacyJournal<T>(context:HttpJournalContext,work:
     // supply one before any journal intent or application work can start.
     if(context.env.ENVIRONMENT!=='development')throw new JournalError('JOURNAL_EXECUTION_CONTEXT_REQUIRED');
   }
-  const operation=withPrivacyJournal(context.env,work,logoutJournalTiming(context.env,context.req));
+  const operation=withPrivacyJournal(context.env,work,timing??logoutJournalTiming(context.env,context.req));
   if(keepAlive)keepAlive(operation.then(()=>undefined,()=>undefined));
   return await operation;
 }
