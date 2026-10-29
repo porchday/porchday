@@ -1,5 +1,47 @@
 # Existing-session observation during releases
 
+## Command lifecycle coordination
+
+`scripts/release-continuity-command.ts` exports `runCommandWithContinuity` for
+new release harnesses. It accepts the same probe target/scope checks, a durable
+append-only `retain(event)` sink and a `runCommand(signal)` callback invoking the
+reviewed activation command exactly once. Supply the existing operation's
+manifest and journal; this wrapper does not authorize replay of a prior run.
+
+The wrapper retains a healthy baseline and command intent before calling the
+command. A failed baseline, lost scope or failed evidence write prevents that
+invocation. It captures each sample's phase at its start, so a sample that spans
+command completion cannot count toward the two required post-command samples.
+It retains the actual command-settlement time and fixed terminal status without
+raw command errors. Failed samples, sample exhaustion, interrupted observation,
+failed retention and unverified command outcomes reject acceptance. A verified
+rollback returns `rolled-back`, distinctly from `complete` promotion.
+
+On any exit it cancels and awaits the command before returning control for
+fixture cleanup. The callback must honor cancellation and settle only after all
+child processes and callbacks have stopped; wrapping a detached subprocess is
+invalid. This wrapper cannot force an arbitrary callback to honor that contract.
+The underlying release command still owns bounded execution, leases, one-shot
+provider intents, rollback and unknown-outcome reconciliation. An observation
+failure after activation does not itself authorize another provider write.
+
+Retain the command's own provider/journal milestones as well. Healthy samples
+around command execution do not independently prove which version was serving,
+that a candidate was reached, or that browser/native/schema overlap worked. The
+wrapper is locally tested but has not yet replaced the dated harness in a hosted
+feature release. Its introduction does not alter the existing activation CLI or
+claim that all callers now enforce continuity. Adoption remains tracked in #3.
+
+Local validation on October 29: the full suite passed 1,161 general tests and
+22 crypto tests, with 193 environment-dependent tests skipped. Fifteen new
+coordinator cases cover baseline/sink/scope rejection before dispatch, sample
+start-phase accounting, cancellation and joining the command, exhausted coverage,
+failed samples, command rejection, terminal-evidence failure and rollback status.
+Deployment-tooling type checking, native Node import, formatting and secret scans
+also passed. These tests use synthetic transports and make no provider writes.
+
+## Probe and watch primitives
+
 `scripts/release-continuity.ts` provides a bounded read-only observer for a
 synthetic session that existed before activation. It complements the durable
 login/logout journey in `release-journey.ts`; neither replaces the release's
