@@ -178,7 +178,8 @@ session lookup, retries, Worker/Queue/database usage and storage. One million re
 canonical records contain about 82 MB of body data; no retention pruning is enabled.
 Account-wide billing and non-R2 costs have not been verified here.
 
-The current four-record inventory fits one page per environment. This supports a
+That historical four-record inventory fit one page per environment. Later staging
+rehearsals add retained denials, so it is not a current inventory. It supported a
 bounded staging rehearsal, not unlimited production growth or a cost guarantee.
 Before wider writer rollout, measure hosted sweep latency and concurrent traffic;
 set an operational history/backlog threshold and demonstrate cleanup discovery
@@ -307,3 +308,39 @@ This closes the scoped compatible-version rollback check with an uncleaned denia
 It does not prove rollback to incompatible readers or every future release, hosted
 Worker interruption, all concurrency orderings, physical-device behavior, larger
 history bounds or monthly availability. Those acceptance gates remain open.
+
+## Hosted successful revocation with overlapping logout — October 29, 2026
+
+[Two additional hosted trials](evidence/session-denial-revocation-overlap-staging-2026-10-29.json)
+use the unchanged staging runtime and separate isolated synthetic fixtures. With
+revocation launched 250 ms before logout, logout again returned 200 and revocation
+401; the secondary session correctly remained usable. A 1,250 ms lead produced
+719 ms of request overlap with both operations returning 200. The primary cookie
+was denied with its canonical native-R2 record verified, and the secondary cookie
+returned 401 with its SQL row removed. An unrelated member stayed usable in both
+trials. Global privacy control was active with no pending intents afterward.
+
+All synthetic members and sessions were removed, temporary read-only operators
+were removed, and provider snapshots remained unchanged. Final staging readiness
+was healthy and the external production monitor reported no incident. No
+password-change action or email delivery was requested. Together with the earlier
+trial, this supplies hosted evidence for successful revocation and rejected
+revocation during overlapping logout. It does not establish internal server
+scheduling, exhaustive interleavings or hosted password-change races.
+
+## Denial cleanup monitoring gap
+
+Source inspection confirms the denial cleanup queue path is separate from the
+normal cleanup path that calls `recordCleanupSuccess`. Its success, invalid-record
+and retry events are logged, but `readOperationalHealth` has no denial-sweep
+freshness or full-pass-progress check. The normal cleanup heartbeat cannot prove
+that denial cleanup is running. This is a confirmed monitoring coverage gap, not
+an observed hosted cleanup outage; reader denial remains independent of cleanup.
+
+Before production writer enablement, add a bounded, content-free denial-cleanup
+health signal and verify that a stopped or persistently failing sweep is detected
+while ordinary cleanup remains healthy. Distinguish page success from full-pass
+progress, preserve retry/CAS and compatible rollback behavior, and test startup,
+staleness, recovery and concurrent updates. Use measured history size and sweep
+progress to set an explicit cleanup-latency bound; do not prune immutable denial
+records to satisfy the bound. Track this work in #1.
