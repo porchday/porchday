@@ -1,5 +1,10 @@
 import {afterAll,beforeAll,describe,expect,it,vi} from 'vitest';
-import {randomUUID} from 'node:crypto';
+import {randomUUID,createHash} from 'node:crypto';
+import {fork} from 'node:child_process';
+import {once} from 'node:events';
+import {createServer} from 'node:http';
+import {fileURLToPath} from 'node:url';
+import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {readdir,readFile} from 'node:fs/promises';
 import {Pool} from 'pg';
 import {serializeSignedCookie} from 'better-call';
@@ -10,6 +15,7 @@ import {prepareMemberAuth,requireMember,requireAppealMember} from '../src/sessio
 import {authRoutes} from '../src/auth-routes';
 import {persistSessionDenial} from '../src/session-denial';
 import {cleanupDeniedSessions,deleteDeniedSession} from '../src/session-denial-cleanup';
+import {denialProgressKey,readDenialCleanupHealth} from '../src/session-denial-progress';
 import type {Env,Variables} from '../src/types';
 
 const base=process.env.TEST_DATABASE_URL;
@@ -234,14 +240,15 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
  it('sweeps a confirmed denial through the restricted auth role without deleting another session',async()=>{
   const actor=await person(),other=await person(),records=new Map<string,string>();
   const store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,
-   put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};},
-   list:async()=>({objects:[...records.keys()].map(key=>({key})),truncated:false})};
+   put:async(key:string,text:string,options?:{onlyIf?:{etagDoesNotMatch?:string;etagMatches?:string}})=>{if(options?.onlyIf?.etagDoesNotMatch==='*'&&records.has(key)||options?.onlyIf?.etagMatches&&(!records.has(key)||options.onlyIf.etagMatches!=='record'))return null;records.set(key,text);return {etag:'record'};},
+   list:async({prefix}:{prefix:string})=>({objects:[...records.keys()].filter(key=>key.startsWith(prefix)).map(key=>({key})),truncated:false})};
   await persistSessionDenial(store,actor.sessionId);
   const guardedEnv={...env,SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:store} as unknown as Env;
   expect((await cleanupDeniedSessions(guardedEnv)).deleted).toBe(1);
   expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(0);
   expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[other.sessionId])).rowCount).toBe(1);
-  expect((await cleanupDeniedSessions(guardedEnv)).deleted).toBe(0);expect(records.size).toBe(1);
+  expect((await cleanupDeniedSessions(guardedEnv)).deleted).toBe(0);expect(records.size).toBe(2);
+  expect((await readDenialCleanupHealth(guardedEnv)).issues).toEqual([]);
  });
  it('orders exact cleanup behind an existing identity operation and can retry a lost commit reply',async()=>{
   const actor=await person(),other=await person(),{pool}=runtimePool(),lock=await owner.connect();
@@ -271,5 +278,59 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
   const exposed=await auth.handler(new Request(env.APP_URL+'/api/auth/clearDeniedSessionCookies',{method:'POST',headers:{Origin:env.APP_URL,'Content-Type':'application/json'},body:'{}'}));
   expect(exposed.status).toBe(404);
  });
+
+ it('recovers in a fresh process after SIGKILL between native R2 publication and SQL cleanup',async()=>{
+  const actor=await person(),other=await person();
+  const mf=new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response(null,{status:404})}}',compatibilityDate:'2026-10-01',r2Buckets:['JOURNAL']}));
+  const bucket=await mf.getR2Bucket('JOURNAL');
+  const key='session-denials/v1/'+createHash('sha256').update('porchday-session-denial-v1\0'+actor.sessionId).digest('hex')+'.json';
+  const bearer=randomUUID(),control='synthetic-global-control-unchanged';await bucket.put('control.json',control);
+  let publications=0;
+  const server=createServer(async(request,response)=>{
+   try{
+    if(request.headers.authorization!=='Bearer '+bearer){response.writeHead(401).end();return;}
+    let body='';for await(const chunk of request){body+=chunk;if(body.length>4096)throw Error();}
+    const {operation,args}=JSON.parse(body);let result:unknown;
+    if(operation==='get'&&[key,denialProgressKey].includes(args[0])){const row=await bucket.get(args[0]);result=row?{etag:row.etag,value:await row.text()}:null;}
+    else if(operation==='put'&&[key,denialProgressKey].includes(args[0])){if(args[0]===key)publications++;result=await bucket.put(args[0],args[1],args[2]);result=result?{etag:(result as {etag:string}).etag}:null;}
+    else if(operation==='list'&&args[0].prefix==='session-denials/v1/')result={objects:(await bucket.list({prefix:args[0].prefix})).objects.map(row=>({key:row.key})),truncated:false};
+    else throw Error();
+    response.setHeader('Content-Type','application/json');response.end(JSON.stringify(result));
+   }catch{response.writeHead(500).end();}
+  });
+  const children:ReturnType<typeof fork>[]=[];
+  try{
+   server.listen(0,'127.0.0.1');await once(server,'listening');const address=server.address() as {port:number};
+   const start=(action:'publish'|'cleanup')=>{
+    const child=fork(fileURLToPath(new URL('./fixtures/session-denial-process.ts',import.meta.url)),[],{execArgv:['--import','tsx'],stdio:['ignore','ignore','ignore','ipc']});children.push(child);
+    const message=new Promise<any>((resolve,reject)=>{
+     const timer=setTimeout(()=>reject(Error('SUBPROCESS_MESSAGE_TIMEOUT')),10000);
+     child.once('message',value=>{clearTimeout(timer);resolve(value);});
+     child.once('error',error=>{clearTimeout(timer);reject(error);});
+     child.once('exit',()=>{clearTimeout(timer);reject(Error('SUBPROCESS_EXITED_BEFORE_MESSAGE'));});
+    });
+    child.send({action,url:'http://127.0.0.1:'+address.port,bearer,sessionId:actor.sessionId,database:env.HYPERDRIVE_AUTH.connectionString});return {child,message};
+   };
+   const writer=start('publish');expect(await writer.message).toEqual({phase:'denial-confirmed'});
+   const stopped=once(writer.child,'exit');writer.child.kill('SIGKILL');expect(await stopped).toEqual([null,'SIGKILL']);
+   expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(1);
+   const {pool}=runtimePool(),auth=createAuth({...env,RECOVERY_JOURNAL:bucket} as unknown as Env,pool);
+   expect(await auth.api.getSession({headers:actor.headers})).toBeNull();
+   expect((await auth.api.getSession({headers:other.headers}))?.user.id).toBe(other.memberId);
+   for(const deleted of [1,0]){
+    const recovery=start('cleanup'),exited=once(recovery.child,'exit');
+    expect(await recovery.message).toMatchObject({phase:'cleanup-complete',result:{seen:1,deleted,invalid:0}});
+    expect(await exited).toEqual([0,null]);
+   }
+   expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(0);
+   expect((await auth.api.getSession({headers:other.headers}))?.user.id).toBe(other.memberId);
+   expect(await(await bucket.get('control.json'))!.text()).toBe(control);
+   expect(await bucket.get(key)).not.toBeNull();expect(publications).toBe(1);
+   expect((await readDenialCleanupHealth({SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:bucket} as unknown as Env)).issues).toEqual([]);
+  }finally{
+   for(const child of children)if(child.exitCode===null&&child.signalCode===null){const stopped=once(child,'exit');child.kill('SIGKILL');await stopped;}
+   server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await mf.dispose();
+  }
+ },30000);
 
 });

@@ -57,19 +57,16 @@ const emails: { text: string; subject: string }[] = [];
 const pending: Promise<unknown>[] = [];
 const app = new Hono<{ Bindings: Env; Variables: Variables }>();
 app.route("/api/auth", authRoutes);
-const context = {
-  waitUntil(p: Promise<unknown>) {
-    pending.push(p);
-  },
-  passThroughOnException() {},
-  props: {},
-} as ExecutionContext;
 async function call(
   path: string,
   body?: unknown,
   cookie = "",
   extraHeaders: Record<string, string> = {},
 ) {
+  // Workers waitUntil belongs to one request. A shared test context would make
+  // a completed logout await a deliberately paused concurrent password change.
+  const requestPending:Promise<unknown>[]=[];
+  const context={waitUntil(p:Promise<unknown>){requestPending.push(p);pending.push(p);},passThroughOnException(){},props:{}} as ExecutionContext;
   const response = await app.fetch(
     new Request(env.APP_URL + "/api/auth/" + path, {
       method: body === undefined ? "GET" : "POST",
@@ -85,8 +82,8 @@ async function call(
     env,
     context,
   );
-  const scheduled = pending.length;
-  await Promise.allSettled(pending.splice(0));
+  const scheduled = requestPending.length;
+  await Promise.allSettled(requestPending);
   return { response, scheduled };
 }
 async function person() {
@@ -161,7 +158,7 @@ suite("Authenticated account privacy journal boundary", () => {
   beforeAll(async () => {
     if (
       !base ||
-      !new URL(base).pathname.endsWith("/porchday_auth_journal_test")
+      !(["localhost","127.0.0.1"].includes(new URL(base).hostname) && /^\/porchday(?:_[a-z0-9]+)*_auth_journal_test$/.test(new URL(base).pathname))
     )
       throw Error("Dedicated disposable auth_journal_test database required");
     owner = new Pool({ connectionString: base });
@@ -746,5 +743,88 @@ suite("Authenticated account privacy journal boundary", () => {
     expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
     expect(store.rows.get('control.json')!.value).toBe(control);
   }));
+
+  it('recovers a denial committed after the real HTTP publication deadline without a global intent',async()=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(p.id),control=store.rows.get('control.json')!.value;
+    const put=store.put.bind(store);let release!:()=>void,entered!:()=>void,committed!:()=>void;
+    const gate=new Promise<void>(resolve=>{release=resolve;});
+    const started=new Promise<void>(resolve=>{entered=resolve;});
+    const finished=new Promise<void>(resolve=>{committed=resolve;});let writes=0;
+    store.put=async(...args)=>{
+      if(!args[0].startsWith('session-denials/v1/'))return put(...args);
+      writes++;entered();await gate;const result=await put(...args);committed();return result;
+    };
+    try{
+      const request=call('sign-out',{},p.cookie);await started;
+      expect((await request).response.status).toBe(503);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(1);
+      expect((await(await call('get-session',undefined,p.cookie)).response.json()).user.id).toBe(p.id);
+      release();await finished;
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      // The timed-out HTTP path must not resume SQL cleanup after the late write.
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(1);
+      expect(writes).toBe(1);expect(store.rows.get('control.json')!.value).toBe(control);
+      expect((await cleanupDeniedSessions(env)).deleted).toBe(1);
+      expect((await cleanupDeniedSessions(env)).deleted).toBe(0);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+      expect(store.rows.get('control.json')!.value).toBe(control);
+      expect(writes).toBe(1);
+    }finally{release();}
+  }),15000);
+  it('bounds real identity-lock contention during logout and recovers through the independent sweep',async()=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(),control=store.rows.get('control.json')!.value;
+    const lock=await owner.connect();
+    try{
+      await lock.query('BEGIN');
+      await lock.query("SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",[p.id]);
+      expect((await call('sign-out',{},p.cookie)).response.status).toBe(503);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(1);
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      expect(store.rows.get('control.json')!.value).toBe(control);
+    }finally{await lock.query('ROLLBACK');lock.release();}
+    expect((await cleanupDeniedSessions(env)).deleted).toBe(1);
+    expect((await cleanupDeniedSessions(env)).deleted).toBe(0);
+    expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+    expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+    expect(store.rows.get('control.json')!.value).toBe(control);
+  }),15000);
+
+  it.each(['password-first','denial-first'] as const)('preserves credential and denial boundaries during concurrent logout (%s)',async order=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(p.id);
+    const originalCheck=store.beforeWrite,newPassword='synthetic-concurrent-new-password';
+    const originalSession=(await owner.query('SELECT id FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0].id;
+    let release!:()=>void,paused=false;
+    const gate=new Promise<void>(resolve=>{release=resolve;});
+    store.beforeWrite=async key=>{
+      await originalCheck?.(key);
+      const matches=order==='password-first'?key.startsWith('session-denials/v1/'):key.startsWith('intents/');
+      if(matches&&!paused){paused=true;await gate;}
+    };
+    const change=()=>call('change-password',{currentPassword:p.password,newPassword},p.cookie);
+    let held:ReturnType<typeof call>|undefined;
+    try{
+      held=order==='password-first'?call('sign-out',{},p.cookie):change();
+      await vi.waitFor(()=>expect(paused).toBe(true),{timeout:3000});
+      const first=await(order==='password-first'?change():call('sign-out',{},p.cookie));
+      expect(first.response.status).toBe(200);
+      release();const second=await held;
+      expect(second.response.status).toBe(order==='password-first'?200:401);
+      const control=(await readJournalControl(store)).value;
+      expect(control.mode).toBe('active');expect(control.pending).toHaveLength(0);
+      expect([...store.rows.entries()].some(([key,row])=>key.startsWith('session-denials/v1/')&&JSON.parse(row.value).sessionId===originalSession)).toBe(true);
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      const changed=(await owner.query('SELECT credentials_changed_at FROM public.auth_user WHERE id=$1',[p.id])).rows[0].credentials_changed_at;
+      if(order==='password-first')expect(changed).not.toBeNull();else expect(changed).toBeNull();
+      const accepted=order==='password-first'?newPassword:p.password,rejected=order==='password-first'?p.password:newPassword;
+      expect((await call('sign-in/email',{email:p.email,password:rejected})).response.status).toBe(401);
+      const fresh=await call('sign-in/email',{email:p.email,password:accepted});expect(fresh.response.status).toBe(200);
+      const freshCookie=fresh.response.headers.getSetCookie().map(value=>value.split(';')[0]).join('; ');
+      expect((await(await call('get-session',undefined,freshCookie)).response.json()).user.id).toBe(p.id);
+      expect(await(await call('get-session',undefined,p.cookie)).response.json()).toBeNull();
+    }finally{release();if(held)await held;store.beforeWrite=originalCheck;}
+  }),15000);
 
 });
