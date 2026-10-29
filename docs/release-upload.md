@@ -75,3 +75,38 @@ changed plans/canonical bytes, partial records, concurrent calls, historical rec
 readback and a real SIGKILL after dispatch. No hosted upload has yet exercised this
 new composition. Source/CI authorization, the concrete subprocess transport and
 provider/artifact reconciliation still require integration in the normal command.
+
+## Concrete subprocess transport
+
+`createWranglerUploadProcess` in `scripts/release-upload-process.ts` supplies the
+transport callback for `dispatchOnce`. It snapshots its inputs, rechecks the private
+config's SHA-256 and target/account, verifies the pinned CLI receipt and spawns
+`versions upload` without a shell. It supplies the operation UUID as the upload
+message for later provider reconciliation. It refuses build hooks, alternate
+environments, container/export configuration, bundling and enabled preview URLs.
+The caller must still verify every referenced executable, source map and asset
+against preparation evidence immediately before dispatch.
+
+The child receives an explicit environment containing only the required provider
+credentials, PATH/HOME/TMPDIR, CI/output controls and a private Wrangler log directory.
+It does not inherit NODE_OPTIONS or other arbitrary parent variables. A pinned
+preload guard sets a private umask and exits on controller IPC disconnect. This
+prevents a killed controller leaving the uploader running indefinitely. It cannot
+undo a request that reached the provider; the durable intent still requires
+reconciliation. The IPC channel is unreferenced so normal CLI exit is not delayed.
+
+Execution has a four-minute deadline and a one-MiB combined stdout/stderr cap.
+Cancellation, timeout or excessive output sends SIGTERM, then SIGKILL after one
+second if needed. The callback waits for the child's close event before returning,
+so the upload lease remains in flight through termination. Failed execution reports
+a fixed error code, without returning raw diagnostics or credentials. Wrangler's
+own logs remain in the owner-only directory with sanitization enabled. Successful
+stdout can yield an untrusted version hint, but the upload callback discards it:
+provider/artifact reconciliation is mandatory even after exit code zero.
+
+Subprocess tests cover normal exit, nonzero exit, output overflow, timeout/SIGKILL,
+cancellation and real controller SIGKILL followed by uploader exit. Configuration
+tests reject target/hash drift and unreviewed execution settings before spawn.
+These tests use synthetic child programs and make no provider writes. The complete
+normal release command still needs source/CI authorization and concrete provider
+reconciliation before this transport can be exercised on a hosted candidate.

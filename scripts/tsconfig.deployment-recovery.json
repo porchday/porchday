@@ -17,6 +17,7 @@
     "cloudflare-release-reader.ts",
     "release-schema.ts",
     "release-wrangler.ts",
-    "release-upload-lease.ts"
+    "release-upload-lease.ts",
+    "release-upload-process.ts"
   ]
 }
