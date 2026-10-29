@@ -50,7 +50,28 @@ For a hosted rehearsal:
    continuous availability between successful probes.
 
 The library's local tests cover read authorization, denial, readiness, deadlines,
-late responses, retention failures, scope loss and credential redaction. Hosted
-integration is still pending. It does not yet prove a normal feature deployment,
+late responses, retention failures, scope loss and credential redaction. The staging rehearsal below provides scoped hosted integration evidence. It
+does not prove a normal feature deployment,
 browser/native client overlap, backward-compatible schema changes or production
 continuity. Those remain acceptance criteria in issue #3.
+
+
+## Hosted staging rollback rehearsal — October 29
+
+Runtime `8634c17` passed a real activation and automatic rollback from flag-only
+candidate `5259bcf4` to baseline `2120ff4c`. The candidate used identical API
+code/schema/assets with writer and cleanup disabled. A local failed readiness
+observation triggered the real provider rollback. The independent observer used
+the original transport and retained 17 healthy samples between 12:46:31.238 and
+12:47:03.655 UTC, with a maximum start gap of 2,003.971 milliseconds. A baseline
+sample completed before dispatch; samples covered candidate state and two began
+after the command completed in rolled-back state.
+[Evidence](evidence/session-denial-refill-continuity-rollback-staging-2026-10-29.json).
+
+Both versions rejected the revoked cookie while its SQL row remained and allowed
+the unrelated synthetic member. After releasing the identity lock, scheduled
+cleanup removed the retained row within 45.368 seconds and completed a new pass.
+Exact fixture cleanup verified zero rows, the provider was restored and the lease
+released. Production Workers were unchanged. This proves the stated sampled
+flag-only rollback scope; normal feature rollout, old/new browser/native clients,
+compatible schema changes and production continuity still require evidence.

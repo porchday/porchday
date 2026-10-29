@@ -1,6 +1,6 @@
 # Independent session denial: validation gates
 
-As of October 29, 2026, 12:32 UTC, staging version `2120ff4c` runs isolated
+As of October 29, 2026, 12:48 UTC, staging version `2120ff4c` runs isolated
 runtime `8634c17` with logout writer and cleanup enabled. Production `f613874a`
 retains server runtime `ebc567a4`, with both flags disabled. Current frontend
 assets are `b2b3a06`. The maintained draft PR integrates the tested runtime code;
@@ -28,9 +28,14 @@ failure of capacity acceptance despite healthy sampled probes.
 A bounded six-session denied backlog also recovered through scheduled cleanup;
 that does not establish pilot-scale denied-backlog capacity.
 
-The preceding six-read runtime `0892b28` passed a compatible rollback rehearsal:
-denial enforcement and unrelated-member access survived both versions, and
-scheduled cleanup recovered after rollback.
+Current runtime `8634c17` passed a flag-only activation/automatic rollback
+rehearsal. All 17 existing-session continuity samples passed across candidate
+and restored baseline, including retained-row denial enforcement. Scheduled
+cleanup recovered within 45.368 seconds after lock release; exact fixture cleanup
+and provider reconciliation passed. This does not establish normal feature or
+schema rollout continuity.
+[Rollback evidence](evidence/session-denial-refill-continuity-rollback-staging-2026-10-29.json).
+The older `0892b28` rehearsal remains historical evidence for its own scope.
 
 Production enablement still requires repeatable capacity margin, pilot-scale
 denied-backlog behavior, remaining hosted interruption/password-change
