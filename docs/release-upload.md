@@ -539,3 +539,30 @@ This verifies the normal hosted command path. It did not run continuous traffic
 across the transition, change application features, exercise automatic rollback,
 or test older installed clients. Those checks, failure escalation and measured
 monthly availability remain open; this result is not a zero-downtime guarantee.
+
+### October 29 hosted automatic rollback rehearsal
+
+The [rollback evidence](evidence/activation-rollback-staging-2026-10-29.json)
+records the maintained command on clean tooling `a231534`, after its pinned Verify
+and Secret scan runs passed. It uploaded a byte-identical inactive staging version,
+activated it, then automatically restored the baseline when candidate verification
+reported unhealthy. A private, hash-pinned operator harness supplied a local 503
+readiness observation only in the candidate-observed journal phase. It did not
+change the hosted application's response or intercept baseline readiness checks.
+A scope test confirmed production and other requests passed through unchanged.
+
+The durable journal reached `rolled-back`. Real baseline readiness, login,
+authorized profile/feed, logout and revocation passed; all 29 public assets passed.
+Canonical finalization recorded the observed rollback deployment and released the
+lease. Historical resume returned `already-finalized` without credentials.
+
+A separate synthetic login stayed open across activation and rollback. Its 36
+profile/feed samples all passed, and subsequent logout revoked that session. A
+scoped database read found zero fixture sessions; no saved cookies remained.
+Production's version stayed unchanged and its independent monitor remained healthy.
+
+This demonstrates hosted automatic rollback triggered by a local failed check,
+plus sampled session continuity across both version transitions. It does not
+demonstrate recovery from an actual hosted defect, regional failure, feature/schema
+change, or compatibility with older installed clients. Unknown-operation escalation
+and the broader daily-release acceptance requirements remain open.
