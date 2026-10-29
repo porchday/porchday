@@ -279,3 +279,37 @@ per-read start/end times so sequential observations are not described as one
 transactional snapshot. A failed save propagates without retrying the journey or
 other operations. Future workload runners must use this collector and the shared
 runtime health calculation; the original failed trial and its proofs stay intact.
+
+## Durable resource creation
+
+`QueueAdmissionLease` now has a distinct `porchday-queue-creation-v1` protocol
+for one fixed range queue. It shares the deployment SQLite lock and persistent
+marker with uploads, activations and settings changes. A creation plan binds the
+immutable baseline snapshot and expected new queue name/settings. Only the new
+provider-assigned queue ID is unknown before dispatch; the planned snapshot uses
+a placeholder solely for comparison. Verified proof and canonical inventory
+always retain the actual ID, and later reconciliation must match that ID exactly.
+
+The new queue must have zero consumers and producers, no changes to existing
+inventory, delivery delay zero, retention 345,600 seconds and delivery unpaused.
+Creation does not attach execution. The documented
+[create API](https://developers.cloudflare.com/api/resources/queues/methods/create/)
+does not expose a pause option in its request schema; a separate verified settings
+operation must pause the unattached queue before consumer attachment. Unexpected
+provider defaults fail reconciliation rather than being silently accepted.
+
+Intent is durably recorded before the only create send. A timeout or missing
+queue in a later read never permits another send or cancellation. The same
+operation must reconcile the complete account catalogue and exact queue detail.
+The lease independently permits only the planned single-queue addition; the
+operator workflow must also check complete catalogue evidence before and after.
+An invalid plan is rejected before a persistent lock is created. Baseline drift
+before dispatch permits safe cancellation; after intent it requires reconciliation.
+
+Finalization records its receipt before atomically changing only the canonical
+snapshot reference. Recovery tests cover lost replies, both sides of canonical
+replacement, changed provider IDs, unexpected consumers/producers/settings,
+unrelated drift and exclusion of concurrent uploads. The creation, settings,
+upload and deployment lease suites passed 56 tests, with tooling typecheck,
+formatting and secret checks passing. No queue has been created by these tests;
+the actual operator workflow and staged admission remain to be exercised.
