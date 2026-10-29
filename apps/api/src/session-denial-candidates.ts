@@ -11,6 +11,10 @@ import type {Env} from './types';
 // a SQL candidate pass does not prove that the historical R2 list was scanned.
 export const candidateProgressKey='session-denial-maintenance/v3/sql-sessions.json';
 export const candidatePageSize=100;
+// Workers allow six requests waiting for response headers per invocation.
+// Discovery has finished before these reads; deletion and checkpoint I/O wait
+// for the entire read batch. Do not exceed the platform ceiling or overlap SQL.
+const authorityReadConcurrency=6;
 type CandidateProgress=Omit<DenialProgress,'v'>&{v:3;strategy:'sql-session-keyset'};
 export function parseCandidateProgress(text:string):CandidateProgress{
  if(text.length>16384)throw new DenialCleanupError();
@@ -72,10 +76,10 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
   page.ids.some(id=>typeof id!=='string'||!id||id.length>8192||id===cursor)||new Set(page.ids).size!==page.ids.length)throw new DenialCleanupError();
  const result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
  let stopped=false;
- for(let offset=0;offset<page.ids.length;offset+=5){
+ for(let offset=0;offset<page.ids.length;offset+=authorityReadConcurrency){
   if(Date.now()>=deadline){stopped=true;break;}
   // Only reads run concurrently. Late reads cannot dispatch a SQL deletion.
-  const batch=page.ids.slice(offset,offset+5);
+  const batch=page.ids.slice(offset,offset+authorityReadConcurrency);
   const authority=await timing.run('authority_batches',()=>Promise.all(batch.map(async id=>{
    try{return await boundedIO(()=>sessionDenied(store,id));}
    catch(error){if(error instanceof SessionDenialError&&['SESSION_DENIAL_INVALID','SESSION_DENIAL_ID_INVALID'].includes(error.code))return 'invalid' as const;throw new DenialCleanupError();}

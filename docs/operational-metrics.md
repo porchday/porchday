@@ -281,5 +281,5 @@ Compare weighted phase durations and counts across the same staging time window.
 Total overlaps its component phases and must not be added to them. Enqueue is
 send-observation latency, not queue delivery time. Missing telemetry does not
 prove zero work or healthy progress. These measurements diagnose the failed
-10,000-session capacity trials; they do not change the five-read concurrency,
+10,000-session capacity trials; they do not change the configured read concurrency,
 20-second work budget, CAS checkpoints or full-pass freshness requirements.
