@@ -1,3 +1,4 @@
+import {logoutJournalTiming,measureJournalPhase} from './journal-timing';
 import {publishSessionDenial} from './session-denial';
 import {deleteDeniedSession} from './session-denial-cleanup';
 import { Hono, type Context } from "hono";
@@ -305,6 +306,7 @@ authRoutes.all("/*", async (c) => {
   if (c.req.method !== expectedMethod)
     return c.json({ error: { code: "METHOD_NOT_ALLOWED" } }, 405);
   const physicalPool = authPool(c.env);
+  const logoutTiming = logoutJournalTiming(c.env,c.req);
   let committedAndConfirmed = false;
   try {
     // Commit the rate limit before any operation transaction or R2 write.
@@ -312,12 +314,12 @@ authRoutes.all("/*", async (c) => {
     const key = await hashToken(
       c.env.BETTER_AUTH_SECRET + "|" + ip + "|" + path,
     );
-    const limited = await physicalPool.query(
+    const limited = await measureJournalPhase(logoutTiming,'rate_limit',()=>physicalPool.query(
       `INSERT INTO public.auth_rate_limits(key,count,expires_at) VALUES($1,1,now()+interval '1 minute')
       ON CONFLICT(key) DO UPDATE SET count=CASE WHEN auth_rate_limits.expires_at<now() THEN 1 ELSE auth_rate_limits.count+1 END,
       expires_at=CASE WHEN auth_rate_limits.expires_at<now() THEN now()+interval '1 minute' ELSE auth_rate_limits.expires_at END RETURNING count`,
       [key],
-    );
+    ));
     if (limited.rows[0].count > (path === "get-session" ? 60 : 10))
       reject("RATE_LIMIT", 429);
     let incoming: Record<string, unknown> = {};
@@ -345,7 +347,7 @@ authRoutes.all("/*", async (c) => {
         reject("INVALID_CODE");
     }
     const proof = sensitive(path)
-      ? await authorize(c, physicalPool, path, incoming)
+      ? await measureJournalPhase(logoutTiming,'initial_authorization',()=>authorize(c, physicalPool, path, incoming))
       : null;
     if(path==='sign-out'&&c.env.SESSION_DENIAL_WRITER_V1==='true'){
       if(!proof?.sessionId||!proof.auth)reject('UNAUTHORIZED',401);
