@@ -1,0 +1,35 @@
+{
+  "at": "2026-10-29T19:51:31.659Z",
+  "source": "3c0c7e2fedee59d2b4e7ffa5663e5308b518b2fc",
+  "stagingVersion": "dfb52ebb-ed51-4ff4-bb99-736de78fbfc0",
+  "productionChanged": false,
+  "rollout": {
+    "samples": 12,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "fixtureRows": 0
+  },
+  "backlog": {
+    "members": 100,
+    "denied": 400,
+    "live": 100,
+    "drainMs": 283034,
+    "samples": 15,
+    "failedJourneys": 0,
+    "liveSessionsRetained": true,
+    "remainingFixtureRows": 0,
+    "providerUnchanged": true,
+    "leaseReleased": true,
+    "maxSampledPageAgeSeconds": 144,
+    "maxSampledPassAgeSeconds": 264,
+    "maxJourneyMs": 5857,
+    "observedFullPassCompletionIntervalMs": 279079,
+    "finalPassDurationMs": 148449
+  },
+  "limitations": [
+    "100-member workload is not pilot-capacity evidence",
+    "No production denial writer or cleanup enablement",
+    "No claim of 99.99% monthly availability",
+    "Earlier operator fixture preparation failed on weak ETag; all four immutable writes reconciled exactly, no SQL seed, failure preserved"
+  ]
+}
