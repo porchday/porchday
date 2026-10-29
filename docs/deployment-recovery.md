@@ -133,14 +133,50 @@ Independent monitoring and actionable owner alerts must remain active. Persisten
 control-plane failure can prevent rollback even if a candidate is unhealthy;
 this controller is not cross-provider failover and cannot guarantee 99.99%.
 
-## Required hosted drill
+## Hosted staging drill and remaining gates
 
-After the current deployment lease is free, pin the latest canonical state and
-confirm that both candidate and rollback artifacts preserve denial readers.
-Exercise a reversible staging configuration failure with synthetic checks,
-observe automatic rollback, and verify the restored version and journeys. Keep
-production free of deliberate destructive tests. Record elapsed detection and
-recovery time, known and unknown outcomes, actual provider versions, retained
-schema, and alert delivery in the existing reliability issues. Only then wire
-this controller into the normal deployment entry point. No new paid service or
-production mutation is performed by importing these modules or running tests.
+On October 28, controller source `b424808` ran against the real staging Worker.
+The candidate retained application source `52949ef0`, all 24 assets, the denial
+readers and the 56-migration schema. Only `APP_URL` changed to a reserved `.invalid`
+hostname. The candidate's synthetic sign-in returned 403, while shallow checks
+still passed. The controller detected the failed journey and automatically restored
+the verified baseline with one rollback POST.
+
+Activation dispatch to verified rollback took **7.546 seconds**. The restored
+journey, asset hashes and exact provider deployment identity passed, followed by
+two more complete journeys. Production's concurrent external cycles stayed healthy.
+This is evidence for this staging configuration fault, not a continuous outage
+duration measurement or a guarantee for every failure mode.
+
+The full post-rollback snapshot exposed a separate provider behavior: active-version
+resources had the correct configuration, but Worker-level settings still described
+the latest uploaded, inactive candidate. Finalization stopped rather than accepting
+that mismatch. An explicitly recorded corrective **inactive upload** restored the
+safe settings without another activation. Its code and resources were verified,
+an additional journey passed, the synthetic fixture was removed, the final snapshot
+was pinned in the canonical record and the lease was archived. All 24 public assets
+were checked again after correction. This operator-assisted completion is not yet
+unattended release automation.
+
+The existing GitHub bot relay delivered explicitly marked outage and recovery drill
+comments; both exact comments were read back. Human/device receipt remains a separate
+check. See [sanitized drill evidence](evidence/deployment-recovery-2026-10-28.json).
+
+Before enabling the normal deployment entry point:
+
+- Move the actual artifact/schema/resource and journey adapters into reviewed
+  repository tooling, including safe handling of active versus latest-uploaded
+  configuration. Never let a later release inherit an inactive failed candidate.
+- Verify normal daily feature deployment continuity with authenticated traffic
+  running before, during and after activation. A successful rollback drill does
+  not prove that an ordinary feature rollout has no downtime.
+- Preserve old/new API and client compatibility, immutable assets needed by open
+  clients, additive migrations and the denial-reader floor. Separate risky feature
+  activation from code deployment where appropriate.
+- Exercise interruption/resumption and failed finalization through that same
+  normal entry point, retain failed evidence, and keep owner alerts independent.
+
+These daily-release requirements are tracked in [#3](https://github.com/porchday/porchday/issues/3)
+and the complete availability objective remains in [#42](https://github.com/porchday/porchday/issues/42).
+Persistent provider control-plane failure and cross-provider failover remain
+separate limitations. No deliberate production outage was induced by the drill.
