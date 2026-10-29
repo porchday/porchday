@@ -11,11 +11,21 @@ export async function withMember<T>(env: Pick<Env, 'HYPERDRIVE_SOCIAL'>, memberI
     // Hyperdrive supports prepared statements. Disabling them adds parameter
     // discovery messages that its transaction pool does not reliably support.
     // This caches query plans, never permission decisions or returned rows.
-    const sql = trackPostgres(env, 'social', postgres(env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false, idle_timeout: 5, connect_timeout: 10 }));
     const started=timing?performance.now():0;
+    let firstParameter=false,beginEntered=false;
+    // A startup milestone, not proof of socket readiness or backend allocation.
+    // Ignore parameter names/values and later SET responses. Never enable the
+    // driver's debug hook: it changes query/parameter enumerability on errors.
+    const onparameter=timing?()=>{
+        if(firstParameter||beginEntered)return;
+        firstParameter=true;
+        recordFeedPhase(timing,'social_first_parameter',performance.now()-started);
+    }:undefined;
+    const sql = trackPostgres(env, 'social', postgres(env.HYPERDRIVE_SOCIAL.connectionString, { max: 1, prepare: true, fetch_types: false, idle_timeout: 5, connect_timeout: 10, onparameter }));
     let commitStarted:number|undefined;
     try {
         const result=await sql.begin(async (db) => {
+            beginEntered=true;
             if(timing)recordFeedPhase(timing,'social_connect_begin',performance.now()-started);
             await measureFeedPhase(timing,'social_actor',async()=>{await db `select set_config('app.member_id', ${memberId}, true)`;});
             const value=await measureFeedPhase(timing,'social_query',()=>work(db));

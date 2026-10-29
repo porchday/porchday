@@ -12,7 +12,7 @@ import type {Env,Variables} from '../src/types';
 // adapters. Existing database integration suites separately exercise actual RLS.
 const fixture=vi.hoisted(()=>({trace:[] as string[],quarantined:false,verified:true,status:'active',queryFailure:false,journalFailure:false,
  member:'11111111-1111-4111-8111-111111111111',generation:'22222222-2222-4222-8222-222222222222'}));
-vi.mock('postgres',()=>({default:(connection:string)=>{
+vi.mock('postgres',()=>({default:(connection:string,options?:{onparameter?:()=>void})=>{
  const sql=async(strings:TemplateStringsArray,..._values:unknown[])=>{
   // postgres.js composes this empty cursor fragment without executing a query.
   if(!strings.join('').trim())return [];
@@ -27,6 +27,7 @@ vi.mock('postgres',()=>({default:(connection:string)=>{
   return [];
  };
  sql.begin=async(work:(db:typeof sql)=>Promise<unknown>)=>{
+  options?.onparameter?.();
   fixture.trace.push('begin');
   try{const value=await work(sql);fixture.trace.push('commit');return value;}
   catch(error){fixture.trace.push('rollback');throw error;}
@@ -60,7 +61,7 @@ function setup(overrides:Partial<Env>={}, path='/api/v1/feed'){
  return {env,points,pending,request};
 }
 
-test('all nine fixed phases cover the actual feed path without changing checks, identity or response headers',async()=>{
+test('fixed phases including the optional startup milestone cover the actual feed path without changing checks, identity or response headers',async()=>{
  const {request,points,pending}=setup();
  const response=await request();await Promise.all(pending);
  expect(response.status).toBe(200);expect(await response.json()).toEqual({items:[],next_cursor:null});
@@ -143,7 +144,7 @@ test('authenticated me exposes only fixed numeric phases; denials expose none an
  const response=await request();expect(response.status).toBe(200);
  const header=response.headers.get('server-timing')!;
  const names=header.split(', ').map(value=>{expect(value).toMatch(/^[a-z0-9_]+;dur=[0-9]+$/);return value.split(';')[0];});
- expect(names).toEqual([...FEED_PHASES.filter(phase=>phase!=='social_actor'&&phase!=='social_commit'),'journal_r2','journal_db','worker']);
+ expect(names).toEqual([...FEED_PHASES.filter(phase=>phase!=='social_actor'&&phase!=='social_commit'&&phase!=='social_first_parameter'),'journal_r2','journal_db','worker']);
  expect(header).not.toMatch(/private|secret|11111111|22222222|synthetic/);
  expect(points).toHaveLength(0);
  expect(response.headers.get('cache-control')).toBe('private, no-store');

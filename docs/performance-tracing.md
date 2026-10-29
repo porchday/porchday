@@ -176,3 +176,34 @@ After staging, and again after production, verify with a member account:
    `trace_write_ok` points and no `trace_write_failed`; `connections` shows the
    `/api/v1/traces` route's connection use.
 7. The next day, confirm a `trace_cleanup_ok` point from the `17 3 * * *` cron.
+
+## Social connection startup milestone
+
+`social_connect_begin` spans client construction through entry into the transaction
+callback. It includes connection acquisition and BEGIN, and must not be called
+pure socket-connect time. An optional nested `social_first_parameter` milestone
+records elapsed time from the same start until the first PostgreSQL.js
+`onparameter` notification before transaction entry. It records no parameter
+name/value, SQL, connection ID or error details. Later notifications are ignored.
+The debug hook remains disabled because it changes query/parameter enumerability
+on driver errors. No query, pool setting, transaction identity or retry changes.
+
+A missing milestone is unknown, not zero. The driver notifies only changed server
+parameters; a startup without a notification has no milestone. Arrival does not
+prove socket readiness, origin backend allocation, absence of pooler queueing or
+a particular cause of latency. Both phases start at the same point, so do not sum
+them. Their difference only describes the remaining interval to transaction entry.
+The milestone applies to the `withMember` PostgreSQL.js path, not every driver or
+bootstrap path. It inherits existing opt-in trace/staging phase collection.
+
+On October 29, 2026 at 00:57:43 UTC, the existing read-only capacity helper found
+4 staging and 9 production server client-backend connections, each against a
+25-connection limit with 3 superuser-reserved slots. Both had zero idle
+transactions and one active database connection (including the observer).
+Staging runtime-role counts were zero; production auth/social/jobs counts were
+2/1/1. These are isolated snapshots, not evidence about connection pressure during
+previous slow requests or pooler queue depth. No configuration or workload changed.
+
+For media, `r2_media_get` stops when the object response is obtained; the handler
+then streams its body. Compare browser body-consumed timing and decryption/decode
+separately. A short R2 span does not establish a fast complete photo download.
