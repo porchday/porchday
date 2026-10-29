@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {join,isAbsolute} from 'node:path';
 import {deploymentPlanHash,deploymentTarget,type DeploymentPlan} from './deployment-recovery.ts';
 import {ghTransport,type GitHubTransport} from './external-monitor-github.ts';
-export const releaseAlertReasons=['activation-unconfirmed','rollback-unconfirmed','verification-unavailable','observation-unavailable','concurrent-change','command-failed','release-overdue','release-state-unreadable'] as const;
+export const releaseAlertReasons=['activation-unconfirmed','rollback-unconfirmed','verification-unavailable','observation-unavailable','concurrent-change','command-failed','release-overdue','release-state-unreadable','notification-drill'] as const;
 export type ReleaseAlert={v:1;operationId:string;planHash:string;worker:string;reason:typeof releaseAlertReasons[number];at:string};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export function validateReleaseAlert(value:unknown):asserts value is ReleaseAlert{
@@ -13,7 +13,7 @@ export function validateReleaseAlert(value:unknown):asserts value is ReleaseAler
 }
 export function releaseAlertBody(event:ReleaseAlert){
  validateReleaseAlert(event);
- return `<!-- porchday-release-attention:${event.operationId}:${event.planHash} -->\n@andyk @bobbyhwilder\n\nA release needs operator attention.\nWorker: ${event.worker}\nObserved at: ${event.at}\nReason: ${event.reason}\nOperation: ${event.operationId}\nPlan: ${event.planHash}\n\nInspect the retained private manifest, journal and current provider state. Resume only the same operation after reconciliation. Do not replay an uncertain write, replace its operation ID, or remove its deployment lock. This alert does not by itself establish a site outage. See docs/release-upload.md.\n`;
+ return `<!-- porchday-release-attention:${event.operationId}:${event.planHash} -->\n@andyk @bobbyhwilder\n\n${event.reason==='notification-drill'?'Notification drill: no deployment failure is being reported.':'A release needs operator attention.'}\nWorker: ${event.worker}\nObserved at: ${event.at}\nReason: ${event.reason}\nOperation: ${event.operationId}\nPlan: ${event.planHash}\n\nInspect the retained private manifest, journal and current provider state. Resume only the same operation after reconciliation. Do not replay an uncertain write, replace its operation ID, or remove its deployment lock. This alert does not by itself establish a site outage. See docs/release-upload.md.\n`;
 }
 /** Immutable outbox: one sanitized notification per operation; later outcomes stay in private journals. */
 export function queueReleaseAlert(directory:string,plan:DeploymentPlan,reason:ReleaseAlert['reason'],now=new Date()):ReleaseAlert{

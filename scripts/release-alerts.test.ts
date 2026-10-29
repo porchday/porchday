@@ -17,7 +17,7 @@ describe('release attention alerts',()=>{
  });
  it('rejects arbitrary fields, prose, malformed identity and timestamps',()=>{
   for(const bad of [{...event,password:'secret'},{...event,reason:'private error'},{...event,operationId:[id]},{...event,worker:'arbitrary'},{...event,at:'yesterday'}])expect(()=>validateReleaseAlert(bad)).toThrow();
-  expect(releaseAlertBody(event)).toContain('@andyk @bobbyhwilder');
+  expect(releaseAlertBody(event)).toContain('@andyk @bobbyhwilder');expect(releaseAlertBody({...event,reason:'notification-drill'})).toContain('Notification drill: no deployment failure is being reported.');
  });
  it('preserves the first durable alert across repeated failures and rejects changed plans',()=>{
   const d=realpathSync(mkdtempSync(join(tmpdir(),'release-alert-')));try{
