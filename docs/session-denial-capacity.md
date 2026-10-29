@@ -221,5 +221,32 @@ sample to the unchanged exact-timestamp verifier. A partial sample cannot satisf
 the two-pass gate. The helper has no transport timeout or automatic recovery;
 the harness retains bounded requests, the shared lease, exact fixture cleanup
 and read-only reconciliation. Nine fault-injection tests cover ordering, each
-collection stage, evidence-write failures and error redaction. The future private
-template uses this helper, but it has not yet completed a hosted trial.
+collection stage, evidence-write failures and error redaction. The diagnostic trial below exercises this helper on the normal hosted path.
+
+
+## Diagnostic repeat completed on the same runtime
+
+The enhanced harness completed on staging `2120ff4c` / runtime `8634c17` at
+12:31:44 UTC. Both scans retained all 10,000 synthetic sessions and saw 10,003
+candidates. Exact scan durations were 204.221/226.230 seconds; completion
+intervals were 262.202/258.819 seconds. All 25 sampled journeys passed. The 100
+retained component results match their complete samples, with a confirmed start
+and retained marker for each. Exact cleanup left zero fixture rows, fresh checks
+passed, provider/canonical state stayed unchanged and the lease was released.
+[Evidence](evidence/session-denial-diagnostic-repeat-10k-staging-2026-10-29.json).
+
+| Trial on runtime 8634c17 | Scan durations (seconds) | Exact completion intervals (seconds) | Result |
+| --- | --- | --- | --- |
+| First | 125.272 / 206.815 | 185.052 / 255.657 | Two-pass check passed |
+| Intervening repeat | 226.166 retained | 287.644 retained | Incomplete; not accepted |
+| Diagnostic repeat | 204.221 / 226.230 | 262.202 / 258.819 | Two-pass check passed |
+
+The latest completed trial has 37.798 seconds of minimum interval margin, while
+the narrowest retained margin across all three trials remains 12.356 seconds.
+This evidence supports moving to the other recovery/release checks rather than
+repeating identical scans indefinitely. It does not establish sustained pilot
+headroom, a latency percentile or the monthly SLO. Mixed workload, denied-backlog
+capacity, compatible rollback and release continuity remain separate gates.
+Successful collection demonstrates the new harness's normal hosted path; local
+fault injection supplies the failure-path evidence. No hosted collector crash
+or sink fault was injected in this run.

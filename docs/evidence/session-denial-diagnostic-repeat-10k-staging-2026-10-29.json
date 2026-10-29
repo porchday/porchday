@@ -1,0 +1,319 @@
+{
+  "classification": "Second completed exact-timestamp trial passed on unchanged runtime; broad headroom and mixed-workload acceptance remain open",
+  "trialResult": {
+    "at": "2026-10-29T12:31:44.917Z",
+    "passed": true,
+    "environment": "staging",
+    "runtimeSource": "8634c17551d3b68c39d0bc5aeb8a547a8cc2e322",
+    "toolingSource": "79e9bb4a9f799afe6c00a08fcda7a75b2edef32b",
+    "version": "2120ff4c-a65f-4435-bf87-385d6a279bb8",
+    "syntheticSessions": 10000,
+    "syntheticMembers": 1,
+    "seededAt": "2026-10-29T12:23:36.901Z",
+    "passCompletions": [
+      {
+        "completedAt": 1793276835487,
+        "durationMs": 204221,
+        "seen": 10003,
+        "invalid": 0
+      },
+      {
+        "completedAt": 1793277094306,
+        "durationMs": 226230,
+        "seen": 10003,
+        "invalid": 0
+      }
+    ],
+    "exactProof": {
+      "completedPasses": [
+        {
+          "completedAt": 1793276835487,
+          "durationMs": 204221,
+          "seen": 10003,
+          "invalid": 0
+        },
+        {
+          "completedAt": 1793277094306,
+          "durationMs": 226230,
+          "seen": 10003,
+          "invalid": 0
+        }
+      ],
+      "fullPassIntervalsMs": [
+        262202,
+        258819
+      ],
+      "maxFullPassIntervalMs": 262202,
+      "limitations": [
+        "Exact observed full-pass intervals only; no claim of continuous page freshness or complete user-journey coverage.",
+        "A missed intermediate pass can cause conservative rejection; never infer a missing completion."
+      ]
+    },
+    "healthySamples": 25,
+    "latencies": {
+      "anonymous_session": {
+        "samples": 25,
+        "medianMs": 343,
+        "p95Ms": 670,
+        "maxMs": 1042
+      },
+      "authorized_feed": {
+        "samples": 25,
+        "medianMs": 399,
+        "p95Ms": 814,
+        "maxMs": 948
+      },
+      "authorized_profile": {
+        "samples": 25,
+        "medianMs": 308,
+        "p95Ms": 373,
+        "maxMs": 400
+      },
+      "login": {
+        "samples": 25,
+        "medianMs": 593,
+        "p95Ms": 773,
+        "maxMs": 1037
+      },
+      "logout": {
+        "samples": 25,
+        "medianMs": 693,
+        "p95Ms": 899,
+        "maxMs": 936
+      },
+      "monitor_freshness": {
+        "samples": 25,
+        "medianMs": 85,
+        "p95Ms": 160,
+        "maxMs": 273
+      },
+      "protected_readiness": {
+        "samples": 25,
+        "medianMs": 320,
+        "p95Ms": 553,
+        "maxMs": 635
+      },
+      "revocation": {
+        "samples": 25,
+        "medianMs": 181,
+        "p95Ms": 225,
+        "maxMs": 254
+      }
+    },
+    "maxPageAgeSeconds": 46,
+    "maxPassAgeSeconds": 246,
+    "intermediatePassSeen": [
+      0,
+      300,
+      500,
+      1100,
+      1400,
+      2000,
+      2300,
+      2900,
+      3200,
+      3800,
+      4100,
+      4700,
+      5000,
+      5600,
+      6000,
+      6500,
+      6800,
+      7400,
+      7700,
+      8400,
+      8900,
+      9300
+    ],
+    "remainingFixtureRows": 0,
+    "manualSweepInvocations": 0,
+    "progressWrites": 0,
+    "providerUnchanged": true,
+    "productionMutations": 0,
+    "leaseReleased": true
+  },
+  "toolingCI": {
+    "source": "79e9bb4a9f799afe6c00a08fcda7a75b2edef32b",
+    "repository": "porchday/porchday",
+    "runs": [
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "workflowSha256": "ec948b5d3cb00ac4b23c63cfded556d427247ee9cef78eb1a7c0c13433e852d9",
+        "runId": 40872263182,
+        "attempt": 1,
+        "jobId": 123442048542,
+        "url": "https://github.com/porchday/porchday/actions/runs/40872263182"
+      },
+      {
+        "workflow": ".github/workflows/secret-scan.yml",
+        "workflowSha256": "ab299ff0f86f66a18e6b4dcd005281d3486160095470c84418e9d8bb819877f7",
+        "runId": 40872263175,
+        "attempt": 1,
+        "jobId": 123442048411,
+        "url": "https://github.com/porchday/porchday/actions/runs/40872263175"
+      }
+    ]
+  },
+  "observationDiagnostics": {
+    "savedSamples": 25,
+    "stagesPerSample": 4,
+    "confirmedStartRecords": 100,
+    "confirmedRetainedRecords": 100,
+    "privateResultsMatchedToSamples": 100,
+    "failedStageRecords": 0,
+    "localObservationTests": 9,
+    "localExactProofTests": 6,
+    "limitations": [
+      "Successful stage retention is demonstrated; hosted sink failure and process termination were not induced.",
+      "A partial or missing sample cannot satisfy exact completion acceptance."
+    ]
+  },
+  "pairedOccupancy": {
+    "at": "2026-10-29T12:32:43.592Z",
+    "environment": "staging",
+    "runtimeSource": "8634c17551d3b68c39d0bc5aeb8a547a8cc2e322",
+    "window": {
+      "from": "2026-10-29T12:23:37.000Z",
+      "toExclusive": "2026-10-29T12:31:39.000Z"
+    },
+    "querySha256": "fb8baa50e9f40fe0c1d2e0865998ed50cc1684f5e2e7ed6232985f7922e13490",
+    "row": {
+      "observed_points": 46,
+      "estimated_events": 46,
+      "available_slot_ms": 1807968,
+      "occupied_slot_ms": 1551383,
+      "observed_reads": 20506
+    },
+    "occupancyRatio": 0.8580810058585108,
+    "limitations": [
+      "Paired slot totals share sampling weights, but are sampled estimates.",
+      "Only successfully settled bounded read groups contribute; failed groups are excluded.",
+      "Available slot time is group wall time times min(6, group size) configured workers; read count is actual started reads.",
+      "Observation occupancy is not R2 service time or predicted pipeline speedup.",
+      "Flush timestamps may include boundary-crossing work.",
+      "Missing telemetry is not zero work; production and post-cleanup recovery are excluded."
+    ]
+  },
+  "phaseAggregates": {
+    "at": "2026-10-29T12:32:43.687Z",
+    "environment": "staging",
+    "runtimeSource": "8634c17551d3b68c39d0bc5aeb8a547a8cc2e322",
+    "window": {
+      "from": "2026-10-29T12:23:37.000Z",
+      "toExclusive": "2026-10-29T12:31:39.000Z"
+    },
+    "querySha256": "77912776d5cdcddc94ee8ea44df4ca9486518ff586a31777f8bf3a5587555b05",
+    "rows": [
+      {
+        "phase": "authority_batches",
+        "observed_points": 17,
+        "estimated_events": 37,
+        "estimated_total_ms": 268561,
+        "estimated_attempts": 845,
+        "invocation_p95_ms": 8684
+      },
+      {
+        "phase": "enqueue",
+        "observed_points": 26,
+        "estimated_events": 43,
+        "estimated_total_ms": 8858,
+        "estimated_attempts": 43,
+        "invocation_p95_ms": 372
+      },
+      {
+        "phase": "pool_close",
+        "observed_points": 14,
+        "estimated_events": 35,
+        "estimated_total_ms": 0,
+        "estimated_attempts": 35,
+        "invocation_p95_ms": 0
+      },
+      {
+        "phase": "progress_read",
+        "observed_points": 23,
+        "estimated_events": 48,
+        "estimated_total_ms": 24194,
+        "estimated_attempts": 211,
+        "invocation_p95_ms": 697
+      },
+      {
+        "phase": "progress_write",
+        "observed_points": 30,
+        "estimated_events": 61,
+        "estimated_total_ms": 66747,
+        "estimated_attempts": 276,
+        "invocation_p95_ms": 1609
+      },
+      {
+        "phase": "sql_list",
+        "observed_points": 24,
+        "estimated_events": 52,
+        "estimated_total_ms": 45113,
+        "estimated_attempts": 239,
+        "invocation_p95_ms": 1025
+      },
+      {
+        "phase": "total",
+        "observed_points": 19,
+        "estimated_events": 38,
+        "estimated_total_ms": 321966,
+        "estimated_attempts": 38,
+        "invocation_p95_ms": 11506
+      }
+    ],
+    "limitations": [
+      "Sampled phase aggregates, not per-request traces.",
+      "Points are timestamped at invocation flush; boundary-crossing work may contribute.",
+      "Total overlaps component phases; do not add them.",
+      "Enqueue measures send observation, not delivery latency.",
+      "Missing points may reflect ingestion delay or unavailable telemetry; not zero work.",
+      "Cleanup/recovery after fixture removal is excluded from this window."
+    ]
+  },
+  "sameRuntimeTrials": [
+    {
+      "trial": "first completed",
+      "scanDurationsMs": [
+        125272,
+        206815
+      ],
+      "fullPassIntervalsMs": [
+        185052,
+        255657
+      ],
+      "acceptedTwoPassTrial": true
+    },
+    {
+      "trial": "interrupted repeat",
+      "scanDurationsMs": [
+        226166
+      ],
+      "fullPassIntervalsMs": [
+        287644
+      ],
+      "acceptedTwoPassTrial": false,
+      "reason": "Collection failed before the second completion was retained."
+    },
+    {
+      "trial": "diagnostic repeat",
+      "scanDurationsMs": [
+        204221,
+        226230
+      ],
+      "fullPassIntervalsMs": [
+        262202,
+        258819
+      ],
+      "acceptedTwoPassTrial": true
+    }
+  ],
+  "limitations": [
+    "Two completed trials and one incomplete trial do not establish an availability percentile, sustained mixed-workload capacity or monthly SLO.",
+    "The narrowest retained interval margin across these trials is 12.356 seconds; retain that result even though its trial did not complete.",
+    "Fixture sessions belong to one synthetic member and remain extant; this is not pilot-scale denied-backlog recovery.",
+    "Successful scans do not verify daily-release continuity, current-runtime rollback, hosted interruption/password concurrency, devices or cost acceptance.",
+    "The current runtime remains staging-only for writer/cleanup. No production mutation, manual sweep or progress timestamp write occurred.",
+    "Telemetry is sampled and ingestion may lag; the exact query window and collection timestamp are retained."
+  ]
+}
