@@ -14,6 +14,14 @@ function fixture(){
  return{options,delivered,calls,state:()=>state,append:()=>{state={...state,pending:[...state.pending,recovery]};},time:(milliseconds:number)=>{clock+=milliseconds;},readFails:(value:boolean)=>{failRead=value;},saveFails:(value:boolean)=>{failSave=value;},posts:()=>posts,gets:()=>gets};
 }
 describe('relay scheduling',()=>{
+ it('marks explicit drills in dispatch and requires the matching drill acknowledgement',async()=>{
+  const f=fixture();let acknowledged=false;
+  const transport:GitHubTransport=async(method,path,body)=>{
+   if(method==='GET')return path.includes('/comments?')?[{body:alertBody(outage,'operator-mac',acknowledged),user:{login:'github-actions[bot]',type:'Bot'}}]:{title:'External production availability alerts (operator-mac)'};
+   expect(JSON.parse((body as {inputs:{payload:string}}).inputs.payload).drill).toBe(true);return null;
+  };
+  const d=createRelayDrainer({...f.options,drill:true,transport});await d.flush();expect(f.state().pending).toHaveLength(1);acknowledged=true;f.time(5000);await d.flush();expect(f.state().pending).toEqual([]);
+ });
  it('retries a failed GET promptly without consuming a dispatch cooldown',async()=>{
   const f=fixture(),d=createRelayDrainer(f.options);f.readFails(true);await d.flush();expect(f.posts()).toBe(0);expect(f.state().lastRelayAttempt).toBeUndefined();f.readFails(false);f.time(4999);await d.flush();expect(f.posts()).toBe(0);f.time(1);await d.flush();expect(f.posts()).toBe(1);expect(f.calls.indexOf('save')).toBeLessThan(f.calls.indexOf('post'));
  });
