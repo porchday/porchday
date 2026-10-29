@@ -111,3 +111,23 @@ Before another rollout, require pinned synthetic identity existence and ownershi
 to be checked before activation. Preserve unknown login evidence and use explicit
 reviewed recovery for unavailable verification. Production diagnostics remain
 undeployed. This failure is tracked in issue #3; investigation #55 remains open.
+
+## Verification fixture preflight
+
+The activation CLI checks its pinned probe fixture after existing release
+authorization and before the controller records an activation intent. A bounded
+read-only database transaction verifies the exact ID/email, verified-email flag,
+member status and presence of a password credential account. The query returns
+only a boolean, never passwords, hashes, IDs or member records. Missing fixtures,
+read failures and cancellation stop activation without a provider write.
+
+The gate runs only for a new activation authorization. Rollback and reconciliation
+of an already-dispatched activation do not rerun it or replay login/deployment
+requests. A preflight rejection remains cancellable through the existing
+pre-intent cancellation path; preserve its evidence. The normal post-activation
+journey is still mandatory: this check cannot establish password correctness,
+prevent later fixture deletion or prove application health.
+
+The hosted read-only check rejected the deleted release fixture and accepted
+the active monitor fixture without login or database/provider writes.
+[Evidence](evidence/release-probe-preflight-2026-10-29.json).

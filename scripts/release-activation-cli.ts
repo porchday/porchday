@@ -16,6 +16,7 @@ import {CloudflareReleaseReader} from './cloudflare-release-reader.ts';
 import {registerReleaseWatch} from './release-watch.ts';
 import {queueReleaseAlert,deliverReleaseAlert,type ReleaseAlert} from './release-alerts.ts';
 import {CloudflareDeploymentClient} from './cloudflare-deployment-client.ts';
+import {verifyReleaseProbeFixture,withReleaseProbePreflight} from './release-probe-preflight.ts';
 
 export type ActivationManifest={version:1;plan:DeploymentPlan;review:ActivationReviewEvidence&{execution:ActivationExecution}};
 const hash=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
@@ -67,7 +68,7 @@ export async function executeActivationManifest(input:ActivationManifest,env:Nod
   const final=()=>finalizePreparedActivation({...common,client,directory:e.proofDirectory},signal);
   const state=await journal.read();if(state&&['complete','rolled-back'].includes(state.phase))return await final();
   const verify=createReleaseVerifier({plan,config,assets:review.assets,directory:e.proofDirectory,journey:{directory:e.journeyDirectory,assertLease:s=>{lease.assert(plan,s);}}});
-  const ports=createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>client.deploy(v,id,s),verify}});
+  const ports=withReleaseProbePreflight(createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>client.deploy(v,id,s),verify}}),s=>verifyReleaseProbeFixture({...database,config,signal:s}));
   const combine=(s:AbortSignal)=>AbortSignal.any([signal,s]);
   const bounded:DeploymentPorts={authorize:(p,d,s)=>ports.authorize(p,d,combine(s)),observe:s=>ports.observe(combine(s)),deploy:(v,id,s)=>ports.deploy(v,id,combine(s)),verify:(v,s)=>ports.verify(v,combine(s))};
   const outcome=await recoverDeployment(plan,journal,bounded);

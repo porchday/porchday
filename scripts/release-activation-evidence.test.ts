@@ -284,9 +284,9 @@ describe('activation operator command',()=>{
 });
 
 describe('complete activation command composition',()=>{
- it.each([false,true])('uses the real journals and lease through synthetic provider execution (lostLogin=%s)',async lostLogin=>{
+ it.each([[false,false],[true,false],[false,true]])('uses the real journals and lease (lostLogin=%s, missingFixture=%s)',async(lostLogin,missingFixture)=>{
   const f=await cliFixture();
-  const preparation=await import('./release-upload-preparation.ts'),ci=await import('./release-ci.ts'),schema=await import('./release-schema.ts'),provider=await import('./cloudflare-deployment-client.ts'),inventoryModule=await import('./cloudflare-release-reader.ts');
+  const probePreflight=await import('./release-probe-preflight.ts'),preparation=await import('./release-upload-preparation.ts'),ci=await import('./release-ci.ts'),schema=await import('./release-schema.ts'),provider=await import('./cloudflare-deployment-client.ts'),inventoryModule=await import('./cloudflare-release-reader.ts');
   try{
    f.manifest.queues={staging:{id:'1'.repeat(32),name:'porchday-staging-jobs'},production:{id:'2'.repeat(32),name:'porchday-production-jobs'}};
    const bytes=JSON.stringify(f.manifest);writeFileSync(f.cli.review.execution.uploadManifest.path,bytes);f.cli.review.execution.uploadManifest.sha256=hash(bytes);
@@ -294,6 +294,7 @@ describe('complete activation command composition',()=>{
    f.review.publicAssets={candidate:publicAssetManifestHash(f.evidence.assets.candidate),baseline:publicAssetManifestHash(f.evidence.assets.baseline)};f.save();f.cli.plan.assetManifests={...f.review.publicAssets};
    const inventory=structuredClone(f.proof.inventory);let observed={version:id(1),deploymentId:id(5),operationId:null as string|null},revoked=false,logins=0;
    vi.spyOn(preparation,'verifyUploadTooling').mockImplementation(async(_workspace,source)=>({source}));vi.spyOn(ci,'verifyReleaseCi').mockImplementation(async o=>({source:o.source,repository:'porchday/porchday',runs:[]}));vi.spyOn(schema,'captureReleaseSchema').mockImplementation(async()=>structuredClone(f.manifest.evidence.schema));
+   const preflight=vi.spyOn(probePreflight,'verifyReleaseProbeFixture').mockImplementation(async()=>{if(missingFixture)throw Error('RELEASE_PROBE_FIXTURE_INVALID');});
    vi.spyOn(inventoryModule.CloudflareReleaseReader.prototype,'snapshot').mockImplementation(async()=>structuredClone(inventory) as any);
    vi.spyOn(provider.CloudflareDeploymentClient.prototype,'observe').mockImplementation(async()=>({...observed}));
    const deploy=vi.spyOn(provider.CloudflareDeploymentClient.prototype,'deploy').mockImplementation(async(version,operationId)=>{inventory.workers[f.key].active=version;inventory.workers[f.key].resources=f.proof.candidate.resources;observed={version,operationId,deploymentId:id(7)};throw Error('LOST_PROVIDER_REPLY');});
@@ -310,8 +311,14 @@ describe('complete activation command composition',()=>{
    });vi.stubGlobal('fetch',request);
    const databaseUrl=new URL('postgres://host.pg.psdb.cloud:5432/database?sslmode=verify-full');databaseUrl.username='test.synthetic';databaseUrl.password='synthetic';
    const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'t'.repeat(32),PORCHDAY_STAGING_DATABASE_MIGRATION_URL:databaseUrl.href};
+   if(missingFixture){
+    await expect(executeActivationManifest(f.cli,env,AbortSignal.timeout(10000))).rejects.toThrow('RELEASE_PROBE_FIXTURE_INVALID');
+    expect(preflight).toHaveBeenCalledTimes(1);expect(deploy).not.toHaveBeenCalled();expect(logins).toBe(0);expect(request).not.toHaveBeenCalled();
+    expect(observed.version).toBe(id(1));expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(id(1));
+    expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000),'cancel')).toMatchObject({status:'cancelled-before-intent'});expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);return;
+   }
    const result=await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000));expect(result.status).toBe(lostLogin?'attention-required':'finalized');expect(deploy).toHaveBeenCalledTimes(1);expect(logins).toBe(1);
-   if(lostLogin){expect(await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000))).toMatchObject({status:'attention-required',outcome:'verification-unavailable'});expect(logins).toBe(1);expect(deploy).toHaveBeenCalledTimes(1);expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);}
+   if(lostLogin){expect(await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000))).toMatchObject({status:'attention-required',outcome:'verification-unavailable'});expect(logins).toBe(1);expect(preflight).toHaveBeenCalledTimes(1);expect(deploy).toHaveBeenCalledTimes(1);expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);}
    else{const count=request.mock.calls.length;expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:'already-finalized'});expect(request.mock.calls.length).toBe(count);expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'))).toMatchObject({stagingVersion:id(2),stagingAssetsSource:'a'.repeat(40)});}
   }finally{vi.restoreAllMocks();vi.unstubAllGlobals();f.close();}
  });
