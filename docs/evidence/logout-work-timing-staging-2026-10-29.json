@@ -1,0 +1,41 @@
+{
+  "scope": "staging code activation only; legacy transaction instrumentation ingestion remains unverified",
+  "source": "6373a6c789e05c9774ce0c59a17c56fd2676fa56",
+  "stagingVersion": "6b3c5098-1b98-4d00-b01d-b3a920acfb0e",
+  "baseline": "774ea8a2-0aa3-430e-b56e-3eaf0e75c43b",
+  "at": "2026-10-29T18:59:52.867Z",
+  "passed": true,
+  "continuity": {
+    "status": "complete",
+    "samples": 11,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "maxStartGapMs": 2012.1395830000001
+  },
+  "remainingFixtureRows": 0,
+  "stagingWriterEnabled": true,
+  "stagingCleanupEnabled": true,
+  "productionChanged": false,
+  "validation": {
+    "diagnosticBranch": "a4d5a0f353e3703cf6b95a6dcafc0f2df9bd9340",
+    "diagnosticDatabaseTests": 895,
+    "cryptoTests": 22,
+    "mainAlignedFocusedTests": 36,
+    "apiTypecheck": "passed",
+    "exactSourcePushCi": 40935043885,
+    "exactSourcePrCi": 40935050768,
+    "ciConclusion": "success"
+  },
+  "legacyRehearsal": {
+    "inactiveCandidate": "e03216d6-beda-42e3-8f02-d44aad2be757",
+    "preflightFailure": "PRODUCTION_PROBE_NOT_READY",
+    "fixturesCreated": false,
+    "activationDispatched": false,
+    "reconciled": true
+  },
+  "limitations": [
+    "No production latency fix demonstrated.",
+    "Legacy transaction subphase ingestion is not yet verified.",
+    "Healthy staging continuity does not establish monthly availability."
+  ]
+}
