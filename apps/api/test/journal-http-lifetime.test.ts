@@ -4,7 +4,7 @@ import {Hono} from 'hono';
 import type {Env,Variables} from '../src/types';
 const database=vi.hoisted(()=>({query:Object.assign(vi.fn(),{end:vi.fn()})}));
 vi.mock('postgres',()=>({default:()=>database.query}));
-import {withHttpPrivacyJournal,privacyMutationMiddleware,readJournalControl,type JournalStore} from '../src/privacy-journal';
+import {withHttpPrivacyJournal,privacyReadGuard,privacyMutationMiddleware,readJournalControl,type JournalStore} from '../src/privacy-journal';
 
 function deferred<T=void>(){
  let resolve!:(value:T|PromiseLike<T>)=>void,reject!:(error:unknown)=>void;
@@ -33,6 +33,20 @@ describe('HTTP privacy operations retain one awaited durability lifecycle',()=>{
    throw Error('Unexpected test query');
   });
   env={ENVIRONMENT:'production',RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:'synthetic-not-connected'}} as unknown as Env;
+ });
+ it.each([false,true])('times the outer logout guard and close without bypassing failed checks (%s)',async(fail)=>{
+  const writeDataPoint=vi.fn(),handler=vi.fn(c=>c.json({ok:true}));
+  env.LOGOUT_PHASE_TIMING='true';env.METRICS={writeDataPoint} as never;
+  if(fail)database.query.mockRejectedValue(Error('private database failure'));
+  const app=new Hono<{Bindings:Env;Variables:Variables}>();
+  app.use('*',privacyReadGuard);app.post('/api/auth/sign-out',handler);
+  const response=await app.request('/api/auth/sign-out',{method:'POST'},env);
+  expect(response.status).toBe(fail?503:200);
+  expect(handler).toHaveBeenCalledTimes(fail?0:1);
+  expect(database.query.end).toHaveBeenCalledTimes(1);
+  const points=writeDataPoint.mock.calls.map(([point])=>point).filter(point=>point.blobs[2]==='journal_phase');
+  expect(points.map(point=>point.blobs[5])).toEqual(['read_guard','read_guard_close']);
+  expect(JSON.stringify(points)).not.toContain('private database failure');
  });
  function execution(){
   return {pending:[] as Promise<unknown>[],waitUntil(p:Promise<unknown>){this.pending.push(p);},passThroughOnException(){},props:{}};
