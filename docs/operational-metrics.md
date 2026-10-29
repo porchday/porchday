@@ -359,3 +359,11 @@ and initial_authorization169ms; one logout request point reported200/689ms.
 Initial queries were empty before ingestion. This verifies emission, not
 individual-request correlation or the cause of prior production delays.
 See [staging evidence](evidence/logout-prejournal-continuity-staging-2026-10-29.json).
+
+Production emission was verified after the successful13:26UTC rollout of
+`c2f8bf5` as `3896cab5`. The13:26:35–13:27:35UTC aggregate window contains all
+four new phases: observed maxima read_guard66ms, read_guard_close0ms,
+rate_limit82ms, initial_authorization313ms. Three logout request points were200,
+maximum4095ms. Sampling weights differ by phase, and nested phases overlap;
+these values cannot be summed into a request or used to diagnose earlier delays.
+[Production evidence](evidence/logout-prejournal-production-verified-2026-10-29.json).

@@ -1,5 +1,13 @@
 # Independent session denial: validation gates
 
+Production update,2026-10-29 13:26UTC: `3896cab5` / runtime `c2f8bf5` adds
+only pre-journal logout diagnostics to the previous `ebc567a4` baseline.
+Writer/cleanup remain disabled; topology/schema/31assets retained. The new
+fixture preflight, full release journey,13healthy continuity samples and exact
+cleanup passed. Staging remains `c0b3699a` / `770071b`.
+[Production evidence](evidence/logout-prejournal-production-verified-2026-10-29.json).
+Earlier version-specific results below are historical.
+
 Current staging update, 2026-10-29 13:02 UTC: runtime `770071b` / Worker
 `c0b3699a` adds only gated pre-journal logout diagnostics to `8634c17`. Writer
 and cleanup remain enabled in staging; production remains `f613874a` /

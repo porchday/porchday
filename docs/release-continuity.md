@@ -131,3 +131,22 @@ prevent later fixture deletion or prove application health.
 The hosted read-only check rejected the deleted release fixture and accepted
 the active monitor fixture without login or database/provider writes.
 [Evidence](evidence/release-probe-preflight-2026-10-29.json).
+
+## Production diagnostic activation verified — October29,13:26UTC
+
+Fresh operation `2538dee7` activated `3896cab5` / runtime `c2f8bf5` with
+tooling `3599019` and the fixture preflight gate. The pinned active monitor
+identity was verified before activation; the normal durable release journey
+passed login, reads, logout, revocation and readiness. All31assets were retained.
+Thirteen existing-session/profile/feed/denied-cookie/readiness samples were
+healthy from13:26:13.476 through13:26:38.304UTC, maximum start gap2003.788ms.
+Baseline completed before dispatch, candidate-phase samples were retained, and
+two samples began after command completion. Exact fixture cleanup0, provider
+reconciliation and lease release passed; staging remained unchanged.
+[Evidence](evidence/logout-prejournal-production-verified-2026-10-29.json).
+
+The earlier rejected operation remains preserved; its unknown login was never
+replayed. This fresh release used corrected verification configuration and the
+tested preflight gate. Production writer/cleanup remain disabled. This adds
+sampled backend code continuity, not frontend/native/schema overlap or the
+monthly SLO. The earlier logout latency cause remains an investigation.
