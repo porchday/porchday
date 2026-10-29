@@ -3,11 +3,11 @@ import {randomUUID} from 'node:crypto';
 import {constants,closeSync,fsyncSync,lstatSync,mkdirSync,openSync,writeFileSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
-import {deploymentPlanHash,deploymentTarget,type DeploymentPlan,type DeploymentPorts} from './deployment-recovery.ts';
+import {deploymentPlanHash,recoveryTarget,type DeploymentPlan,type DeploymentPorts} from './deployment-recovery.ts';
 import {probe,validateProbeConfig,type ProbeConfig} from './external-monitor-probe.ts';
 import {verifyPublicAssets,validatePublicAssetManifest,publicAssetManifestHash,type PublicAssetManifest} from './release-assets-verify.ts';
 
-function evidence(directory:string,value:unknown){
+export function retainReleaseEvidence(directory:string,value:unknown){
  const stat=lstatSync(directory);
  if(!stat.isDirectory()||stat.isSymbolicLink()||(stat.mode&0o077)!==0||stat.uid!==process.getuid?.())throw Error('RELEASE_EVIDENCE_DIRECTORY_INVALID');
  const path=join(directory,randomUUID()+'.json'),fd=openSync(path,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
@@ -21,7 +21,7 @@ export function createReleaseVerifier(options:{plan:DeploymentPlan;config:ProbeC
  const plan=structuredClone(options.plan),planHash=deploymentPlanHash(plan),config=structuredClone(options.config),assets=structuredClone(options.assets);
  validateProbeConfig(config);validatePublicAssetManifest(assets.candidate);validatePublicAssetManifest(assets.baseline);
  if(plan.assetManifests&&(publicAssetManifestHash(assets.candidate)!==plan.assetManifests.candidate||publicAssetManifestHash(assets.baseline)!==plan.assetManifests.baseline))throw Error('RELEASE_ASSET_PLAN_MISMATCH');
- if(deploymentTarget(plan.worker).environment!==config.environment)throw Error('RELEASE_VERIFICATION_SCOPE_MISMATCH');
+ if(recoveryTarget(plan.worker).environment!==config.environment)throw Error('RELEASE_VERIFICATION_SCOPE_MISMATCH');
  if(!isAbsolute(options.directory))throw Error('RELEASE_EVIDENCE_PATH_INVALID');
  const directory=options.directory,transport=options.fetch??fetch,journey=options.journey?{...options.journey}:undefined;mkdirSync(directory,{recursive:true,mode:0o700});
  const origin=config.environment==='production'?'https://porchday.org':'https://staging.porchday.com';
@@ -30,7 +30,7 @@ export function createReleaseVerifier(options:{plan:DeploymentPlan;config:ProbeC
   if(active)throw Error('RELEASE_VERIFICATION_ALREADY_RUNNING');
   if(![plan.candidateVersion,plan.baselineVersion].includes(version))throw Error('RELEASE_VERSION_NOT_IN_PLAN');
   active=true;proofs.delete(version);
-  const attemptId=randomUUID(),record=(kind:string,detail:unknown)=>evidence(directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash,version,attemptId,kind,detail});
+  const attemptId=randomUUID(),record=(kind:string,detail:unknown)=>retainReleaseEvidence(directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash,version,attemptId,kind,detail});
   const finish=(outcome:'healthy'|'unhealthy'|'unknown')=>{record('outcome',{outcome});return outcome;};
   try{
    record('started',{environment:config.environment});

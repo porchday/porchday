@@ -1,5 +1,5 @@
 import {isDeepStrictEqual} from 'node:util';
-import {deploymentPlanHash,deploymentTarget,type DeploymentPlan,type DeploymentPorts,type RecoveryJournal} from './deployment-recovery.ts';
+import {deploymentPlanHash,recoveryTarget,type DeploymentPlan,type DeploymentPorts,type RecoveryJournal} from './deployment-recovery.ts';
 import {leasedDeploymentPorts,type FileDeploymentLease} from './deployment-recovery-lease.ts';
 import type {CloudflareReleaseReader} from './cloudflare-release-reader.ts';
 import type {UploadManifest} from './release-upload-cli.ts';
@@ -19,14 +19,14 @@ type StateOptions={workspace:string;plan:DeploymentPlan;manifest:UploadManifest;
 export function createActivationStateVerifier(options:StateOptions){
  const plan=structuredClone(options.plan),planHash=deploymentPlanHash(plan),manifest=structuredClone(options.manifest),evidence=structuredClone(options.evidence),database={...options.database};
  const {workspace,proofPath,lease,reader}=options,checks=options.checks??{tooling:verifyUploadTooling,ci:verifyReleaseCi,schema:captureReleaseSchema};
- const upload=readCompletedUpload(manifest,proofPath),target=deploymentTarget(plan.worker);
+ const upload=readCompletedUpload(manifest,proofPath),target=recoveryTarget(plan.worker);
  if(evidence.version!==1||evidence.uploadPlanHash!==upload.uploadPlanHash||evidence.uploadProofSha256!==upload.proofSha256||database.branchId!==manifest.evidence.databaseBranchId||! /^[a-f0-9]{40}$/.test(evidence.baseline.source))throw Error('ACTIVATION_STATE_EVIDENCE_CHANGED');
  // Validate the complete plan/upload relationship before any external reads.
  assertActivationInventory(upload,plan,plan.baselineVersion,upload.inventory);
  const assert=(input:DeploymentPlan,signal:AbortSignal)=>{
   signal.throwIfAborted();if(deploymentPlanHash(input)!==planHash)throw Error('ACTIVATION_STATE_PLAN_CHANGED');
   const canonical=lease.assert(plan,signal),edge=canonical.edgeRouting as Record<string,unknown>|undefined;
-  const baselineSource=target.frontend?edge?.[target.environment+'FrontendSource']:canonical[target.environment+'RuntimeSource'];
+  const baselineSource=target.monitor?(canonical.monitorSources as Record<string,unknown>|undefined)?.[target.environment]:target.frontend?edge?.[target.environment+'FrontendSource']:canonical[target.environment+'RuntimeSource'];
   if(baselineSource!==evidence.baseline.source)throw Error('ACTIVATION_BASELINE_SOURCE_CHANGED');
   const current=readCompletedUpload(manifest,proofPath);
   if(!isDeepStrictEqual(current,upload))throw Error('ACTIVATION_UPLOAD_EVIDENCE_CHANGED');

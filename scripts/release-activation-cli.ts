@@ -1,9 +1,10 @@
+import {verifyMonitorRead} from './release-monitor-verification.ts';
 import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync,realpathSync,existsSync,writeFileSync,fsyncSync} from 'node:fs';
 import {isDeepStrictEqual} from 'node:util';
 import {createHash,randomUUID} from 'node:crypto';
 import {dirname,isAbsolute,join,resolve,sep} from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
-import {deploymentPlanHash,deploymentTarget,recoverDeployment,type DeploymentPlan,type DeploymentPorts} from './deployment-recovery.ts';
+import {deploymentPlanHash,deploymentTarget,recoveryTarget,recoverDeployment,type DeploymentPlan,type DeploymentPorts} from './deployment-recovery.ts';
 import {FileDeploymentLease} from './deployment-recovery-lease.ts';
 import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
 import {readUploadManifest} from './release-upload-cli.ts';
@@ -27,8 +28,8 @@ function privateBytes(path:string){
  const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{const s=fstatSync(fd);if(!s.isFile()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0||s.size<1||s.size>16*1024*1024)throw Error('ACTIVATION_MANIFEST_PERMISSIONS');const bytes=readFileSync(fd);if(bytes.length!==s.size)throw Error('ACTIVATION_MANIFEST_CHANGED');return bytes;}finally{closeSync(fd);}
 }
 function directory(path:string){if(typeof path!=='string'||!isAbsolute(path)||realpathSync(path)!==path)throw Error('ACTIVATION_MANIFEST_PATH_INVALID');const s=lstatSync(path);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('ACTIVATION_MANIFEST_PERMISSIONS');}
-function validate(manifest:ActivationManifest){
- keys(manifest,['version','plan','review']);deploymentTarget(manifest.plan.worker);if(manifest.version!==1)throw Error('ACTIVATION_MANIFEST_INVALID');deploymentPlanHash(manifest.plan);
+function validate(manifest:ActivationManifest,monitor=false){
+ keys(manifest,['version','plan','review']);if(monitor){if(!recoveryTarget(manifest.plan.worker).monitor)throw Error('ACTIVATION_MONITOR_TARGET_REQUIRED');}else deploymentTarget(manifest.plan.worker);if(manifest.version!==1)throw Error('ACTIVATION_MANIFEST_INVALID');deploymentPlanHash(manifest.plan);
  if(activationReviewHash(manifest.review)!==manifest.plan.evidenceDigest)throw Error('ACTIVATION_MANIFEST_EVIDENCE_CHANGED');
  const e=manifest.review.execution;keys(e,['root','workspace','uploadManifest','proofPath','probe','journalDirectory','proofDirectory','journeyDirectory']);
  for(const p of [e.root,e.workspace,e.proofPath,e.journalDirectory,e.proofDirectory,e.journeyDirectory])if(typeof p!=='string'||!isAbsolute(p)||resolve(p)!==p)throw Error('ACTIVATION_MANIFEST_PATH_INVALID');
@@ -38,6 +39,7 @@ function validate(manifest:ActivationManifest){
  for(let i=0;i<dirs.length;i++)for(let j=i+1;j<dirs.length;j++)if(dirs[i]===dirs[j]||dirs[i].startsWith(dirs[j]+sep)||dirs[j].startsWith(dirs[i]+sep))throw Error('ACTIVATION_MANIFEST_DIRECTORY_OVERLAP');
  directory(e.root);directory(e.journalDirectory);
 }
+export function readMonitorActivationManifest(path:string):ActivationManifest{const manifest=JSON.parse(privateBytes(path).toString()) as ActivationManifest;validate(manifest,true);return manifest;}
 export function readActivationManifest(path:string):ActivationManifest{const manifest=JSON.parse(privateBytes(path).toString()) as ActivationManifest;validate(manifest);return manifest;}
 function readPinned(file:{path:string;sha256:string}){const bytes=privateBytes(file.path);if(hash(bytes)!==file.sha256)throw Error('ACTIVATION_MANIFEST_FILE_CHANGED');return bytes;}
 
@@ -45,13 +47,13 @@ function readPinned(file:{path:string;sha256:string}){const bytes=privateBytes(f
  * mutation callback. The harness owns pinned fixtures, durable sample retention
  * and scope checks spanning lease handoff/finalization. Resuming a historical
  * operation cannot manufacture a fresh observed release acceptance. */
-export async function executeActivationWithContinuity(
- input:ActivationManifest,env:NodeJS.ProcessEnv,
+async function executeScopedActivationWithContinuity(
+ monitor:boolean,input:ActivationManifest,env:NodeJS.ProcessEnv,
  observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,
  signal:AbortSignal,
 ){
- signal.throwIfAborted();const manifest=structuredClone(input);validate(manifest);
- if(observation.target.environment!==deploymentTarget(manifest.plan.worker).environment)throw Error('ACTIVATION_CONTINUITY_SCOPE_CHANGED');
+ signal.throwIfAborted();const manifest=structuredClone(input);validate(manifest,monitor);
+ if(observation.target.environment!==recoveryTarget(manifest.plan.worker).environment)throw Error('ACTIVATION_CONTINUITY_SCOPE_CHANGED');
  const e=manifest.review.execution;
  // Reject history before network reads; use the existing explicit reconciliation
  // entry point for interrupted operations and preserve their original evidence.
@@ -59,15 +61,22 @@ export async function executeActivationWithContinuity(
  if(state&&(state.phase!=='prepared'||state.planHash!==deploymentPlanHash(manifest.plan))||await FileDeploymentLease.completed(e.root,manifest.plan,{read:async()=>state,write:async()=>{throw Error('ACTIVATION_CONTINUITY_READ_ONLY');}}))throw Error('ACTIVATION_CONTINUITY_REQUIRES_RECONCILIATION');
  registerReleaseWatch({plan:manifest.plan,root:e.root,journalDirectory:e.journalDirectory,proofDirectory:e.proofDirectory});
  return await runCommandWithContinuity({...observation,runCommand:async commandSignal=>{
-  const result=await executeActivationManifest(manifest,env,commandSignal);
+  const result=await executeScopedActivationManifest(manifest,env,commandSignal,monitor);
   if(result.status==='finalized'&&(result.outcome==='complete'||result.outcome==='rolled-back'))return result.outcome;
   return 'attention-required';
  }},signal);
 }
 
+export async function executeActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal){
+ return executeScopedActivationWithContinuity(false,input,env,observation,signal);
+}
+export async function executeMonitorActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal){
+ return executeScopedActivationWithContinuity(true,input,env,observation,signal);
+}
+
 /** Explicit activate/resume. Archived completion and durable finalization resume need no credentials. */
-export async function executeActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,action:'activate'|'cancel'='activate'){
- const manifest=structuredClone(input);validate(manifest);signal.throwIfAborted();if(!['activate','cancel'].includes(action))throw Error('ACTIVATION_ARGUMENTS');
+async function executeScopedActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,monitor:boolean,action:'activate'|'cancel'='activate'){
+ const manifest=structuredClone(input);validate(manifest,monitor);signal.throwIfAborted();if(!['activate','cancel'].includes(action))throw Error('ACTIVATION_ARGUMENTS');
  const {plan,review}=manifest,e=review.execution,journal=new FileRecoveryJournal(e.journalDirectory);
  if(await FileDeploymentLease.completed(e.root,plan,journal)){if(action==='cancel')throw Error('DEPLOYMENT_ALREADY_FINALIZED');return{status:'already-finalized' as const,historical:true,operationId:plan.operationId};}
  if(action==='cancel'){const lease=FileDeploymentLease.acquire(e.root,plan);try{await lease.cancelBeforeIntent(journal);return{status:'cancelled-before-intent' as const,operationId:plan.operationId};}finally{lease.close();}}
@@ -81,7 +90,7 @@ export async function executeActivationManifest(input:ActivationManifest,env:Nod
  if(!isDeepStrictEqual(upload,JSON.parse(uploadBytes.toString())))throw Error('ACTIVATION_MANIFEST_FILE_CHANGED');
  if(upload.root!==e.root)throw Error('ACTIVATION_UPLOAD_ROOT_CHANGED');
  const config=JSON.parse(readPinned(e.probe).toString()) as ProbeConfig;validateProbeConfig(config);
- const target=deploymentTarget(plan.worker);if(config.environment!==target.environment)throw Error('ACTIVATION_PROBE_SCOPE_CHANGED');
+ const target=recoveryTarget(plan.worker);if(config.environment!==target.environment)throw Error('ACTIVATION_PROBE_SCOPE_CHANGED');
  verifyActivationReview(plan,upload,e.proofPath,review);
  const accountId=env.CLOUDFLARE_ACCOUNT_ID??'',apiToken=env.CLOUDFLARE_API_TOKEN??'',connection=env[target.environment==='staging'?'PORCHDAY_STAGING_DATABASE_MIGRATION_URL':'PORCHDAY_PRODUCTION_DATABASE_MIGRATION_URL']??'';
  const database={connection,branchId:upload.evidence.databaseBranchId};validateReleaseDatabaseTarget(connection,database.branchId);
@@ -93,13 +102,24 @@ export async function executeActivationManifest(input:ActivationManifest,env:Nod
   const final=()=>finalizePreparedActivation({...common,client,directory:e.proofDirectory},signal);
   const state=await journal.read();if(state&&['complete','rolled-back'].includes(state.phase))return await final();
   const verify=createReleaseVerifier({plan,config,assets:review.assets,directory:e.proofDirectory,journey:{directory:e.journeyDirectory,assertLease:s=>{lease.assert(plan,s);}}});
-  const ports=withReleaseProbePreflight(createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>client.deploy(v,id,s),verify}}),s=>verifyReleaseProbeFixture({...database,config,signal:s}));
+  const monitoredVerify:DeploymentPorts['verify']=async(v,s)=>{const result=await verify(v,s);if(result==='healthy'&&monitor)await verifyMonitorRead({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);return result;};
+  const reviewed=createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>client.deploy(v,id,s),verify:monitoredVerify}});
+  const authorized:DeploymentPorts={...reviewed,authorize:async(p,d,s)=>{await reviewed.authorize(p,d,s);if(monitor&&d==='activate')await verifyMonitorRead({plan,review,version:plan.baselineVersion,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);}};
+  const ports=withReleaseProbePreflight(authorized,s=>verifyReleaseProbeFixture({...database,config,signal:s}));
   const combine=(s:AbortSignal)=>AbortSignal.any([signal,s]);
   const bounded:DeploymentPorts={authorize:(p,d,s)=>ports.authorize(p,d,combine(s)),observe:s=>ports.observe(combine(s)),deploy:(v,id,s)=>ports.deploy(v,id,combine(s)),verify:(v,s)=>ports.verify(v,combine(s))};
   const outcome=await recoverDeployment(plan,journal,bounded);
   if(!['complete','rolled-back'].includes(outcome))return{status:'attention-required' as const,outcome,operationId:plan.operationId};
   return await final();
  }finally{lease.close();}
+}
+export async function executeActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,action:'activate'|'cancel'='activate'){
+ return executeScopedActivationManifest(input,env,signal,false,action);
+}
+/** Explicit monitor entry point; retains all application journey, CI, schema,
+ * inventory and lease gates and additionally requires monitor state evidence. */
+export async function executeMonitorActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,action:'activate'|'cancel'='activate'){
+ return executeScopedActivationManifest(input,env,signal,true,action);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  let manifest:ActivationManifest|undefined;
@@ -111,10 +131,12 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  };
  const controller=new AbortController(),stop=()=>controller.abort();process.once('SIGINT',stop);process.once('SIGTERM',stop);
  try{
-  const [action,path,...extra]=process.argv.slice(2);if(!['activate','cancel'].includes(action)||!path||extra.length)throw Error('ACTIVATION_ARGUMENTS');
-  manifest=readActivationManifest(path);
-  if(action==='activate')registerReleaseWatch({plan:manifest.plan,root:manifest.review.execution.root,journalDirectory:manifest.review.execution.journalDirectory,proofDirectory:manifest.review.execution.proofDirectory});
-  const result=await executeActivationManifest(manifest,process.env,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60*1000)]),action as 'activate'|'cancel');
+  const [action,path,...extra]=process.argv.slice(2);if(!['activate','cancel','activate-monitor','cancel-monitor'].includes(action)||!path||extra.length)throw Error('ACTIVATION_ARGUMENTS');
+  const monitor=action.endsWith('-monitor'),operation=action.startsWith('activate')?'activate':'cancel';
+  manifest=monitor?readMonitorActivationManifest(path):readActivationManifest(path);
+  if(operation==='activate')registerReleaseWatch({plan:manifest.plan,root:manifest.review.execution.root,journalDirectory:manifest.review.execution.journalDirectory,proofDirectory:manifest.review.execution.proofDirectory});
+  const execute=monitor?executeMonitorActivationManifest:executeActivationManifest;
+  const result=await execute(manifest,process.env,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60*1000)]),operation);
   console.log(JSON.stringify(result));if(result.status==='attention-required'){process.exitCode=2;await alert(result.outcome as ReleaseAlert['reason']);}
  }catch(error){
   // Retain only a fixed code and operation identity, never raw exception text.

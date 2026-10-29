@@ -1,7 +1,7 @@
 import {constants,closeSync,fsyncSync,fstatSync,lstatSync,mkdirSync,openSync,readFileSync,realpathSync,unlinkSync,writeFileSync,existsSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {createHash} from 'node:crypto';
-import {deploymentPlanHash,deploymentTarget,type DeploymentPlan} from './deployment-recovery.ts';
+import {deploymentPlanHash,recoveryTarget,type DeploymentPlan} from './deployment-recovery.ts';
 import {validateProbeConfig,type ProbeConfig,type Check} from './external-monitor-probe.ts';
 const hash=(value:string)=>createHash('sha256').update(value).digest('hex');
 type Result={at:string;status:'healthy'|'unhealthy'|'unknown';checks:Check[];unresolved?:'login'|'logout';logoutReconciled?:boolean;authenticatedAt?:string;authenticatedChecksReused?:boolean};
@@ -35,7 +35,7 @@ async function json(response:Response){
  */
 export async function runReleaseJourney(options:{plan:DeploymentPlan;version:string;config:ProbeConfig;directory:string;assertLease:(signal:AbortSignal)=>void;fetch?:typeof fetch},signal:AbortSignal):Promise<Result>{
  const plan=structuredClone(options.plan),config=structuredClone(options.config),version=options.version,planHash=deploymentPlanHash(plan);validateProbeConfig(config);
- if(![plan.candidateVersion,plan.baselineVersion].includes(version)||deploymentTarget(plan.worker).environment!==config.environment)throw Error('RELEASE_JOURNEY_SCOPE_CHANGED');
+ if(![plan.candidateVersion,plan.baselineVersion].includes(version)||recoveryTarget(plan.worker).environment!==config.environment)throw Error('RELEASE_JOURNEY_SCOPE_CHANGED');
  signal.throwIfAborted();options.assertLease(signal);privateDirectory(options.directory);const directory=join(options.directory,planHash+'-'+version);
  try{mkdirSync(directory,{mode:0o700});sync(options.directory);}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
  const scope=hash(JSON.stringify({planHash,version,config})),journal=new Journal(directory,scope),assert=()=>{signal.throwIfAborted();options.assertLease(signal);privateDirectory(directory);};

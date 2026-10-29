@@ -1,8 +1,9 @@
+import {parseMonitorSnapshot} from './release-monitor-state.ts';
 import {constants,closeSync,fstatSync,openSync,readFileSync,realpathSync} from 'node:fs';
 import {isAbsolute} from 'node:path';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
-import {deploymentPlanHash,deploymentTarget,type DeploymentPlan,type DeploymentPorts} from './deployment-recovery.ts';
+import {deploymentPlanHash,recoveryTarget,type DeploymentPlan,type DeploymentPorts} from './deployment-recovery.ts';
 import {createPreparedActivationPorts,type ActivationStateEvidence} from './release-activation-state.ts';
 import type {UploadManifest} from './release-upload-cli.ts';
 import {readCompletedUpload} from './release-activation-evidence.ts';
@@ -12,7 +13,7 @@ export const compatibilityChecks=['schemaRollback','denialReaders','webClientOve
 type EvidenceFile={path:string;sha256:string};
 export type CompatibilityReview={version:1;worker:string;candidate:{version:string;source:string};baseline:{version:string;source:string};schema:ReleaseSchemaFingerprint;publicAssets:{candidate:string;baseline:string};checks:Record<typeof compatibilityChecks[number],{status:'passed'|'scheduled';basis:string;evidence:EvidenceFile[]}>};
 export type ActivationExecution={root:string;workspace:string;uploadManifest:EvidenceFile;proofPath:string;probe:EvidenceFile;journalDirectory:string;proofDirectory:string;journeyDirectory:string};
-export type ActivationReviewEvidence={execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
+export type ActivationReviewEvidence={monitor?:{baseline:EvidenceFile;storageCompatibility:EvidenceFile};execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
 function canonical(value:unknown):string{
  if(value===null||typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))return JSON.stringify(value);
@@ -38,8 +39,9 @@ function readEvidence(file:EvidenceFile){
 export function verifyActivationReview(plan:DeploymentPlan,manifest:UploadManifest,proofPath:string,input:ActivationReviewEvidence){
  const evidence=structuredClone(input);deploymentPlanHash(plan);
  if(plan.evidenceDigest!==activationReviewHash(evidence))throw Error('ACTIVATION_REVIEW_PLAN_CHANGED');
- keys(evidence,['version','state','compatibility','assets',...(evidence.execution===undefined?[]:['execution'])]);keys(evidence.assets,['candidate','baseline']);
+ keys(evidence,['version','state','compatibility','assets',...(evidence.execution===undefined?[]:['execution']),...(evidence.monitor===undefined?[]:['monitor'])]);keys(evidence.assets,['candidate','baseline']);
  if(evidence.version!==1)throw Error('ACTIVATION_REVIEW_INVALID');
+ readMonitorReview(plan,evidence);
  const upload=readCompletedUpload(manifest,proofPath);
  if(evidence.state.version!==1||evidence.state.uploadPlanHash!==upload.uploadPlanHash||evidence.state.uploadProofSha256!==upload.proofSha256||upload.worker!==plan.worker||upload.source!==plan.candidateSource||upload.candidateVersion!==plan.candidateVersion||upload.baselineVersion!==plan.baselineVersion)throw Error('ACTIVATION_REVIEW_UPLOAD_CHANGED');
  const publicAssets={candidate:publicAssetManifestHash(evidence.assets.candidate),baseline:publicAssetManifestHash(evidence.assets.baseline)};
@@ -54,7 +56,7 @@ export function verifyActivationReview(plan:DeploymentPlan,manifest:UploadManife
   if(typeof check.basis!=='string'||check.basis.trim().length<1||check.basis.length>4096||!Array.isArray(check.evidence)||check.evidence.length>20)throw Error('ACTIVATION_COMPATIBILITY_INCOMPLETE');
   // A staging candidate must be activated before its hosted acceptance can run.
   // This exception is explicit, limited to that gate, and forbidden in production.
-  if(name==='stagingAcceptance'&&check.status==='scheduled'&&deploymentTarget(plan.worker).environment==='staging'&&check.evidence.length===0){pendingChecks.push(name);continue;}
+  if(name==='stagingAcceptance'&&check.status==='scheduled'&&recoveryTarget(plan.worker).environment==='staging'&&check.evidence.length===0){pendingChecks.push(name);continue;}
   if(check.status!=='passed'||check.evidence.length<1)throw Error('ACTIVATION_COMPATIBILITY_INCOMPLETE');
   for(const file of check.evidence){
    keys(file,['path','sha256']);
@@ -77,4 +79,20 @@ export function createReviewedActivationPorts(options:Omit<Parameters<typeof cre
   authorize:async(input,_direction,signal)=>{check(input,signal);},
   verify:async(version,signal)=>{check(plan,signal);const result=await ports.verify(version,signal);check(plan,signal);return result;},
  }});
+}
+
+/** Immutable monitor-specific evidence is required even when application gates pass. */
+export function readMonitorReview(plan:DeploymentPlan,evidence:ActivationReviewEvidence){
+ const target=recoveryTarget(plan.worker);
+ if(!target.monitor){if(evidence.monitor!==undefined)throw Error('ACTIVATION_MONITOR_SCOPE_CHANGED');return null;}
+ if(!evidence.monitor)throw Error('ACTIVATION_MONITOR_EVIDENCE_REQUIRED');
+ keys(evidence.monitor,['baseline','storageCompatibility']);
+ const raw=JSON.parse(readEvidence(evidence.monitor.baseline).toString());keys(raw,['environment','at','status','body']);
+ if(raw.environment!==target.environment)throw Error('ACTIVATION_MONITOR_SCOPE_CHANGED');
+ const baseline=parseMonitorSnapshot(raw.environment,raw.status,raw.body,raw.at);
+ const storage=JSON.parse(readEvidence(evidence.monitor.storageCompatibility).toString());
+ keys(storage,['version','baselineSource','candidateSource','compatible','evidence']);
+ if(storage.version!==1||storage.baselineSource!==evidence.state.baseline.source||storage.candidateSource!==plan.candidateSource||storage.compatible!==true||!Array.isArray(storage.evidence)||storage.evidence.length<1||storage.evidence.length>20)throw Error('ACTIVATION_MONITOR_COMPATIBILITY_REQUIRED');
+ let bytes=0;for(const file of storage.evidence){bytes+=readEvidence(file).length;if(bytes>64*1024*1024)throw Error('ACTIVATION_REVIEW_TOO_LARGE');}
+ return baseline;
 }
