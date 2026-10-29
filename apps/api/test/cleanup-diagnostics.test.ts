@@ -109,8 +109,8 @@ describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{
   env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1=mode;message.body={kind,denialPartition:0};await run();
   expect(message.ack).toHaveBeenCalledTimes(1);expect(message.retry).not.toHaveBeenCalled();expect(steps.denial).not.toHaveBeenCalled();expect(steps.partition).not.toHaveBeenCalled();expect(steps.expiry).not.toHaveBeenCalled();expect(steps.journal).not.toHaveBeenCalled();
  });
- it('keeps both scan namespaces available in shadow mode and rejects unknown mode settings',async()=>{
-  env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1='shadow';message.body={kind:'session_denial_cleanup'};await run();message.body={kind:'session_denial_cleanup_partition',denialPartition:2};await run();expect(steps.denial).toHaveBeenCalledTimes(1);expect(steps.partition).toHaveBeenCalledTimes(1);
+ it.each(['shadow','dual'])('keeps both scan namespaces available in %s mode and rejects unknown mode settings',async mode=>{
+  env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1=mode;message.body={kind:'session_denial_cleanup'};await run();message.body={kind:'session_denial_cleanup_partition',denialPartition:2};await run();expect(steps.denial).toHaveBeenCalledTimes(1);expect(steps.partition).toHaveBeenCalledTimes(1);
   env.SESSION_DENIAL_PARTITIONS_V1='invalid';message.ack.mockClear();await run();expect(message.ack).not.toHaveBeenCalled();expect(message.retry).toHaveBeenCalledExactlyOnceWith({delaySeconds:60});expect(steps.partition).toHaveBeenCalledTimes(1);
  });
  it('retries uncertain partition sends without acknowledging or registering a global intent',async()=>{

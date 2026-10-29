@@ -11,10 +11,10 @@ const env=(mode='active')=>({SESSION_DENIAL_CLEANUP_V1:'true',SESSION_DENIAL_PAR
 function record(partition:number,age=0){const at=Date.now()-age;return{v:4,strategy:'sql-session-ranges',partition,cursor:null,pageCompletedAt:at,passStartedAt:null,passSeen:0,passInvalid:0,lastPass:{completedAt:at,durationMs:1,seen:100,invalid:0}};}
 describe('partition cleanup runtime admission and modes',()=>{
  it('defaults to legacy behavior and rejects invalid/inconsistent opt-ins',()=>{
-  expect(denialCleanupMode({})).toBe('disabled');for(const value of ['true','ACTIVE','', 'shadow','active'])expect(()=>denialCleanupMode({SESSION_DENIAL_PARTITIONS_V1:value})).toThrow();
+  expect(denialCleanupMode({})).toBe('disabled');for(const value of ['true','ACTIVE','', 'shadow','dual','active'])expect(()=>denialCleanupMode({SESSION_DENIAL_PARTITIONS_V1:value})).toThrow();
   expect(denialCleanupMode(env('shadow'))).toBe('shadow');expect(denialCleanupMode(env())).toBe('active');
  });
- it.each(['disabled','shadow','active'])('schedules only the fixed jobs for %s',async mode=>{
+ it.each(['disabled','shadow','dual','active'])('schedules only the fixed jobs for %s',async mode=>{
   const e=env(mode);await scheduleDenialCleanup(e);const jobs=vi.mocked(e.JOBS.send).mock.calls.map(call=>call[0]);
   expect(jobs).toEqual([...(mode!=='active'?[{kind:'session_denial_cleanup'}]:[]),...(mode!=='disabled'?[0,1,2].map(denialPartition=>({kind:'session_denial_cleanup_partition',denialPartition})):[])]);
  });
@@ -46,12 +46,20 @@ describe('partition cleanup runtime admission and modes',()=>{
   const result=await readManagedDenialCleanupHealth(e);expect(get).toHaveBeenCalledTimes(3);expect(result.issues).toContain('session_denial_pass_stale');expect(result.snapshot?.pass_age_seconds).toBe(301);expect(get).not.toHaveBeenCalledWith(candidateProgressKey);
   get.mockResolvedValueOnce(null as never);expect((await readManagedDenialCleanupHealth(e)).issues).toEqual(['session_denial_cleanup_missing']);
  });
+ it('keeps strict v4 readiness when rolling back active to dual after legacy progress has aged out',async()=>{
+  const e=env('active');let stalled=false;
+  const get=vi.fn(async(key:string)=>{const partition=[0,1,2].find(p=>partitionProgressKey(p)===key);if(partition===undefined)throw Error('legacy checkpoint is stale');return{etag:'e',text:async()=>JSON.stringify(record(partition,stalled&&partition===2?301000:0))};});e.RECOVERY_JOURNAL={get} as never;
+  expect((await readManagedDenialCleanupHealth(e)).issues).toEqual([]);
+  e.SESSION_DENIAL_PARTITIONS_V1='dual';expect((await readManagedDenialCleanupHealth(e)).issues).toEqual([]);expect(get).toHaveBeenCalledTimes(6);expect(get).not.toHaveBeenCalledWith(candidateProgressKey);
+  stalled=true;expect((await readManagedDenialCleanupHealth(e)).issues).toContain('session_denial_pass_stale');
+  get.mockResolvedValueOnce(null as never);expect((await readManagedDenialCleanupHealth(e)).issues).toEqual(['session_denial_cleanup_missing']);
+ });
  it('keeps shadow readiness on v3 during initialization, and rejects bad mode configuration',async()=>{
   const e=env('shadow'),get=vi.fn(async(key:string)=>{expect(key).toBe(candidateProgressKey);const{partition:_,...value}=record(0);return{etag:'e',text:async()=>JSON.stringify({...value,v:3,strategy:'sql-session-keyset'})};});e.RECOVERY_JOURNAL={get} as never;
   expect((await readManagedDenialCleanupHealth(e)).issues).toEqual([]);expect(get).toHaveBeenCalledTimes(1);
   expect((await readManagedDenialCleanupHealth(env('invalid'))).issues).toEqual(['session_denial_cleanup_unavailable']);
  });
- it('bounds aggregate active health even if one shard stalls forever',async()=>{
-  const e=env();e.RECOVERY_JOURNAL={get:vi.fn(()=>new Promise(()=>{}))} as never;vi.useFakeTimers();try{const pending=readManagedDenialCleanupHealth(e);await vi.advanceTimersByTimeAsync(2000);expect(await pending).toEqual({issues:['session_denial_cleanup_unavailable'],snapshot:null});expect(vi.getTimerCount()).toBe(0);}finally{vi.useRealTimers();}
+ it.each(['active','dual'])('bounds aggregate %s health even if one shard stalls forever',async mode=>{
+  const e=env(mode);e.RECOVERY_JOURNAL={get:vi.fn(()=>new Promise(()=>{}))} as never;vi.useFakeTimers();try{const pending=readManagedDenialCleanupHealth(e);await vi.advanceTimersByTimeAsync(2000);expect(await pending).toEqual({issues:['session_denial_cleanup_unavailable'],snapshot:null});expect(vi.getTimerCount()).toBe(0);}finally{vi.useRealTimers();}
  });
 });

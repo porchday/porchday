@@ -9,10 +9,10 @@ import {drainSessionCandidates,readCandidateCleanupHealth,type CandidateSweepRes
 import {denialPartitions,partitionProgressKey,partitionStore,parsePartitionProgress,partitionCleanupHealth,listPartitionCandidates,type DenialPartition} from './session-denial-partitions';
 
 type ModeEnv=Partial<Pick<Env,'SESSION_DENIAL_CLEANUP_V1'|'SESSION_DENIAL_PARTITIONS_V1'>>;
-export function denialCleanupMode(env:ModeEnv):'disabled'|'shadow'|'active'{
+export function denialCleanupMode(env:ModeEnv):'disabled'|'shadow'|'dual'|'active'{
  const mode=env.SESSION_DENIAL_PARTITIONS_V1??'disabled';
- if(!['disabled','shadow','active'].includes(mode)||mode!=='disabled'&&env.SESSION_DENIAL_CLEANUP_V1!=='true')throw new DenialCleanupError();
- return mode as 'disabled'|'shadow'|'active';
+ if(!['disabled','shadow','dual','active'].includes(mode)||mode!=='disabled'&&env.SESSION_DENIAL_CLEANUP_V1!=='true')throw new DenialCleanupError();
+ return mode as 'disabled'|'shadow'|'dual'|'active';
 }
 function partitionId(value:unknown):DenialPartition{if(!denialPartitions.includes(value as DenialPartition))throw new DenialCleanupError();return value as DenialPartition;}
 function rawToken(partition:DenialPartition,token:string){
@@ -27,7 +27,7 @@ async function bounded<T>(work:()=>Promise<T>,ms:number):Promise<T>{let timer:Re
 async function send(env:Pick<Env,'JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'METRICS'>>,job:DenialJob){
  const timing=new CandidateTimings();try{await timing.run('enqueue',()=>bounded(()=>env.JOBS.send(job),5000));}finally{if(env.ENVIRONMENT)timing.flush({ENVIRONMENT:env.ENVIRONMENT,METRICS:env.METRICS});}
 }
-/** The deployed queue consumer cap must be verified before opting into either
+/** The deployed queue consumer cap must be verified before opting into any
  * partition mode. This fanout is fixed; arbitrary messages cannot add ranges. */
 export async function scheduleDenialCleanup(env:Pick<Env,'JOBS'>&ModeEnv){
  const mode=denialCleanupMode(env);if(env.SESSION_DENIAL_CLEANUP_V1!=='true')return;
@@ -56,7 +56,9 @@ export async function cleanupDenialPartition(env:Env,value:unknown,token?:string
 export async function readManagedDenialCleanupHealth(env:ModeEnv&Partial<Pick<Env,'RECOVERY_JOURNAL'>>){
  try{
   const mode=denialCleanupMode(env);
-  if(mode!=='active')return await readCandidateCleanupHealth(env);
+  // Dual keeps legacy work running but shares active readiness, making it a
+  // rollback target after v3 progress ages out. Never mix partial range proofs.
+  if(mode==='disabled'||mode==='shadow')return await readCandidateCleanupHealth(env);
   if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
   const progress=await bounded(()=>Promise.all(denialPartitions.map(async partition=>{
    const object=await env.RECOVERY_JOURNAL!.get(partitionProgressKey(partition));

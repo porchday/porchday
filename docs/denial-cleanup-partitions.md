@@ -47,17 +47,21 @@ not establish hosted partition throughput improvement.
 ## Runtime integration and required deployment admission
 
 1. Bound queue consumer concurrency before enabling parallel partitions. The
-   current verified queue has batch size one and no explicit concurrency cap.
-   Staging and production Wrangler source configs now specify a maximum of four
-   concurrent invocations. Those settings have not been applied to the provider.
+   staging queue has batch size one and a verified concurrency cap of four.
+   Production still has no explicit cap; its partition mode remains absent.
+   Both Wrangler source configs specify four, but source settings alone do not
+   establish deployed state.
    Verify the deployed cap before enabling the mode, then measure database
    connection usage and expiry/email progress under load. Source configuration
    alone is not admission evidence.
    Duplicate deliveries must remain bounded by that cap; CAS alone only prevents
    conflicting checkpoint publication and does not prevent duplicate SQL work.
 2. `SESSION_DENIAL_PARTITIONS_V1` implements disabled (also the absent default),
-   shadow and active modes. Shadow runs independent v4 ranges alongside v3 on a
-   small staging fixture; readiness remains v3 during initialization. Active mode
+   shadow, dual and active modes. Shadow runs independent v4 ranges alongside v3
+   on a small staging fixture; readiness remains v3 during initialization. Dual
+   keeps both schedulers running but requires all three v4 ranges for readiness.
+   Promote shadow to verified dual before activating v4 alone, so the preceding
+   dual version remains a rollback target even when v3 progress ages out. Active mode
    replaces v3 scheduling and requires every v4 range for readiness. Invalid
    modes, or partition opt-in without cleanup enabled, fail closed. Obsolete v3
    deliveries in active mode and v4 deliveries in disabled mode are acknowledged
@@ -79,7 +83,10 @@ not establish hosted partition throughput improvement.
    stale after active mode stops v3 scheduling; merely retaining its bytes does
    not prove an old worker would immediately pass readiness. Activation and
    rollback evidence must account for mode, queue settings and progress freshness.
-   Never fabricate fresh checkpoints to make a rollout pass.
+   Never fabricate fresh checkpoints to make a rollout pass. The dual transition
+   addresses stale legacy progress, but cannot hide a missing or corrupted v4
+   range; both dual and active must fail those cases. Hosted rollback testing
+   remains required.
 
 Cloudflare documents six requests waiting for response headers per invocation;
 separate invocations have separate limits. Queue concurrency can be explicitly
@@ -170,4 +177,22 @@ original intent and receipt; it never resends an unknown mutation. Tests cover l
 replies, crash boundaries, inventory drift, lock exclusion and proof corruption.
 The lease and existing upload/deployment suites passed 43 tests, with typecheck,
 formatting, secrets and diff checks passing. This is tooling validation only: the
-provider concurrency cap and partition mode remain unapplied.
+provider concurrency cap was subsequently applied to staging only; partition
+mode remains absent in both environments.
+
+At 21:02:55 UTC, the queue settings operation completed after all six exact-source
+CI checks passed for `60b681eaea9fd3a83ddab2315c1c346a97a60a1a`. Full provider
+readback matched exactly one intended change: staging consumer concurrency four.
+The canonical inventory reference was finalized, the shared lease released, and
+staging readiness plus fresh production monitor checks passed. Worker versions,
+production settings, retry policy and dead-letter routing were unchanged.
+[Provider update API](https://developers.cloudflare.com/api/resources/queues/subresources/consumers/methods/update/)
+was checked before the once-only request. This does not prove load capacity.
+
+The new dual transition mode is implemented locally after this queue change;
+it is not part of the currently deployed c570e74 runtime. The 53 focused tests
+and API typecheck/format/secret/diff checks passed. Its tests cover
+both queue namespaces, fixed scheduling, strict range health and bounded reads,
+including active-to-dual recovery with unavailable legacy progress. Stale or
+missing v4 ranges still fail readiness. Hosted mode transitions and rollback
+acceptance remain outstanding.
