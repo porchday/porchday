@@ -18,6 +18,11 @@ function fixture(){
 }
 afterEach(()=>vi.useRealTimers());
 describe('deployment recovery',()=>{
+ it('snapshots nested asset pins before asynchronous authorization',async()=>{
+  const f=fixture(),input={...plan,assetManifests:{candidate:'c'.repeat(64),baseline:'d'.repeat(64)}},originalHash=deploymentPlanHash(input);
+  f.ports.authorize=vi.fn(async received=>{input.assetManifests.candidate='e'.repeat(64);expect(received.assetManifests?.candidate).toBe('c'.repeat(64));});
+  expect(await recoverDeployment(input,f.journal,f.ports)).toBe('complete');expect(f.journal.state?.planHash).toBe(originalHash);
+ });
  it('reconciles an acknowledged activation through transient GET failures',async()=>{
   const f=fixture();let failures=2;const read=f.ports.observe;f.ports.observe=vi.fn(async signal=>{if(f.current().version===plan.candidateVersion&&failures-->0)throw new RetryableObservationError();return read(signal);});
   expect(await f.run()).toBe('complete');expect(f.ports.deploy).toHaveBeenCalledTimes(1);expect(f.journal.state?.phase).toBe('complete');

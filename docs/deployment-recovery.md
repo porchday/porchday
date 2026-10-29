@@ -93,9 +93,9 @@ Integration tests use the actual controller and durable journal to demonstrate
 that persistent HTTP-200 HTML for an expected module triggers one rollback and
 that the restored version is verified against its own manifest. These are local
 fixtures, not a hosted release of this new adapter. Provider/source/schema
-authorization, inactive uploads, asset-aware canonical finalization and a complete
-normal release command remain required. In particular, the current lease's
-code-version finalization must not be used to claim new asset provenance.
+authorization, inactive uploads and a complete normal release command remain
+required. Asset finalization is implemented below, but its hosted integration
+has not yet been verified.
 
 ## Durable operation and resumption
 
@@ -160,8 +160,38 @@ the finalization receipt and must identify the terminal API version. The caller
 must verify the snapshot against the provider and release contract first; a local
 JSON file alone is not provider evidence. Omitting the snapshot is supported for
 local fixtures, but a hosted rollout must supply it.
-This is suitable for API-version-only operations. Changes to other resources need
-a separate reviewed finalization contract.
+Without an asset-changing plan this updates only the selected API or frontend
+code version. Changes to other resources need a separately reviewed finalization
+contract.
+
+For a public asset change, set `assetManifests.candidate` and
+`assetManifests.baseline` in the immutable deployment plan using
+`publicAssetManifestHash`. This pins source, every file/hash and retained source
+commits independently of object key ordering. The shared verifier checks both
+manifest pins before starting a journey. After a healthy result, its
+`assetProof(version)` method returns the durable proof path for that invocation.
+The proof includes the exact manifest and complete successful public report;
+failed/cancelled later verification clears the in-memory proof reference.
+
+Call `finalize(journal, providerSnapshotPath, assetProofPath)` for these plans.
+Both the provider snapshot and matching terminal-version asset proof are required.
+The lease checks operation/plan/version identity, the appropriate candidate or
+rollback manifest digest, and every report entry's URL, hash, MIME type and status.
+It rejects missing, duplicated or failed checks. It pins the proof's file bytes
+in the durable finalization receipt; changed evidence prevents resumption.
+Code-only plans reject an unplanned asset proof. A backend behind an enabled
+frontend cannot update public asset provenance through this path.
+
+Successful finalization updates the public environment asset source and, for a
+frontend, its asset source under `edgeRouting`. `releaseAssets` records the exact
+component/version, manifest digest, retained sources and proof reference. A
+rollback uses its own verified baseline package; it never records the failed
+candidate's assets as restored. Frontend finalization preserves backend code
+identity; both paths preserve unrelated canonical fields. Evidence files are
+private and bounded to 32 MiB. These
+checks establish consistent recorded evidence, not its authenticity: the release
+command must still verify source/CI provenance, actual provider state and the
+required client-overlap/rollback compatibility before finalization.
 
 A restart during finalization may reacquire the same plan when the canonical bytes
 match either side of its receipt. Such a lease prohibits provider I/O: resume

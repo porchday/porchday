@@ -1,11 +1,13 @@
 import {afterEach,describe,expect,it} from 'vitest';
 import {createHash} from 'node:crypto';
-import {chmodSync,mkdtempSync,readFileSync,readdirSync,rmSync} from 'node:fs';
+import {chmodSync,mkdtempSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createReleaseVerifier} from './release-verification.ts';
 import {recoverDeployment,type DeploymentPlan,type DeploymentObservation} from './deployment-recovery.ts';
 import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
+import {FileDeploymentLease,leasedDeploymentPorts} from './deployment-recovery-lease.ts';
+import {publicAssetManifestHash} from './release-assets-verify.ts';
 import type {ProbeConfig} from './external-monitor-probe.ts';
 const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-4000-8000-000000000000',sha=(s:string)=>createHash('sha256').update(s).digest('hex');
 const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
@@ -33,6 +35,39 @@ function fixture(){
 }
 afterEach(()=>{for(const root of roots.splice(0))rmSync(root,{recursive:true,force:true});});
 describe('shared release journey and asset gate',()=>{
+ it.each(['api-complete','api-rollback','frontend-complete','frontend-rollback','hidden-api-complete'])('records the verified asset package and resumes finalization for %s',async scenario=>{
+  const f=fixture(),frontend=scenario.startsWith('frontend'),rollback=scenario.endsWith('rollback'),hidden=scenario.startsWith('hidden');
+  const release:DeploymentPlan={...plan,worker:frontend?'porchday-staging-edge':plan.worker,...(frontend?{backendVersion:uuid(20),backendReaderFloor:uuid(21)}:{}),assetManifests:{candidate:publicAssetManifestHash(f.options.assets.candidate),baseline:publicAssetManifestHash(f.options.assets.baseline)}};
+  const before={stagingVersion:frontend?uuid(20):plan.baselineVersion,stagingRuntimeSource:'c'.repeat(40),stagingAssetsSource:'d'.repeat(40),compatibleRollbackVersions:{staging:frontend?uuid(21):plan.baselineVersion},edgeRouting:{stagingEnabled:frontend||hidden,stagingFrontendVersion:plan.baselineVersion,stagingFrontendSource:'e'.repeat(40)},sourceComposition:'keep'};
+  const canonical=join(f.root,'latest-verified-deployment.json');writeFileSync(canonical,JSON.stringify(before),{mode:0o600});
+  const journal=new FileRecoveryJournal(join(f.root,'journal'));let current:DeploymentObservation={version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null},lease=FileDeploymentLease.acquire(f.root,release),writes=0;
+  try{
+   const verify=createReleaseVerifier({...f.options,plan:release,fetch:async(input,init)=>rollback&&current.version===plan.candidateVersion&&String(input).endsWith('/health')?Response.json({status:'unavailable',issues:[]},{status:503}):f.transport(input,init)});
+   const ports=leasedDeploymentPorts(release,lease,journal,{authorize:async()=>{},observe:async()=>({...current}),deploy:async(version,operationId)=>{writes++;current={version,operationId,deploymentId:uuid(30+writes)};},verify});
+   expect(await recoverDeployment(release,journal,ports)).toBe(rollback?'rolled-back':'complete');expect(writes).toBe(rollback?2:1);
+   const key=frontend?'staging-edge':'staging',version=rollback?plan.baselineVersion:plan.candidateVersion,proof=verify.assetProof(version)!;expect(proof).toBeTruthy();
+   const snapshot=join(f.root,'snapshot.json');writeFileSync(snapshot,JSON.stringify({workers:{staging:{active:before.stagingVersion},[key]:{active:version}}}),{mode:0o600});
+   if(hidden){await expect(lease.finalize(journal,snapshot,proof)).rejects.toThrow('ASSETS_NOT_PUBLIC_TARGET');expect(JSON.parse(readFileSync(canonical,'utf8'))).toEqual(before);return;}
+   await expect(lease.finalize(journal,snapshot)).rejects.toThrow('ASSET_PROOF_REQUIRED');expect(JSON.parse(readFileSync(canonical,'utf8'))).toEqual(before);
+   const original=readFileSync(proof,'utf8');
+   for(const tamper of ['checks','version','manifest']){
+    const invalid=JSON.parse(original);if(tamper==='checks')invalid.detail.report.checks=[];else if(tamper==='version')invalid.version=uuid(999);else invalid.detail.manifest.source='f'.repeat(40);
+    writeFileSync(proof,JSON.stringify(invalid));await expect(lease.finalize(journal,snapshot,proof)).rejects.toThrow('ASSET_PROOF_INVALID');
+   }
+   writeFileSync(proof,original);
+   await lease.finalize(journal,snapshot,proof);lease.close();
+   writeFileSync(proof,original+' ');expect(()=>FileDeploymentLease.acquire(f.root,release)).toThrow('ASSET_PROOF_CHANGED');writeFileSync(proof,original);
+   lease=FileDeploymentLease.acquire(f.root,release);await lease.finalize(journal);await lease.release(journal);
+   const result=await FileDeploymentLease.completed(f.root,release,journal),manifest=rollback?f.options.assets.baseline:f.options.assets.candidate;
+   expect(result?.stagingAssetsSource).toBe(manifest.source);expect(result?.sourceComposition).toBe('keep');
+   expect(result?.releaseAssets).toMatchObject({[key]:{version,source:manifest.source,manifestSha256:publicAssetManifestHash(manifest)}});
+   if(frontend){expect(result?.stagingVersion).toBe(before.stagingVersion);expect(result?.stagingRuntimeSource).toBe(before.stagingRuntimeSource);expect(result?.edgeRouting).toMatchObject({stagingFrontendAssetsSource:manifest.source});}
+  }finally{lease.close();}
+ });
+ it('rejects manifests that differ from the immutable asset plan before a journey starts',()=>{
+  const f=fixture(),release={...plan,assetManifests:{candidate:'f'.repeat(64),baseline:publicAssetManifestHash(f.options.assets.baseline)}};
+  expect(()=>createReleaseVerifier({...f.options,plan:release})).toThrow('ASSET_PLAN_MISMATCH');expect(f.calls).toEqual([]);
+ });
  it('rejects overlapping journeys against the same verifier identity',async()=>{
   const f=fixture();let unblock!:()=>void;const gate=new Promise<void>(resolve=>{unblock=resolve;});const fetcher:typeof fetch=async(input,init)=>{await gate;return f.transport(input,init);};
   const verify=createReleaseVerifier({...f.options,fetch:fetcher}),first=verify(plan.candidateVersion,new AbortController().signal);

@@ -3,10 +3,11 @@ import {readFileSync} from 'node:fs';
 import {extname,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 
-export interface PublicAssetManifest {source:string;files:Record<string,string>}
+export interface PublicAssetManifest {source:string;files:Record<string,string>;retainedSources?:string[]}
 const types:Record<string,string[]>={'.html':['text/html'],'.js':['text/javascript','application/javascript'],'.mjs':['text/javascript','application/javascript'],'.css':['text/css'],'.svg':['image/svg+xml'],'.png':['image/png'],'.json':['application/json'],'.map':['application/json'],'.webmanifest':['application/manifest+json','application/json'],'.txt':['text/plain'],'.woff2':['font/woff2']};
 export function validatePublicAssetManifest(manifest:PublicAssetManifest):void{
  if(!manifest||typeof manifest.source!=='string'||!/^[a-f0-9]{40}$/.test(manifest.source)||!manifest.files||Array.isArray(manifest.files)||typeof manifest.files!=='object')throw Error('INVALID_PUBLIC_MANIFEST');
+ if(manifest.retainedSources!==undefined&&(!Array.isArray(manifest.retainedSources)||manifest.retainedSources.length>100||!manifest.retainedSources.every(source=>typeof source==='string'&&/^[a-f0-9]{40}$/.test(source))))throw Error('INVALID_PUBLIC_MANIFEST');
  const entries=Object.entries(manifest.files).sort(([a],[b])=>a.localeCompare(b));
  if(entries.length<1||entries.length>20000)throw Error('INVALID_PUBLIC_MANIFEST');
  for(const [path,digest] of entries){
@@ -14,6 +15,22 @@ export function validatePublicAssetManifest(manifest:PublicAssetManifest):void{
    ||(path!=='_headers'&&!types[extname(path)]))throw Error('INVALID_PUBLIC_MANIFEST');
  }
  if(!entries.some(([path])=>path!=='_headers'))throw Error('NO_PUBLIC_ASSETS');
+}
+export function publicAssetManifestHash(manifest:PublicAssetManifest):string{
+ validatePublicAssetManifest(manifest);
+ return createHash('sha256').update(JSON.stringify({source:manifest.source,files:Object.fromEntries(Object.entries(manifest.files).sort(([a],[b])=>a<b?-1:a>b?1:0)),retainedSources:[...new Set(manifest.retainedSources??[])].sort()})).digest('hex');
+}
+/** Structural completeness of a retained report, not authentication of its origin. */
+export function validatePublicAssetReport(origin:string,manifest:PublicAssetManifest,report:Awaited<ReturnType<typeof verifyPublicAssets>>):void{
+ validatePublicAssetManifest(manifest);
+ const expected=Object.entries(manifest.files).filter(([path])=>path!=='_headers');
+ if(!report||report.origin!==origin||report.source!==manifest.source||report.healthy!==true||!Number.isFinite(Date.parse(report.at))||!Array.isArray(report.checks)||report.checks.length!==expected.length)throw Error('PUBLIC_ASSET_PROOF_INVALID');
+ const seen=new Set<string>();
+ for(const check of report.checks){
+  if(!check||typeof check.path!=='string'||check.path==='_headers'||seen.has(check.path)||!Object.hasOwn(manifest.files,check.path)||check.ok!==true||check.code!=='ok'||check.status!==200||check.sha256!==manifest.files[check.path]
+   ||!types[extname(check.path)]?.includes(check.contentType??'')||check.urlPath!==(['index.html','app-shell.html'].includes(check.path)?'/app-shell':'/'+check.path))throw Error('PUBLIC_ASSET_PROOF_INVALID');
+  seen.add(check.path);
+ }
 }
 export async function verifyPublicAssets(origin:string,manifest:PublicAssetManifest,options:{fetch?:typeof fetch;signal?:AbortSignal}={}){
  if(!['https://staging.porchday.com','https://porchday.org'].includes(origin))throw Error('INVALID_RELEASE_ORIGIN');

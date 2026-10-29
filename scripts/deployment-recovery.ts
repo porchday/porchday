@@ -1,6 +1,6 @@
 /** Provider-neutral rollout control. No network, credentials, or writes on import. */
 import {createHash} from 'node:crypto';
-export type DeploymentPlan={operationId:string;worker:string;candidateVersion:string;candidateSource:string;baselineVersion:string;baselineDeploymentId:string;compatibleRollbackVersions:readonly string[];evidenceDigest:string;backendVersion?:string;backendReaderFloor?:string};
+export type DeploymentPlan={operationId:string;worker:string;candidateVersion:string;candidateSource:string;baselineVersion:string;baselineDeploymentId:string;compatibleRollbackVersions:readonly string[];evidenceDigest:string;backendVersion?:string;backendReaderFloor?:string;assetManifests?:Readonly<{candidate:string;baseline:string}>};
 export type DeploymentObservation={version:string;deploymentId:string;operationId:string|null};
 export type Phase='prepared'|'activation-intent'|'candidate-observed'|'rollback-intent'|'complete'|'rolled-back';
 export type RecoveryState={v:1;revision:number;planHash:string;phase:Phase;candidateDeploymentId?:string;rollbackDeploymentId?:string};
@@ -29,9 +29,10 @@ export function deploymentTarget(worker:string){
 }
 export function deploymentPlanHash(plan:DeploymentPlan):string{
  const target=deploymentTarget(plan.worker);
+ if(plan.assetManifests!==undefined&&(!plan.assetManifests||Object.keys(plan.assetManifests).sort().join(',')!=='baseline,candidate'||![plan.assetManifests.candidate,plan.assetManifests.baseline].every(value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value))))throw new RecoveryError('DEPLOYMENT_ASSET_PLAN_INVALID');
  if(!id.test(plan.operationId)||![plan.candidateVersion,plan.baselineVersion,plan.baselineDeploymentId].every(x=>id.test(x))||plan.candidateVersion===plan.baselineVersion||! /^[a-f0-9]{40}$/.test(plan.candidateSource)||! /^[a-f0-9]{64}$/.test(plan.evidenceDigest)||!Array.isArray(plan.compatibleRollbackVersions)||!plan.compatibleRollbackVersions.every(x=>id.test(x))||!plan.compatibleRollbackVersions.includes(plan.baselineVersion)
   ||(target.frontend?typeof plan.backendVersion!=='string'||!id.test(plan.backendVersion)||typeof plan.backendReaderFloor!=='string'||!id.test(plan.backendReaderFloor):plan.backendVersion!==undefined||plan.backendReaderFloor!==undefined))throw new RecoveryError('DEPLOYMENT_PLAN_OR_ROLLBACK_FLOOR_INVALID');
- return createHash('sha256').update(JSON.stringify({operationId:plan.operationId,worker:plan.worker,candidateVersion:plan.candidateVersion,candidateSource:plan.candidateSource,baselineVersion:plan.baselineVersion,baselineDeploymentId:plan.baselineDeploymentId,compatibleRollbackVersions:[...new Set(plan.compatibleRollbackVersions)].sort(),evidenceDigest:plan.evidenceDigest,...(target.frontend?{backendVersion:plan.backendVersion,backendReaderFloor:plan.backendReaderFloor}:{})})).digest('hex');
+ return createHash('sha256').update(JSON.stringify({operationId:plan.operationId,worker:plan.worker,candidateVersion:plan.candidateVersion,candidateSource:plan.candidateSource,baselineVersion:plan.baselineVersion,baselineDeploymentId:plan.baselineDeploymentId,compatibleRollbackVersions:[...new Set(plan.compatibleRollbackVersions)].sort(),evidenceDigest:plan.evidenceDigest,...(target.frontend?{backendVersion:plan.backendVersion,backendReaderFloor:plan.backendReaderFloor}:{}),...(plan.assetManifests?{assetManifests:{candidate:plan.assetManifests.candidate,baseline:plan.assetManifests.baseline}}:{})})).digest('hex');
 }
 export const phaseTransitions:Record<Phase,readonly Phase[]>={prepared:['activation-intent'],'activation-intent':['candidate-observed'],'candidate-observed':['complete','rollback-intent'],'rollback-intent':['rolled-back'],complete:[],'rolled-back':[]};
 export function validateRecoveryState(value:unknown):asserts value is RecoveryState{
@@ -74,7 +75,7 @@ export function rollbackOperationId(operationId:string):string{
 
 /** Resume with the same plan/journal after interruption. An existing intent is never sent again. */
 export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>}={}):Promise<RecoveryResult>{
- const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
+ const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
  const rollbackId=rollbackOperationId(plan.operationId);
  let state=await journal.read();if(state){validateRecoveryState(state);if(state.planHash!==hash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');}
  const advance=async(phase:Phase,fields:Partial<RecoveryState>={})=>{const next:RecoveryState={...state,...fields,v:1,revision:(state?.revision??0)+1,planHash:hash,phase};validateRecoveryTransition(state,next);await journal.write(state,next);state=next;};

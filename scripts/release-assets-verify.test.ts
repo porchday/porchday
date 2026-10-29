@@ -1,9 +1,16 @@
 import {describe,it,expect} from 'vitest';
 import {createHash} from 'node:crypto';
-import {verifyPublicAssets} from './release-assets-verify.ts';
+import {verifyPublicAssets,publicAssetManifestHash,validatePublicAssetReport} from './release-assets-verify.ts';
 const sha=(body:string)=>createHash('sha256').update(body).digest('hex');
 const source='a'.repeat(40),origin='https://staging.porchday.com';
 describe('public release asset verification',()=>{
+ it('pins manifest content independently of key order and rejects incomplete or duplicated proof',async()=>{
+  const manifest={source,files:{'b.js':sha('module'),'a.js':sha('module')},retainedSources:['b'.repeat(40)]};
+  expect(publicAssetManifestHash(manifest)).toBe(publicAssetManifestHash({...manifest,files:{'a.js':sha('module'),'b.js':sha('module')}}));
+  expect(publicAssetManifestHash(manifest)).not.toBe(publicAssetManifestHash({...manifest,retainedSources:[]}));
+  const report=await verifyPublicAssets(origin,manifest,{fetch:async()=>new Response('module',{headers:{'content-type':'text/javascript'}})});expect(()=>validatePublicAssetReport(origin,manifest,report)).not.toThrow();
+  for(const checks of [report.checks.slice(0,1),[report.checks[0],report.checks[0]],report.checks.map(c=>({...c,contentType:'text/html'}))])expect(()=>validatePublicAssetReport(origin,manifest,{...report,checks})).toThrow('PROOF_INVALID');
+ });
  it('requires the exact bytes and executable content type, not merely HTTP 200',async()=>{
   const result=await verifyPublicAssets(origin,{source,files:{'assets/old.js':sha('module'),'assets/current.js':sha('module'),'assets/wrong.js':sha('module')}},{fetch:async input=>new Response(String(input).includes('old.js')?'<html>':String(input).includes('wrong.js')?'changed':'module',{headers:{'content-type':String(input).includes('old.js')?'text/html':'text/javascript; charset=utf-8'}})});
   expect(result.healthy).toBe(false);expect(result.checks.map(c=>[c.path,c.code])).toEqual([['assets/current.js','ok'],['assets/old.js','content_type'],['assets/wrong.js','hash']]);
