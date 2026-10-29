@@ -566,3 +566,38 @@ plus sampled session continuity across both version transitions. It does not
 demonstrate recovery from an actual hosted defect, regional failure, feature/schema
 change, or compatibility with older installed clients. Unknown-operation escalation
 and the broader daily-release acceptance requirements remain open.
+
+### Release attention notifications
+
+The activation CLI now saves an immutable owner-only `attention-<operation>.json`
+in its proof directory when it returns `attention-required` or throws after reading
+a valid manifest. It preserves the first alert for that operation; detailed later
+outcomes remain in the private journal and failure records. The alert contains only
+a validated worker name, UUID, plan digest, timestamp and allowlisted reason.
+Credentials, private paths, raw errors and application responses are excluded.
+
+The command then attempts to dispatch `release-alert-relay.yml` on `main`. The
+owner-restricted workflow posts as the Actions bot to existing issue #3 and mentions
+`andyk` and `bobbyhwilder`. It serializes by operation and checks paginated comments
+for the exact prior bot message before posting. A matching human comment is not
+delivery evidence. Dispatch acceptance is reported as `PENDING`; only observing
+the exact bot message is `DELIVERED`. A lost acknowledgement is reconciled on retry.
+GitHub failure leaves the durable local alert and does not change the deployment's
+exit status or authorize another deployment write.
+
+After inspecting the current operation and confirming attention is still needed,
+retry only its notification with:
+
+```sh
+node scripts/release-alert-retry.ts /absolute/private/proofs/attention-OPERATION.json
+```
+
+This command does not execute deployment recovery or authenticated journeys. A
+notification can remain pending until another read observes the bot comment.
+
+Deployment status: this relay is implemented on the release-tooling branch and must
+reach `main` before it can run. Hosted delivery and owner inbox receipt remain
+unverified. No background outbox retry or independent release-process watchdog is
+installed yet. SIGKILL, host loss, malformed manifests and unavailable local storage
+can prevent queueing; the production availability monitor remains separate. This
+change alone does not close the unattended-release escalation requirement.

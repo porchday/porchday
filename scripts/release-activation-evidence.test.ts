@@ -318,7 +318,7 @@ describe('complete activation command composition',()=>{
 });
 
 it('retains a sanitized private failure code on a native command failure',async()=>{const f=await cliFixture();try{
- const child=spawnSync(process.execPath,['scripts/release-activation-cli.ts','activate',f.path],{encoding:'utf8',env:{...process.env,PORCHDAY_STAGING_DATABASE_MIGRATION_URL:''}});
+ const child=spawnSync(process.execPath,['scripts/release-activation-cli.ts','activate',f.path],{encoding:'utf8',env:{...process.env,PORCHDAY_MONITOR_GH_PATH:'/nonexistent/porchday-test-gh',PORCHDAY_STAGING_DATABASE_MIGRATION_URL:''}});
  expect(child.status).toBe(1);expect(child.stdout).toBe('');expect(child.stderr).toContain('RELEASE_ACTIVATION_FAILED');
- const files=readdirSync(f.cli.review.execution.proofDirectory);expect(files).toHaveLength(1);const record=JSON.parse(readFileSync(join(f.cli.review.execution.proofDirectory,files[0]),'utf8'));expect(record).toMatchObject({operationId:f.cli.plan.operationId,code:'RELEASE_SCHEMA_TARGET_INVALID'});expect(JSON.stringify(record)).not.toContain('p'.repeat(32));expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+ expect(child.stderr).toContain('RELEASE_OWNER_NOTIFICATION_PENDING');const all=readdirSync(f.cli.review.execution.proofDirectory);expect(all.filter(n=>n.startsWith('attention-'))).toHaveLength(1);const files=all.filter(n=>n.startsWith('failure-'));expect(files).toHaveLength(1);const record=JSON.parse(readFileSync(join(f.cli.review.execution.proofDirectory,files[0]),'utf8'));expect(record).toMatchObject({operationId:f.cli.plan.operationId,code:'RELEASE_SCHEMA_TARGET_INVALID'});expect(JSON.stringify(record)).not.toContain('p'.repeat(32));expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
 }finally{f.close();}});

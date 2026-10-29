@@ -13,6 +13,7 @@ import {createReleaseVerifier} from './release-verification.ts';
 import {validateProbeConfig,type ProbeConfig} from './external-monitor-probe.ts';
 import {validateReleaseDatabaseTarget} from './release-schema.ts';
 import {CloudflareReleaseReader} from './cloudflare-release-reader.ts';
+import {queueReleaseAlert,deliverReleaseAlert,type ReleaseAlert} from './release-alerts.ts';
 import {CloudflareDeploymentClient} from './cloudflare-deployment-client.ts';
 
 export type ActivationManifest={version:1;plan:DeploymentPlan;review:ActivationReviewEvidence&{execution:ActivationExecution}};
@@ -75,12 +76,18 @@ export async function executeActivationManifest(input:ActivationManifest,env:Nod
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  let manifest:ActivationManifest|undefined;
+ const alert=async(reason:ReleaseAlert['reason'])=>{
+  if(!manifest)return;
+  try{const event=queueReleaseAlert(manifest.review.execution.proofDirectory,manifest.plan,reason);
+   try{const status=await deliverReleaseAlert(event);console.error('RELEASE_OWNER_NOTIFICATION_'+status.toUpperCase());}catch{console.error('RELEASE_OWNER_NOTIFICATION_PENDING');}
+  }catch{console.error('RELEASE_OWNER_NOTIFICATION_NOT_QUEUED');}
+ };
  const controller=new AbortController(),stop=()=>controller.abort();process.once('SIGINT',stop);process.once('SIGTERM',stop);
  try{
   const [action,path,...extra]=process.argv.slice(2);if(!['activate','cancel'].includes(action)||!path||extra.length)throw Error('ACTIVATION_ARGUMENTS');
   manifest=readActivationManifest(path);
   const result=await executeActivationManifest(manifest,process.env,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60*1000)]),action as 'activate'|'cancel');
-  console.log(JSON.stringify(result));if(result.status==='attention-required')process.exitCode=2;
+  console.log(JSON.stringify(result));if(result.status==='attention-required'){process.exitCode=2;await alert(result.outcome as ReleaseAlert['reason']);}
  }catch(error){
   // Retain only a fixed code and operation identity, never raw exception text.
   if(manifest)try{
@@ -90,6 +97,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
    try{writeFileSync(fd,JSON.stringify({at:new Date().toISOString(),operationId:manifest.plan.operationId,planHash:deploymentPlanHash(manifest.plan),code})+'\n');fsyncSync(fd);}finally{closeSync(fd);}
    const parent=openSync(directoryPath,constants.O_RDONLY);try{fsyncSync(parent);}finally{closeSync(parent);}
   }catch{/* Preserve the fixed console error even when evidence storage failed. */}
+  await alert('command-failed');
   console.error('RELEASE_ACTIVATION_FAILED: retain the exact manifest, journal and private session evidence; inspect before resuming. Never replace an uncertain operation with a new ID.');process.exitCode=1;}
  finally{process.removeListener('SIGINT',stop);process.removeListener('SIGTERM',stop);}
 }

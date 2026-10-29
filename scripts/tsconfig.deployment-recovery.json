@@ -29,6 +29,9 @@
     "release-activation-review.ts",
     "release-activation-finalize.ts",
     "release-journey.ts",
-    "release-activation-cli.ts"
+    "release-activation-cli.ts",
+    "release-alerts.ts",
+    "release-alert-relay.ts",
+    "release-alert-retry.ts"
   ]
 }
