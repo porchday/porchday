@@ -78,7 +78,10 @@ denial retained. An uncertain publication response was reconciled by exact
 read-only record comparison; the write was not replayed. No application version,
 writer/cleanup flag, schema or routing changed during this verification.
 
-The independent logout writer remains disabled. Hosted push enforcement,
-writer/cleanup failure and concurrency cases, device behavior and cost acceptance
-remain required before enabling it. This reader evidence does not resolve all
+The [hosted staging contention rehearsal](evidence/denial-writer-contention-staging-2026-10-29.md)
+also verified denial enforcement during a bounded SQL lock timeout and subsequent
+normal cleanup and journal recovery. The independent production logout writer
+remains disabled. Hosted push enforcement, remaining writer/cleanup failure and
+concurrency cases, device behavior and cost acceptance remain required before
+enabling it. This evidence does not resolve all
 interrupted privacy operations or establish the availability SLO.

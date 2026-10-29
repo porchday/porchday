@@ -16,10 +16,18 @@ and #9; source inspected at `ac291bdb0e04d45a30a62b4072da4e2d7c9e4c52`.
 | Daily releases | Existing guarded activation evidence checks allowed/revoked sessions and continuity across version changes | Retain old/new client and backward-compatible schema checks; installed service-worker and physical native-device behavior cannot be inferred from API continuity. |
 | Availability objective | External 20-second monitor and release/recovery evidence exist | Actual calendar-month and 30-day observation, core journey coverage, and remaining recovery gates. The prior outage and coverage gaps remain in the accounting. |
 
-## Next hosted check
+## Hosted contention follow-up
 
-Prepare a staging-only writer contention rehearsal using newly allocated owned
-synthetic identities. Hold only the fixture identity's advisory lock, issue one
+The [staging contention rehearsal](denial-writer-contention-staging-2026-10-29.md)
+subsequently passed: one logout returned 503 in 5.737 seconds while its immutable
+denial already rejected the retained SQL session. The separate account remained
+usable; normal cleanup, exact teardown and journal recovery were verified.
+This closes the hosted identity-lock contention check described below. It does
+not close hosted password ordering, storage failures or process-interruption
+coverage.
+
+The rehearsal used newly allocated owned
+synthetic identities. Its required procedure was to hold only the fixture identity's advisory lock, issue one
 logout, and verify the durable denial rejects that session while an unrelated
 session remains usable. Release the lock and observe normal cleanup and journal
 publication. Record dispatch intent before the request; an unknown reply must
@@ -36,4 +44,5 @@ another person's device to obtain that evidence. The existing
 `sent` outbox assertion does not test denied-session suppression. It is not an
 appropriate unchanged runner for the missing gate.
 
-No test was run and no deployment or provider setting changed during this audit.
+The initial audit ran no tests. The linked follow-up records the later hosted
+test; neither changed deployment or provider settings.
