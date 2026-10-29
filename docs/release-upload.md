@@ -514,4 +514,28 @@ The executing commit's full Verify CI reached its final secret scan, which rejec
 a literal dummy remote database URL in the command integration test. The fixture
 now constructs that synthetic URL through URL fields; the scanner rule is unchanged.
 Local scanning, the 74-test activation suite and TypeScript passed after the fix.
-A fresh hosted CI result is still required before release authorization.
+The corrected tooling commit `56eaf32` subsequently passed Verify run
+40825295567 and Secret scan run 40825295569 before the staging rehearsal below.
+
+### October 29 hosted command acceptance
+
+The [sanitized staging record](evidence/activation-command-staging-2026-10-29.json)
+records a successful invocation of the maintained inactive-upload command followed
+by the activation command on clean tooling commit `56eaf32`. The candidate used
+byte-identical runtime source `ebc567a`, preserving the existing staging edge,
+assets, schema, bindings and targeted Oregon placement. A preparatory read rejected
+an outdated assumption that staging placement was off; that attempt made no
+provider writes and its serialization lease was cancelled before dispatch.
+
+The candidate activated and reached `complete`. Protected readiness, anonymous
+session, monitor freshness, login, authorized profile/feed, logout and old-session
+rejection passed. Both release verification and finalization verified all 29 public
+assets. Canonical finalization recorded the observed deployment and released the
+lease. A subsequent invocation returned `already-finalized` without credentials.
+The synthetic fixture had zero remaining database sessions and its saved cookie
+was removed after confirmed revocation. Production's version stayed unchanged.
+
+This verifies the normal hosted command path. It did not run continuous traffic
+across the transition, change application features, exercise automatic rollback,
+or test older installed clients. Those checks, failure escalation and measured
+monthly availability remain open; this result is not a zero-downtime guarantee.

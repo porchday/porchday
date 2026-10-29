@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "environment": "staging",
+  "toolingSource": "56eaf327f4e0530e554da3021b49f190fc44fde5",
+  "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "toolingVerifyRun": 40825295567,
+  "toolingSecretScanRun": 40825295569,
+  "runtimeVerifyRun": 40821631462,
+  "runtimeSecretScanRun": 40821631389,
+  "operationId": "2591a491-391b-4f1c-96e6-cf486813d41f",
+  "baselineVersion": "23c888ab-57dc-44b8-aad2-7c65884dde15",
+  "candidateVersion": "c6be8a43-f2aa-41f1-900b-814767a1f29f",
+  "candidateDeploymentId": "c64ffe2f-22b6-475c-a49c-d322d751fc25",
+  "uploadOutcome": "verified-inactive",
+  "activationOutcome": "complete",
+  "finalizationOutcome": "finalized",
+  "journey": {
+    "at": "2026-10-29T05:59:16.045Z",
+    "status": "healthy",
+    "checks": [
+      {
+        "name": "protected_readiness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "anonymous_session",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "monitor_freshness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "login",
+        "ok": true
+      },
+      {
+        "name": "authorized_profile",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "authorized_feed",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "revocation",
+        "ok": true,
+        "status": 401
+      },
+      {
+        "name": "logout",
+        "ok": true,
+        "status": 200
+      }
+    ],
+    "logoutReconciled": false,
+    "authenticatedAt": "2026-10-29T05:59:16.997Z",
+    "authenticatedChecksReused": false
+  },
+  "assets": {
+    "at": "2026-10-29T05:59:26.890Z",
+    "healthy": true,
+    "passed": 29,
+    "skipped": [
+      "_headers"
+    ]
+  },
+  "cleanup": {
+    "at": "2026-10-29T05:59:48.696Z",
+    "remainingSyntheticSessions": 0
+  },
+  "leaseReleased": true,
+  "historicalResume": "already-finalized",
+  "productionVersionUnchanged": "3ee85699-feef-4b0c-b264-d5ff13ab6e94",
+  "scope": "Byte-identical staging runtime with retained edge and assets. Normal maintained upload/activation/finalization path; no production deployment or injected fault.",
+  "limitations": [
+    "No continuous pre/during/post activation traffic watch in this rehearsal.",
+    "Does not verify a feature-changing release or old-client/native-device compatibility.",
+    "Hosted automatic rollback and operator escalation remain unverified.",
+    "Does not establish monthly availability."
+  ]
+}
