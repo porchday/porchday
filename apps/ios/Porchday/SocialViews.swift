@@ -45,12 +45,16 @@ struct FeedView: View {
     @MainActor private func load(more: Bool = false) async {
         if more && busy { return }
         guard let memberID = model.member?.id, vault.unlocked else { return }
+        let authenticationGeneration = model.authenticationGeneration
+        let deviceID = vault.device?.id
         let attempt = UUID()
         loadID = attempt
         busy = true
         defer { if loadID == attempt { busy = false } }
         let current: @MainActor @Sendable () -> Bool = {
-            loadID == attempt && model.member?.id == memberID && vault.unlocked && !Task.isCancelled
+            loadID == attempt && model.member?.id == memberID &&
+                model.authenticationGeneration == authenticationGeneration &&
+                vault.device?.id == deviceID && vault.unlocked && !Task.isCancelled
         }
         await model.perform {
             let suffix = more ? "?cursor=" + (cursor ?? "").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)! : ""
