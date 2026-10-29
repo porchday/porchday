@@ -20,6 +20,11 @@ export interface Env {
   SESSION_DENIAL_CLEANUP_V1?: string;
   /** Opt in only with verified queue admission and independent range progress. */
   SESSION_DENIAL_PARTITIONS_V1?: string;
+  /** Enable only after all four queue consumers have verified aggregate admission. */
+  SESSION_DENIAL_QUEUE_TOPOLOGY_V1?: string;
+  DENIAL_RANGE_0?: Queue<DenialJob>;
+  DENIAL_RANGE_1?: Queue<DenialJob>;
+  DENIAL_RANGE_2?: Queue<DenialJob>;
   /** Enable only after all consumers and compatible rollback versions enforce denials. */
   SESSION_DENIAL_WRITER_V1?: string;
   ASSETS: Fetcher;

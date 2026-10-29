@@ -216,3 +216,47 @@ All 10 continuity samples passed, including two post-terminal samples. Exact
 fixture cleanup verified zero rows, provider inventory was reconciled and the
 lease released. The controlled return and restoration are complete; capacity
 and the remaining failure/device gates are still open.
+
+## Isolated delivery implementation, not yet deployed
+
+The failed shared-queue trial showed concurrency averaging one during its first
+two workload minutes despite a cap of four. `session-denial-delivery.ts` adds an
+explicit `SESSION_DENIAL_QUEUE_TOPOLOGY_V1=isolated` opt-in. The absent default
+remains shared delivery. All three producer bindings are required before any
+partition send: `DENIAL_RANGE_0`, `DENIAL_RANGE_1`, and `DENIAL_RANGE_2`. Fixed
+queue names are `porchday-<environment>-denial-0` through `-denial-2`.
+
+Cron and continuation sends use the selected range's binding. Provider-supplied
+queue identity must agree with the message's range before application work.
+Unrelated or cross-range payloads fail on their original queue's retry and
+dead-letter path. Old shared-queue range messages are acknowledged after switching
+to isolated delivery; cron resumes their persisted ranges on the new queues.
+Switching back to shared delivery drains dedicated-queue messages as obsolete.
+Neither direction changes checkpoints or replays a payload onto another queue.
+The dual/active readiness contract and all freshness/work limits remain unchanged.
+
+Admission must verify **one concurrent consumer per range and one for ordinary
+jobs**, batch size one, retry/dead-letter settings, every producer binding and
+all queue identities. The existing jobs cap must be reduced from four before
+activating the additional consumers. Four queue invocations do not mean four
+database connections: each range pool allows one, while ordinary identity cleanup
+can allocate an outer journal pool of one, its own jobs pool of one, and an auth
+pool of three. That gives a conservative queue-pool ceiling of eight for this
+path, excluding HTTP requests, cron, operators and provider pooling. Verify those
+other sources and physical connection occupancy before admission; this source
+calculation alone does not establish safe total database usage.
+
+The maintained inventory reader currently covers only the two ordinary queues.
+Extend its explicit inventory and durable admission/reconciliation protocols
+before creating or enabling additional queues. The rollback baseline must contain
+delivery-aware code and retain all producer bindings. No provider queue, binding,
+consumer cap or topology flag has changed as part of this implementation. Dedicated
+queues do not guarantee delivery latency; repeat the unchanged combined workload
+from idle, with connection and ordinary-job evidence, before claiming capacity.
+
+`scripts/denial-capacity-observation.ts` preserves each bounded observation before
+acceptance assertions, including partial reads and stale-range details. It retains
+per-read start/end times so sequential observations are not described as one
+transactional snapshot. A failed save propagates without retrying the journey or
+other operations. Future workload runners must use this collector and the shared
+runtime health calculation; the original failed trial and its proofs stay intact.

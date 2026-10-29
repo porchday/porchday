@@ -25,7 +25,23 @@ describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{
   points=[];env={ENVIRONMENT:'staging',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}}} as Env;
   message={body:{kind:'expiry'},ack:vi.fn(),retry:vi.fn()};
  });
- async function run(){await worker.queue({messages:[message]} as never,env);}
+ async function run(queue='porchday-staging-jobs'){await worker.queue({queue,messages:[message]} as never,env);}
+ function isolate(){env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1='active';env.SESSION_DENIAL_QUEUE_TOPOLOGY_V1='isolated';for(const key of ['JOBS','DENIAL_RANGE_0','DENIAL_RANGE_1','DENIAL_RANGE_2'] as const)env[key]={send:vi.fn(async()=>{})} as never;}
+ it('processes only the assigned isolated range and sends continuation before acknowledgement',async()=>{
+  isolate();const order:string[]=[];vi.mocked(env.DENIAL_RANGE_1!.send).mockImplementation(async()=>{order.push('send');});message.ack.mockImplementation(()=>{order.push('ack');});
+  message.body={kind:'session_denial_cleanup_partition',denialPartition:1,denialProgressEtag:'v4:1:old'};
+  steps.partition.mockResolvedValueOnce({seen:100,deleted:1,invalid:0,advanced:true,continuation:'v4:1:new'});await run('porchday-staging-denial-1');
+  expect(steps.partition).toHaveBeenCalledExactlyOnceWith(env,1,'v4:1:old');expect(env.JOBS.send).not.toHaveBeenCalled();expect(env.DENIAL_RANGE_1!.send).toHaveBeenCalledExactlyOnceWith({kind:'session_denial_cleanup_partition',denialPartition:1,denialProgressEtag:'v4:1:new'});expect(order).toEqual(['send','ack']);expect(steps.journal).not.toHaveBeenCalled();
+ });
+ it('rejects a wrongly routed batch before any SQL work or acknowledgement',async()=>{
+  isolate();message.body={kind:'expiry'};await expect(run('porchday-staging-denial-1')).rejects.toThrow();
+  for(const step of Object.values(steps))expect(step).not.toHaveBeenCalled();expect(message.ack).not.toHaveBeenCalled();expect(message.retry).not.toHaveBeenCalled();
+ });
+ it('acknowledges obsolete topology messages without processing them in either direction',async()=>{
+  isolate();message.body={kind:'session_denial_cleanup_partition',denialPartition:1};await run();
+  delete env.SESSION_DENIAL_QUEUE_TOPOLOGY_V1;await run('porchday-staging-denial-1');
+  expect(message.ack).toHaveBeenCalledTimes(2);for(const step of Object.values(steps))expect(step).not.toHaveBeenCalled();expect(env.JOBS.send).not.toHaveBeenCalled();expect(env.DENIAL_RANGE_1!.send).not.toHaveBeenCalled();
+ });
  it.each([
   ['expiry','cleanup_expiry_failed'],['identity','cleanup_identity_failed'],['metadata','cleanup_auth_metadata_failed'],
   ['webPush','cleanup_web_push_failed'],['nativePush','cleanup_native_push_failed'],['email','cleanup_email_failed'],['heartbeat','cleanup_heartbeat_failed'],

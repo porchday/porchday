@@ -1,4 +1,5 @@
 import {denialCleanupMode,scheduleDenialCleanup,cleanupDenialPartition,enqueuePartitionContinuation} from './session-denial-runtime';
+import {denialDeliveryAction} from './session-denial-delivery';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions,enqueueCandidateContinuation} from './session-denial-candidates';
 import { Hono } from 'hono';
 import {requestTimingMiddleware} from './request-timing';
@@ -134,8 +135,14 @@ export default {
   }
  },
  async queue(batch:MessageBatch<DenialJob>,env:Env){
+  // Validate the entire batch before any application work. Keep mismatched
+  // payloads on their original queue's retry/dead-letter path.
+  const messages:Message<DenialJob>[]=[];
+  for(const message of batch.messages){
+   if(denialDeliveryAction(env,batch.queue,message.body)==='obsolete')message.ack();else messages.push(message);
+  }
   await connectionScope('job:queue',async()=>{
-  const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup','session_denial_cleanup_partition'].includes(m.body.kind));
+  const cleanup=messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup','session_denial_cleanup_partition'].includes(m.body.kind));
   if(cleanup.length){
    let failedPhase:CleanupFailureCode='cleanup_journal_failed';
    try {
@@ -162,7 +169,7 @@ export default {
    for(const message of cleanup)message.ack();
    }catch(error){reportConnectionRefusal(env,error);event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
   }
-  for(const message of batch.messages.filter(m=>['session_denial_cleanup','session_denial_cleanup_partition'].includes(m.body.kind))){
+  for(const message of messages.filter(m=>['session_denial_cleanup','session_denial_cleanup_partition'].includes(m.body.kind))){
    try{
     const partitioned=message.body.kind==='session_denial_cleanup_partition',mode=denialCleanupMode(env);
     // Drain old-mode deliveries without restarting their obsolete scan namespace.
@@ -172,7 +179,7 @@ export default {
     event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
    catch{event('error',{code:'session_denial_cleanup_retry'},env);message.retry({delaySeconds:60});}
   }
-  for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
+  for(const message of messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
    try{if(message.body.kind==='media_backup_start'){await scheduleMediaBackup(env);message.ack();continue;}if(!message.body.id)throw Error('BACKUP_ID_REQUIRED');const result=await processMediaBackup(env,message.body.id);if(result==='busy')message.retry({delaySeconds:60});else message.ack();}
    catch(error){reportConnectionRefusal(env,error);event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
   }
