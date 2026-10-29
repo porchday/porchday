@@ -27,4 +27,10 @@ it.each(['rate_limit','initial_authorization'] as const)('retains %s failure tim
  const points=writeDataPoint.mock.calls.map(([point])=>point).filter(point=>point.blobs[2]==='journal_phase');
  expect(points.map(point=>point.blobs[5])).toEqual(failedPhase==='rate_limit'?['rate_limit']:['rate_limit','initial_authorization']);
  expect(JSON.stringify(points)).not.toMatch(/private|synthetic-key/);
+ const summaries=writeDataPoint.mock.calls.map(([point])=>point).filter(point=>point.blobs[2]==='logout_summary');
+ expect(summaries).toHaveLength(1);expect(summaries[0].doubles[1]).toBe(0);
+ expect(summaries[0].doubles[2]).toBeGreaterThanOrEqual(0);
+ if(failedPhase==='rate_limit')expect(summaries[0].doubles[3]).toBe(-1);else expect(summaries[0].doubles[3]).toBeGreaterThanOrEqual(0);
+ expect(summaries[0].doubles.slice(4)).toEqual(Array(11).fill(-1));
+ expect(JSON.stringify(summaries)).not.toMatch(/private|synthetic-key/);
 });

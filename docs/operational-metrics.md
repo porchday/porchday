@@ -270,3 +270,39 @@ recorded production release. No threshold, retry, receipt, quarantine, mutation
 ordering or revocation rule is changed by this instrumentation. Root cause and
 latency improvement remain unverified until measurements and a corrective change
 satisfy #55.
+
+
+### Correlated logout operation summary
+
+The diagnostic source also emits one `porchday_logout_summary_v1` point when an
+opted-in hosted logout auth handler settles. This is a separate schema and index
+(`logout_summary:/api/auth/sign-out`); existing `porchday_metrics_v1` consumers
+and individual phase points are unchanged. It is not deployed merely by merging
+or testing the source.
+
+The five blobs are the schema, environment, fixed `logout_summary` event, fixed
+`/api/auth/sign-out` route and `POST`. No request/member/session IDs, URL values,
+headers, SQL, error strings or journal keys are included. The numeric columns are:
+
+| Column | Meaning |
+| --- | --- |
+| double1 | Auth-handler elapsed milliseconds, starting before rate limiting |
+| double2 | Handler reached its existing `committedAndConfirmed` branch: 1 or 0 |
+| double3–double4 | Rate limit; initial authorization |
+| double5–double7 | Journal guard; registration; application work |
+| double8–double11 | Checkpoint; receipt; retirement; journal connection close |
+| double12–double15 | Nested R2 reads; R2 writes; database status; database pages |
+
+Phase values accumulate within this operation; `-1` means no valid measurement,
+including a phase that was not reached. Zero means measured and rounded to zero.
+All durations are finite and bounded to one hour. Nested I/O overlaps enclosing
+phases: do not sum all columns. These values can be compared within the same
+sampled point without joining unrelated aggregate maxima. Analytics sampling
+still prevents conclusions about every logout. The confirmation bit is not an
+HTTP status, old-cookie verification result or proof of successful revocation.
+
+This interval excludes the earlier outer read guard, network transfer and the
+full synthetic journey. It also excludes auth-pool shutdown scheduled afterward.
+The observer cannot change an operation result, retry a mutation, wait for the
+metrics sink or log a failed sink's payload. A terminated invocation may emit no
+summary; absence is unknown, not a successful or fast logout.
