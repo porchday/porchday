@@ -68,6 +68,25 @@ deduplication and native CLI execution. A local assembly using the actual verifi
 `52949ef0` and `9800b842` public builds retained the two missing files with their
 original hashes in a 27-file, 4,862,599-byte package. It made no provider changes.
 
+The reusable Chromium check starts a loopback-only server that serves the old
+HTML document, then serves subsequent asset requests from the selected newer
+package. Run it against the actual public build directories:
+
+```sh
+node scripts/release-assets-browser.ts /private/old-build /private/new-build /private/assembled-assets
+```
+
+It requires the installed Playwright Chromium browser. Requests outside the local
+origin are blocked, service workers are disabled so cached files cannot hide the
+failure, and any API request receives a local unauthenticated stub. The first run
+must reproduce the broken startup without retention; the second must render the
+login form, have no module-MIME or page errors, and return exact old asset hashes.
+It prints both results and fails unless the negative and positive controls agree.
+This is a deployment-race startup check, not a signed-in session or API-compatibility
+test. The same actual builds reproduced a non-rendering page without retention
+and a working login form with retention, including the old CSS, React and crypto
+module hashes. Hosted activation and authenticated traffic remain unverified.
+
 Before claiming this fixes deployed continuity, integrate the package and rollback
 artifacts into the reviewed release command, upload through staging, verify every
 retained URL's hash and MIME type, and exercise a previous-release browser before,
