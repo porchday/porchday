@@ -369,3 +369,22 @@ Full source validation also passed: 22 crypto tests and 1,058 general tests, wit
 192 environment-dependent tests skipped in the general run. The separate
 PostgreSQL run above covers the relevant 38 auth/session tests. API typecheck,
 formatting, secret and diff checks passed. Hosted rollout remains pending.
+
+## Operator DNS retry correction — October 29, 2026
+
+The isolated progress release `4b6825e` was uploaded as verified-inactive staging
+version `966329b9`. Its bootstrap operator encountered `OPERATOR_DNS_NOT_READY`;
+reconciliation verified teardown, no v2 progress record, unchanged application
+state and empty activation journals. No activation occurred.
+
+The maintained operator transport now retries only DNS lookup, before constructing
+an HTTP request: at most three attempts with 100/200 ms backoff, within five seconds
+and the overall request deadline. Lookup time is subtracted from the HTTP budget.
+The request is dispatched at most once; transport failure or a lost write reply
+never enters the retry loop. A stalled or late DNS result cannot dispatch after
+the deadline. TLS hostname/server-name verification remains unchanged.
+
+All ten targeted tests passed: six DNS/dispatch deadline tests and four native-local
+R2 operator authorization/CAS/media tests. Formatting, secret and diff checks passed.
+Hosted confirmation and the real bootstrap/activation remain pending; this change
+is not evidence that the provider's DNS propagation failure has been eliminated.

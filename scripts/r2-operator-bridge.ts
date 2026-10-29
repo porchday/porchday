@@ -2,6 +2,7 @@ import {readFile} from 'node:fs/promises';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {resolve4,resolve6,resolveCname,Resolver} from 'node:dns/promises';
 import {request as httpsRequest} from 'node:https';
+import {withOperatorAddress} from './operator-dns.ts';
 import type {JournalStore} from '../apps/api/src/privacy-journal.js';
 
 type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>;verifyMediaObject(value:{key:string;sha256:string;byteSize:number}):Promise<void>;restoreMediaObject(value:{snapshotId:string;key:string;sha256:string;byteSize:number}):Promise<void>;probeRequest?:(path:string,body?:unknown,method?:'POST'|'PUT')=>Promise<Response>};
@@ -40,12 +41,11 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
   // domain at its authoritative server while retaining normal TLS verification.
   async function requestBridge(path:string,body:unknown,authorized=true,method='POST'):Promise<Response>{
     const requestLimit=options.probeModule?.largeRequestTimeoutMs&&['/probe/reserve','/probe/reserve-overlap','/probe/upload'].includes(path)?options.probeModule.largeRequestTimeoutMs:30000;
-    const remaining=probeDeadline&&!['/probe/cleanup','/probe/diagnostics'].includes(path)?probeDeadline-Date.now():requestLimit;
-    if(remaining<=0)throw Error('OPERATOR_PROBE_RUNTIME_EXCEEDED');
-    let address:string|undefined;try{[address]=await authoritative.resolve4(hostname);}catch{throw Error('OPERATOR_DNS_NOT_READY');}if(!address)throw Error('OPERATOR_DNS_NOT_READY');
+    const deadline=Math.min(Date.now()+requestLimit,probeDeadline&&!['/probe/cleanup','/probe/diagnostics'].includes(path)?probeDeadline:Infinity);
+    if(deadline<=Date.now())throw Error('OPERATOR_PROBE_RUNTIME_EXCEEDED');
     const binary=body instanceof Uint8Array,encoded=binary?body:JSON.stringify(body??{});
     if(binary&&body.byteLength>26*1024*1024)throw Error('OPERATOR_REQUEST_TOO_LARGE');
-    return new Promise((resolve,reject)=>{
+    return withOperatorAddress(()=>authoritative.resolve4(hostname),(address,remaining)=>new Promise<Response>((resolve,reject)=>{
       const started=Date.now(),request=httpsRequest({hostname,servername:hostname,path,method,lookup:(_host,options,callback)=>{
         if(typeof options==='object'&&options.all)callback(null,[{address,family:4}] as never);else callback(null,address,4);
       },headers:{...(authorized?{Authorization:'Bearer '+bearer}:{}),'Content-Type':binary?'application/octet-stream':'application/json'},timeout:Math.min(requestLimit,remaining)},response=>{
@@ -58,7 +58,7 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
       request.once('close',()=>clearTimeout(deadlineTimer));
       if(options.probeModule&&['/probe/reserve','/probe/reserve-overlap','/probe/upload'].includes(path))request.once('finish',()=>options.onProgress?.('request-body-sent-'+path.slice(7)+'-'+(Date.now()-started)+'ms'));
       request.on('timeout',()=>request.destroy(Error('OPERATOR_BRIDGE_TIMEOUT')));request.on('error',error=>reject(error.message==='OPERATOR_BRIDGE_TIMEOUT'?Error('OPERATOR_BRIDGE_TIMEOUT'):Error('OPERATOR_BRIDGE_UNAVAILABLE')));request.end(encoded);
-    });
+    }),deadline);
   }
   let attemptedUpload=false,domainId:string|undefined;
   async function call(path:string,body:unknown):Promise<Response> {
