@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {FileDeploymentLease} from './deployment-recovery-lease.ts';
-import {deploymentPlanHash,type DeploymentPlan,type RecoveryJournal,type RecoveryState} from './deployment-recovery.ts';
+import {deploymentPlanHash,rollbackOperationId,type DeploymentPlan,type RecoveryJournal,type RecoveryState} from './deployment-recovery.ts';
 const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
 function fixture(){const root=mkdtempSync(join(tmpdir(),'porchday-lease-')),canonical=JSON.stringify({stagingVersion:plan.baselineVersion,stagingRuntimeSource:'c'.repeat(40),compatibleRollbackVersions:{staging:plan.baselineVersion}});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});return{root,canonical};}
@@ -184,5 +184,60 @@ describe('monitor recovery canonical state',()=>{
  });
  it('does not accept application asset manifests on monitor plans',()=>{
   expect(()=>deploymentPlanHash({...plan,worker:'porchday-monitor-staging',assetManifests:{candidate:'a'.repeat(64),baseline:'b'.repeat(64)}})).toThrow('MONITOR_ASSETS_FORBIDDEN');
+ });
+});
+
+describe('failed monitor rollback disposition',()=>{
+ function setup(){
+  const f=fixture(),monitor={...plan,worker:'porchday-monitor-staging'},canonical=JSON.stringify({stagingVersion:uuid(20),monitorVersions:{staging:plan.baselineVersion},monitorSources:{staging:'c'.repeat(40)},compatibleRollbackVersions:{'monitor-staging':plan.baselineVersion}});
+  writeFileSync(join(f.root,'latest-verified-deployment.json'),canonical);
+  let state:RecoveryState={v:1,revision:4,planHash:deploymentPlanHash(monitor),phase:'rollback-intent',candidateDeploymentId:uuid(5)};
+  const log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('must not change journal');}};
+  const result={observation:{version:monitor.baselineVersion,operationId:rollbackOperationId(monitor.operationId),deploymentId:uuid(6)},evidenceDigest:'d'.repeat(64),reason:'MONITOR_UNAVAILABLE_AFTER_ROLLBACK' as const};
+  return{...f,canonical,monitor,log,result,setState:(next:RecoveryState)=>{state=next;}};
+ }
+ it('archives failure without claiming health or changing canonical/journal, and permanently forbids replay',async()=>{
+  const f=setup(),lease=FileDeploymentLease.acquire(f.root,f.monitor);try{
+   await lease.resolveFailedMonitorRollback(f.log,async()=>f.result,AbortSignal.timeout(5000));
+   expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);expect((await f.log.read())?.phase).toBe('rollback-intent');
+   expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(existsSync(join(f.root,'deployment-recovery-failed-'+plan.operationId+'/failed-recovery.json'))).toBe(true);
+   expect(await FileDeploymentLease.completed(f.root,f.monitor,f.log)).toBe(null);expect(()=>FileDeploymentLease.acquire(f.root,f.monitor)).toThrow('ALREADY_RESOLVED_FAILED');
+   const next=FileDeploymentLease.acquire(f.root,{...f.monitor,operationId:uuid(40)});next.close();
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it.each(['read-failure','wrong-operation','wrong-version','invalid-digest','journal-change','canonical-change','unexpected-file'] as const)('retains unresolved evidence on %s',async kind=>{
+  const f=setup(),lease=FileDeploymentLease.acquire(f.root,f.monitor);try{
+   await expect(lease.resolveFailedMonitorRollback(f.log,async()=>{
+    if(kind==='read-failure')throw Error('provider unavailable');
+    if(kind==='wrong-operation')return{...f.result,observation:{...f.result.observation,operationId:uuid(40)}};
+    if(kind==='wrong-version')return{...f.result,observation:{...f.result.observation,version:plan.candidateVersion}};
+    if(kind==='invalid-digest')return{...f.result,evidenceDigest:'invalid'};
+    if(kind==='journal-change')f.setState({...await f.log.read() as RecoveryState,revision:5});
+    if(kind==='canonical-change')writeFileSync(join(f.root,'latest-verified-deployment.json'),f.canonical+' ');
+    if(kind==='unexpected-file')writeFileSync(join(f.root,'deployment-lock/extra'),'x',{mode:0o600});
+    return f.result;
+   },AbortSignal.timeout(5000))).rejects.toThrow();expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);expect(existsSync(join(f.root,'deployment-lock/failed-recovery.json'))).toBe(false);
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('resumes interrupted local archival and blocks regular controller operations',async()=>{
+  const f=setup();let lease=FileDeploymentLease.acquire(f.root,f.monitor);try{
+   const record={v:1,planHash:deploymentPlanHash(f.monitor),journal:await f.log.read(),...f.result};writeFileSync(join(f.root,'deployment-lock/failed-recovery.json'),JSON.stringify(record)+'\n',{mode:0o600});lease.close();lease=FileDeploymentLease.acquire(f.root,f.monitor);
+   expect(()=>lease.assert(f.monitor)).toThrow('FAILURE_RESOLUTION_IN_PROGRESS');
+   await expect(lease.resolveFailedMonitorRollback(f.log,async()=>({...f.result,evidenceDigest:'e'.repeat(64)}),AbortSignal.timeout(5000))).rejects.toThrow('PROOF_CHANGED');
+   await lease.resolveFailedMonitorRollback(f.log,async()=>f.result,AbortSignal.timeout(5000));
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('holds the kernel lease and rejects concurrent release operations through asynchronous inspection',async()=>{
+  const f=setup(),lease=FileDeploymentLease.acquire(f.root,f.monitor);try{
+   await lease.resolveFailedMonitorRollback(f.log,async()=>{
+    expect(()=>lease.close()).toThrow('RESOLUTION_IN_PROGRESS');expect(()=>lease.assert(f.monitor)).toThrow('RESOLUTION_IN_PROGRESS');
+    expect(()=>FileDeploymentLease.acquire(f.root,f.monitor)).toThrow('LEASE_BUSY');
+    await expect(lease.resolveFailedMonitorRollback(f.log,async()=>f.result,AbortSignal.timeout(5000))).rejects.toThrow('RESOLUTION_IN_PROGRESS');return f.result;
+   },AbortSignal.timeout(5000));
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('cannot use the disposition for application deployments or an unrolled monitor candidate',async()=>{
+  const f=fixture(),app=FileDeploymentLease.acquire(f.root,plan);try{await expect(app.resolveFailedMonitorRollback(journal('prepared'),async()=>{throw Error('must not run');},AbortSignal.timeout(5000))).rejects.toThrow('UNSAFE');}finally{app.close();rmSync(f.root,{recursive:true,force:true});}
+  const m=setup(),lease=FileDeploymentLease.acquire(m.root,m.monitor);try{m.setState({v:1,revision:3,planHash:deploymentPlanHash(m.monitor),phase:'candidate-observed',candidateDeploymentId:uuid(5)});await expect(lease.resolveFailedMonitorRollback(m.log,async()=>m.result,AbortSignal.timeout(5000))).rejects.toThrow('UNSAFE');}finally{lease.close();rmSync(m.root,{recursive:true,force:true});}
  });
 });

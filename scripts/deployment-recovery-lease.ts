@@ -3,7 +3,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {constants,openSync,closeSync,fsyncSync,lstatSync,mkdirSync,readFileSync,readdirSync,writeFileSync,unlinkSync,renameSync,existsSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
-import {deploymentPlanHash,recoveryTarget,rollbackOperationId,RecoveryError,validateRecoveryState,type DeploymentPlan,type RecoveryJournal,type DeploymentPorts,type RecoveryState} from './deployment-recovery.ts';
+import {deploymentPlanHash,recoveryTarget,rollbackOperationId,RecoveryError,validateRecoveryState,type DeploymentObservation,type DeploymentPlan,type RecoveryJournal,type DeploymentPorts,type RecoveryState} from './deployment-recovery.ts';
 import {publicAssetManifestHash,validatePublicAssetReport,type PublicAssetManifest} from './release-assets-verify.ts';
 const protocol='porchday-deployment-recovery-sqlite-v1';
 const assetProofLimit=32*1024*1024;
@@ -76,6 +76,7 @@ export class FileDeploymentLease{
  private readonly owner:Owner;
  private readonly plan:DeploymentPlan;
  private held=true;
+ private resolvingFailure=false;
  private constructor(root:string,db:DatabaseSync,owner:Owner,plan:DeploymentPlan){this.root=root;this.db=db;this.owner=owner;this.plan=Object.freeze({...plan,...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});}
  /** No time-based stealing. Resume only the same plan while holding the kernel lock. */
  static acquire(root:string,plan:DeploymentPlan):FileDeploymentLease{
@@ -87,6 +88,7 @@ export class FileDeploymentLease{
   catch{db?.close();throw new RecoveryError('DEPLOYMENT_LEASE_BUSY');}
   try{
    const canonical=privateText(join(root,'latest-verified-deployment.json')),directory=join(root,'deployment-lock'),ownerPath=join(directory,'owner.json');let created=false;
+   if(existsSync(join(root,'deployment-recovery-failed-'+plan.operationId)))throw new RecoveryError('DEPLOYMENT_ALREADY_RESOLVED_FAILED');
    if(existsSync(archivePath(root,plan)))throw new RecoveryError('DEPLOYMENT_ALREADY_FINALIZED');
    if(existsSync(join(root,'deployment-recovery-cancelled-'+plan.operationId)))throw new RecoveryError('DEPLOYMENT_ALREADY_CANCELLED');
    if(!existsSync(directory))checkCanonical(plan,canonical);
@@ -102,6 +104,7 @@ export class FileDeploymentLease{
    }
    const lease=new FileDeploymentLease(root,db,owner,plan),finalization=readFinalization(directory,plan,owner);
    if(finalization){lease.assertOwner();if(canonical!==finalization.before&&canonical!==finalization.after)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');}
+   else if(existsSync(join(directory,'failed-recovery.json'))){lease.assertOwner();if(digest(canonical)!==owner.baselineSha256)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');checkCanonical(plan,canonical);}
    else lease.assert(plan);return lease;
   }catch(error){db.exec('ROLLBACK');db.close();throw error;}
  }
@@ -112,11 +115,34 @@ export class FileDeploymentLease{
  }
  /** Checks canonical identity/floor acknowledgement; artifact/schema proof is additionally required. */
  assert(plan:DeploymentPlan,signal?:AbortSignal):Record<string,unknown>{
-  signal?.throwIfAborted();this.assertOwner();if(deploymentPlanHash(plan)!==this.owner.planHash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');
+  signal?.throwIfAborted();if(this.resolvingFailure)throw new RecoveryError('DEPLOYMENT_FAILURE_RESOLUTION_IN_PROGRESS');this.assertOwner();if(deploymentPlanHash(plan)!==this.owner.planHash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');
+  if(existsSync(join(this.root,'deployment-lock/failed-recovery.json')))throw new RecoveryError('DEPLOYMENT_FAILURE_RESOLUTION_IN_PROGRESS');
   if(readFinalization(join(this.root,'deployment-lock'),this.plan,this.owner))throw new RecoveryError('DEPLOYMENT_FINALIZATION_IN_PROGRESS');
   const text=privateText(join(this.root,'latest-verified-deployment.json'));if(digest(text)!==this.owner.baselineSha256)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');
   const canonical=checkCanonical(plan,text);
   signal?.throwIfAborted();return canonical;
+ }
+ /** Archive an explicitly failed monitor recovery after read-only proof of the
+  * exact rollback and unchanged collateral state. Never marks health successful,
+  * advances the journal, rewrites canonical state, or permits operation replay. */
+ async resolveFailedMonitorRollback(journal:RecoveryJournal,verify:(plan:Readonly<DeploymentPlan>,signal:AbortSignal)=>Promise<{observation:DeploymentObservation;evidenceDigest:string;reason:'MONITOR_UNAVAILABLE_AFTER_ROLLBACK'}>,signal:AbortSignal):Promise<void>{
+  if(this.resolvingFailure)throw new RecoveryError('DEPLOYMENT_FAILURE_RESOLUTION_IN_PROGRESS');
+  const directory=join(this.root,'deployment-lock'),path=join(directory,'failed-recovery.json');
+  const check=()=>{signal.throwIfAborted();this.assertOwner();if(!recoveryTarget(this.plan.worker).monitor||readFinalization(directory,this.plan,this.owner))throw new RecoveryError('DEPLOYMENT_FAILURE_RESOLUTION_UNSAFE');const current=privateText(join(this.root,'latest-verified-deployment.json'));if(digest(current)!==this.owner.baselineSha256)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');checkCanonical(this.plan,current);};
+  check();this.resolvingFailure=true;
+  try{
+   const state=await journal.read();validateRecoveryState(state);if(state.planHash!==this.owner.planHash||state.phase!=='rollback-intent')throw new RecoveryError('DEPLOYMENT_FAILURE_RESOLUTION_UNSAFE');
+   const result=await verify(this.plan,signal);check();
+   if(JSON.stringify(await journal.read())!==JSON.stringify(state))throw new RecoveryError('DEPLOYMENT_JOURNAL_CHANGED');
+   const observed=result.observation;
+   if(!result||Object.keys(result).sort().join(',')!=='evidenceDigest,observation,reason'||!observed||Object.keys(observed).sort().join(',')!=='deploymentId,operationId,version'||observed.version!==this.plan.baselineVersion||observed.operationId!==rollbackOperationId(this.plan.operationId)||!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(observed.deploymentId)||observed.deploymentId===this.plan.baselineDeploymentId||result.reason!=='MONITOR_UNAVAILABLE_AFTER_ROLLBACK'||!/^[a-f0-9]{64}$/.test(result.evidenceDigest))throw new RecoveryError('DEPLOYMENT_FAILURE_PROOF_INVALID');
+   const record=JSON.stringify({v:1,planHash:this.owner.planHash,journal:state,...result})+'\n',existing=existsSync(path);
+   if(readdirSync(directory).sort().join(',')!==(existing?'failed-recovery.json,owner.json':'owner.json'))throw new RecoveryError('DEPLOYMENT_LEASE_DIRECTORY_CHANGED');
+   if(existing&&privateText(path)!==record)throw new RecoveryError('DEPLOYMENT_FAILURE_PROOF_CHANGED');
+   const archive=join(this.root,'deployment-recovery-failed-'+this.plan.operationId);if(existsSync(archive))throw new RecoveryError('DEPLOYMENT_ALREADY_RESOLVED_FAILED');
+   if(!existing){atomicText(path,record,this.root);syncDirectory(directory);}
+   check();renameSync(directory,archive);syncDirectory(this.root);
+  }finally{this.resolvingFailure=false;if(!existsSync(directory))this.close();}
  }
  /** Persist terminal evidence before replacing canonical bytes. Safe to resume, without provider writes. */
  async finalize(journal:RecoveryJournal,providerSnapshotPath?:string,assetEvidencePath?:string):Promise<void>{
@@ -172,7 +198,7 @@ export class FileDeploymentLease{
   return JSON.parse(receipt.after);
  }
  /** Releases the kernel lock only. Unknown outcomes keep the persistent marker for same-plan resume. */
- close():void{if(this.held){this.held=false;try{this.db.exec('ROLLBACK');}finally{this.db.close();}}}
+ close():void{if(this.resolvingFailure)throw new RecoveryError('DEPLOYMENT_FAILURE_RESOLUTION_IN_PROGRESS');if(this.held){this.held=false;try{this.db.exec('ROLLBACK');}finally{this.db.close();}}}
 }
 
 /** Enforce lease/canonical checks at the I/O boundary as well as authorization.
