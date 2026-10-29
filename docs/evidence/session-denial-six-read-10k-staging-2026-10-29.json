@@ -1,0 +1,337 @@
+{
+  "classification": "bounded capacity acceptance passed; substantial performance improvement not demonstrated",
+  "runtimeCommit": "0892b284f709293b0d68aeaa5b4b06cdbf6c2f28",
+  "toolingCommit": "5f3f6d76e1a1fcc75a78f42d1f9af122c8d410f9",
+  "uploadOperation": "20ec712a-c2d2-4a5b-be25-032a73d02735",
+  "activationOperation": "f5b45643-7e0d-4cae-ad65-940f9bf09212",
+  "requiredPushCI": {
+    "runtimeVerify": 40858647995,
+    "runtimeSecrets": 40858648170,
+    "toolingVerify": 40852181996,
+    "toolingSecrets": 40852182036
+  },
+  "verifiedFirstPartySources": 49,
+  "retainedPublicAssets": 31,
+  "scheduledProgress": {
+    "at": "2026-10-29T10:40:53.243Z",
+    "passed": true,
+    "version": "d06996e3-2b78-47f7-a04e-cace08bd6ec1",
+    "runtimeSource": "0892b284f709293b0d68aeaa5b4b06cdbf6c2f28",
+    "observedWithinMs": 54342,
+    "freshPage": true,
+    "freshPass": true,
+    "samples": [
+      {
+        "at": "2026-10-29T10:39:59.257Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 8,
+          "pass_age_seconds": 8,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T10:40:10.208Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 19,
+          "pass_age_seconds": 19,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T10:40:20.668Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 29,
+          "pass_age_seconds": 29,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T10:40:30.962Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 39,
+          "pass_age_seconds": 39,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T10:40:41.569Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 50,
+          "pass_age_seconds": 50,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T10:40:51.819Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 0,
+          "pass_age_seconds": 0,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": true,
+        "freshPass": true
+      }
+    ],
+    "manualSweepInvocations": 0,
+    "providerUnchanged": true
+  },
+  "capacity": {
+    "at": "2026-10-29T10:50:29.013Z",
+    "passed": true,
+    "environment": "staging",
+    "runtimeSource": "0892b284f709293b0d68aeaa5b4b06cdbf6c2f28",
+    "toolingSource": "5f3f6d76e1a1fcc75a78f42d1f9af122c8d410f9",
+    "version": "d06996e3-2b78-47f7-a04e-cace08bd6ec1",
+    "syntheticSessions": 10000,
+    "syntheticMembers": 1,
+    "seededAt": "2026-10-29T10:41:01.312Z",
+    "passCompletions": [
+      {
+        "observedAt": "2026-10-29T10:45:43.358Z",
+        "completedLower": 1793270730358,
+        "startLower": 1793270513358,
+        "durationSeconds": 217,
+        "seen": 10003
+      },
+      {
+        "observedAt": "2026-10-29T10:50:23.446Z",
+        "completedLower": 1793271006446,
+        "startLower": 1793270752446,
+        "durationSeconds": 254,
+        "seen": 10003
+      }
+    ],
+    "healthySamples": 29,
+    "latencies": {
+      "anonymous_session": {
+        "samples": 29,
+        "medianMs": 326,
+        "p95Ms": 390,
+        "maxMs": 635
+      },
+      "authorized_feed": {
+        "samples": 29,
+        "medianMs": 410,
+        "p95Ms": 572,
+        "maxMs": 826
+      },
+      "authorized_profile": {
+        "samples": 29,
+        "medianMs": 288,
+        "p95Ms": 636,
+        "maxMs": 743
+      },
+      "login": {
+        "samples": 29,
+        "medianMs": 530,
+        "p95Ms": 640,
+        "maxMs": 693
+      },
+      "logout": {
+        "samples": 29,
+        "medianMs": 645,
+        "p95Ms": 837,
+        "maxMs": 1043
+      },
+      "monitor_freshness": {
+        "samples": 29,
+        "medianMs": 79,
+        "p95Ms": 110,
+        "maxMs": 249
+      },
+      "protected_readiness": {
+        "samples": 29,
+        "medianMs": 296,
+        "p95Ms": 635,
+        "maxMs": 789
+      },
+      "revocation": {
+        "samples": 29,
+        "medianMs": 168,
+        "p95Ms": 246,
+        "maxMs": 318
+      }
+    },
+    "maxPageAgeSeconds": 52,
+    "maxPassAgeSeconds": 273,
+    "intermediatePassSeen": [
+      0,
+      400,
+      800,
+      1100,
+      1600,
+      2200,
+      2300,
+      3100,
+      3200,
+      3900,
+      4200,
+      4700,
+      5200,
+      5600,
+      6200,
+      6400,
+      7100,
+      7200,
+      8100,
+      8900,
+      9000,
+      9700,
+      9900
+    ],
+    "remainingFixtureRows": 0,
+    "manualSweepInvocations": 0,
+    "progressWrites": 0,
+    "providerUnchanged": true,
+    "productionMutations": 0,
+    "leaseReleased": true
+  },
+  "phaseAggregates": {
+    "at": "2026-10-29T10:50:32.890Z",
+    "environment": "staging",
+    "runtimeSource": "0892b284f709293b0d68aeaa5b4b06cdbf6c2f28",
+    "window": {
+      "from": "2026-10-29T10:41:02.000Z",
+      "toExclusive": "2026-10-29T10:50:23.000Z"
+    },
+    "querySha256": "c89ac4c30c884a708520cbcd36974adaa593470b4d4c89cbf0b2abe7e2bde321",
+    "rows": [
+      {
+        "phase": "authority_batches",
+        "observed_points": 18,
+        "estimated_events": 42,
+        "estimated_total_ms": 277002,
+        "estimated_attempts": 2790,
+        "invocation_p95_ms": 10350
+      },
+      {
+        "phase": "enqueue",
+        "observed_points": 24,
+        "estimated_events": 35,
+        "estimated_total_ms": 6253,
+        "estimated_attempts": 35,
+        "invocation_p95_ms": 292
+      },
+      {
+        "phase": "pool_close",
+        "observed_points": 20,
+        "estimated_events": 44,
+        "estimated_total_ms": 0,
+        "estimated_attempts": 44,
+        "invocation_p95_ms": 0
+      },
+      {
+        "phase": "progress_read",
+        "observed_points": 25,
+        "estimated_events": 60,
+        "estimated_total_ms": 29779,
+        "estimated_attempts": 268,
+        "invocation_p95_ms": 674
+      },
+      {
+        "phase": "progress_write",
+        "observed_points": 20,
+        "estimated_events": 42,
+        "estimated_total_ms": 42157,
+        "estimated_attempts": 186,
+        "invocation_p95_ms": 1317
+      },
+      {
+        "phase": "sql_list",
+        "observed_points": 23,
+        "estimated_events": 45,
+        "estimated_total_ms": 39641,
+        "estimated_attempts": 193,
+        "invocation_p95_ms": 1369
+      },
+      {
+        "phase": "total",
+        "observed_points": 20,
+        "estimated_events": 46,
+        "estimated_total_ms": 423558,
+        "estimated_attempts": 46,
+        "invocation_p95_ms": 12539
+      }
+    ],
+    "limitations": [
+      "Sampled phase aggregates, not per-request traces.",
+      "Points are timestamped at invocation flush; boundary-crossing work may contribute.",
+      "Total overlaps component phases; do not add them.",
+      "Enqueue measures send observation, not delivery latency.",
+      "Missing points may reflect ingestion delay or unavailable telemetry; not zero work.",
+      "Cleanup/recovery after fixture removal is excluded from this window."
+    ]
+  },
+  "phaseMeanMsPerAttempt": {
+    "authority_batches": 99.284,
+    "enqueue": 178.657,
+    "pool_close": 0.0,
+    "progress_read": 111.116,
+    "progress_write": 226.651,
+    "sql_list": 205.394,
+    "total": 9207.783
+  },
+  "comparison": {
+    "priorFiveReadPassSeconds": [
+      234,
+      245
+    ],
+    "sixReadPassSeconds": [
+      217,
+      254
+    ],
+    "priorMeanSeconds": 239.5,
+    "sixReadMeanSeconds": 235.5,
+    "meanReductionPercent": 1.67,
+    "priorMaxObservedPassAgeSeconds": 288,
+    "sixReadMaxObservedPassAgeSeconds": 273,
+    "controlledRandomizedComparison": false
+  },
+  "interpretation": [
+    "Two full passes succeeded with all10000 synthetic sessions intact.",
+    "Only a1.67% mean reduction across these successive two-pass runs; second six-read pass was slower than either five-read pass. Substantial repeatable improvement is not demonstrated.",
+    "Observed freshness margin is27s against300s; point samples can miss higher peaks. Earlier failures remain relevant.",
+    "Authority batches remain the largest measured per-page cost; current evidence does not establish the distribution of individual read times or that batch barriers cause the variability.",
+    "No denied-backlog, hosted interruption, device, production writer or monthly SLO acceptance is implied."
+  ]
+}

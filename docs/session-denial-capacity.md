@@ -41,3 +41,17 @@ storage/SQL failure paths and repeat two complete hosted passes with the entire
 journey results, phase timing and exact cleanup. Retain earlier failed evidence.
 Do not enable production writers based solely on this experiment: compatible
 rollback, denied-backlog and interruption/concurrency acceptance remain required.
+
+## Six-read hosted result
+
+The six-read runtime completed two10,003-candidate passes in217 and254 seconds
+with all10,000 synthetic sessions intact. All29 journey observations passed;
+exact cleanup, unchanged provider state and released lease were verified.
+Maximum observed full-pass age was273 seconds. [Evidence](evidence/session-denial-six-read-10k-staging-2026-10-29.json).
+
+The mean235.5 seconds is only1.67% lower than the prior239.5-second mean, and the
+second pass was slower than either prior pass. These successive runs are not a
+randomized comparison. Six reads alone have not demonstrated substantial,
+repeatable capacity margin. Authority batches remain the largest measured
+per-page cost; per-read latency distribution and the contribution of batch
+barriers remain unmeasured. Keep the broader capacity and recovery gates open.
