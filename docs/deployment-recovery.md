@@ -22,6 +22,23 @@ of reviewed release evidence, and the explicitly verified compatible rollback
 versions. A source branch name or a version's age is not compatibility evidence.
 The plan digest is only an identity check; it does not authenticate its contents.
 
+The target can be `porchday-staging`, `porchday-production`, or the corresponding
+`-edge` frontend Worker. Staging currently routes public traffic through its
+frontend; production currently routes directly to its API Worker. Select the
+actual serving component from the verified topology. A backend-only staging
+activation does not publish a changed frontend asset package.
+
+Frontend plans additionally require `backendVersion` and `backendReaderFloor`.
+The lease requires the frontend to be enabled in the canonical topology and those
+backend pins to match. Frontend rollback targets belong in
+`compatibleRollbackVersions`; backend privacy compatibility is acknowledged
+separately. Finalization updates the frontend code version/source under
+`edgeRouting`, preserves backend and asset provenance, and checks that a supplied
+snapshot still has the pinned backend version. It records recovery under the
+component key such as `staging-edge`. Existing API plan hashes and finalization
+receipts retain their format; the completed October 28 hosted drill remains
+readable with these changes.
+
 `authorize` must verify the exclusive deployment lease, canonical deployment
 record, actual artifact/source provenance, schema compatibility, bindings,
 assets, routes, queue policy and current denial-reader floor. It runs before
@@ -43,6 +60,42 @@ and `unknown` when the evidence cannot support either conclusion. Honor the
 abort signal. Never replay an ambiguous user mutation when repeating a probe.
 The controller does not repair database state, clear privacy intents, or infer
 that rollback reverses a migration.
+
+## Shared journey and asset verifier
+
+`createReleaseVerifier` in `scripts/release-verification.ts` supplies the controller's
+`verify` port. Provide the immutable plan, a dedicated synthetic-account config,
+the candidate and baseline public-asset manifests, and an absolute private
+evidence directory. Never reuse the continuous production monitor's identity
+concurrently. The factory snapshots inputs, checks the environment and manifests,
+and refuses overlapping calls. The authorization adapter must still authenticate
+the manifests and their source/CI provenance against the plan's release evidence.
+Code and asset source commits can legitimately differ, particularly for the
+retained staging frontend executable.
+
+Each invocation records a durable start before making requests, performs one
+authenticated journey, and records its sanitized observation. A completed failed
+journey, including a request timeout or transport failure, is `unhealthy`; it is
+an observed availability failure without claiming a root cause. This can cause a
+conservative rollback during a local network problem. The controller must still
+observe its exact deployment and reauthorize a compatible rollback target.
+Cancellation of the enclosing verification is `unknown`; unexpected exceptions
+or evidence-write failures also remain unavailable to the controller.
+
+After a successful journey, the verifier checks the expected public assets. It
+allows up to three read-only convergence rounds, spaced by 250 and 750 milliseconds,
+and saves every round, including failures. It never repeats the login/logout
+journey just to retry assets. Persistent incorrect bytes, MIME types, statuses or
+transport failures are `unhealthy`. Only a passing journey and complete matching
+asset report can return `healthy`. The controller's overall deadline still applies.
+
+Integration tests use the actual controller and durable journal to demonstrate
+that persistent HTTP-200 HTML for an expected module triggers one rollback and
+that the restored version is verified against its own manifest. These are local
+fixtures, not a hosted release of this new adapter. Provider/source/schema
+authorization, inactive uploads, asset-aware canonical finalization and a complete
+normal release command remain required. In particular, the current lease's
+code-version finalization must not be used to claim new asset provenance.
 
 ## Durable operation and resumption
 

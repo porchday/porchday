@@ -5,8 +5,7 @@ import {pathToFileURL} from 'node:url';
 
 export interface PublicAssetManifest {source:string;files:Record<string,string>}
 const types:Record<string,string[]>={'.html':['text/html'],'.js':['text/javascript','application/javascript'],'.mjs':['text/javascript','application/javascript'],'.css':['text/css'],'.svg':['image/svg+xml'],'.png':['image/png'],'.json':['application/json'],'.map':['application/json'],'.webmanifest':['application/manifest+json','application/json'],'.txt':['text/plain'],'.woff2':['font/woff2']};
-export async function verifyPublicAssets(origin:string,manifest:PublicAssetManifest,options:{fetch?:typeof fetch;signal?:AbortSignal}={}){
- if(!['https://staging.porchday.com','https://porchday.org'].includes(origin))throw Error('INVALID_RELEASE_ORIGIN');
+export function validatePublicAssetManifest(manifest:PublicAssetManifest):void{
  if(!manifest||typeof manifest.source!=='string'||!/^[a-f0-9]{40}$/.test(manifest.source)||!manifest.files||Array.isArray(manifest.files)||typeof manifest.files!=='object')throw Error('INVALID_PUBLIC_MANIFEST');
  const entries=Object.entries(manifest.files).sort(([a],[b])=>a.localeCompare(b));
  if(entries.length<1||entries.length>20000)throw Error('INVALID_PUBLIC_MANIFEST');
@@ -14,7 +13,12 @@ export async function verifyPublicAssets(origin:string,manifest:PublicAssetManif
   if(path.length>240||!path.split('/').every(part=>/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(part))||typeof digest!=='string'||!/^[a-f0-9]{64}$/.test(digest)
    ||(path!=='_headers'&&!types[extname(path)]))throw Error('INVALID_PUBLIC_MANIFEST');
  }
- const selected=entries.filter(([path])=>path!=='_headers');if(!selected.length)throw Error('NO_PUBLIC_ASSETS');
+ if(!entries.some(([path])=>path!=='_headers'))throw Error('NO_PUBLIC_ASSETS');
+}
+export async function verifyPublicAssets(origin:string,manifest:PublicAssetManifest,options:{fetch?:typeof fetch;signal?:AbortSignal}={}){
+ if(!['https://staging.porchday.com','https://porchday.org'].includes(origin))throw Error('INVALID_RELEASE_ORIGIN');
+ validatePublicAssetManifest(manifest);
+ const entries=Object.entries(manifest.files).sort(([a],[b])=>a.localeCompare(b)),selected=entries.filter(([path])=>path!=='_headers');
  const at=new Date().toISOString(),transport=options.fetch??fetch;
  const checks:{path:string;urlPath:string;ok:boolean;code:string;status?:number;contentType?:string;sha256?:string}[]=new Array(selected.length);let cursor=0;
  await Promise.all(Array.from({length:Math.min(4,selected.length)},async()=>{

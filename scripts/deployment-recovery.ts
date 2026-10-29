@@ -1,6 +1,6 @@
 /** Provider-neutral rollout control. No network, credentials, or writes on import. */
 import {createHash} from 'node:crypto';
-export type DeploymentPlan={operationId:string;worker:string;candidateVersion:string;candidateSource:string;baselineVersion:string;baselineDeploymentId:string;compatibleRollbackVersions:readonly string[];evidenceDigest:string};
+export type DeploymentPlan={operationId:string;worker:string;candidateVersion:string;candidateSource:string;baselineVersion:string;baselineDeploymentId:string;compatibleRollbackVersions:readonly string[];evidenceDigest:string;backendVersion?:string;backendReaderFloor?:string};
 export type DeploymentObservation={version:string;deploymentId:string;operationId:string|null};
 export type Phase='prepared'|'activation-intent'|'candidate-observed'|'rollback-intent'|'complete'|'rolled-back';
 export type RecoveryState={v:1;revision:number;planHash:string;phase:Phase;candidateDeploymentId?:string;rollbackDeploymentId?:string};
@@ -23,9 +23,15 @@ export class RetryableObservationError extends Error{constructor(){super('DEPLOY
 export class RecoveryError extends Error{constructor(code:string){super(code);}}
 export type RecoveryResult='complete'|'rolled-back'|'activation-unconfirmed'|'rollback-unconfirmed'|'verification-unavailable'|'observation-unavailable'|'concurrent-change';
 const id=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
+export function deploymentTarget(worker:string){
+ const match=/^porchday-(staging|production)(-edge)?$/.exec(worker);if(!match)throw new RecoveryError('DEPLOYMENT_TARGET_INVALID');
+ return{environment:match[1] as 'staging'|'production',frontend:!!match[2],key:match[1]+(match[2]??'')};
+}
 export function deploymentPlanHash(plan:DeploymentPlan):string{
- if(!id.test(plan.operationId)||!/^porchday-(staging|production)$/.test(plan.worker)||![plan.candidateVersion,plan.baselineVersion,plan.baselineDeploymentId].every(x=>id.test(x))||plan.candidateVersion===plan.baselineVersion||! /^[a-f0-9]{40}$/.test(plan.candidateSource)||! /^[a-f0-9]{64}$/.test(plan.evidenceDigest)||!Array.isArray(plan.compatibleRollbackVersions)||!plan.compatibleRollbackVersions.every(x=>id.test(x))||!plan.compatibleRollbackVersions.includes(plan.baselineVersion))throw new RecoveryError('DEPLOYMENT_PLAN_OR_ROLLBACK_FLOOR_INVALID');
- return createHash('sha256').update(JSON.stringify({operationId:plan.operationId,worker:plan.worker,candidateVersion:plan.candidateVersion,candidateSource:plan.candidateSource,baselineVersion:plan.baselineVersion,baselineDeploymentId:plan.baselineDeploymentId,compatibleRollbackVersions:[...new Set(plan.compatibleRollbackVersions)].sort(),evidenceDigest:plan.evidenceDigest})).digest('hex');
+ const target=deploymentTarget(plan.worker);
+ if(!id.test(plan.operationId)||![plan.candidateVersion,plan.baselineVersion,plan.baselineDeploymentId].every(x=>id.test(x))||plan.candidateVersion===plan.baselineVersion||! /^[a-f0-9]{40}$/.test(plan.candidateSource)||! /^[a-f0-9]{64}$/.test(plan.evidenceDigest)||!Array.isArray(plan.compatibleRollbackVersions)||!plan.compatibleRollbackVersions.every(x=>id.test(x))||!plan.compatibleRollbackVersions.includes(plan.baselineVersion)
+  ||(target.frontend?typeof plan.backendVersion!=='string'||!id.test(plan.backendVersion)||typeof plan.backendReaderFloor!=='string'||!id.test(plan.backendReaderFloor):plan.backendVersion!==undefined||plan.backendReaderFloor!==undefined))throw new RecoveryError('DEPLOYMENT_PLAN_OR_ROLLBACK_FLOOR_INVALID');
+ return createHash('sha256').update(JSON.stringify({operationId:plan.operationId,worker:plan.worker,candidateVersion:plan.candidateVersion,candidateSource:plan.candidateSource,baselineVersion:plan.baselineVersion,baselineDeploymentId:plan.baselineDeploymentId,compatibleRollbackVersions:[...new Set(plan.compatibleRollbackVersions)].sort(),evidenceDigest:plan.evidenceDigest,...(target.frontend?{backendVersion:plan.backendVersion,backendReaderFloor:plan.backendReaderFloor}:{})})).digest('hex');
 }
 export const phaseTransitions:Record<Phase,readonly Phase[]>={prepared:['activation-intent'],'activation-intent':['candidate-observed'],'candidate-observed':['complete','rollback-intent'],'rollback-intent':['rolled-back'],complete:[],'rolled-back':[]};
 export function validateRecoveryState(value:unknown):asserts value is RecoveryState{

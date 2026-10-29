@@ -4,6 +4,10 @@ import {observeDeployment} from './deployment-recovery.ts';
 const version='22222222-0000-0000-0000-000000000000',deployment='33333333-0000-0000-0000-000000000000',operation='11111111-0000-0000-0000-000000000000';
 const reply=(percentage=100,message='porchday-recovery:'+operation)=>Response.json({success:true,result:{deployments:[{id:deployment,versions:[{version_id:version,percentage}],annotations:{'workers/message':message}}]}});
 const client=(fetch:typeof globalThis.fetch)=>new CloudflareDeploymentClient({accountId:'a'.repeat(32),worker:'porchday-staging',apiToken:'synthetic-only-token-for-test',fetch});
+it('routes frontend observations to that exact Worker endpoint',async()=>{
+ const request=vi.fn(async()=>reply()),frontend=new CloudflareDeploymentClient({accountId:'a'.repeat(32),worker:'porchday-staging-edge',apiToken:'synthetic-only-token-for-test',fetch:request});
+ expect((await frontend.observe(new AbortController().signal)).version).toBe(version);expect((request.mock.calls as unknown as [string,RequestInit][])[0][0]).toBe('https://api.cloudflare.com/client/v4/accounts/'+'a'.repeat(32)+'/workers/scripts/porchday-staging-edge/deployments');
+});
 it('retries the observed Cloudflare 500 read and preserves operation identity',async()=>{
  const request=vi.fn().mockResolvedValueOnce(Response.json({success:false,errors:[{code:10500}]},{status:500})).mockResolvedValueOnce(reply());
  expect(await observeDeployment(client(request),undefined,async()=>{})).toEqual({version,deploymentId:deployment,operationId:operation});expect(request).toHaveBeenCalledTimes(2);expect(request.mock.calls.every(x=>!x[1].method)).toBe(true);

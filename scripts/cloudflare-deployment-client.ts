@@ -8,7 +8,7 @@ export class CloudflareDeploymentClient{
  private readonly token:string;
  private readonly request:typeof fetch;
  constructor(options:{accountId:string;worker:string;apiToken:string;fetch?:typeof fetch}){
-  if(!/^[a-f0-9]{32}$/.test(options.accountId)||!/^porchday-(staging|production)$/.test(options.worker)||typeof options.apiToken!=='string'||options.apiToken.length<20)throw new RecoveryError('DEPLOYMENT_PROVIDER_CONFIGURATION_INVALID');
+  if(!/^[a-f0-9]{32}$/.test(options.accountId)||!/^porchday-(staging|production)(-edge)?$/.test(options.worker)||typeof options.apiToken!=='string'||options.apiToken.length<20)throw new RecoveryError('DEPLOYMENT_PROVIDER_CONFIGURATION_INVALID');
   this.endpoint='https://api.cloudflare.com/client/v4/accounts/'+options.accountId+'/workers/scripts/'+options.worker+'/deployments';this.token=options.apiToken;this.request=options.fetch??fetch;
  }
  async observe(signal:AbortSignal):Promise<DeploymentObservation>{
