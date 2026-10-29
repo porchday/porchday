@@ -32,6 +32,7 @@ export class FileUploadLease{
   try{db=new DatabaseSync(database);try{db.exec('PRAGMA busy_timeout=0; BEGIN IMMEDIATE');}catch(error){db.close();throw error;}}catch{throw Error('UPLOAD_LEASE_BUSY');}
   try{
    if(existsSync(join(root,'release-upload-completed-'+plan.operationId)))throw Error('UPLOAD_ALREADY_COMPLETED');
+   if(existsSync(join(root,'release-upload-cancelled-'+plan.operationId)))throw Error('UPLOAD_ALREADY_CANCELLED');
    if(sha(text(join(root,'latest-verified-deployment.json')))!==plan.canonicalSha256)throw Error('UPLOAD_CANONICAL_CHANGED');
    const path=join(root,'deployment-lock'),owner:Owner={v:1,protocol,owner:'release-upload-'+plan.operationId,operationId:plan.operationId,planHash:hash,source:plan.source,baselineSha256:plan.canonicalSha256};
    let created=false;try{mkdirSync(path,{mode:0o700});created=true;sync(root);}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;}
@@ -91,6 +92,15 @@ export class FileUploadLease{
    if(existing){if(JSON.stringify(existing)!==JSON.stringify(record))throw Error('UPLOAD_VERIFICATION_CHANGED');}
    else exclusive(join(this.root,'deployment-lock/upload-verified.json'),record,join(this.root,'deployment-lock'));
   }finally{this.inFlight=false;}
+ }
+ /** Cancel only an owned preparation with no durable dispatch intent; preserve its owner record. */
+ cancelBeforeDispatch():void{
+  this.assert();if(this.inFlight)throw Error('UPLOAD_IN_PROGRESS');
+  const parent=join(this.root,'deployment-lock'),archive=join(this.root,'release-upload-cancelled-'+this.plan.operationId);
+  if(this.intent()||this.verified())throw Error('UPLOAD_CANCELLATION_UNSAFE');
+  if(readdirSync(parent).sort().join(',')!=='owner.json')throw Error('UPLOAD_DIRECTORY_CHANGED');
+  if(existsSync(archive))throw Error('UPLOAD_ALREADY_CANCELLED');
+  renameSync(parent,archive);sync(this.root);this.close();
  }
  /** Archive only reconciled inactive uploads. Does not change canonical active state. */
  release():Verified{

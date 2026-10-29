@@ -44,9 +44,24 @@ describe('durable inactive upload lease',()=>{
    await expect(lease.dispatchOnce(async()=>{throw Error('CI failed');},async()=>{},signal())).rejects.toThrow('CI failed');expect(existsSync(join(f.root,'deployment-lock/upload-intent.json'))).toBe(false);
    let done!:()=>void;const gate=new Promise<void>(resolve=>{done=resolve;});
    const pending=lease.dispatchOnce(async()=>{await gate;},async()=>{},signal());
-   await expect(lease.dispatchOnce(async()=>{},async()=>{},signal())).rejects.toThrow('UPLOAD_IN_PROGRESS');expect(()=>lease.close()).toThrow('UPLOAD_IN_PROGRESS');
+   await expect(lease.dispatchOnce(async()=>{},async()=>{},signal())).rejects.toThrow('UPLOAD_IN_PROGRESS');expect(()=>lease.close()).toThrow('UPLOAD_IN_PROGRESS');expect(()=>lease.cancelBeforeDispatch()).toThrow('UPLOAD_IN_PROGRESS');
    done();expect(await pending).toBe('dispatched');
   }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('cancels only before intent, preserves evidence and forbids reuse of the operation',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
+  try{
+   await expect(lease.dispatchOnce(async()=>{throw Error('failed gate');},async()=>{},signal())).rejects.toThrow('failed gate');
+   lease.cancelBeforeDispatch();expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+   expect(existsSync(join(f.root,'release-upload-cancelled-'+f.plan.operationId+'/owner.json'))).toBe(true);
+   expect(()=>FileUploadLease.acquire(f.root,f.plan)).toThrow('ALREADY_CANCELLED');
+   const next=FileUploadLease.acquire(f.root,{...f.plan,operationId:id(9)});next.cancelBeforeDispatch();
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('never cancels after intent, including an ambiguous send',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
+  try{await lease.dispatchOnce(async()=>{},async()=>{throw Error('lost response');},signal());expect(()=>lease.cancelBeforeDispatch()).toThrow('CANCELLATION_UNSAFE');expect(existsSync(join(f.root,'deployment-lock/upload-intent.json'))).toBe(true);}
+  finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
  });
  it('requires reconciliation, archives evidence and leaves canonical active state unchanged',async()=>{
   const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);

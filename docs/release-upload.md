@@ -222,9 +222,10 @@ Every dispatch outcome proceeds through reconciliation. An uncertain upload with
 failed reconciliation retains its lease marker; resuming the same operation does
 not authorize or send again. Successful reconciliation archives the inactive-upload
 receipt without changing active canonical state. No activation is performed.
-This is a maintained programmatic entry point; the operator CLI, activation handoff
-and hosted end-to-end rollout remain unfinished. A failed authorization before intent
-also leaves the same-plan marker, which must not be stolen or removed by age.
+The operator CLI below invokes this maintained entry point. Activation handoff and
+hosted end-to-end rollout remain unfinished. Failed authorization before intent
+leaves the same-plan marker, which can be explicitly cancelled through the owned
+lease only when no upload intent exists; never remove it by age.
 
 Tests exercise the orchestration with a real durable lease and synthetic external
 gates: failed preparation/CI/schema/baseline gates send nothing; uncertain dispatch
@@ -234,3 +235,49 @@ These are not hosted provider tests. Source/CI pins and hashes require reviewed
 build provenance; passing CI does not independently prove that asset bytes were
 built from the claimed source. Concurrent local mutation remains outside the
 filesystem preflight guarantee.
+
+## Operator command
+
+Prepare a private absolute-path JSON manifest matching `UploadManifest` in
+`scripts/release-upload-cli.ts`. It contains the version (1), shared private root,
+clean tooling workspace, private proof/log directories, upload plan, complete
+prepared evidence and reviewed staging/production queue IDs/names. Credentials
+are supplied only through the environment, not the manifest. The plan digest must
+match the evidence and its canonical digest must match the shared current state.
+The workspace must be the checkout executing the command.
+
+Run the inactive upload (or resume the exact same operation):
+
+```sh
+python3 scripts/with-secrets.py node scripts/release-upload-cli.ts upload /absolute/private/upload-manifest.json
+```
+
+The command uses `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN` and the target's
+`PORCHDAY_STAGING_DATABASE_MIGRATION_URL` or
+`PORCHDAY_PRODUCTION_DATABASE_MIGRATION_URL`. Database target and reader configuration
+are checked before lease acquisition. SIGINT/SIGTERM cancel bounded work; a
+15-minute outer deadline also applies. Failure prints a fixed message, leaves
+private evidence intact and never automatically assigns another operation ID.
+A completed archived receipt returns `already-verified` without credentials,
+provider reads or writes. Successful new work returns `verified-inactive`, never
+an assertion that the version is active or that its public assets are healthy.
+
+To abandon a failed preparation that has **no durable upload intent**:
+
+```sh
+node scripts/release-upload-cli.ts cancel /absolute/private/upload-manifest.json
+```
+
+This acquires the exact owned plan, verifies canonical state and archives its
+owner-only record as `release-upload-cancelled-<operationId>`. The cancelled ID
+cannot be reused. Any intent, partial intent, in-flight callback or unexpected
+marker content prevents cancellation. After a send was attempted, only read-only
+reconciliation is permitted. Cancellation never deletes an inactive provider
+version. A crash after successful archive is recoverable through the archived
+record; do not remove or overwrite it.
+
+CLI tests use real private manifests and lease records, verify cancellation
+refusal after uncertain dispatch, credential-free completed-receipt readback,
+manifest drift/permissions and sanitized failures from a real child invocation.
+They do not exercise a hosted upload. Activation, continuous authenticated checks
+and public asset verification remain required after an inactive upload.
