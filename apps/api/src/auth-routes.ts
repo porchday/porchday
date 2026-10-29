@@ -370,7 +370,7 @@ authRoutes.all("/*", async (c) => {
       ).rows[0]?.id;
     let completedEmailChange = false;
     const work = async () => {
-      const client = await physicalPool.connect();
+      const client = await measureJournalPhase(logoutTiming,'work_pool_acquire',()=>physicalPool.connect());
       const proxyClient = {
         query: client.query.bind(client),
         release: () => {},
@@ -383,15 +383,17 @@ authRoutes.all("/*", async (c) => {
       let transaction = false;
       let commitAttempted = false;
       try {
-        await client.query("BEGIN");
-        transaction = true;
-        await client.query("SET LOCAL lock_timeout='10s'");
+        await measureJournalPhase(logoutTiming,'work_begin',async()=>{
+          await client.query("BEGIN");
+          transaction = true;
+          await client.query("SET LOCAL lock_timeout='10s'");
+        });
         if (memberToLock && uuid.test(memberToLock))
-          await pool.query(
+          await measureJournalPhase(logoutTiming,'work_identity_lock',()=>pool.query(
             "SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",
             [memberToLock],
-          );
-        const checked = proof ? await authorize(c, pool, path, incoming) : null;
+          ));
+        const checked = proof ? await measureJournalPhase(logoutTiming,'work_reauthorization',()=>authorize(c, pool, path, incoming)) : null;
         if (checked && checked.memberId !== proof?.memberId)
           reject("UNAUTHORIZED", 401);
         let request = c.req.raw;
@@ -563,17 +565,17 @@ authRoutes.all("/*", async (c) => {
           }
           return response;
         };
-        const response = await handle();
+        const response = await measureJournalPhase(logoutTiming,'work_handler',handle);
         // The journal wrapper observes the committed database cursor. No R2
         // mutation happens while this request holds SQL/advisory locks. Session
         // denial reads are bounded and repeat during in-transaction authorization.
         commitAttempted = true;
-        await client.query("COMMIT");
+        await measureJournalPhase(logoutTiming,'work_commit',()=>client.query("COMMIT"));
         transaction = false;
         return response;
       } catch (error) {
         if (transaction) {
-          const rollback = await client.query("ROLLBACK").catch(() => null);
+          const rollback = await measureJournalPhase(logoutTiming,'work_rollback',()=>client.query("ROLLBACK")).catch(() => null);
           // Only an acknowledged rollback before any COMMIT attempt proves that
           // this transaction did not commit. Preserve ambiguous outcomes.
           if (!commitAttempted && rollback?.command === "ROLLBACK")

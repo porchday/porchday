@@ -247,8 +247,28 @@ The enclosing phases are `guard`, `registration`, `work`, `checkpoint`, `receipt
 `retirement` (pending-list removal), and `close`. Nested `r2_read`, `r2_write`,
 `database_status` and `database_page` points measure individual I/O operations,
 including the existing adapter's retry delays. R2 reads include consuming the body.
-Database durations include connection acquisition, network and query execution;
-they cannot isolate pool wait time. `work` includes the existing logout handler.
+Database durations include connection acquisition, network and query execution.
+The enclosing `work` phase includes the existing logout transaction. Optional
+subphases now separate its boundaries:
+
+| Phase | Measured interval |
+| --- | --- |
+| `work_pool_acquire` | Awaiting `Pool.connect()`, including any local wait or connection setup |
+| `work_begin` | BEGIN and existing transaction-local lock-timeout setup |
+| `work_identity_lock` | Existing identity-lock query, including network and lock wait |
+| `work_reauthorization` | Repeated in-transaction session and member authorization |
+| `work_handler` | Existing auth handler and its required follow-up operations |
+| `work_commit` | COMMIT acknowledgement; a timeout remains ambiguous |
+| `work_rollback` | Attempted rollback acknowledgement, including failures |
+
+These are elapsed operation boundaries, not pure server lock-wait or connection-
+queue measurements. They do not introduce retries, change ordering or lock limits,
+or replace commit/rollback evidence. They emit only with the existing hosted
+logout opt-in. The denial-writer branch does not execute this legacy transaction
+and therefore emits no transaction subphases. The 15-number correlated v1 summary
+is unchanged; subphases are independent aggregate points and cannot be joined to
+one summary. Do not sum them with their enclosing `work` duration. Source changes
+alone do not establish hosted ingestion or an improved latency outcome.
 Do not sum nested and enclosing dimensions or add their percentiles together.
 These aggregates cannot reconstruct a specific request or measure client network
 latency. Compare with the request metrics and external whole-journey observations.
