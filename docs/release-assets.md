@@ -188,3 +188,40 @@ there were no provider writes. The same-version smoke establishes hosted
 observer operation, not a new deployment transition. Existing-session API
 continuity, signed-in UI, installed service workers, native clients and scheduled
 release adoption remain separate acceptance requirements under #3.
+
+## Frontend activation with browser evidence
+
+`executeFrontendActivationWithClients` in
+`scripts/release-frontend-observation.ts` wraps the maintained
+`executeActivationWithContinuity` controller. Call it with the immutable activation
+manifest path, release environment, authenticated continuity observation and abort
+signal. It accepts only a frontend target in the matching observation environment.
+The proof directory must already be canonical, private and owned by the operator.
+
+The wrapper rejects completed or non-prepared operations, checks the permanent
+continuity gate, and writes an exclusive, fsynced intent. It prepares the hosted
+browser and durably records its baseline before recording command intent and
+dispatching the maintained controller exactly once. Controller observations also
+check that the browser remains connected. Only a completed candidate command
+proceeds to browser acceptance. Complete command and browser results are retained
+separately; failures retain a fixed, redacted attention disposition and queue the
+existing release alert locally. Delivery still requires the existing alert relay.
+
+An existing intent always requires reconciliation, including when preparation
+failed before dispatch. Never delete receipts to retry a started or uncertain
+operation. Preserve the original journal and reconcile its outcome read-only.
+Cancellation and browser closure are mandatory; a failed close is also attention.
+
+Browser acceptance occurs **after deployment finalization**. A failure there does
+not automatically roll back, rewrite the completed journal, or dispatch again.
+In-command authenticated continuity retains the existing recovery controller;
+post-finalization browser failure requires reviewed recovery. This entry point is
+not yet adopted by scheduled releases or verified across a new hosted deployment.
+
+Nine wrapper tests cover receipt ordering, one-time dispatch, historical-state
+rejection, failed baseline persistence, rollback/unknown/error outcomes, browser
+acceptance failure, observer liveness and failed closure. Together with the hosted
+and local browser observers and continuity/activation checks, 57 tests pass;
+asset and deployment-recovery TypeScript checks also pass. Wrapper tests use
+mocked controller/browser boundaries and real private filesystem receipts; they
+do not establish hosted deployment or signed-in client continuity.

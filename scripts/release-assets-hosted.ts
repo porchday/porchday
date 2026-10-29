@@ -40,7 +40,7 @@ export async function beginHostedAssetTransition(input:Options){
  let finished=false,closed:Promise<void>|undefined,timer:ReturnType<typeof setTimeout>|undefined;
  const close=()=>{if(!closed){clearTimeout(timer);options.signal?.removeEventListener('abort',onAbort);closed=browser.close();}return closed;};
  const onAbort=()=>{void close().catch(()=>{});};
- const assertOpen=()=>{options.signal?.throwIfAborted();need(!closed,'HOSTED_ASSET_OBSERVER_CLOSED');};
+ const assertOpen=()=>{options.signal?.throwIfAborted();need(!closed&&browser.isConnected(),'HOSTED_ASSET_OBSERVER_CLOSED');};
  options.signal?.addEventListener('abort',onAbort,{once:true});timer=setTimeout(onAbort,lifetime);timer.unref();
  try{
   assertOpen();const context=await browser.newContext({serviceWorkers:'block'});
@@ -63,7 +63,7 @@ export async function beginHostedAssetTransition(input:Options){
   need(oldErrors.pageErrors===0&&oldErrors.moduleMimeErrors===0,'HOSTED_ASSET_BASELINE_ERRORS');
   await page.getByLabel('Email address',{exact:true}).fill('retained-tab@example.test');assertOpen();
   const baselineReceipt={at:new Date().toISOString(),origin,baselineManifest:publicAssetManifestHash(baseline),candidateManifest:publicAssetManifestHash(candidate),lazyModules:lazy,oldErrors:{...oldErrors},serviceWorkers:'blocked',authenticated:false};
-  return{baselineReceipt,close,async finish(){
+  return{baselineReceipt,assertOpen,close,async finish(){
    need(!finished,'HOSTED_ASSET_FINISH_ALREADY_STARTED');finished=true;
    try{
     assertOpen();const responses:Promise<{path:string;status:number;contentType:string;matchesBaseline:boolean}>[]=[];
