@@ -1,0 +1,374 @@
+{
+  "observedFailureAt": "2026-10-29T09:20:12.045Z",
+  "classification": "One failed production synthetic journey; final revocation observation reached shared 10-second deadline",
+  "rootCause": "Unproven",
+  "originalCookieOutcome": "Unverified in the failed cycle; no successful authorization response observed",
+  "recovery": "Two subsequent complete probes passed at 09:20:32 and 09:20:52 UTC without operator intervention",
+  "observations": [
+    {
+      "v": 1,
+      "at": "2026-10-29T09:19:52.043Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1159
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 626
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 345
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 485
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1024
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2897
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 211
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 186
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 240
+        }
+      ],
+      "durationMs": 4793,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T09:20:12.045Z",
+      "environment": "production",
+      "healthy": false,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 485
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 680
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 374
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 452
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1073
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2484
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 260
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 219
+        },
+        {
+          "name": "revocation",
+          "ok": false,
+          "durationMs": 5763,
+          "failure": "deadline"
+        }
+      ],
+      "durationMs": 10006,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T09:20:32.046Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 486
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 745
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 447
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 439
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 743
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2704
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 232
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 204
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 193
+        }
+      ],
+      "durationMs": 4389,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T09:20:52.046Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 562
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 695
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 615
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 823
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 951
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2843
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 269
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 848
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 201
+        }
+      ],
+      "durationMs": 4699,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    }
+  ],
+  "databaseFollowup": {
+    "collectedAt": "2026-10-29T09:21:43.622842+00:00",
+    "result": {
+      "environment": "production",
+      "checked_at": "2026-10-29T09:21:44.050Z",
+      "database_bytes": 14546611,
+      "server_connection_limit": 25,
+      "reserved_connections": 3,
+      "server_connections": 9,
+      "database_connections": 7,
+      "active_connections": 1,
+      "idle_transaction_connections": 0,
+      "superuser_connections": 2,
+      "auth_connections": 2,
+      "social_connections": 1,
+      "jobs_connections": 1,
+      "other_connections": 3
+    }
+  },
+  "metricsFollowup": {
+    "collectedAt": "2026-10-29T09:21:43.620909+00:00",
+    "result": {
+      "environment": "production",
+      "view": "summary",
+      "data": [
+        {
+          "route": "/api/*",
+          "requests": "358",
+          "server_errors": "0",
+          "mean_ms": 221.27653631284917,
+          "p95_ms": 443
+        },
+        {
+          "route": "/api/auth/get-session",
+          "requests": "83",
+          "server_errors": "0",
+          "mean_ms": 423.06024096385545,
+          "p95_ms": 614
+        },
+        {
+          "route": "/api/operations/health",
+          "requests": "56",
+          "server_errors": "0",
+          "mean_ms": 250.53571428571428,
+          "p95_ms": 581
+        },
+        {
+          "route": "/api/auth/sign-in/email",
+          "requests": "43",
+          "server_errors": "0",
+          "mean_ms": 724,
+          "p95_ms": 1038
+        },
+        {
+          "route": "/api/v1/feed",
+          "requests": "42",
+          "server_errors": "0",
+          "mean_ms": 648.1428571428571,
+          "p95_ms": 752
+        },
+        {
+          "route": "/api/auth/sign-out",
+          "requests": "42",
+          "server_errors": "0",
+          "mean_ms": 2716.5714285714284,
+          "p95_ms": 3233
+        },
+        {
+          "route": "/health",
+          "requests": "14",
+          "server_errors": "0",
+          "mean_ms": 0,
+          "p95_ms": 0
+        },
+        {
+          "route": "/assets/*",
+          "requests": "2",
+          "server_errors": "0",
+          "mean_ms": 8.5,
+          "p95_ms": 10
+        }
+      ]
+    }
+  },
+  "countersFollowup": {
+    "collectedAt": "2026-10-29T09:21:43.621867+00:00",
+    "result": {
+      "environment": "production",
+      "view": "counters",
+      "data": [
+        {
+          "kind": "job",
+          "code": "cleanup_complete",
+          "events": "15",
+          "quantity": 0
+        }
+      ]
+    }
+  },
+  "outageAlert": "https://github.com/porchday/porchday/issues/52#issuecomment-6492848622",
+  "recoveryAlert": "https://github.com/porchday/porchday/issues/52#issuecomment-6492859286",
+  "botCommentsVerified": true,
+  "ownerInboxVerified": false,
+  "limits": [
+    "15-minute sampled server aggregates cannot explain an individual client deadline or exclude earlier contention",
+    "Follow-up connection snapshot is not incident-time headroom",
+    "No production mutation or quarantine release performed by this investigation",
+    "Failed sample retained; no probe deadline relaxation"
+  ]
+}
