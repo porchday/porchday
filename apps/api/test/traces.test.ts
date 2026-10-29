@@ -123,3 +123,27 @@ test('tracing endpoints report unavailable until D1 is provisioned',async()=>{
  }
  expect(await cleanupTraces(unprovisioned)).toBe(0);
 });
+
+test('the summary groups a member\'s own requests by route and server steps by name, timing only successes',async()=>{
+ const {env,app,as}=setup();
+ const photo=(seq:number,id:string,dur:number,status=200)=>({seq,kind:'resource' as const,name:`GET /api/v1/media/${id}/bytes`,start:seq,dur,attrs:{status,server_total:dur/2}});
+ const spans=[
+  photo(0,a,100),photo(1,b,300),photo(2,a,900,503),
+  {seq:3,parent:0,kind:'server' as const,name:'r2_media_get',start:1,dur:40},
+  {seq:4,parent:1,kind:'server' as const,name:'r2_media_get',start:1,dur:60},
+  {seq:5,parent:2,kind:'server' as const,name:'r2_media_get',start:1,dur:800},
+  {seq:6,parent:0,kind:'server' as const,name:'server total',start:1,dur:50},
+  {seq:7,kind:'resource' as const,name:'img /assets/logo.png',start:1,dur:5,attrs:{}},
+  {seq:8,kind:'resource' as const,name:'GET /api/v1/feed',start:1,dur:700,attrs:{status:200,route:'/api/v1/feed'}},
+ ];
+ await app.request('/api/v1/traces',post({...upload(0),spans}),env);
+ as(b);await app.request('/api/v1/traces',post(upload(3,'b'.repeat(32))),env);as(a);
+ const summary=await (await app.request('/api/v1/traces/summary',{},env)).json();
+ expect(summary.routes).toEqual([
+  {route:'GET /api/v1/feed',count:1,failed:0,p50_ms:700,p95_ms:700,max_ms:700,server_p50_ms:null},
+  {route:'GET /api/v1/media/:id/bytes',count:3,failed:1,p50_ms:200,p95_ms:300,max_ms:300,server_p50_ms:100},
+ ]);
+ // Even-sized samples average the two middle values for the median; p95 is nearest-rank.
+ // The failed request's 800 ms step and the "server total" span are left out.
+ expect(summary.phases).toEqual([{phase:'r2_media_get',count:2,p50_ms:50,p95_ms:60,max_ms:60}]);
+});
