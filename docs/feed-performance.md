@@ -283,3 +283,237 @@ regression risk is material because `run_worker_first` includes static delivery.
 Keep production placement unchanged for this bounded code release. An API-only
 placement design and representative signed-in US East/West measurements are
 follow-up work; no regional replicas are introduced.
+
+## Ambitious p99 acceptance goal (October 28, 2026)
+
+Track the owner-requested goal under #9, with logout work in #55 and reliability
+under #40/#42. Targets in milliseconds: ordinary authenticated reads 750; feed
+1,000; text post/edit/reaction confirmed saved 1,000; logout **including rejection
+of the old session** 1,000; warm launch to first readable post 1,500; cold launch
+with saved credentials and unlocked keys to usable feed 3,000; first visible photo
+fully downloaded/decrypted/decoded 2,000; honest interaction feedback 100.
+
+Run the offline acceptance report with:
+
+```sh
+node scripts/latency-acceptance.mjs /path/to/private-observations.json
+```
+
+It makes no network calls and cannot initiate a load test. Exit 0 means only that
+all supplied run-level p99s have sufficient data and meet their latency target;
+exit 2 means a missed target or insufficient evidence; exit 1 means invalid input.
+It never certifies release acceptance, a representative workload, no reliability
+regression, or completion of the goal. All inputs must come from retained,
+reviewable measurements, not fabricated/repeated samples or sampling weights.
+
+Input is a JSON object with `version: 1` and a `runs` array. Each run has:
+
+- `id`: unique experiment label (lowercase letters, digits, hyphens, at most 64).
+- `environment`: staging or production; `release`: full 40-character source SHA.
+- `region`: us-west, us-east or manila; `regionEvidence`: operator-attested,
+  runner-location or unknown. Preserve supporting runner/device evidence privately;
+  neither an edge code nor IP geolocation alone establishes phone location.
+- `platform`: web, pwa or ios; `device`: physical-phone, desktop or simulator;
+  `network`: cellular, wifi, wired or emulated. Keep device/OS/browser versions,
+  carrier/network conditions and any shaping configuration in the experiment record.
+- `workload` and `scenario`: bounded experiment labels, never member IDs or URLs.
+  Separate first-page reads, pagination, profile reads, writes, photo sizes,
+  audience sizes, cold/warm states and concurrency levels. Do not pool unlike work.
+- `operation`: read, feed, post, edit, reaction, logout, warm-feed, cold-feed,
+  first-photo or feedback; `scope`: server or end-to-end. Server intervals and
+  client intervals require separate runs and must not be added or averaged together.
+  Logout and UI/photo milestones require end-to-end scope.
+- `startedAt` and `endedAt`: UTC timestamps bounding the actual collection period;
+  `expectedAttempts`: the predeclared run size, including interrupted attempts.
+- `samples`: one record per actual attempt, with a unique zero-based `ordinal`,
+  finite nonnegative `elapsedMs` and `outcome`: success, error or timeout. Success
+  requires the operation-specific assertion, not merely HTTP 200. A write must
+  be acknowledged and verified; logout must also reject the old session. Photo
+  success ends at decode/render, not headers or download. Do not retry under the
+  same ordinal or replace a failure with its successful retry.
+
+Reports retain every run separately and expose observed/expected counts, errors,
+timeouts, missing attempts, failure rate and nearest-rank p50/p95/p99. Errors,
+timeouts and missing attempts rank as **unbounded**, preventing a fast denial or
+truncated timeout from looking like a fast successful operation. A percentile
+can still be within target with rare errors; reliability remains a separate gate.
+No percentile is emitted below 10,000 observed attempts. Incomplete runs, unknown
+region evidence, and end-to-end runs without physical phones on cellular/Wi-Fi
+cannot pass. Small exploratory samples remain useful diagnostics, not acceptance.
+
+Before production load generation, agree on exact operations/request counts,
+concurrency and request-rate caps, duration, abort thresholds, synthetic-data
+cleanup, and a spending ceiling. This goal does not authorize an unbounded
+production benchmark. Use staged workloads first, retaining all failed and
+interrupted runs and the corresponding deployment and rollback evidence.
+
+Completion requires the complete operation/region matrix with at least 10,000
+observations per critical server operation and region, representative web/PWA
+and native-iOS phone journeys, no reliability regression, verified rollback and
+seven days of production observation after the candidate release. Missing device,
+regional or seven-day evidence is incomplete work, not a reason to relax targets.
+
+
+### Bounded staging diagnostic collector
+
+`npx tsx scripts/collect-staging-latency.ts --run <manifest> <output>` performs
+sequential, alternating bootstrap and first-page feed reads against staging only.
+Both paths must be under `artifacts/private/hosted-smoke/`; the manifest is private
+(mode 0600) and contains a synthetic staging session. Never use a real member's
+session. Prepare and verify the fixture through the hosted-smoke workflow; its
+owner remains responsible for signing out and cleaning up synthetic data afterward.
+The collector does not create or revoke sessions.
+
+The manifest fields are `synthetic: true`, `origin: "https://staging.porchday.com"`,
+`cookie` (the private Cookie header), `memberId`, `postId`, `deployment` (the staging
+health endpoint's deployment UUID), `expiresAt` (within 24 hours), `attempts`
+(1–100 total authenticated requests), `intervalMs` (1,000–60,000 between request
+starts), and `timeoutMs` (1,000–15,000 per request, including body download).
+Use a known visible synthetic post and a synthetic account with a `qa_` handle.
+No redirects or retries are allowed. Two additional unauthenticated health reads
+check the deployment before and after the experiment. This does not detect a
+change followed by a rollback during the interval; retain deployment history too.
+
+The tool reserves fresh output paths before traffic and durably appends every
+attempt to a private `.attempts.jsonl` journal. It stops on the first unsuccessful
+attempt, expired fixture, or persistence failure. The final output preserves
+partial results; a deployment mismatch invalidates completion. An interruption
+can leave the initial `collecting` output and attempt journal, which must be kept
+as incomplete evidence. Failed attempts retain their status when headers arrived,
+but never response bodies, session cookies, member IDs, or arbitrary trace headers.
+Authenticated diagnostic reads opt into request-local tracing with fresh random
+trace IDs, without uploading traces to D1. Only numeric allowlisted phase spans
+and total duration are retained; duplicate summary/span timings are not added.
+This adds instrumentation overhead, so record this condition when comparing runs.
+Numeric allowlisted Server-Timing phases are diagnostic hints; absent timing is
+null rather than zero. Elapsed time includes body transfer and validation on the
+runner, not phone rendering or photo decryption.
+
+Exit 0 means only a completed diagnostic run; exit 2 means an interrupted or
+invalidated run; exit 1 means a configuration/persistence error. At most 100 reads
+cannot establish p99 acceptance. Retain runner location, network, release mapping,
+fixture workload and conditions separately. Never concatenate exploratory runs
+into an acceptance claim or use this tool to send production traffic.
+
+### October 28 exploratory read baseline and feed preparation candidate
+
+At 23:53:42.993–23:54:02.473 UTC, staging deployment
+`913d617a-f7f9-40fd-92b7-8efe3e649fa9` completed 20 sequential alternating
+bootstrap/feed reads, with one second minimum between starts and tracing enabled.
+Normal login verified a surviving synthetic account and an existing owned visible
+post; no posts or account data were changed. The old native interop handoff was
+not reused. The fresh session was signed out afterward, and its old cookie was
+rejected with HTTP 401. Private individual samples are retained under
+`artifacts/private/hosted-smoke/read-baseline-20261028.json` in the p99 worktree.
+
+| Operation | Observations | Runner mean / max | Server mean / max | Authentication phase mean |
+| --- | ---: | ---: | ---: | ---: |
+| Bootstrap read | 10 | 349.2 / 662.7 ms | 215.8 / 266 ms | 82.5 ms |
+| Feed read | 10 | 487.9 / 788.1 ms | 321.7 / 362 ms | 153.4 ms |
+
+All 20 returned HTTP 200 and passed account/post assertions; there were no failed,
+timeout or missing measured attempts. This is a small synthetic desktop sample
+with unverified geography and network conditions, not a p99, phone, capacity, or
+regional acceptance claim. Phase timings can overlap and must not be summed.
+
+Code inspection found that early request-local auth schema preparation applies
+only to bootstrap reads. The candidate extends it to exact `GET /api/v1/feed`
+requests. Schema metadata validation can overlap the privacy guard and reuse the
+existing deployment/binding-scoped schema verdict. Session lookup/renewal, current
+member status and feed queries still wait for the guard and schema success;
+no session, permissions, member data or sockets are shared between requests.
+Tests cover both routes, guard denial, schema failure and unchanged unrelated
+routes. The measured difference motivates the candidate, but does not prove its
+benefit. Deployment, paired staging measurement and rollback validation remain
+required before treating it as an accepted performance improvement.
+
+### October 29 staged feed experiment and verified rollback
+
+The exact runtime candidate `ef13001f94c0c546826506075f66f1e88b97c8bd`
+contains only the feed schema-preparation source change on verified runtime
+`52949ef0c02f0a1aefa6e81a14e14e1c233eaa87`, plus its tests. Its full CI
+passed in run 40791134229. The PR branch was not deployed wholesale, because it
+does not contain every current runtime change.
+
+Under exclusive deployment ownership, three sequential runs each made ten
+bootstrap and ten feed reads at one-second minimum spacing, using fresh sessions
+for the same surviving synthetic account and existing owned post. Every measured
+read returned 200 and passed assertions; there were no failed, timed-out or
+missing measured attempts. Each session was signed out and rejected afterward.
+
+| Phase (UTC October 29) | API version | Feed runner mean / max | Feed server mean / max | Feed auth mean |
+| --- | --- | ---: | ---: | ---: |
+| Before, 00:04:03.402–00:04:22.880 | `f504e9c9-04ab-414f-9a75-daeed914144d` | 431.0 / 724.9 ms | 297.2 / 334 ms | 145.4 ms |
+| Candidate, 00:05:42.422–00:06:01.965 | `f527cb84-973e-430e-a61d-f5ff15b46626` | 377.0 / 495.1 ms | 270.8 / 392 ms | 101.6 ms |
+| Rollback, 00:06:20.330–00:06:39.904 | `f504e9c9-04ab-414f-9a75-daeed914144d` | 477.1 / 977.4 ms | 308.5 / 350 ms | 156.4 ms |
+
+Bootstrap runner means were 441.2, 461.5 and 338.7 ms, with server means
+270.1, 202.9 and 241.3 ms respectively. Logout through completed old-session
+rejection took 2783.0, 2582.1 and 2569.5 ms. Those logout observations exceed the
+one-second target; they are retained rather than hidden behind read performance.
+
+Feed means improved during the candidate run, but its highest server duration
+was worse than either baseline's maximum. This small desktop sample supports
+further investigation, not a tail-latency improvement, regional/phone result,
+capacity claim or p99 acceptance. Geography and network conditions remain
+unverified; tracing was enabled, and cold/warm variance is visible in bootstrap.
+
+Provider snapshots verified the actual API version around each phase. Public
+`/health` reports the separate staging edge version, so the earlier October 28
+health UUID must not be read as an API deployment identity. All 24 public assets,
+worker bindings/runtime settings, topology and production state were preserved.
+An inactive-upload verification initially stopped on source-map byte inequality;
+read-only reconciliation verified byte-identical executable code, identical
+mappings/names/source lists and all 45 first-party sources. The only map changes
+were provider serialization of source-root/file metadata and four null dependency
+source entries as empty strings. No upload was retried and no uncertain mutation
+was repeated.
+
+The experiment ended on the original staging API version. The final provider
+snapshot and canonical deployment record were reconciled, synthetic sessions
+were revoked, and the deployment lock was released. Private evidence is retained
+at the primary checkout's `artifacts/private/p99-feed-preparation-20261028/`.
+Production promotion and all p99 acceptance gates remain outstanding.
+
+### October 29 bounded write-path baseline
+
+Between 00:13:01.671 and 00:13:09.403 UTC, one synthetic staging account created
+one new `only_me` text post, edited it once and added one reaction. Each operation
+was independently read back, signature-verified and decrypted. The post had a
+10-minute deadline, was deleted through the normal endpoint after measurement,
+and subsequently returned 404. The session was signed out and its saved cookie
+returned 401. No existing content, recipients, keys or relationships changed.
+
+| Operation | Samples | Action to acknowledgement | Action through decrypted read-back | Write request server duration |
+| --- | ---: | ---: | ---: | ---: |
+| Text post | 1 | 1172.8 ms | 2300.5 ms | 504 ms |
+| Text edit | 1 | 3214.6 ms | 3859.1 ms | 2721 ms |
+| Reaction | 1 | 972.5 ms | 1569.2 ms | 401 ms |
+
+The action interval begins before audience lookup/encryption/signing and ends
+when the mutation's successful response has been consumed. The read-back column
+adds an independent verification request and decryption; do not confuse that
+extra validation cost with the user's acknowledgement interval. `pd-total` is
+server handling for the mutation only. All three attempts succeeded; no retries,
+failures or timeouts occurred. This is a diagnostic desktop sample with tracing,
+unverified geography/network and a tiny self-only audience. No percentile or
+representative mobile/write-load conclusion follows. Posting and editing missed
+the one-second acknowledgement target in these observations; the reaction was
+close to it, which does not establish p99 compliance.
+
+Provider snapshots before and after matched, including staging API
+`f504e9c9-04ab-414f-9a75-daeed914144d`, settings and production state. The shared
+lock was released after cleanup verification. Private script, intent, individual
+samples, cleanup and provider evidence were archived in the primary checkout's
+`artifacts/private/p99-write-latency-20261029/`. No production load was generated.
+The edit's server duration merits phase-level investigation while preserving its
+privacy-journal and content-lifecycle checks; this sample does not identify which
+individual phase caused that delay.
+
+Collector correction: the original direct/trace phase-name regex excluded digits
+and silently omitted `journal_r2`. The regex now accepts digits while retaining
+the fixed phase allowlist, and a regression test covers both direct summaries and
+repeated traced R2 spans without double counting summaries. Total/auth/feed
+measurements above are unaffected; missing R2 details in earlier evidence cannot
+be recovered and must not be treated as zero. The write diagnostic has a separate
+tested parser in PR #69 with the corresponding `privacy_r2_*` correction.
