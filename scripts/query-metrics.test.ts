@@ -77,3 +77,19 @@ test('connection views query only db_conn and db_snapshot points and return boun
  expect(snapshot.fetcher.mock.calls.at(-1)![1].body).toContain("blob3='db_snapshot'");
  expect(JSON.parse(snapshot.output.mock.calls.at(-1)![0]).data).toEqual([{minute:'2026-10-28 07:31:00',code:'jobs_idle_in_transaction',connections:3,oldest_ms:65000}]);
 });
+
+test('denial cleanup reader weights phase totals and attempt counts and suppresses private values',async()=>{
+ const {fetcher,output}=await invoke('denial-cleanup-phases',Response.json({data:[
+  {phase:'authority_batches',total_ms:'200',attempts:10,events:2,private:'hidden'},
+  {phase:'private-token',total_ms:3},{phase:'sql_list',attempts:-1,total_ms:'private-token'},
+ ]}));
+ const sql=fetcher.mock.calls[0][1].body;
+ expect(sql).toContain("blob3='denial_cleanup_phase'");
+ expect(sql).toContain('sum(double2*_sample_interval) AS total_ms');
+ expect(sql).toContain('sum(double3*_sample_interval) AS attempts');
+ expect(JSON.parse(output.mock.calls[0][0]).data).toEqual([{phase:'authority_batches',events:2,total_ms:200,attempts:10},{phase:'sql_list'}]);
+});
+test('denial cleanup reader rejects production before network access',async()=>{
+ await expect(invoke('denial-cleanup-phases',Response.json({data:[]}),'production')).rejects.toThrow('DENIAL_CLEANUP_PHASES_STAGING_ONLY');
+ expect(fetch).not.toHaveBeenCalled();
+});

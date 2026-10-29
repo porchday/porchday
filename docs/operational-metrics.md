@@ -262,3 +262,24 @@ recorded production release. No threshold, retry, receipt, quarantine, mutation
 ordering or revocation rule is changed by this instrumentation. Root cause and
 latency improvement remain unverified until measurements and a corrective change
 satisfy #55.
+
+### Staging session denial cleanup timings
+
+`denial_cleanup_phase` emits at most one aggregate point per observed phase per
+cleanup invocation, only in staging. Fixed codes are `progress_read`, `sql_list`,
+`authority_batches`, `sql_delete`, `progress_write`, `pool_close`, `total` and
+`enqueue`. The usual duration field is cumulative wall milliseconds; count is
+phase attempts, including failures. Authority duration measures each concurrent
+batch as a whole, not the sum of individual object latencies. SQL list includes
+connection acquisition and its read-only transaction. Total includes pool close;
+enqueue is measured separately. No member/session IDs, ETags, SQL or error text
+are emitted. Telemetry failures do not affect cleanup results.
+
+Use `node --import tsx scripts/query-metrics.ts staging denial-cleanup-phases`
+with private operator credentials to read fixed aggregates over the last 15 minutes.
+Compare weighted phase durations and counts across the same staging time window.
+Total overlaps its component phases and must not be added to them. Enqueue is
+send-observation latency, not queue delivery time. Missing telemetry does not
+prove zero work or healthy progress. These measurements diagnose the failed
+10,000-session capacity trials; they do not change the five-read concurrency,
+20-second work budget, CAS checkpoints or full-pass freshness requirements.
