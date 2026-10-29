@@ -253,6 +253,37 @@ workers; combined-worker hosted acceptance remains unverified. These tests do no
 mutate a provider or establish
 hosted rollback timing. The 45-second candidate-verification limit is unchanged.
 
+## Staging browser recovery drill
+
+`executeStagingBrowserRecoveryDrill` uses the same reviewed activation manifest,
+browser gate, authenticated continuity and recovery controller. It rejects a
+production target before creating an intent or launching a browser. Prepare a new
+staging operation with compatible baseline/candidate asset manifests and review it
+as a real provider activation: the drill does activate the candidate and must
+restore the baseline through the normal authorized rollback path.
+
+The injected exception is confined to the observer's fresh Chromium context at
+document load. It changes no served files, shared browser profile, member session
+or server response. Baseline observation and unrelated clients remain unaffected.
+Receipts explicitly identify the staging drill and whether the injected exception
+was observed. An absent exception, inconsistent passing report or missing browser
+error is unknown evidence, never permission to complete the candidate.
+
+A successful return requires the actual failed browser report and a `rolled-back`
+terminal result from the maintained controller. It writes a separate drill result
+and queues a notification drill through the existing alert relay. Other outcomes
+retain attention evidence and require reconciliation of the original operation.
+Never reuse a drill manifest or clear its browser receipts to retry. Verify final
+provider identity, baseline assets, post-command continuity and exact synthetic
+fixture cleanup before reporting hosted acceptance.
+
+Real Chromium with synthetic transport exercises this injection through actual
+recovery decisions for edge and combined workers. Hosted execution is still
+unverified. This drill tests browser-triggered recovery, not a provider outage or
+an actual defect served to members; physical and signed-in clients remain separate
+requirements. Ordinary release automation must continue using the normal client
+entry point, never the drill entry point.
+
 Nine wrapper tests cover receipt ordering, one-time dispatch, historical-state
 rejection, failed baseline persistence, rollback/unknown/error outcomes, browser
 acceptance failure, observer liveness and failed closure. Durable-gate tests cover

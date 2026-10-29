@@ -23,9 +23,16 @@ export async function executeApplicationActivationWithClients(path:string,env:No
  observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
  return executeObservedActivation(path,env,observation,signal,false);
 }
+/** A real staging activation/recovery with a fault confined to the observer.
+ * A successful drill requires observed browser failure and verified rollback. */
+export async function executeStagingBrowserRecoveryDrill(path:string,env:NodeJS.ProcessEnv,
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
+ return executeObservedActivation(path,env,observation,signal,false,true);
+}
 async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean){
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false){
  signal.throwIfAborted();const manifest=readActivationManifest(path),target=deploymentTarget(manifest.plan.worker),{plan,review}=manifest,e=review.execution;
+ if(drill&&target.environment!=='staging')throw Error('BROWSER_RECOVERY_DRILL_STAGING_REQUIRED');
  if(frontendOnly&&!target.frontend)throw Error('FRONTEND_OBSERVATION_TARGET_REQUIRED');
  if(!frontendOnly&&(!review.assets.baseline.files['index.html']||!review.assets.candidate.files['index.html']))throw Error('APPLICATION_OBSERVATION_ASSETS_REQUIRED');
  if(!frontendOnly&&!plan.assetManifests)throw Error('APPLICATION_OBSERVATION_ASSET_PINS_REQUIRED');
@@ -41,20 +48,27 @@ async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
   const parent=openSync(e.proofDirectory,constants.O_RDONLY);try{fsyncSync(parent);}finally{closeSync(parent);}
  };
  // Existing intent is never overwritten, including after a pre-dispatch failure.
- retain('intent',{candidateVersion:plan.candidateVersion,baselineVersion:plan.baselineVersion});
+ retain('intent',{candidateVersion:plan.candidateVersion,baselineVersion:plan.baselineVersion,...(drill?{drill:'staging-fresh-client-exception'}:{})});
  createBrowserGate(e.proofDirectory,plan).require();
  let browser:Awaited<ReturnType<typeof beginHostedAssetTransition>>|undefined;
  let browserStarted=false,report:Awaited<ReturnType<Awaited<ReturnType<typeof beginHostedAssetTransition>>['finish']>>|undefined;
  let phase:'before-command'|'command-started'|'command-returned'='before-command';
  try{
-  browser=await beginHostedAssetTransition({origin:target.environment==='staging'?'https://staging.porchday.com':'https://porchday.org',baseline:review.assets.baseline,candidate:review.assets.candidate,signal});
+  browser=await beginHostedAssetTransition({origin:target.environment==='staging'?'https://staging.porchday.com':'https://porchday.org',baseline:review.assets.baseline,candidate:review.assets.candidate,signal,...(drill?{stagingFreshClientException:true as const}:{})});
   retain('baseline',browser.baselineReceipt);signal.throwIfAborted();
   retain('command-intent',{automaticRetry:false});phase='command-started';
   const command=await executeActivationWithContinuity(manifest,env,{...observation,assertScope:()=>{if(!browserStarted)browser!.assertOpen();observation.assertScope();}},signal,async candidateSignal=>{
    browserStarted=true;const cancel=()=>{void browser!.close().catch(()=>{});};candidateSignal.addEventListener('abort',cancel,{once:true});
-   try{candidateSignal.throwIfAborted();report=await browser!.finish();candidateSignal.throwIfAborted();retain('browser-result',report);return report.passed?'healthy':'unhealthy';}
+   try{candidateSignal.throwIfAborted();report=await browser!.finish();candidateSignal.throwIfAborted();retain('browser-result',report);
+    if(drill&&(report.drill!=='staging-fresh-client-exception'||report.drillExceptionObserved!==true||report.newErrors.pageErrors<1||report.passed!==false))return 'unknown';
+    return report.passed?'healthy':'unhealthy';}
    finally{candidateSignal.removeEventListener('abort',cancel);}
   });phase='command-returned';retain('command-result',command);
+  if(drill){
+   if(command.status!=='rolled-back'||report?.passed!==false||report.drill!=='staging-fresh-client-exception'||report.drillExceptionObserved!==true||report.newErrors.pageErrors<1)throw Error('BROWSER_RECOVERY_DRILL_UNVERIFIED');
+   retain('drill-result',{passed:true,outcome:'rolled-back',fault:'staging-fresh-client-exception'});queueReleaseAlert(e.proofDirectory,plan,'notification-drill');
+   return{command,browser:report};
+  }
   if(command.status!=='complete')throw Error('FRONTEND_OBSERVATION_CANDIDATE_NOT_COMPLETE');
   if(!report?.passed)throw Error('FRONTEND_OBSERVATION_BROWSER_FAILED');
   return{command,browser:report};
