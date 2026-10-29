@@ -61,8 +61,9 @@ export async function previousHostedExecutionFailed(runId:string,transport:GitHu
 }
 
 /** Reconcile an uncertain comment write using its persisted event marker before retrying. */
-export async function deliver(issue:number,event:AlertEvent,source:'operator-mac'|'github-backup',options:{transport?:GitHubTransport;drill?:boolean;relay?:boolean;requireBot?:boolean}={}):Promise<void>{
+export async function deliver(issue:number,event:AlertEvent,source:'operator-mac'|'github-backup',options:{transport?:GitHubTransport;drill?:boolean;relay?:boolean;requireBot?:boolean;reconcileOnly?:boolean;beforeRelayDispatch?:()=>void|Promise<void>}={}):Promise<void>{
  if(!Number.isSafeInteger(issue)||issue<1)throw Error('INVALID_MONITOR_ISSUE');
+ if(options.reconcileOnly&&!options.relay)throw Error('INVALID_RELAY_RECONCILIATION');
  if(options.relay&&(issue!==52||source!=='operator-mac'))throw Error('INVALID_RELAY_DESTINATION');
  const transport=options.transport??ghTransport,body=alertBody(event,source,options.drill),marker=body.split('\n')[0];
  const path=`/repos/porchday/porchday/issues/${issue}`;
@@ -78,6 +79,8 @@ export async function deliver(issue:number,event:AlertEvent,source:'operator-mac
   if(comments.some(c=>c.body?.startsWith(marker)&&c.body!==body))throw Error('MONITOR_EVENT_CONFLICT');
   if(comments.length<100){
    if(options.relay){
+    if(options.reconcileOnly)throw Error('NOTIFICATION_PENDING');
+    await options.beforeRelayDispatch?.();
     await transport('POST','/repos/porchday/porchday/actions/workflows/external-monitor-relay.yml/dispatches',{
      ref:'main',inputs:{event_id:event.id,payload:JSON.stringify({event:{id:event.id,kind:event.kind,at:event.at,failedChecks:event.failedChecks},drill:!!options.drill})},
     });

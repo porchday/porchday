@@ -1,5 +1,5 @@
-import {appendFileSync,closeSync,fsyncSync,lstatSync,mkdirSync,openSync,readFileSync,renameSync,writeFileSync} from 'node:fs';
-import {join} from 'node:path';
+import {constants,appendFileSync,closeSync,fsyncSync,lstatSync,mkdirSync,openSync,readFileSync,renameSync,writeFileSync} from 'node:fs';
+import {join,dirname} from 'node:path';
 import {randomUUID} from 'node:crypto';
 import {alertBody,initialState,type AlertState} from './external-monitor-alerts';
 import type {Observation} from './external-monitor-probe';
@@ -17,12 +17,14 @@ export function atomicJson(path:string,value:unknown):void {
  const temporary=path+'.'+randomUUID()+'.tmp',fd=openSync(temporary,'wx',0o600);
  try{writeFileSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}
  renameSync(temporary,path);
+ const directory=openSync(dirname(path),constants.O_RDONLY);try{fsyncSync(directory);}finally{closeSync(directory);}
 }
 export function readState(directory:string):AlertState {
  let state:AlertState;
  try{state=JSON.parse(privateFile(join(directory,'state.json')));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return initialState();throw Error('MONITOR_STATE_INVALID');}
  if(state.v!==1||typeof state.incident!=='boolean'||![0,1,2].includes(state.healthyStreak)
   ||(state.lastAt!==null&&!Number.isFinite(Date.parse(state.lastAt)))||!Array.isArray(state.pending))throw Error('MONITOR_STATE_INVALID');
+ if(state.lastRelayAttempt!==undefined&&(!state.lastRelayAttempt||!/^[a-zA-Z0-9-]{1,64}$/.test(state.lastRelayAttempt.id)||!Number.isFinite(Date.parse(state.lastRelayAttempt.at))))throw Error('MONITOR_STATE_INVALID');
  for(const event of state.pending)alertBody(event,'operator-mac');
  return state;
 }

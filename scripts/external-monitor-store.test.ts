@@ -10,7 +10,7 @@ afterEach(()=>{for(const path of directories.splice(0))rmSync(path,{recursive:tr
 describe('monitor persistence',()=>{
  it('persists undelivered events privately across restarts',()=>{
   const path=directory();privateDirectory(path);expect(readState(path)).toEqual(initialState());
-  const state={...initialState(),incident:true,pending:[{id:'event',kind:'outage' as const,at:'2026-10-28T21:00:00Z',failedChecks:['login']}]};
+  const state={...initialState(),incident:true,pending:[{id:'event',kind:'outage' as const,at:'2026-10-28T21:00:00Z',failedChecks:['login']}],lastRelayAttempt:{id:'event',at:'2026-10-28T21:00:01Z'}};
   persistState(path,state);expect(readState(path)).toEqual(state);
   expect(JSON.parse(privateFile(join(path,'state.json')))).toEqual(state);
  });
@@ -20,6 +20,7 @@ describe('monitor persistence',()=>{
   symlinkSync(file,join(path,'link'));expect(()=>privateFile(join(path,'link'))).toThrow('MONITOR_FILE_PERMISSIONS');
   atomicJson(join(path,'state.json'),{...initialState(),pending:[{id:'event',kind:'outage',at:'2026-10-28T21:00:00Z',failedChecks:['private content']}]});
   expect(()=>readState(path)).toThrow();
+  atomicJson(join(path,'state.json'),{...initialState(),lastRelayAttempt:null});expect(()=>readState(path)).toThrow('MONITOR_STATE_INVALID');
  });
  it('keeps failures and timestamp gaps in append-only history',()=>{
   const path=directory();
