@@ -246,9 +246,28 @@ path, excluding HTTP requests, cron, operators and provider pooling. Verify thos
 other sources and physical connection occupancy before admission; this source
 calculation alone does not establish safe total database usage.
 
-The maintained inventory reader currently covers only the two ordinary queues.
-Extend its explicit inventory and durable admission/reconciliation protocols
-before creating or enabling additional queues. The rollback baseline must contain
+The pinned deployment tooling still covers only the two ordinary queues. The
+source reader now accepts explicit identities for each fixed range and existing
+dead-letter queue, rejects unregistered producer bindings, and requires complete
+consumer/producer lists. Upload manifests validate the registry before acquiring
+a lease. The reader's optional second CLI argument is an absolute private registry
+JSON path; omitting it retains the existing two-queue configuration.
+
+A separate bounded account catalogue reads every reported page and rejects
+duplicates, changing totals, incomplete pages and incomplete consumer lists.
+Admission must compare catalogue reads around its scoped inventory; pagination
+is not an atomic provider snapshot. This makes unregistered queues visible when
+checking total consumer concurrency and reconciling an unknown create outcome.
+The [provider list API](https://developers.cloudflare.com/api/resources/queues/methods/list/)
+was checked on October 29. A GET-only hosted check found exactly the two ordinary
+queues and their dead-letter queues, matching the expanded scoped snapshot;
+both dead-letter queues had zero consumers. Existing canonical inventory was
+unchanged. No canonical metadata was rewritten by this read-only check.
+
+Promote the verified reader to the pinned tooling and finish durable resource
+creation/admission reconciliation before enabling additional queues. Queue IDs
+are provider-assigned: never resend an unknown create request under a new operation
+or assume its missing reply means failure. The rollback baseline must contain
 delivery-aware code and retain all producer bindings. No provider queue, binding,
 consumer cap or topology flag has changed as part of this implementation. Dedicated
 queues do not guarantee delivery latency; repeat the unchanged combined workload

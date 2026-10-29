@@ -28,7 +28,7 @@ async function fixture(options:{complete?:boolean;frontend?:boolean;production?:
  const files={[entry]:'f'.repeat(64),[entry+'.map']:'0'.repeat(64)},artifacts={directory:root,entry,hashes:files,sourcePaths:['apps/api/src/index.ts']} as UploadManifest['evidence']['artifacts'];
  const evidence:UploadManifest['evidence']={version:1,worker,source,before,settings,resources,databaseBranchId:'synthetic',schema,ci,artifacts,preparation:{configPath:join(root,'config.json'),configSha256:'1'.repeat(64),wrangler:{} as any,inputs:{bundle:{directory:root,entry,files},assets:null},toolingSource:'2'.repeat(40),toolingCi:ci,assetSources:[]}};
  const plan={operationId:id(3),worker,source,canonicalSha256:hash(canonical),evidenceDigest:uploadReconciliationEvidenceHash(evidence)};
- const manifest:UploadManifest={version:1,root,workspace:root,proofDirectory:root,privateLogDirectory:root,plan,evidence,queues:{} as any};
+ const manifest:UploadManifest={version:1,root,workspace:root,proofDirectory:root,privateLogDirectory:root,plan,evidence,queues:{staging:{id:'b'.repeat(32),name:'porchday-staging-jobs'},production:{id:'c'.repeat(32),name:'porchday-production-jobs'}}};
  const inventory=structuredClone(before);inventory.workers[key].latest=id(2);
  const proof={version:1,planHash:uploadPlanHash(plan),candidate:{version:id(2),resources:{...resources,script:{...resources.script,etag:'candidate'}}},inventory,schema,ci:{source},provenance:{source,files:{'apps/api/src/index.ts':'3'.repeat(64)}},artifacts:{entry,hashes:files},preparation:{toolingCi:{source:evidence.preparation.toolingSource}}};
  options.mutate?.(proof);const proofPath=join(root,'proof.json'),bytes=JSON.stringify(proof);writeFileSync(proofPath,bytes,{mode:0o600});
