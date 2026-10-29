@@ -6,12 +6,19 @@ import type { Env } from './types';
 import { sendAccountEmail } from './email';
 import {enqueueAccountEmail} from './email-outbox';
 import {trackPool} from './connection-metrics';
+import {authSchemaGate} from './auth-schema';
 
-export function createAuth(env: Env, pool: Pool, signupId?: string, inTransaction=false, validateSchema=true) {
+/** Unless the caller decides, schema validation reuses this deployment's
+ * completed verdict, so per-request instances do not each rerun Better Auth's
+ * catalog introspection. A failed verdict is never reused here: each request
+ * validates again and fails closed inside Better Auth. */
+export function createAuth(env: Env, pool: Pool, signupId?: string, inTransaction=false, validateSchema?: boolean) {
+  const key=authSchemaGate.key(env),gated=validateSchema===undefined;
+  if(gated)validateSchema=!authSchemaGate.validated(key);
   const accountEmail=(memberId:string,to:string,subject:string,text:string)=>inTransaction
     ? enqueueAccountEmail(env,pool,memberId,to,subject,text)
     : sendAccountEmail(env,to,subject,text);
-  return betterAuth({
+  const auth=betterAuth({
     appName: 'Porchday', baseURL: env.APP_URL, basePath: '/api/auth',
     secret: env.BETTER_AUTH_SECRET, database: inTransaction ? {dialect:new PostgresDialect({pool}),type:'postgres',transaction:false} : pool,
     trustedOrigins: [env.APP_URL],
@@ -67,6 +74,9 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
       } } },
     },
   });
+  if(gated&&validateSchema)void auth.$context.then(context=>context.checkSchema?.())
+    .then(()=>authSchemaGate.succeeded(key)).catch(()=>{});
+  return auth;
 }
 export function authPool(env: Env): Pool {
   return trackPool(env, 'auth', new Pool({connectionString: env.HYPERDRIVE_AUTH.connectionString, max:3, connectionTimeoutMillis:10000, idleTimeoutMillis:1000}));

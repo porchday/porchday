@@ -216,6 +216,15 @@ version metadata always validates. Roll a fresh deployment after auth schema
 migrations or binding changes; maintain backward compatibility while old
 isolates drain. This is a metadata optimization, never an authorization cache.
 
+Every other Better Auth instance (other member routes, appeals and
+`/api/auth/*`) reuses the same successful verdict by default. Better Auth caches
+its schema check only inside one instance, and Porchday creates one per request,
+so before this each of those requests reran the catalog introspection: about
+1,300 runs an hour on October 29, the largest single use of production database
+time, and two extra database round trips per request. A failed verdict is not
+reused on these paths; each request validates again and fails closed inside
+Better Auth. Callers that pass `validateSchema` explicitly keep their choice.
+
 `auth_schema_wait` separates waiting for schema readiness from `auth_session`,
 which now measures the actual fresh session operation. Previously these were
 combined. A normal joined session/user lookup already uses one query; renewal
