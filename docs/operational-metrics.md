@@ -243,7 +243,15 @@ SQL, error text or response header is added. Failed operations emit elapsed time
 but that timing is not success evidence. Missing points do not establish success.
 Telemetry errors are ignored without replaying work or changing its outcome.
 
-The enclosing phases are `guard`, `registration`, `work`, `checkpoint`, `receipt`,
+Before the mutation journal begins, `read_guard` measures the outer privacy
+readability check, `read_guard_close` its awaited connection close, `rate_limit`
+the rate-limit query (including pool acquisition), and `initial_authorization`
+the initial session and member-status checks. These phases also apply when the
+independent session-denial writer is enabled. They do not measure body parsing,
+rate-limit key hashing, or the entire HTTP lifetime. Aggregate points cannot
+correlate an individual slow request or distinguish pool wait from SQL execution.
+
+The enclosing mutation-journal phases are `guard`, `registration`, `work`, `checkpoint`, `receipt`,
 `retirement` (pending-list removal), and `close`. Nested `r2_read`, `r2_write`,
 `database_status` and `database_page` points measure individual I/O operations,
 including the existing adapter's retry delays. R2 reads include consuming the body.
