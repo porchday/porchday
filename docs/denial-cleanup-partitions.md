@@ -41,8 +41,8 @@ all sessions at one instant.
 
 The core is now connected to cron, queue delivery and operational health through
 `session-denial-runtime.ts`. The mode binding is absent by default, preserving v3
-behavior. The integration has not been deployed and does not establish hosted
-throughput improvement.
+behavior. The integration is deployed to staging with the mode absent; it does
+not establish hosted partition throughput improvement.
 
 ## Runtime integration and required deployment admission
 
@@ -141,3 +141,33 @@ The integrated full API suite passed 542 tests with one skipped (57 files).
 Typecheck, formatting, secret and diff checks also passed. The source deployment
 configs specify the consumer cap; no queue setting, mode flag or worker version
 was changed by this local validation.
+
+## Staging code deployment and queue admission tooling
+
+Runtime `c570e740b0d272eab226d596fb07d47a8e5e7a15` passed all six push/PR
+CI checks and was activated as staging version
+`3216c7be-bda5-4818-bc90-26eb4f9b47ee`. The original continuity observer
+recorded nine healthy samples, but its command ended attention-required before
+release verification started. That observed activation acceptance remains
+incomplete; it must not be reported as a clean continuous rollout.
+
+Read-only reconciliation confirmed the original candidate deployment and operation
+identity. The maintained recovery controller resumed the same journal, passed the
+application journey and assets, and finalized the candidate without reactivating
+it. Subsequent reads confirmed the retained allowed session, revoked-cookie denial
+and operational readiness. The remaining synthetic session was logged out once;
+both synthetic accounts were removed and zero fixture rows verified. Provider
+inventory remained unchanged and the shared lease was released. Production was
+unchanged. Two production monitor timeouts in the same interval recovered on the
+next probe; temporal overlap does not establish their cause.
+
+`queue-admission-lease.ts` adds a durable settings-change protocol using the same
+SQLite kernel lock and persistent marker as deployments. It records intent before
+a single send, reconciles exact provider inventory after an uncertain reply, and
+writes a finalization receipt before atomically updating the canonical snapshot
+reference. All unrelated canonical fields remain fixed. Recovery resumes the
+original intent and receipt; it never resends an unknown mutation. Tests cover lost
+replies, crash boundaries, inventory drift, lock exclusion and proof corruption.
+The lease and existing upload/deployment suites passed 43 tests, with typecheck,
+formatting, secrets and diff checks passing. This is tooling validation only: the
+provider concurrency cap and partition mode remain unapplied.
