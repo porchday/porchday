@@ -1,20 +1,21 @@
 # Independent session denial: validation gates
 
-As of October 29, 2026, 11:08 UTC, staging version `d06996e3` runs isolated
-runtime `0892b28` with logout writer and cleanup enabled. Production `f613874a`
+As of October 29, 2026, 11:32 UTC, staging version `4108c561` runs isolated
+runtime `119dff0` with logout writer and cleanup enabled. Production `f613874a`
 retains server runtime `ebc567a4`, with both flags disabled. Current frontend
 assets are `b2b3a06`. The maintained draft PR integrates the tested runtime code;
 its broader development tree also contains unrelated features and is not the
 deployment source.
 
-Two full 10,003-candidate scans with all 10,000 synthetic sessions intact passed
-in 217 and 254 seconds. All 29 journey probes passed, but the mean improvement
-over the previous run was only 1.67%, and observed freshness margin was 27 seconds.
+The latest two 10,003-candidate scans completed in 198 and 259 seconds with all
+10,000 synthetic sessions intact and all 28 sampled journeys passing. Paired
+read-slot occupancy was 67.04%. However, timing bounds imply a completion interval
+above 300 seconds between sampled checks; continuous freshness is not established.
 [Capacity evidence and limitations](session-denial-capacity.md) remain material.
 A bounded six-session denied backlog also recovered through scheduled cleanup;
 that does not establish pilot-scale denied-backlog capacity.
 
-The current six-read runtime also passed a compatible rollback rehearsal:
+The preceding six-read runtime `0892b28` passed a compatible rollback rehearsal:
 denial enforcement and unrelated-member access survived both versions, and
 scheduled cleanup recovered after rollback.
 

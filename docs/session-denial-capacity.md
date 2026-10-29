@@ -67,3 +67,30 @@ Read concurrency, deadlines, SQL deletion ordering, checkpoints and health thres
 stay unchanged. Local tests exercise unequal read latencies, partial batches and
 late completion after failure. Hosted occupancy and any resulting throughput change
 are not yet measured. Do not infer a capacity improvement from instrumentation.
+
+
+## Paired occupancy result and freshness sampling gap
+
+Staging runtime `119dff0` completed two full 10,003-candidate scans in 198 and
+259 seconds, with all 10,000 synthetic sessions intact. All 28 sampled journeys
+passed. Exact cleanup verified zero fixture rows, unchanged provider state and
+released lease. [Evidence](evidence/session-denial-occupancy-10k-staging-2026-10-29.json).
+
+The bounded load window yielded 48 paired occupancy points: 1,360,090 occupied
+slot milliseconds out of 2,028,804 available, or 67.04% occupancy, across 20,706
+observed reads. About 32.96% of observed slot time waited for the rest of its batch.
+Only successful batches contribute; partial batches count actual reads. These
+measurements support evaluating bounded refilling of the existing six read slots,
+with serial deletion after reads settle. They do not predict a throughput gain
+or establish the safety of a different scheduler. Preserve deadlines, failed-read
+behavior, exact-prefix checkpoints and the platform connection limit in any trial.
+
+The sampled trial result is not sufficient capacity acceptance. The inferred gap
+between the two completed passes exceeds 300 seconds even though no sampled
+readiness response failed. Intersecting request intervals with floored pass ages,
+including one millisecond of clock padding, yields 301.974–303.584 seconds under
+a stable server/client clock-offset assumption. Exact persisted completion times
+were not captured, so this remains a timing inference, not a directly recorded
+stale response. Future acceptance must capture those timestamps and verify the
+interval between full passes, in addition to journey probes and scan duration.
+Do not relax health thresholds or relabel this run as repeatable freshness margin.
