@@ -597,7 +597,49 @@ notification can remain pending until another read observes the bot comment.
 
 Deployment status: this relay is implemented on the release-tooling branch and must
 reach `main` before it can run. Hosted delivery and owner inbox receipt remain
-unverified. No background outbox retry or independent release-process watchdog is
-installed yet. SIGKILL, host loss, malformed manifests and unavailable local storage
+unverified. The independent watcher described below implements background retry and overdue
+operation detection, but is not installed yet. SIGKILL, host loss, malformed manifests and unavailable local storage
 can prevent queueing; the production availability monitor remains separate. This
 change alone does not close the unattended-release escalation requirement.
+
+### Independent release watcher
+
+`release-watch-cli.ts` runs separately from the activation command. The command
+atomically registers the reviewed operation before attempting its deployment lease.
+The watcher reads these owner-only registrations and journal/archive evidence. An
+operation without verified completion or pre-intent cancellation after two minutes
+queues `release-overdue`; unreadable journal/receipt evidence queues
+`release-state-unreadable`. Existing command alerts can be delivered immediately.
+Age indicates attention is needed, never that a process is dead or that an uncertain
+write may be retried. The watcher never acquires the deployment lease, mutates
+provider state, runs user journeys, or removes recovery evidence.
+
+```sh
+node scripts/release-watch-cli.ts /absolute/shared/private/root --once
+node scripts/release-watch-cli.ts /absolute/shared/private/root --continuous
+```
+
+Continuous mode polls every 20 seconds after each completed pass. A dedicated SQLite
+lock prevents overlapping watcher instances and is released by the OS on process
+exit. A separate SQLite delivery store persists the notification dispatch timestamp
+before the request, enforces a 60-second dispatch cooldown across restart, and saves
+confirmed delivery. Reads reconcile uncertain dispatches during cooldown. Bot-side
+operation concurrency and exact-comment checks deduplicate repeated workflow
+dispatches. Completed and cancelled records suppress stale pending notifications;
+registrations are retained as evidence. The registry is bounded to 1,000 entries;
+rotation requires deliberate archival. Malformed entries increment an error count
+without suppressing other valid registrations.
+
+Tests include a real SIGKILL after activation intent with the retained lease and
+canonical record unchanged by observation, terminal archive/cancellation detection,
+unreadable journals, corrupt-registration isolation, durable dispatch cooldown and
+receipt reconciliation, and the native polling command with GitHub unavailable.
+The watcher currently covers activation CLI registrations, not legacy release or
+inactive-upload processes. A two-minute overdue alert may also identify a slow but
+still-running operation; operators must inspect it before acting.
+
+Installation status: implemented and locally verified, not installed as a Mac
+LaunchAgent yet. Hosted relay delivery and owner inbox receipt remain unverified.
+The existing production availability monitor continues independently. Host power or
+network loss still requires coverage outside this Mac; this watcher does not supply
+that coverage.

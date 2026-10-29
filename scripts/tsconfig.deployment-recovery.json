@@ -32,6 +32,9 @@
     "release-activation-cli.ts",
     "release-alerts.ts",
     "release-alert-relay.ts",
-    "release-alert-retry.ts"
+    "release-alert-retry.ts",
+    "release-watch.ts",
+    "release-watch-delivery.ts",
+    "release-watch-cli.ts"
   ]
 }

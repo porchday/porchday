@@ -13,6 +13,7 @@ import {createReleaseVerifier} from './release-verification.ts';
 import {validateProbeConfig,type ProbeConfig} from './external-monitor-probe.ts';
 import {validateReleaseDatabaseTarget} from './release-schema.ts';
 import {CloudflareReleaseReader} from './cloudflare-release-reader.ts';
+import {registerReleaseWatch} from './release-watch.ts';
 import {queueReleaseAlert,deliverReleaseAlert,type ReleaseAlert} from './release-alerts.ts';
 import {CloudflareDeploymentClient} from './cloudflare-deployment-client.ts';
 
@@ -86,6 +87,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
  try{
   const [action,path,...extra]=process.argv.slice(2);if(!['activate','cancel'].includes(action)||!path||extra.length)throw Error('ACTIVATION_ARGUMENTS');
   manifest=readActivationManifest(path);
+  if(action==='activate')registerReleaseWatch({plan:manifest.plan,root:manifest.review.execution.root,journalDirectory:manifest.review.execution.journalDirectory,proofDirectory:manifest.review.execution.proofDirectory});
   const result=await executeActivationManifest(manifest,process.env,AbortSignal.any([controller.signal,AbortSignal.timeout(15*60*1000)]),action as 'activate'|'cancel');
   console.log(JSON.stringify(result));if(result.status==='attention-required'){process.exitCode=2;await alert(result.outcome as ReleaseAlert['reason']);}
  }catch(error){
