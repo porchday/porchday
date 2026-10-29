@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "scope": "read-only authorization timing and staging durable journeys; no Worker activation",
+  "executingToolingSource": "6dddac084138b0b3b4e681277fd5290bf6fc36c5",
+  "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "timing": {
+    "at": "2026-10-29T05:40:11.682Z",
+    "elapsedMs": 4446,
+    "referenceToolingCiSource": "342f4a8b42aa05c02217955850f34468d226ab99",
+    "releaseAuthorization": false,
+    "providerWrites": 0,
+    "databaseWrites": 0,
+    "canonicalUnchanged": true,
+    "checks": [
+      {
+        "name": "tooling-before",
+        "ms": 43,
+        "ok": true
+      },
+      {
+        "name": "schema-before",
+        "ms": 710,
+        "ok": true
+      },
+      {
+        "name": "baseline-runtime-ci",
+        "ms": 2250,
+        "ok": true
+      },
+      {
+        "name": "inventory-before",
+        "ms": 2312,
+        "ok": true
+      },
+      {
+        "name": "candidate-runtime-ci",
+        "ms": 2429,
+        "ok": true
+      },
+      {
+        "name": "reference-tooling-ci",
+        "ms": 2448,
+        "ok": true
+      },
+      {
+        "name": "tooling-after",
+        "ms": 59,
+        "ok": true
+      },
+      {
+        "name": "schema-after",
+        "ms": 651,
+        "ok": true
+      },
+      {
+        "name": "inventory-after",
+        "ms": 1895,
+        "ok": true
+      }
+    ]
+  },
+  "stagingJourney": {
+    "at": "2026-10-29T05:42:59.076Z",
+    "environment": "staging",
+    "firstStatus": "healthy",
+    "resumeStatus": "healthy",
+    "resumeOnlyReads": true,
+    "counts": {
+      "login": 1,
+      "logout": 1,
+      "otherWrites": 0,
+      "reads": 9
+    },
+    "remainingSyntheticSessions": 0,
+    "providerUnchanged": true,
+    "canonicalUnchanged": true,
+    "workerWrites": 0,
+    "fixtureRetainedForFutureReleaseChecks": true,
+    "authenticatedStartedAt": "2026-10-29T05:42:50.962Z",
+    "firstChecks": [
+      {
+        "name": "protected_readiness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "anonymous_session",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "monitor_freshness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "login",
+        "ok": true
+      },
+      {
+        "name": "authorized_profile",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "authorized_feed",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "revocation",
+        "ok": true,
+        "status": 401
+      },
+      {
+        "name": "logout",
+        "ok": true,
+        "status": 200
+      }
+    ],
+    "resumeAuthenticatedChecksReused": true
+  },
+  "stagingLostLogoutReply": {
+    "at": "2026-10-29T05:45:04.437Z",
+    "environment": "staging",
+    "simulatedLostLogoutAck": true,
+    "firstStatus": "healthy",
+    "logoutReconciled": true,
+    "resumeStatus": "healthy",
+    "resumeOnlyReads": true,
+    "counts": {
+      "login": 1,
+      "logout": 1,
+      "reads": 9
+    },
+    "remainingSyntheticSessions": 0,
+    "providerUnchanged": true,
+    "canonicalUnchanged": true,
+    "workerWrites": 0,
+    "discardedReplyStatus": 200
+  },
+  "limits": [
+    "One authorization timing sample; reference tooling CI was for a prior passing source, not authorization of the executing source.",
+    "Staging fixture creation and normal login/logout writes occurred; no Worker upload, activation or rollback occurred.",
+    "Resumed authenticated checks are retained historical evidence, not new login samples.",
+    "No production fault was injected. Full hosted activation command acceptance and monthly SLO measurement remain open."
+  ]
+}

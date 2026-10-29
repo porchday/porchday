@@ -1,0 +1,59 @@
+{
+  "at": "2026-10-29T04:40:22.469Z",
+  "passed": true,
+  "source": "c57e0278bfc97026011a4737e6f05a5083a98e77",
+  "version": "4771f4b0-dff5-456e-bc98-a616b9f62e2d",
+  "checks": [
+    {
+      "name": "sdk_session",
+      "passed": true,
+      "status": 200
+    },
+    {
+      "name": "sdk_list_sessions",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "member_profile",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "member_feed",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "member_appeal",
+      "passed": true,
+      "status": 401
+    },
+    {
+      "name": "denial_enforced_with_sql_row_retained",
+      "passed": true
+    },
+    {
+      "name": "other_session_usable",
+      "passed": true
+    },
+    {
+      "name": "fresh_login_with_denied_cookie",
+      "passed": true
+    },
+    {
+      "name": "exact_synthetic_cleanup_denial_retained",
+      "passed": true
+    }
+  ],
+  "writerEnabled": false,
+  "cleanupEnabled": false,
+  "temporaryOperatorRemoved": true,
+  "uncertainWriteReconciledReadOnly": true,
+  "originalFailure": "SESSION_DENIAL_READ_FAILED",
+  "scope": "Production SDK/member/appeal reader enforcement, retained SQL row, unaffected separate session, fresh login and exact synthetic cleanup. Hosted push, writer failures, concurrency and device checks remain.",
+  "serializationLeaseReleased": true,
+  "syntheticSessionCleanupVerified": true,
+  "uncertainWriteReplayed": false,
+  "localScopeChecks": 6
+}

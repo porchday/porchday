@@ -10,6 +10,33 @@ const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000
 const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
 function fixture(){const root=mkdtempSync(join(tmpdir(),'porchday-lease-')),canonical=JSON.stringify({stagingVersion:plan.baselineVersion,stagingRuntimeSource:'c'.repeat(40),compatibleRollbackVersions:{staging:plan.baselineVersion}});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});return{root,canonical};}
 const journal=(phase:'prepared'|'complete'):RecoveryJournal=>({read:async()=>({v:1,revision:phase==='complete'?4:1,planHash:deploymentPlanHash(plan),phase,...(phase==='complete'?{candidateDeploymentId:uuid(5)}:{})}),write:async()=>{throw Error('unused');}});
+describe('frontend deployment target',()=>{
+ it.each(['complete','rolled-back'] as const)('finalizes %s without overwriting backend or asset provenance',async phase=>{
+  const f=fixture(),frontend:DeploymentPlan={...plan,worker:'porchday-staging-edge',backendVersion:uuid(20),backendReaderFloor:uuid(21)};let lease:FileDeploymentLease|undefined;
+  const before={stagingVersion:uuid(20),stagingRuntimeSource:'d'.repeat(40),stagingSource:'d'.repeat(40),stagingAssetsSource:'e'.repeat(40),compatibleRollbackVersions:{staging:uuid(21)},edgeRouting:{stagingEnabled:true,stagingFrontendVersion:plan.baselineVersion,stagingFrontendSource:'c'.repeat(40),stagingFrontendAssetsSource:'f'.repeat(40),productionEnabled:false}};
+  const state:RecoveryState={v:1,revision:phase==='complete'?4:5,planHash:deploymentPlanHash(frontend),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})};const log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('unused');}};
+  try{
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(before));lease=FileDeploymentLease.acquire(f.root,frontend);
+   const snapshot=join(f.root,'snapshot.json'),version=phase==='complete'?plan.candidateVersion:plan.baselineVersion;
+   writeFileSync(snapshot,JSON.stringify({workers:{'staging-edge':{active:version},staging:{active:uuid(99)}}}),{mode:0o600});await expect(lease.finalize(log,snapshot)).rejects.toThrow('SNAPSHOT_BACKEND_CHANGED');
+   writeFileSync(snapshot,JSON.stringify({workers:{'staging-edge':{active:version},staging:{active:frontend.backendVersion}}}));await lease.finalize(log,snapshot);await lease.release(log);
+   const record=await FileDeploymentLease.completed(f.root,frontend,log);
+   expect(record).toMatchObject({...before,edgeRouting:{...before.edgeRouting,stagingFrontendVersion:version,stagingFrontendSource:phase==='complete'?plan.candidateSource:before.edgeRouting.stagingFrontendSource}});
+   expect(record?.deploymentRecovery).toMatchObject({'staging-edge':{outcome:phase,version}});
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it.each(['disabled','backend','floor'] as const)('rejects a changed %s before acquiring an operation marker',kind=>{
+  const f=fixture(),frontend:DeploymentPlan={...plan,worker:'porchday-staging-edge',backendVersion:uuid(20),backendReaderFloor:uuid(21)};
+  try{
+   const before={stagingVersion:kind==='backend'?uuid(99):uuid(20),stagingRuntimeSource:'d'.repeat(40),compatibleRollbackVersions:{staging:kind==='floor'?uuid(99):uuid(21)},edgeRouting:{stagingEnabled:kind!=='disabled',stagingFrontendVersion:plan.baselineVersion,stagingFrontendSource:'c'.repeat(40)}};
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(before));expect(()=>FileDeploymentLease.acquire(f.root,frontend)).toThrow(kind==='floor'?'READER_FLOOR':'FRONTEND_BACKEND');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+  }finally{rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('requires explicit backend pins for frontend plans and rejects them for API plans',()=>{
+  expect(()=>deploymentPlanHash({...plan,worker:'porchday-staging-edge'})).toThrow('PLAN_OR_ROLLBACK');
+  expect(()=>deploymentPlanHash({...plan,backendVersion:uuid(20),backendReaderFloor:uuid(21)})).toThrow('PLAN_OR_ROLLBACK');
+ });
+});
 describe('deployment lease coordination',()=>{
  it('excludes a second controller and resumes the same unresolved operation after close',()=>{
   const f=fixture();let a:FileDeploymentLease|undefined,b:FileDeploymentLease|undefined;
@@ -90,7 +117,7 @@ it.each(['before-replace','after-replace','after-release'])('resumes finalizatio
   const exited=once(child,'exit');child.kill('SIGKILL');await exited;
   if(boundary==='before-replace')expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
   if(boundary!=='after-release'){
-   lease=FileDeploymentLease.acquire(f.root,plan);expect(()=>lease!.assert(plan)).toThrow('FINALIZATION_IN_PROGRESS');await lease.finalize(journal('complete'));await lease.release(journal('complete'));
+   lease=FileDeploymentLease.acquire(f.root,plan);expect(()=>lease!.assert(plan)).toThrow('FINALIZATION_IN_PROGRESS');expect(await lease.resumeFinalization(journal('complete'))).toBe(true);
   }
   expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
   const completed=await FileDeploymentLease.completed(f.root,plan,journal('complete'));
