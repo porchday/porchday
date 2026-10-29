@@ -8,7 +8,7 @@ The owner selected **GitHub issue notifications to repository owners** for alert
 
 The synthetic identity must be a dedicated UUID with the matching `UUID@example.test` address and no relationships, posts, staff access or real-member content. Its fixture is operator-provisioned; never substitute a member's credentials. No database or Cloudflare deployment credentials are passed to the daemon. The configuration contains only the synthetic credentials, protected-readiness token, production environment and dedicated issue number. Files require owner-only permissions.
 
-One failed cycle queues an outage notification. Two consecutive successful cycles, at most 45 seconds apart, queue recovery. State and pending notifications survive restart. The Mac reporter dispatches the Actions bot relay and acknowledges delivery only after reading the exact bot-authored comment; uncertain dispatches remain in the persistent outbox. Unchanged failures do not repeatedly mention the owners. Notification failures remain queued and are retried after at least 60 seconds; probe collection continues independently. Public comments contain fixed checks and aggregate outcomes only. Ordinary comments and engineering issues are never deleted or closed by this monitor.
+One failed cycle queues an outage notification. Two consecutive successful cycles, at most 45 seconds apart, queue recovery. State and pending notifications survive restart. The Mac reporter dispatches the Actions bot relay and acknowledges delivery only after reading the exact bot-authored comment; uncertain dispatches remain in the persistent outbox. Unchanged failures do not repeatedly mention the owners. Notification failures remain queued. The reporter source polls read-back every five seconds independently of probes; only relay dispatch attempts have a durable 60-second cooldown. A failed GET does not consume that cooldown. Probe collection continues independently. See the installation evidence below for the currently verified release. Public comments contain fixed checks and aggregate outcomes only. Ordinary comments and engineering issues are never deleted or closed by this monitor.
 
 Every observation is retained in an append-only UTC monthly JSONL file. Gaps in timestamps are unknown, not healthy; a restart does not reset prior failures. These observations measure this probe's scope, not complete application availability. Do not compute a whole-month success percentage by silently dropping unobserved time. Keep at least 30 days and completed-month reports before any retention change.
 
@@ -48,7 +48,7 @@ The original Mac installation posts through the operator's GitHub account. GitHu
 
 The upgraded Mac monitor routes notifications through `.github/workflows/external-monitor-relay.yml`. The Mac submits only validated event metadata and an explicit drill flag; the main-branch workflow posts the fixed notification as `github-actions[bot]`. It receives no application credentials. Dispatch is restricted to the two verified repository owners, and delivery is confined to #52. The source does not remove an event from the Mac's persistent outbox until it reads the exact bot-authored comment. Dispatch acceptance alone is not delivery. Repeated dispatches and workflow reruns reconcile the same event rather than repeating owner mentions.
 
-This relay avoids reliance on the operator's own-activity preference, but normal notification settings and GitHub Actions/API availability still govern delivery. The action queue adds latency; a pending event is reconciled or redispatched after at least 60 seconds while probes continue. The hosted backup already posts directly as the Actions bot to #53. The relay, Mac upgrade and bot-authored drills are verified below. Human acknowledgement and the second owner’s receipt remain unverified.
+This relay avoids reliance on the operator's own-activity preference, but normal notification settings and GitHub Actions/API availability still govern delivery. The action queue adds latency; a pending event is reconciled by read-only polling, with redispatch limited to once per 60 seconds while probes continue. The hosted backup already posts directly as the Actions bot to #53. The relay, Mac upgrade and bot-authored drills are verified below. Human acknowledgement and the second owner’s receipt remain unverified.
 
 ## Initial October 28 installation
 
@@ -95,3 +95,68 @@ It restarts after login, not before login. Power loss, network loss, explicit
 shutdown, logout and host failure remain monitoring gaps. No new paid service was
 added; existing Mac power and network costs remain. This does not establish
 redundant monitoring or the monthly availability target.
+
+### Relay reconciliation latency correction
+
+Real outage comments at 23:17 and 23:27 UTC arrived 20.197 and 97.182 seconds
+after their probe start times. For the slower event, GitHub created the relay
+workflow at 23:28:31 UTC and its comment at 23:28:41 UTC. Local logs show an earlier
+pending notification at 23:27:23.989 UTC and the next attempt at 23:28:31.665 UTC.
+Most of this delay therefore preceded workflow creation. The initiating request
+failure is not classified further by the retained logs.
+
+The former reporter applied a 60-second delay to every failure and every accepted
+but unconfirmed dispatch. Recovery also waited behind that reconciliation. The
+new source separates read-back polling from dispatch: it records a relay attempt
+durably before POST, reconciles every five seconds without dispatching again, and
+permits another dispatch only after 60 seconds. A restart retains that cooldown.
+Failed reads can be retried promptly because they did not attempt a POST. When an
+outage comment is verified, the queued recovery event can be dispatched immediately.
+
+These intervals are scheduling targets, not delivery guarantees. Slow requests,
+GitHub availability and recipient preferences still apply. The source correction
+passes 54 combined monitor/report tests. A separate, explicitly labeled drill
+outbox exercised the new drainer at source `b2a8bf2` without changing production
+monitor state. The [outage comment](https://github.com/porchday/porchday/issues/52#issuecomment-6484026838)
+was posted by the Actions bot 10.781 seconds after event creation; the
+[recovery comment](https://github.com/porchday/porchday/issues/52#issuecomment-6484031045)
+followed its event by 8.726 seconds. The drainer reconciled both exact bot bodies
+and emptied its private outbox. Installation into the continuously running Mac
+service remains pending full CI. No production outage was induced, and this drill
+does not establish human receipt or a delivery-time bound.
+
+## Reproducible availability reports
+
+Run the read-only reporter with Node 24:
+
+```sh
+node scripts/availability-report.ts --state-dir "$HOME/.config/porchday-external-monitor/state"
+```
+
+Use `--as-of 2026-10-28T23:43:40.000Z` for a fixed cutoff, `--month 2026-10`
+for a calendar month, and `--environment staging` for staging history. Output
+contains a UTC monthly report and a rolling 30-day report. The monthly error
+budget uses the full calendar month; month-to-date coverage uses elapsed time.
+The rolling window always spans 30 days ending at the cutoff.
+
+Each completed 20-second UTC bucket receives at most one time weight. Any failed
+sample in a bucket makes that bucket failed, even if another sample succeeds.
+Buckets without a completed observation, gaps and the current incomplete bucket
+remain unknown. Future or unfinished observations cannot establish coverage.
+This is a sampled estimate of login, authorized reads, logout/revocation and
+readiness—not continuous uptime or complete core-journey availability.
+
+Read `coveragePercent` alongside `sampledSuccessRatePercent`; the latter uses only
+observed buckets and must never be presented as a whole-month success rate.
+`estimatedFailedSeconds` is a bucket estimate, not a claim about exact outage
+start/end times. The report always leaves the broader SLO unestablished because
+these probes omit encrypted writes, mail delivery and independent regional
+coverage. Earlier incidents also remain part of the actual SLO even if they
+precede this monitor's collection.
+
+The reporter opens private history read-only, bounds each input at its opening
+size, and includes byte counts and SHA-256 digests. Concurrent appends belong to a
+later report. Malformed observations, mismatched monthly files, nonprivate files
+and a torn trailing record stop reporting; they are never discarded to improve
+availability. Preserve the input byte prefixes alongside retained reports to
+reproduce a fixed snapshot. The reporter does not delete history or post alerts.

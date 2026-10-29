@@ -8,9 +8,11 @@ user journeys passed.
 
 This controller is **not yet the live deployment entry point**. The Cloudflare
 transport, private filesystem journal and deployment lease are implemented and
-tested. Integration with artifact/schema evidence and synthetic journeys, plus a hosted
-staging rollback drill, remain required
-before unattended use. Unit tests do not establish that production can recover automatically.
+tested. A hosted staging drill verified automatic rollback with real artifact,
+schema and journey checks; finalization required an operator-assisted correction
+of inactive-version settings. Move those adapters into the reviewed normal release
+entry point and verify unattended finalization before unattended use. The drill
+does not establish automatic production recovery for every failure mode.
 
 ## Inputs and safety boundaries
 
