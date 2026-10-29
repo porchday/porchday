@@ -9,8 +9,8 @@ export function timing(header:string|null){
  const phases:Record<string,number>={},spans:Record<string,number>={};let total:number|null=null;
  // Accept only fixed numeric phases. Never retain trace IDs, routes or errors.
  for(const entry of (header??'').split(',')){
-  const direct=/^\s*([a-z_-]+);dur=([0-9]+(?:\.[0-9]+)?)\s*$/.exec(entry);
-  const span=/^\s*pd-span;dur=([0-9]+(?:\.[0-9]+)?);desc="([a-z_]+)@([0-9]+(?:\.[0-9]+)?)"\s*$/.exec(entry);
+  const direct=/^\s*([a-z0-9_-]+);dur=([0-9]+(?:\.[0-9]+)?)\s*$/.exec(entry);
+  const span=/^\s*pd-span;dur=([0-9]+(?:\.[0-9]+)?);desc="([a-z0-9_]+)@([0-9]+(?:\.[0-9]+)?)"\s*$/.exec(entry);
   const value=Number(direct?.[2]??span?.[1]);
   if(!Number.isFinite(value)||value>3_600_000)continue;
   if(direct?.[1]==='pd-total')total=value;

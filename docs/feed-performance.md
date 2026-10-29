@@ -509,3 +509,11 @@ samples, cleanup and provider evidence were archived in the primary checkout's
 The edit's server duration merits phase-level investigation while preserving its
 privacy-journal and content-lifecycle checks; this sample does not identify which
 individual phase caused that delay.
+
+Collector correction: the original direct/trace phase-name regex excluded digits
+and silently omitted `journal_r2`. The regex now accepts digits while retaining
+the fixed phase allowlist, and a regression test covers both direct summaries and
+repeated traced R2 spans without double counting summaries. Total/auth/feed
+measurements above are unaffected; missing R2 details in earlier evidence cannot
+be recovered and must not be treated as zero. The write diagnostic has a separate
+tested parser in PR #69 with the corresponding `privacy_r2_*` correction.

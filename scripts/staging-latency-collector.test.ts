@@ -67,3 +67,8 @@ test('opts authenticated reads into tracing with fresh IDs but never uploads tra
  for(const h of headers)expect(JSON.stringify(r)).not.toContain(h);
  expect(f.calls.some(c=>c.url.includes('/traces'))).toBe(false);
 });
+
+test('retains R2 read timings from direct summaries and traced spans',()=>{
+ expect(timing('journal_r2;dur=42, pd-span;dur=42;desc="journal_r2@3"')).toEqual({serverMs:null,phases:{journal_r2:42}});
+ expect(timing('pd-total;dur=100, pd-span;dur=42;desc="journal_r2@3", pd-span;dur=8;desc="journal_r2@50", pd-span;dur=1;desc="private_123@0"')).toEqual({serverMs:100,phases:{journal_r2:50}});
+});
