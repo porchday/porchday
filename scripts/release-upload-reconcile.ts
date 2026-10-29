@@ -27,7 +27,7 @@ const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex
 export function uploadReconciliationEvidenceHash(value:UploadReconciliationEvidence):string{return hash(canonical(value));}
 function privateDirectory(path:string){const s=lstatSync(path);if(!isAbsolute(path)||!s.isDirectory()||s.isSymbolicLink()||realpathSync(path)!==path||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('UPLOAD_EVIDENCE_PERMISSIONS');}
 function privateBytes(path:string):Buffer{const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0||s.size>16*1024*1024)throw Error('UPLOAD_EVIDENCE_PERMISSIONS');const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{return readFileSync(fd);}finally{closeSync(fd);}}
-function resources(value:unknown){
+export function comparableReleaseResources(value:unknown){
  if(!value||typeof value!=='object'||Array.isArray(value))throw Error('UPLOAD_RESOURCES_INVALID');
  const input=value as UploadReconciliationEvidence['resources'];
  if(Object.keys(input).sort().join(',')!=='bindings,script,script_runtime'||!input.script||typeof input.script!=='object'||!input.script_runtime||typeof input.script_runtime!=='object'||!Array.isArray(input.bindings))throw Error('UPLOAD_RESOURCES_INVALID');
@@ -54,7 +54,7 @@ export function createUploadReconciler(options:{workspace:string;proofDirectory:
   const ci=await checks.ci({workspace,source:plan.source,pins:evidence.ci,signal});assert();
   const schema=async()=>{const observed=await checks.schema({...database,expectedMigrations:evidence.schema.migrations,signal});assertReleaseSchema(observed,evidence.schema);assert();return observed;};
   await schema();const candidate=await reader.uploadedVersion(key,plan.operationId,signal);assert();
-  if(!isDeepStrictEqual(resources(candidate.resources),resources(evidence.resources)))throw Error('UPLOAD_CANDIDATE_RESOURCES_CHANGED');
+  if(!isDeepStrictEqual(comparableReleaseResources(candidate.resources),comparableReleaseResources(evidence.resources)))throw Error('UPLOAD_CANDIDATE_RESOURCES_CHANGED');
   const before=await reader.snapshot(signal);assert();assertInactiveUploadSnapshot(evidence.before,before,key,candidate.version,evidence.settings);
   const actual=await reader.script(key,signal);assert();
   const identity=await reader.uploadedVersion(key,plan.operationId,signal);assert();

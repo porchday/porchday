@@ -72,9 +72,8 @@ must pin the uploaded version and its evidence into the deployment plan.
 Tests cover contention in both directions with the existing deployment lease,
 ambiguous response/resume, failed authorization, cancellation, failed reconciliation,
 changed plans/canonical bytes, partial records, concurrent calls, historical receipt
-readback and a real SIGKILL after dispatch. No hosted upload has yet exercised this
-new composition. Source/CI authorization, the concrete subprocess transport and
-provider/artifact reconciliation still require integration in the normal command.
+readback and a real SIGKILL after dispatch. The October 29 auth-rollback release exercised this composition through the
+maintained upload CLI on staging and production; see the hosted evidence below.
 
 ## Concrete subprocess transport
 
@@ -114,9 +113,8 @@ provider/artifact reconciliation is mandatory even after exit code zero.
 Subprocess tests cover normal exit, nonzero exit, output overflow, timeout/SIGKILL,
 cancellation, normal IPC cleanup and real controller SIGKILL followed by uploader exit both before and after IPC cleanup. Configuration
 tests reject target/hash drift and unreviewed execution settings before spawn.
-These tests use synthetic child programs and make no provider writes. The complete
-normal release command still needs source/CI authorization and concrete provider
-reconciliation before this transport can be exercised on a hosted candidate.
+These tests use synthetic child programs and make no provider writes. The maintained upload command integrates source/CI authorization and provider
+reconciliation and has exercised this transport on hosted candidates.
 
 ## Read-only upload discovery and inventory isolation
 
@@ -222,8 +220,8 @@ Every dispatch outcome proceeds through reconciliation. An uncertain upload with
 failed reconciliation retains its lease marker; resuming the same operation does
 not authorize or send again. Successful reconciliation archives the inactive-upload
 receipt without changing active canonical state. No activation is performed.
-The operator CLI below invokes this maintained entry point. Activation handoff and
-hosted end-to-end rollout remain unfinished. Failed authorization before intent
+The operator CLI below invokes this maintained entry point. A hosted rollout has passed using a private activation adapter around the
+maintained deployment controller. The general activation command remains unfinished. Failed authorization before intent
 leaves the same-plan marker, which can be explicitly cancelled through the owned
 lease only when no upload intent exists; never remove it by age.
 
@@ -281,3 +279,33 @@ refusal after uncertain dispatch, credential-free completed-receipt readback,
 manifest drift/permissions and sanitized failures from a real child invocation.
 They do not exercise a hosted upload. Activation, continuous authenticated checks
 and public asset verification remain required after an inactive upload.
+
+## Hosted evidence and activation handoff
+
+The [October 29 auth-rollback rollout](auth-rollback-rollout-2026-10-29.md)
+used the maintained upload CLI for staging and production. Both uploads verified
+inactive candidate artifacts, source, schema and complete provider inventories
+before separate guarded activations. Authenticated journeys, logout revocation
+and public assets passed after activation. This is evidence for those releases,
+not proof of the monthly availability target or every future release.
+
+`readCompletedUpload` in `scripts/release-activation-evidence.ts` reads the actual
+archived upload lease and verifies the owner-only proof against its recorded digest.
+It checks the candidate, source, tooling source, schema, executable hash, source
+path set, reviewed resources and inactive inventory. It rejects unresolved uploads
+and altered evidence. This is historical evidence; it neither acquires a deployment
+lease nor authorizes an activation.
+
+`assertActivationInventory` constrains activation and rollback to the pinned
+Worker's active version and resources. Unrelated Workers, routing, queues and
+schedules remain pinned. Latest-version settings stay at their verified upload
+state even during rollback; they are not evidence of the restored runtime's
+settings. Frontend plans also pin the active backend. Upload and activation share
+the same resource comparison, ignoring binding/property order and provider etags
+while preserving binding values and runtime configuration.
+
+The normal activation command must still compose this handoff with a newly acquired
+deployment lease, fresh CI/schema/provider authorization, compatibility checks,
+single-attempt activation, interruption reconciliation and journey/asset verification.
+Do not treat these historical helpers as permission to activate a saved candidate
+after another release has changed the baseline.
