@@ -84,3 +84,23 @@ test('watch reports empty coverage and sample exhaustion explicitly',async()=>{
  expect(await watchReleaseContinuity({...base,stop:()=>true},new AbortController().signal)).toMatchObject({reason:'stopped',samples:0});expect(fetch).not.toHaveBeenCalled();
  expect(await watchReleaseContinuity({...base,stop:()=>false,maxSamples:1},new AbortController().signal)).toMatchObject({reason:'sample_limit',samples:1});
 });
+
+test.each([
+ ['transport',undefined,()=>Promise.reject(Object.assign(Error('private token'),{message:'CONTINUITY_RESPONSE_TOO_LARGE',cause:{secret:'private'}}))],
+ ['missing_body',401,()=>new Response(null,{status:401})],
+ ['body_limit',503,()=>new Response('private'.repeat(10000),{status:503})],
+ ['json_parse',401,()=>new Response('private non-json body',{status:401})],
+ ['body_read',502,()=>new Response(new ReadableStream({start(controller){controller.error(Error('private body error'));}}),{status:502})],
+] as const)('retains fixed %s diagnostics and observed status without private content',async(stage,status,response)=>{
+ const normal=transport();const fetch=vi.fn(async(input:any,init:any)=>init.headers.Cookie===target.deniedCookie?await response():normal(input,init));
+ const sample=await run(fetch as typeof globalThis.fetch),failed=sample.checks.find(c=>c.name==='denied_profile')!;
+ expect(sample.healthy).toBe(false);expect(sample.checks.filter(c=>!c.ok)).toHaveLength(1);
+ expect(failed).toMatchObject({ok:false,failure:'transport_or_response',failureStage:stage});expect(failed.status).toBe(status);
+ expect(fetch).toHaveBeenCalledTimes(4);expect(JSON.stringify(sample)).not.toMatch(/private|CONTINUITY_RESPONSE|secret|cause/);
+});
+
+test('body deadline retains received status without accepting the response',async()=>{
+ const normal=transport(),fetch=vi.fn(async(input:any,init:any)=>init.headers.Cookie===target.deniedCookie?new Response(new ReadableStream({pull(){return new Promise<void>(()=>{});}}),{status:401}):normal(input,init));
+ const sample=await probeReleaseContinuity({target,fetch:fetch as typeof globalThis.fetch,assertScope:()=>{},timeoutMs:100},new AbortController().signal);
+ expect(sample.healthy).toBe(false);expect(sample.checks.find(c=>c.name==='denied_profile')).toMatchObject({ok:false,status:401,failureStage:'deadline'});expect(fetch).toHaveBeenCalledTimes(4);
+});

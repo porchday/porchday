@@ -1,5 +1,6 @@
 import {setTimeout as sleep} from 'node:timers/promises';
-export type ContinuityCheck={name:'authorized_profile'|'authorized_feed'|'denied_profile'|'protected_readiness';ok:boolean;status?:number;failure?:'transport_or_response';durationMs:number};
+export type ContinuityFailureStage='transport'|'body_read'|'missing_body'|'body_limit'|'json_parse'|'deadline';
+export type ContinuityCheck={name:'authorized_profile'|'authorized_feed'|'denied_profile'|'protected_readiness';ok:boolean;status?:number;failure?:'transport_or_response';failureStage?:ContinuityFailureStage;durationMs:number};
 export type ContinuitySample={at:string;completedAt:string;healthy:boolean;checks:ContinuityCheck[];scope:'existing_session_reads_denial_and_readiness'};
 type Target={environment:'staging'|'production';memberId:string;cookie:string;deniedCookie:string;healthToken:string};
 function validate(target:Target){
@@ -12,11 +13,11 @@ async function withinSignal<T>(signal:AbortSignal,work:()=>Promise<T>):Promise<T
  const stopped=new Promise<never>((_,reject)=>{abort=()=>reject(Error('CONTINUITY_DEADLINE'));signal.addEventListener('abort',abort,{once:true});});
  try{return await Promise.race([work(),stopped]);}finally{signal.removeEventListener('abort',abort);}
 }
-async function boundedJson(response:Response,signal:AbortSignal,assert:()=>void):Promise<any>{
- if(!response.body)throw Error('CONTINUITY_RESPONSE_INVALID');
+async function boundedJson(response:Response,signal:AbortSignal,assert:()=>void,stage:(value:ContinuityFailureStage)=>void):Promise<any>{
+ if(!response.body){stage('missing_body');throw Error('CONTINUITY_RESPONSE_INVALID');}
  const reader=response.body.getReader(),chunks:Uint8Array[]=[];let length=0;
- try{for(;;){assert();const {done,value}=await withinSignal(signal,()=>reader.read());assert();if(done)break;length+=value.length;if(length>65536)throw Error('CONTINUITY_RESPONSE_TOO_LARGE');chunks.push(value);}
-  return JSON.parse(Buffer.concat(chunks).toString());
+ try{for(;;){assert();const {done,value}=await withinSignal(signal,()=>reader.read());assert();if(done)break;length+=value.length;if(length>65536){stage('body_limit');throw Error('CONTINUITY_RESPONSE_TOO_LARGE');}chunks.push(value);}
+  stage('json_parse');return JSON.parse(Buffer.concat(chunks).toString());
  }finally{void reader.cancel().catch(()=>{});}
 }
 
@@ -32,17 +33,21 @@ export async function probeReleaseContinuity(options:{target:Target;assertScope:
  const at=new Date().toISOString(),bounded=AbortSignal.any([signal,AbortSignal.timeout(timeout)]),transport=options.fetch??fetch;
  const origin=target.environment==='staging'?'https://staging.porchday.com':'https://porchday.org';
  const read=async(name:ContinuityCheck['name'],path:string,headers:Record<string,string>,test:(response:Response,body:any)=>boolean):Promise<ContinuityCheck>=>{
-  assert();const started=Date.now();let check:ContinuityCheck;
+  assert();const started=Date.now();let check:ContinuityCheck,status:number|undefined;
+  // Classify our own execution stage, never error text/name/cause from a provider.
+  const diagnostic:{stage:ContinuityFailureStage}={stage:'transport'};
   try{
    const response=await withinSignal(bounded,async()=>{
     const response=await transport(origin+path,{method:'GET',headers,redirect:'error',signal:bounded});
     if(bounded.aborted){void response.body?.cancel().catch(()=>{});bounded.throwIfAborted();}
     return response;
-   });assert();
-   const body=await boundedJson(response,bounded,assert);assert();
+   });
+   if(Number.isInteger(response.status)&&response.status>=100&&response.status<=599)status=response.status;
+   assert();diagnostic.stage='body_read';
+   const body=await boundedJson(response,bounded,assert,value=>{diagnostic.stage=value;});assert();
    check={name,status:response.status,ok:test(response,body),durationMs:Date.now()-started};
   }catch{
-   assert();check={name,ok:false,failure:'transport_or_response',durationMs:Date.now()-started};
+   assert();check={name,...(status===undefined?{}:{status}),ok:false,failure:'transport_or_response',failureStage:bounded.aborted?'deadline':diagnostic.stage,durationMs:Date.now()-started};
   }
   return check;
  };

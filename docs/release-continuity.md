@@ -93,6 +93,22 @@ already completed operation before any new request. The command-line `activate`
 entry remains available for original operation reconciliation; hosted adoption
 of this new observed entry point remains outstanding.
 
+## Failure diagnostics
+
+Failed reads retain the existing `transport_or_response` failure plus a fixed
+`failureStage`: `transport`, `body_read`, `missing_body`, `body_limit`,
+`json_parse` or `deadline`. A received HTTP status remains attached even when
+reading or parsing its body fails. The stage comes from the observer's control
+flow, never a provider's exception message, name or cause. Bodies, headers,
+credential values and raw exceptions are not retained.
+
+A received 401 with an invalid or stalled body still fails the existing check.
+The shared deadline, response-size bound, scope assertions, no-retry rule and
+durable promotion gate are unchanged. Caller cancellation or lost scope still
+rejects the whole observation. Historical samples lacking these fields remain
+unclassified; this addition cannot establish their cause or turn them into
+passing evidence.
+
 ## Probe and watch primitives
 
 `scripts/release-continuity.ts` provides a bounded read-only observer for a
