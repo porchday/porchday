@@ -36,6 +36,7 @@
     "release-watch.ts",
     "release-watch-delivery.ts",
     "release-watch-cli.ts",
-    "release-continuity-command.ts"
+    "release-continuity-command.ts",
+    "release-monitor-state.ts"
   ]
 }

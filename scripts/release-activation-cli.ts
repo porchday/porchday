@@ -28,7 +28,7 @@ function privateBytes(path:string){
 }
 function directory(path:string){if(typeof path!=='string'||!isAbsolute(path)||realpathSync(path)!==path)throw Error('ACTIVATION_MANIFEST_PATH_INVALID');const s=lstatSync(path);if(!s.isDirectory()||s.isSymbolicLink()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('ACTIVATION_MANIFEST_PERMISSIONS');}
 function validate(manifest:ActivationManifest){
- keys(manifest,['version','plan','review']);if(manifest.version!==1)throw Error('ACTIVATION_MANIFEST_INVALID');deploymentPlanHash(manifest.plan);
+ keys(manifest,['version','plan','review']);deploymentTarget(manifest.plan.worker);if(manifest.version!==1)throw Error('ACTIVATION_MANIFEST_INVALID');deploymentPlanHash(manifest.plan);
  if(activationReviewHash(manifest.review)!==manifest.plan.evidenceDigest)throw Error('ACTIVATION_MANIFEST_EVIDENCE_CHANGED');
  const e=manifest.review.execution;keys(e,['root','workspace','uploadManifest','proofPath','probe','journalDirectory','proofDirectory','journeyDirectory']);
  for(const p of [e.root,e.workspace,e.proofPath,e.journalDirectory,e.proofDirectory,e.journeyDirectory])if(typeof p!=='string'||!isAbsolute(p)||resolve(p)!==p)throw Error('ACTIVATION_MANIFEST_PATH_INVALID');

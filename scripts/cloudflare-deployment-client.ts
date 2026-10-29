@@ -1,4 +1,4 @@
-import {RecoveryError,RetryableObservationError,type DeploymentObservation} from './deployment-recovery.ts';
+import {RecoveryError,RetryableObservationError,type DeploymentObservation,recoveryTarget} from './deployment-recovery.ts';
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const marker='porchday-recovery:';
 class BodyTransportError extends Error{}
@@ -8,7 +8,8 @@ export class CloudflareDeploymentClient{
  private readonly token:string;
  private readonly request:typeof fetch;
  constructor(options:{accountId:string;worker:string;apiToken:string;fetch?:typeof fetch}){
-  if(!/^[a-f0-9]{32}$/.test(options.accountId)||!/^porchday-(staging|production)(-edge)?$/.test(options.worker)||typeof options.apiToken!=='string'||options.apiToken.length<20)throw new RecoveryError('DEPLOYMENT_PROVIDER_CONFIGURATION_INVALID');
+  recoveryTarget(options.worker);
+  if(!/^[a-f0-9]{32}$/.test(options.accountId)||typeof options.apiToken!=='string'||options.apiToken.length<20)throw new RecoveryError('DEPLOYMENT_PROVIDER_CONFIGURATION_INVALID');
   this.endpoint='https://api.cloudflare.com/client/v4/accounts/'+options.accountId+'/workers/scripts/'+options.worker+'/deployments';this.token=options.apiToken;this.request=options.fetch??fetch;
  }
  async observe(signal:AbortSignal):Promise<DeploymentObservation>{

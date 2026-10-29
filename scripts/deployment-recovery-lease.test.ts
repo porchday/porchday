@@ -159,3 +159,30 @@ it('pins the verified provider snapshot and rejects a wrong version or changed e
   lease.close();writeFileSync(path,'{}');expect(()=>FileDeploymentLease.acquire(f.root,plan)).toThrow('SNAPSHOT_CHANGED');expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);
  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
 });
+
+describe('monitor recovery canonical state',()=>{
+ it.each((['staging','production'] as const).flatMap(environment=>(['complete','rolled-back'] as const).map(phase=>({environment,phase}))))('finalizes $environment $phase without changing app, edge, history or other monitor',async({environment,phase})=>{
+  const f=fixture(),key='monitor-'+environment,monitorPlan:DeploymentPlan={...plan,worker:'porchday-'+key};let lease:FileDeploymentLease|undefined;
+  try{
+   const before={stagingVersion:uuid(20),productionVersion:uuid(21),stagingRuntimeSource:'d'.repeat(40),productionRuntimeSource:'e'.repeat(40),edgeRouting:{stagingFrontendVersion:uuid(22)},monitorVersions:{staging:environment==='staging'?plan.baselineVersion:uuid(23),production:environment==='production'?plan.baselineVersion:uuid(24)},monitorSources:{staging:'c'.repeat(40),production:'c'.repeat(40)},compatibleRollbackVersions:{[key]:plan.baselineVersion},availabilityObjective:{historyStartedAt:{staging:'2026-10-27T22:09:00Z',production:'2026-10-27T22:13:00Z'}}};
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(before));lease=FileDeploymentLease.acquire(f.root,monitorPlan);
+   const log:RecoveryJournal={read:async()=>({v:1,revision:phase==='complete'?4:5,planHash:deploymentPlanHash(monitorPlan),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})}),write:async()=>{throw Error('unused');}};
+   await expect(lease.finalize(log)).rejects.toThrow('MONITOR_SNAPSHOT_REQUIRED');
+   const snapshot=join(f.root,'monitor-snapshot.json'),version=phase==='complete'?plan.candidateVersion:plan.baselineVersion;
+   writeFileSync(snapshot,JSON.stringify({workers:{[key]:{active:version}}}),{mode:0o600});await lease.finalize(log,snapshot);await lease.release(log);
+   const after=await FileDeploymentLease.completed(f.root,monitorPlan,log);
+   expect(after).toMatchObject({...before,monitorVersions:{...before.monitorVersions,[environment]:version},monitorSources:{...before.monitorSources,[environment]:phase==='complete'?plan.candidateSource:'c'.repeat(40)}});
+   expect(after?.deploymentRecovery).toMatchObject({[key]:{outcome:phase,version}});
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it.each(['source','version','floor'])('refuses missing or mismatched monitor %s before marker creation',kind=>{
+  const f=fixture(),monitorPlan={...plan,worker:'porchday-monitor-staging'};
+  try{
+   const before={monitorVersions:{staging:kind==='version'?uuid(99):plan.baselineVersion},monitorSources:{staging:kind==='source'?undefined:'c'.repeat(40)},compatibleRollbackVersions:{'monitor-staging':kind==='floor'?uuid(99):plan.baselineVersion}};
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(before));expect(()=>FileDeploymentLease.acquire(f.root,monitorPlan)).toThrow();expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+  }finally{rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('does not accept application asset manifests on monitor plans',()=>{
+  expect(()=>deploymentPlanHash({...plan,worker:'porchday-monitor-staging',assetManifests:{candidate:'a'.repeat(64),baseline:'b'.repeat(64)}})).toThrow('MONITOR_ASSETS_FORBIDDEN');
+ });
+});

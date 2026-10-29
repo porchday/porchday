@@ -3,7 +3,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {constants,openSync,closeSync,fsyncSync,lstatSync,mkdirSync,readFileSync,readdirSync,writeFileSync,unlinkSync,renameSync,existsSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
-import {deploymentPlanHash,deploymentTarget,rollbackOperationId,RecoveryError,validateRecoveryState,type DeploymentPlan,type RecoveryJournal,type DeploymentPorts,type RecoveryState} from './deployment-recovery.ts';
+import {deploymentPlanHash,recoveryTarget,rollbackOperationId,RecoveryError,validateRecoveryState,type DeploymentPlan,type RecoveryJournal,type DeploymentPorts,type RecoveryState} from './deployment-recovery.ts';
 import {publicAssetManifestHash,validatePublicAssetReport,type PublicAssetManifest} from './release-assets-verify.ts';
 const protocol='porchday-deployment-recovery-sqlite-v1';
 const assetProofLimit=32*1024*1024;
@@ -15,8 +15,8 @@ function syncDirectory(path:string){const fd=openSync(path,constants.O_RDONLY);t
 type Owner={v:1;protocol:typeof protocol;owner:string;operationId:string;planHash:string;source:string;baselineSha256:string;at:string};
 function checkCanonical(plan:DeploymentPlan,text:string):Record<string,unknown>{
   let canonical:Record<string,unknown>;try{canonical=JSON.parse(text);}catch{throw new RecoveryError('DEPLOYMENT_CANONICAL_INVALID');}
-  const {environment,frontend}=deploymentTarget(plan.worker),floor=(canonical.compatibleRollbackVersions as Record<string,unknown>|undefined)?.[environment],edge=canonical.edgeRouting as Record<string,unknown>|undefined;
-  const version=frontend?edge?.[environment+'FrontendVersion']:canonical[environment+'Version'],source=frontend?edge?.[environment+'FrontendSource']:canonical[environment+'RuntimeSource'];
+  const {environment,frontend,monitor,key}=recoveryTarget(plan.worker),floor=(canonical.compatibleRollbackVersions as Record<string,unknown>|undefined)?.[monitor?key:environment],edge=canonical.edgeRouting as Record<string,unknown>|undefined;
+  const version=monitor?(canonical.monitorVersions as Record<string,unknown>|undefined)?.[environment]:frontend?edge?.[environment+'FrontendVersion']:canonical[environment+'Version'],source=monitor?(canonical.monitorSources as Record<string,unknown>|undefined)?.[environment]:frontend?edge?.[environment+'FrontendSource']:canonical[environment+'RuntimeSource'];
   if(version!==plan.baselineVersion||typeof source!=='string'||! /^[a-f0-9]{40}$/.test(source))throw new RecoveryError('DEPLOYMENT_BASELINE_CHANGED');
   if(frontend&&(edge?.[environment+'Enabled']!==true||canonical[environment+'Version']!==plan.backendVersion||typeof canonical[environment+'RuntimeSource']!=='string'||! /^[a-f0-9]{40}$/.test(canonical[environment+'RuntimeSource'] as string)))throw new RecoveryError('DEPLOYMENT_FRONTEND_BACKEND_CHANGED');
   if(typeof floor!=='string'||(frontend?plan.backendReaderFloor!==floor:!plan.compatibleRollbackVersions.includes(floor)))throw new RecoveryError('DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED');
@@ -28,8 +28,9 @@ function terminalState(state:unknown,hash:string):asserts state is RecoveryState
  validateRecoveryState(state);if(state.planHash!==hash||!['complete','rolled-back'].includes(state.phase))throw new RecoveryError('DEPLOYMENT_LEASE_OUTCOME_UNRESOLVED');
 }
 function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,snapshot?:SnapshotReceipt,assets?:SnapshotReceipt):string{
- const record=checkCanonical(plan,before),{environment,frontend,key}=deploymentTarget(plan.worker),success=state.phase==='complete',edge=record.edgeRouting as Record<string,unknown>|undefined;
- const version=success?plan.candidateVersion:plan.baselineVersion,source=success?plan.candidateSource:frontend?edge?.[environment+'FrontendSource']:record[environment+'RuntimeSource'];
+ const record=checkCanonical(plan,before),{environment,frontend,monitor,key}=recoveryTarget(plan.worker),success=state.phase==='complete',edge=record.edgeRouting as Record<string,unknown>|undefined;
+ const version=success?plan.candidateVersion:plan.baselineVersion,source=success?plan.candidateSource:monitor?(record.monitorSources as Record<string,unknown>)[environment]:frontend?edge?.[environment+'FrontendSource']:record[environment+'RuntimeSource'];
+ if(monitor&&!snapshot)throw new RecoveryError('DEPLOYMENT_MONITOR_SNAPSHOT_REQUIRED');
  if(snapshot){
   if(!isAbsolute(snapshot.path)||!/^[a-f0-9]{64}$/.test(snapshot.sha256))throw new RecoveryError('DEPLOYMENT_SNAPSHOT_INVALID');
   const bytes=privateText(snapshot.path);if(digest(bytes)!==snapshot.sha256)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_CHANGED');
@@ -49,7 +50,7 @@ function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,s
    validatePublicAssetReport(environment==='production'?'https://porchday.org':'https://staging.porchday.com',manifest!,proof.detail.report);
   }catch{throw new RecoveryError('DEPLOYMENT_ASSET_PROOF_INVALID');}
  }else if(assets)throw new RecoveryError('DEPLOYMENT_UNPLANNED_ASSET_PROOF');
- return JSON.stringify({...record,...(snapshot?{latestProviderSnapshot:snapshot.path}:{}),...(frontend?{edgeRouting:{...edge,[environment+'FrontendVersion']:version,[environment+'FrontendSource']:source,...(manifest?{[environment+'FrontendAssetsSource']:manifest.source}:{})}}:{[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source}),
+ return JSON.stringify({...record,...(snapshot?{latestProviderSnapshot:snapshot.path}:{}),...(monitor?{monitorVersions:{...(record.monitorVersions as Record<string,unknown>),[environment]:version},monitorSources:{...(record.monitorSources as Record<string,unknown>),[environment]:source}}:frontend?{edgeRouting:{...edge,[environment+'FrontendVersion']:version,[environment+'FrontendSource']:source,...(manifest?{[environment+'FrontendAssetsSource']:manifest.source}:{})}}:{[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source}),
  ...(manifest?{[environment+'AssetsSource']:manifest.source,releaseAssets:{...(record.releaseAssets as Record<string,unknown>|undefined),[key]:{version,source:manifest.source,retainedSources:manifest.retainedSources??[],manifestSha256:manifestHash,proof:assets}}}:{}),
  deploymentRecovery:{...(record.deploymentRecovery as Record<string,unknown>|undefined),[key]:{operationId:plan.operationId,planHash:deploymentPlanHash(plan),outcome:state.phase,version,source,deploymentId:success?state.candidateDeploymentId:state.rollbackDeploymentId,evidenceDigest:plan.evidenceDigest,...(snapshot?{providerSnapshotSha256:snapshot.sha256}:{})}}})+'\n';
 }

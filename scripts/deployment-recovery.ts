@@ -27,8 +27,16 @@ export function deploymentTarget(worker:string){
  const match=/^porchday-(staging|production)(-edge)?$/.exec(worker);if(!match)throw new RecoveryError('DEPLOYMENT_TARGET_INVALID');
  return{environment:match[1] as 'staging'|'production',frontend:!!match[2],key:match[1]+(match[2]??'')};
 }
+/** Low-level recovery includes monitors; application entry points continue to
+ * call deploymentTarget and cannot activate a monitor with API-only evidence. */
+export function recoveryTarget(worker:string){
+ const match=/^porchday-monitor-(staging|production)$/.exec(worker);
+ if(match)return {environment:match[1] as 'staging'|'production',frontend:false,monitor:true,key:'monitor-'+match[1]};
+ return {...deploymentTarget(worker),monitor:false};
+}
 export function deploymentPlanHash(plan:DeploymentPlan):string{
- const target=deploymentTarget(plan.worker);
+ const target=recoveryTarget(plan.worker);
+ if(target.monitor&&plan.assetManifests!==undefined)throw new RecoveryError('DEPLOYMENT_MONITOR_ASSETS_FORBIDDEN');
  if(plan.assetManifests!==undefined&&(!plan.assetManifests||Object.keys(plan.assetManifests).sort().join(',')!=='baseline,candidate'||![plan.assetManifests.candidate,plan.assetManifests.baseline].every(value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value))))throw new RecoveryError('DEPLOYMENT_ASSET_PLAN_INVALID');
  if(!id.test(plan.operationId)||![plan.candidateVersion,plan.baselineVersion,plan.baselineDeploymentId].every(x=>id.test(x))||plan.candidateVersion===plan.baselineVersion||! /^[a-f0-9]{40}$/.test(plan.candidateSource)||! /^[a-f0-9]{64}$/.test(plan.evidenceDigest)||!Array.isArray(plan.compatibleRollbackVersions)||!plan.compatibleRollbackVersions.every(x=>id.test(x))||!plan.compatibleRollbackVersions.includes(plan.baselineVersion)
   ||(target.frontend?typeof plan.backendVersion!=='string'||!id.test(plan.backendVersion)||typeof plan.backendReaderFloor!=='string'||!id.test(plan.backendReaderFloor):plan.backendVersion!==undefined||plan.backendReaderFloor!==undefined))throw new RecoveryError('DEPLOYMENT_PLAN_OR_ROLLBACK_FLOOR_INVALID');
