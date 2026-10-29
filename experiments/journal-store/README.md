@@ -18,6 +18,7 @@ Run locally with the repository's locked dependencies:
 ```sh
 npx --no-install tsc -p experiments/journal-store/tsconfig.json
 node --import tsx experiments/journal-store/check.mjs
+node experiments/journal-store/check-hosted.mjs
 ```
 
 The harness uses workerd/SQLite via Miniflare supplied by the locked Wrangler tool.
@@ -47,3 +48,23 @@ synthetic-key adapter: concurrent intents/completions, independent intent/receip
 records, rollback rejection, and immutable-chain verification. This exercises
 protocol compatibility locally, not migration or operational recovery. The fault
 fixture module must never be deployed.
+
+## Bounded hosted-controller preparation
+
+`hosted.ts` is a separate, undeployed experimental controller. It requires a secret
+Bearer token, fixed synthetic run ID and an expiry at most 15 minutes away. A durable
+create-only latch allows exactly one run even with concurrent invocations or a lost
+reply. The sequence is five reads and six writes, plus setup/lease/result records.
+Each internal request has a deadline of at most 10 seconds and cannot start after
+expiry. No application content, database calls, real journal paths, region claims
+or p99 claims are involved. The outcome and numeric durations are persisted for
+authenticated read-only retrieval while the controller remains valid. A committed
+latch with no result is unresolved evidence; never reset it and replay the run.
+
+The controller harness verifies authentication, expiry without consuming the latch,
+concurrent single use, exact operation counts, durable result retrieval and an
+uncertain lease response preventing replay. It runs locally and does not provision
+or expose a hosted endpoint. Deployment requires fresh CI, isolated bindings, a
+short fixed deadline, private credentials, and provider-state/cleanup verification.
+The result measures a storage operation shape, not the complete journal protocol or
+end-to-end user action. Real hosted speed, durability and recovery remain unverified.
