@@ -1,0 +1,94 @@
+{
+  "environment": "production",
+  "runtimeSource": "c7861b9ed36fc11dbe5222cf24222e5c0bca0b78",
+  "tooling": "ffa334e424cb518319c9d6d413e3b75645e8a5fa",
+  "activationOperation": "b8b926f7-ae7e-4bed-a485-fa5a58a85f61",
+  "acceptance": {
+    "at": "2026-10-29T17:52:13.781Z",
+    "passed": true,
+    "environment": "production",
+    "version": "ce179b25-6d3e-4170-b3b2-c6d66a773a74",
+    "runtimeSource": "c7861b9ed36fc11dbe5222cf24222e5c0bca0b78",
+    "checks": [
+      "existing_allowed_session_and_revoked_cookie_across_code_activation",
+      "existing_session_reads_and_denial_observed_across_code_activation"
+    ],
+    "candidate": "ce179b25-6d3e-4170-b3b2-c6d66a773a74",
+    "baseline": "3896cab5-a6e1-4f4f-80dd-3fe0c9757dea",
+    "remainingFixtureRows": 0,
+    "productionWriterEnabled": false,
+    "productionCleanupEnabled": false,
+    "stagingWriterEnabled": true,
+    "stagingCleanupEnabled": true,
+    "candidateVerifiedAndCleanupInventoryUnchanged": true
+  },
+  "continuity": {
+    "at": "2026-10-29T17:52:04.657Z",
+    "status": "complete",
+    "samples": 14,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "maxStartGapMs": 2003.2071250000008
+  },
+  "fixtureCleanup": {
+    "at": "2026-10-29T17:52:11.285Z",
+    "remainingFixtureRows": 0,
+    "denialsRetained": true
+  },
+  "postActivationLogout": {
+    "at": "2026-10-29T17:52:10.380Z",
+    "status": 200,
+    "durationMs": 3289
+  },
+  "preflightCorrection": {
+    "at": "2026-10-29T17:51:14.108Z",
+    "operationId": "a6bca33e-af9e-4547-b921-0c445cddb97c",
+    "originalAttempt": "failed-before-fixtures-and-activation",
+    "providerUnchanged": true,
+    "fixtureWrites": 0,
+    "activationWrites": 0,
+    "leaseCancelledBeforeDispatch": true,
+    "reason": "Production intentionally omits both writer flags; absent means disabled in runtime. Original strict-false harness was incorrect."
+  },
+  "scope": "Three-file best-effort numeric logout summary diagnostic; frontend, schema, dependencies and production flags unchanged.",
+  "limitations": [
+    "No latency improvement or root-cause claim.",
+    "Historical staging d5bb continuity failure remains failed and unclassified. Separate narrow diagnostic disposition cites later hosted legacy-path and continuity evidence.",
+    "This verifies an observed backend diagnostic deployment, not daily feature rollout, native compatibility or monthly SLO."
+  ],
+  "initialSummary": {
+    "at": "2026-10-29T17:52:59.791Z",
+    "environment": "production",
+    "window": {
+      "from": "2026-10-29T17:52:07.084Z",
+      "to": "2026-10-29T17:52:59.791Z"
+    },
+    "data": [
+      {
+        "elapsed_ms": 3173,
+        "confirmed_branch": 1,
+        "rate_limit": 44,
+        "initial_authorization": 277,
+        "guard": 77,
+        "registration": 726,
+        "work": 734,
+        "checkpoint": 181,
+        "receipt": 284,
+        "retirement": 850,
+        "close": 0,
+        "r2_read": 381,
+        "r2_write": 1653,
+        "database_status": 187,
+        "database_page": -1,
+        "sample_weight": 1
+      }
+    ],
+    "observedPoints": 1,
+    "limitations": [
+      "Sampled rows cannot be attributed to a specific synthetic account.",
+      "Production uses the legacy journal path; missing phase is -1, not zero.",
+      "No production latency improvement claim.",
+      "The earlier failed staging rollout remains failed; this is a separate diagnostic production rollout."
+    ]
+  }
+}

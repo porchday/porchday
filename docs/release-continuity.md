@@ -408,3 +408,38 @@ and configuration are unchanged. The earlier diagnostic rollout's continuity
 failure remains failed. These successful configuration rehearsals do not clear
 that historical failure, prove signed-in feature UI/native compatibility, or
 establish the monthly availability SLO.
+
+
+## Production logout summary diagnostic — October 29, 17:52 UTC
+
+[Evidence](evidence/logout-summary-production-2026-10-29.json) records a guarded
+production activation of the three-file logout timing diagnostic. Runtime patch
+bytes match the staged diagnostic, whose legacy-journal path and restoration
+passed hosted checks. The separate narrow rollout disposition retains the
+earlier staging transport/response failure as unresolved; it does not convert
+that historical attempt into a pass or approve the broader feature release.
+
+The first fixture preflight stopped before account creation or activation
+because it incorrectly required literal `false` for flags production omits.
+Read-only reconciliation proved unchanged provider inventory and no fixture or
+activation writes, then archived that attempt's lease. A separately recorded
+preflight accepted the runtime's disabled-by-absence setting while retaining
+exact inventory checks. No uncertain mutation was replayed.
+
+The maintained controller and durable continuity gate completed the production
+activation with 14 healthy samples and two post-command samples. Existing
+profile/feed sessions worked and a revoked session remained rejected. The
+post-activation synthetic logout returned 200 in 3,289 ms; the old cookie was
+rejected and all fixture rows were removed. Public assets, schema, dependency
+versions and production writer/cleanup settings are unchanged.
+
+This verifies a guarded diagnostic deployment. It does not demonstrate faster
+logout, identify the latency root cause, prove a daily feature rollout or
+establish the monthly availability SLO.
+
+Initial analytics ingestion is verified: one sampled summary reports 3,173 ms
+inside the auth handler, including registration 726 ms, work 734 ms and
+retirement 850 ms. Nested R2 write time totals 1,653 ms; it overlaps those
+phases and must not be added to them. The sample cannot be attributed to an
+individual synthetic account. More production evidence is needed to explain
+the slow tail.
