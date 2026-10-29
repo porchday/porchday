@@ -91,3 +91,23 @@ left zero rows and released the lease. Production Workers were unchanged.
 This adds actual backend code activation coverage to the separate flag-only
 rollback rehearsal. It does not establish frontend/native client or schema
 overlap, unsampled continuity, production rollout or the monthly SLO.
+
+## Production diagnostic rollout rejected — October29,13:10UTC
+
+Candidate `ed3f2b7e` / `c2f8bf5` was activated, but the pinned release probe
+referenced a deleted synthetic account. Its login outcome was not retained and
+remains unknown; it was not replayed. Seven independent existing-session
+samples were healthy before the verifier stopped. This is not accepted release
+continuity or evidence of an application outage.
+
+Operator-directed recovery restored `f613874a` / `ebc567a4` under the same
+deployment operation. A baseline-only durable journey with the separately
+verified fixture passed; exact fixture cleanup and provider reconciliation
+completed, releasing the lease. A local recovery directory omission was corrected
+before that baseline journey began; no deployment write was repeated.
+[Evidence](evidence/logout-prejournal-production-rollback-2026-10-29.json).
+
+Before another rollout, require pinned synthetic identity existence and ownership
+to be checked before activation. Preserve unknown login evidence and use explicit
+reviewed recovery for unavailable verification. Production diagnostics remain
+undeployed. This failure is tracked in issue #3; investigation #55 remains open.
