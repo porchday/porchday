@@ -59,6 +59,26 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   }finally{await admin.end();}
  });
 
+ it('bootstraps only the current member access hint without reading messages or running retention cleanup',async()=>{
+  const allowed=await person(),other=await person();await allow(allowed,false);
+  const id=randomUUID();
+  await owner.query("INSERT INTO app.builder_chat_messages(id,member_id,body,created_at) VALUES($1,$2,'Synthetic old message',now()-interval '100 days')",[id,allowed.id]);
+  const bootstrap=async(p:Person)=>{
+   const response=await call('GET','/api/v1/me?bootstrap=1',{cookie:p.cookie});expect(response.status).toBe(200);return response.json();
+  };
+  const mine=await bootstrap(allowed);expect(mine.builder_chat_available).toBe(true);
+  expect(mine).not.toHaveProperty('messages');expect(JSON.stringify(mine)).not.toContain('Synthetic old message');
+  expect((await bootstrap(other)).builder_chat_available).toBe(false);
+  expect((await owner.query('SELECT id FROM app.builder_chat_messages WHERE id=$1',[id])).rowCount).toBe(1);
+  await owner.query("UPDATE app.members SET status='suspended' WHERE id=$1",[allowed.id]);
+  expect((await bootstrap(allowed)).builder_chat_available).toBe(false);
+  await owner.query("UPDATE app.members SET status='active' WHERE id=$1",[allowed.id]);
+  await owner.query('DELETE FROM app.builder_chat_access WHERE member_id=$1',[allowed.id]);
+  expect((await bootstrap(allowed)).builder_chat_available).toBe(false);
+  // A previously true client hint cannot authorize any later route.
+  expect((await member(allowed,'GET','')).status).toBe(404);
+ });
+
  it('exposes fixed queue activity, clears stale labels, and never includes another member’s message',async()=>{
   await clearQueue();
   const first=await person(),second=await person();await allow(first);await allow(second);
