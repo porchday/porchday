@@ -3,8 +3,9 @@ import {isAbsolute} from 'node:path';
 import {createHash} from 'node:crypto';
 import {isDeepStrictEqual} from 'node:util';
 import {FileUploadLease,uploadPlanHash} from './release-upload-lease.ts';
-import {comparableReleaseResources,uploadReconciliationEvidenceHash} from './release-upload-reconcile.ts';
+import {comparableReleaseResources,uploadReconciliationEvidenceHash,validateUploadQueueRegistration} from './release-upload-reconcile.ts';
 import {assertInactiveUploadSnapshot} from './cloudflare-release-reader.ts';
+import {registeredQueueInventory} from './release-queue-producers.ts';
 import {recoveryTarget,type DeploymentPlan} from './deployment-recovery.ts';
 import type {UploadManifest} from './release-upload-cli.ts';
 
@@ -27,6 +28,7 @@ function proofBytes(path:string){
 export function readCompletedUpload(manifest:UploadManifest,proofPath:string){
  const input=structuredClone(manifest),e=input.evidence,plan=input.plan;
  if(input.version!==1||!e?.preparation||plan.worker!==e.worker||plan.source!==e.source||plan.evidenceDigest!==uploadReconciliationEvidenceHash(e))throw Error('ACTIVATION_UPLOAD_EVIDENCE_CHANGED');
+ validateUploadQueueRegistration(e);
  const completed=FileUploadLease.completed(input.root,plan);
  if(!completed)throw Error('ACTIVATION_UPLOAD_NOT_COMPLETED');
  const bytes=proofBytes(proofPath),digest=hash(bytes);
@@ -39,13 +41,14 @@ export function readCompletedUpload(manifest:UploadManifest,proofPath:string){
   ||!isDeepStrictEqual(proof.schema,e.schema)
   ||!proof.provenance.files||!isDeepStrictEqual(Object.keys(proof.provenance.files).sort(),[...e.artifacts.sourcePaths].sort()))throw Error('ACTIVATION_UPLOAD_PROOF_INVALID');
  const key=recoveryTarget(plan.worker).key as 'staging'|'production'|'staging-edge'|'production-edge'|'monitor-staging'|'monitor-production';
- assertInactiveUploadSnapshot(e.before,proof.inventory,key,completed.version,e.settings);
+ assertInactiveUploadSnapshot(e.before,proof.inventory,key,completed.version,e.settings,e.queueProducerRegistration);
  const baseline=(e.before as Inventory).workers[key];
  if(!baseline?.resources||!proof.candidate.resources)throw Error('ACTIVATION_UPLOAD_PROOF_INVALID');
  if(!isDeepStrictEqual(comparableReleaseResources(proof.candidate.resources),comparableReleaseResources(e.resources)))throw Error('ACTIVATION_UPLOAD_RESOURCES_CHANGED');
  return{worker:plan.worker,source:plan.source,uploadPlanHash:uploadPlanHash(plan),proofSha256:digest,
   candidateVersion:completed.version,baselineVersion:baseline.active,
-  baselineResources:structuredClone(baseline.resources),candidateResources:structuredClone(proof.candidate.resources),inventory:structuredClone(proof.inventory)};
+  baselineResources:structuredClone(baseline.resources),candidateResources:structuredClone(proof.candidate.resources),inventory:structuredClone(proof.inventory),
+  ...(e.queueProducerRegistration?{queueProducerRegistration:structuredClone(e.queueProducerRegistration),queueProducerBaseline:structuredClone((e.before as Inventory).queues)}:{})};
 }
 export type CompletedUpload=ReturnType<typeof readCompletedUpload>;
 
@@ -60,6 +63,7 @@ export function assertActivationInventory(upload:CompletedUpload,plan:Deployment
  const expected=structuredClone(upload.inventory),worker=expected.workers[target.key];
  if(!worker)throw Error('ACTIVATION_UPLOAD_PROOF_INVALID');
  worker.active=version;worker.resources=structuredClone(version===upload.candidateVersion?upload.candidateResources:upload.baselineResources);
+ if(upload.queueProducerRegistration)expected.queues=registeredQueueInventory({before:upload.queueProducerBaseline,observed:(observed as Inventory)?.queues,worker:target.key,beforeBindings:upload.baselineResources.bindings,afterBindings:upload.candidateResources.bindings,registration:upload.queueProducerRegistration,phase:version===upload.candidateVersion?'candidate':'baseline'});
  if(target.frontend&&expected.workers[target.environment]?.active!==plan.backendVersion)throw Error('ACTIVATION_BACKEND_CHANGED');
  if(!isDeepStrictEqual(observed,expected))throw Error('ACTIVATION_INVENTORY_CHANGED');
 }

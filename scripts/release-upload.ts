@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {FileUploadLease,type UploadPlan} from './release-upload-lease.ts';
-import {createUploadReconciler,uploadReconciliationEvidenceHash,type UploadReconciliationEvidence} from './release-upload-reconcile.ts';
+import {createUploadReconciler,uploadReconciliationEvidenceHash,validateUploadQueueRegistration,type UploadReconciliationEvidence} from './release-upload-reconcile.ts';
 import {verifyUploadPreparation,readUploadConfig,assertPreparationBundle,type UploadPreparation} from './release-upload-preparation.ts';
 import {createWranglerUploadProcess} from './release-upload-process.ts';
 import {verifyReleaseCi} from './release-ci.ts';
@@ -17,6 +17,7 @@ type Options={workspace:string;proofDirectory:string;evidence:PreparedUploadEvid
 export function createPreparedUpload(options:Options){
  const database={...options.database},evidence=structuredClone(options.evidence),digest=uploadReconciliationEvidenceHash(evidence),{lease,workspace,reader}=options;
  if(!evidence.preparation)throw Error('UPLOAD_PREPARATION_REQUIRED');
+ validateUploadQueueRegistration(evidence);
  assertPreparationBundle(evidence.preparation,evidence.artifacts);
  const config=readUploadConfig(evidence.preparation);
  if(config.name!==evidence.worker||config.account_id!==options.accountId||database.branchId!==evidence.databaseBranchId)throw Error('UPLOAD_PREPARATION_TARGET_CHANGED');

@@ -2,6 +2,7 @@ import {constants,closeSync,fsyncSync,lstatSync,openSync,readFileSync,writeFileS
 import {dirname,isAbsolute,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {setTimeout as sleep} from 'node:timers/promises';
+import {registeredQueueInventory,type QueueProducerRegistration} from './release-queue-producers.ts';
 
 const workers=['staging','staging-edge','monitor-staging','production','monitor-production','production-edge'] as const;
 type Worker=typeof workers[number];
@@ -49,14 +50,15 @@ function canonical(value:unknown):string{
  throw Error('RELEASE_INVENTORY_INVALID');
 }
 /** Resource isolation check, not executable or asset verification. */
-export function assertInactiveUploadSnapshot(before:unknown,after:unknown,worker:Worker,version:string,expectedSettings:unknown):void{
+export function assertInactiveUploadSnapshot(before:unknown,after:unknown,worker:Worker,version:string,expectedSettings:unknown,registration?:QueueProducerRegistration):void{
  if(!workers.includes(worker)||!uuid.test(version))throw Error('RELEASE_UPLOAD_TARGET_INVALID');
  const prior=object(before),observed=object(after),priorWorkers=object(prior.workers),observedWorkers=object(observed.workers);
  for(const snapshot of [prior,observed])if(Object.keys(snapshot).sort().join(',')!=='domains,queues,schedules,workers'||!Array.isArray(snapshot.domains))throw Error('RELEASE_INVENTORY_INVALID');
  for(const inventory of [priorWorkers,observedWorkers])if(Object.keys(inventory).sort().join(',')!==[...workers].sort().join(','))throw Error('RELEASE_INVENTORY_INVALID');
  const target=object(priorWorkers[worker]);
  if(typeof target.active!=='string'||!uuid.test(target.active)||typeof target.latest!=='string'||!uuid.test(target.latest)||version===target.active||version===target.latest)throw Error('RELEASE_UPLOAD_NOT_NEW_INACTIVE_VERSION');
- const expected={...prior,workers:{...priorWorkers,[worker]:{...target,latest:version,settings:releaseSettings(expectedSettings)}}};
+ const settings=releaseSettings(expectedSettings),queues=registration?registeredQueueInventory({before:prior.queues,observed:observed.queues,worker,beforeBindings:object(target.settings).bindings,afterBindings:settings.bindings,registration,phase:'upload'}):prior.queues;
+ const expected={...prior,queues,workers:{...priorWorkers,[worker]:{...target,latest:version,settings}}};
  if(canonical(observed)!==canonical(expected))throw Error('RELEASE_UPLOAD_INVENTORY_CHANGED');
 }
 class RetryableRead extends Error{}

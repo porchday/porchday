@@ -77,3 +77,25 @@ before finalization because of the omitted pause field. The original intent and
 manifest are preserved. Recovery must use read-only catalogue/detail evidence
 under that same operation; it must never repeat the POST. No consumers or
 producers were attached, and existing provider inventory is checked independently.
+
+### Producer bindings before consumer admission
+
+A binding-only upload may declare `queueProducerRegistration.keys` for up to
+three fixed environment range queues. This declaration is covered by the upload
+evidence hash and is checked before dispatch. The baseline must have matching
+active/latest bindings; each selected queue must be explicitly paused, have its
+verified identity and default retention/delay settings, and have no producers or
+consumers. The candidate may add only the declared `DENIAL_RANGE_N` bindings.
+Topology must remain shared. Other bindings and queue inventory stay exact.
+
+During inactive upload and rollback, the only permitted registration states are
+an empty producer list or one producer for the exact target Worker. This bounds
+the permitted metadata transition without assuming which version lifecycle step
+publishes it. Raw observations are retained, and the upload reconciler still
+requires identical snapshots across its repeated reads. Candidate activation
+requires all declared producer registrations. Neither state permits consumers,
+unpausing, foreign producers, changed queue identities or unrelated resource
+changes. Actual hosted behavior remains to be verified by the binding rollout.
+Afterward, consumer attachment and delivery enablement remain separate guarded
+operations; this registration proof does not establish connection headroom or
+capacity acceptance.
