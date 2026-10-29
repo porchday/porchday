@@ -620,6 +620,62 @@
     "Fourteen samples do not prove unsampled continuity or monthly availability. Maximum sample gap is not outage duration.",
     "Independent observer covers existing-session profile/feed, denied-cookie rejection and readiness; login/logout covered separately by release journeys.",
     "No failure injected; automatic rollback evidence is from the prior separate rehearsal.",
-    "New diagnostic phase ingestion still pending; no historical latency cause or improvement claimed."
-  ]
+    "Four new phases observed in a bounded staging window after ingestion delay. Aggregate points do not correlate an individual request, diagnose historical production latency or prove improvement."
+  ],
+  "hostedPhaseTelemetry": {
+    "at": "2026-10-29T13:03:17.606Z",
+    "window": {
+      "from": "2026-10-29T13:01:49Z",
+      "toExclusive": "2026-10-29T13:02:00Z"
+    },
+    "data": [
+      {
+        "phase": "rate_limit",
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 17
+      },
+      {
+        "phase": "read_guard_close",
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 0
+      },
+      {
+        "phase": "read_guard",
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 106
+      },
+      {
+        "phase": "initial_authorization",
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 169
+      }
+    ],
+    "limitations": [
+      "Sampled aggregate window, not a trace of the failed client request.",
+      "Missing observations do not prove absence or zero latency."
+    ]
+  },
+  "hostedRequestTelemetry": {
+    "at": "2026-10-29T13:03:17.329Z",
+    "window": {
+      "from": "2026-10-29T13:01:49Z",
+      "toExclusive": "2026-10-29T13:02:00Z"
+    },
+    "data": [
+      {
+        "status": 200,
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 689
+      }
+    ],
+    "limitations": [
+      "Sampled aggregate window, not a trace of the failed client request.",
+      "Missing observations do not prove absence or zero latency."
+    ]
+  }
 }

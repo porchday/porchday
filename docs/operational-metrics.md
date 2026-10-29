@@ -351,3 +351,11 @@ available time is group wall time multiplied by the configured worker count,
 `min(6, group size)`. This includes idle worker tails at the group barrier. Failed
 groups are excluded from occupancy as before. Always pin the runtime/time window
 and report these definitions with a comparison.
+
+Staging verification on October29 at13:03UTC confirmed all four pre-journal
+phases after deployment of `770071b`. In the13:01:49–13:02:00UTC window, one
+point per phase reported read_guard106ms, read_guard_close0ms, rate_limit17ms
+and initial_authorization169ms; one logout request point reported200/689ms.
+Initial queries were empty before ingestion. This verifies emission, not
+individual-request correlation or the cause of prior production delays.
+See [staging evidence](evidence/logout-prejournal-continuity-staging-2026-10-29.json).
