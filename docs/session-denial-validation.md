@@ -95,3 +95,20 @@ separate member remains authenticated, and releasing the lock permits sweep
 recovery. Global control again stays unchanged. These tests exercise real SQL and
 HTTP route behavior with an injected in-memory denial store; they do not establish
 hosted writer behavior, process-crash durability, or device acceptance.
+
+## Local process-loss acceptance — October 29, 2026
+
+The restricted-session PostgreSQL suite now runs a real subprocess publishing the
+production denial helper into native local R2 over a test-only loopback adapter.
+After the helper confirms publication, the parent kills the writer with `SIGKILL`
+before any cleanup connection exists. The SQL row remains present, but a fresh
+SDK session check rejects the denied cookie and accepts an unrelated session.
+
+A separate subprocess runs the production sweep and exact deletion using the
+restricted auth database connection. It deletes one session; another fresh process
+repeats the sweep and deletes zero. The test verifies one publication, retention of
+the canonical denial, and unchanged global control. All 14 restricted-session
+integration tests passed. The R2 service stays alive independently of the killed
+client, matching the relevant process-loss boundary. This is local native-R2 and
+PostgreSQL evidence, not a hosted Worker kill, a storage outage, or a complete
+HTTP-request process-kill test. Hosted writer and device gates remain open.
