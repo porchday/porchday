@@ -269,8 +269,8 @@ new staging version. The observer retained the failure and threw
 This is not a successful zero-failure feature rollout. The failure cause is
 unproven, and no deployment or logout mutation was replayed.
 
-This exposes a remaining integration gap: in-command unhealthy observations
-currently reject acceptance after the command finishes, but do not themselves
+This exposed an integration gap in the tooling used by that rehearsal: in-command unhealthy observations
+rejected acceptance after the command finishes, but do not themselves
 interlock provider dispatch or request compatible rollback. A failure observed
 while preparation is still running must prevent subsequent candidate dispatch;
 after dispatch, recovery must use the existing durable operation and verified
@@ -297,7 +297,29 @@ no history rewrite or replay). Lower-level tests also cover lost activation
 acknowledgement, the intent/dispatch boundary, failure during the last provider
 read, malformed gate evidence, and process-style reconstruction of the gate.
 
-These are local tests of the production tooling path. The hosted rehearsal above
-used the previous tooling and remains failed. A new bounded staging drill and
-installation of the updated release-watch bundle remain necessary before claiming
-hosted automatic recovery or effective late-failure alert delivery.
+These are local tests of the production tooling path. The hosted feature rehearsal above
+used the previous tooling and remains failed. The subsequent preparation-stop
+drill below verifies only the pre-dispatch case; hosted post-activation rollback
+still requires a separate drill.
+
+
+## Hosted preparation-stop drill — October 29, 16:58 UTC
+
+[Evidence](evidence/continuity-prepared-stop-staging-2026-10-29.json) records
+a controlled observer failure while the durable journal was `prepared`. The
+real staging readiness response was 200/healthy before the observer received
+one injected 503. This did not cause a service outage.
+
+The controller performed zero provider writes. Nine observations included one
+controlled failure and two healthy post-command samples; the durable failure
+remained in force. Full provider inventory and canonical bytes were unchanged.
+After reconciliation, the original operation was cancelled before intent.
+Synthetic sessions were revoked, all fixture rows were removed, and the lease
+was released. This is successful stop-drill acceptance, not successful release
+continuity acceptance and not proof of hosted rollback.
+
+The pinned release-watch bundle at `75f57c1` is installed on the Mac mini. A
+separate notification-only drill verified that a late failure after a terminal
+local journal still produces an exact GitHub Actions bot comment on issue #3.
+No provider writes were part of that notification drill. Owner inbox receipt
+remains an outstanding check.
