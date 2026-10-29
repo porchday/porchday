@@ -176,3 +176,133 @@ After staging, and again after production, verify with a member account:
    `trace_write_ok` points and no `trace_write_failed`; `connections` shows the
    `/api/v1/traces` route's connection use.
 7. The next day, confirm a `trace_cleanup_ok` point from the `17 3 * * *` cron.
+
+### Privacy-write phase diagnostics
+
+Opted-in HTTP traces include fixed `privacy_` phase names for guard,
+registration, work, checkpoint, receipt, retirement, close and nested R2/database
+I/O. This allows an edit's durability overhead to be separated from handler work.
+The existing aggregate exporter remains limited to explicitly enabled logout
+requests. Ordinary untraced edits do not allocate a journal timing observer.
+Anonymous requests receive no internal Server-Timing details.
+
+Phases may overlap: nested R2/database durations must not be added to their parent
+phases. The existing request trace span cap also applies; omitted phases are
+missing evidence, not zero duration. Phase tracing does not bypass journal
+registration, durable completion, original error handling or disconnect retention.
+
+#### October 29 staging write diagnostic
+
+Exact-runtime candidate `75c92e1` passed CI run 40793155412 and ran briefly as
+staging API `fb844261-1ad6-46e8-b229-8e45c965361b`. One synthetic self-only post,
+one edit and one reaction succeeded, each with independent signature/decryption
+read-back. Measurements started at 00:23:08.738, 00:23:11.135 and 00:23:15.933 UTC.
+
+| Operation | Action to acknowledged response | Including verification read-back | Mutation server duration |
+| --- | ---: | ---: | ---: |
+| Post | 1191.6 ms | 2396.2 ms | 531 ms |
+| Edit | 4039.8 ms | 4796.4 ms | 3006 ms |
+| Reaction | 1036.3 ms | 1534.9 ms | 445 ms |
+
+The edit's non-overlapping journal phases were guard 66 ms, registration 704 ms,
+wrapped work 257 ms, checkpoint 1054 ms, receipt 257 ms, retirement 420 ms and
+close 0 ms (rounded). Journal phases excluding wrapped work totaled 2501 ms;
+248 ms preceded the guard. This identifies the awaited journal as the dominant
+cost in this observation, not a reason to bypass its durability requirements.
+New posts and reaction additions do not traverse this privacy-mutation wrapper;
+absence of their journal spans is expected, not a zero-cost journal measurement.
+
+The private collector's phase regex omitted names containing digits, so nested
+`privacy_r2_read`/`privacy_r2_write` timings were not retained. Do not infer absent
+R2 work or attribute parent-phase time to specific storage calls from this run.
+The tested `scripts/privacy-write-timing.ts` parser now retains every emitted
+journal phase, including repeated R2 spans, without summing nested durations.
+Another bounded diagnostic using it is still needed for that missing detail.
+No raw response headers or private content were retained in the numeric evidence.
+
+This is one observation per operation on a desktop runner, with tracing enabled,
+unverified region/network and a small self-only audience. All acknowledged times
+exceeded one second; none establishes p99, regional or phone performance. There
+were no measured failures, timeouts or retries. A Node module-resolution failure
+occurred before any test intent/network traffic; the collector then ran once via
+`tsx`. No uncertain mutation was repeated.
+
+The owned post was deleted and returned 404; the session was signed out and its
+saved cookie returned 401. Original staging API
+`f504e9c9-04ab-414f-9a75-daeed914144d` was restored. Provider verification preserved
+all 24 web assets, runtime settings and production state. The canonical provider
+record was reconciled and the deployment lock released. Evidence is archived in
+the primary checkout's `artifacts/private/p99-write-tracing-20261029/`.
+
+#### Corrected R2 diagnostic, October 29
+
+A second bounded run reused the verified inactive candidate above, without a new
+upload. Every mutation's release header matched the candidate. The corrected
+allowlisted parser retained R2 names; the test required edit work, R2 read and R2
+write evidence before counting the edit as successful.
+
+| Operation start (UTC) | Action to acknowledgement | Including read-back | Mutation server |
+| --- | ---: | ---: | ---: |
+| Post, 00:25:37.093 | 1761.9 ms | 2326.0 ms | 881 ms |
+| Edit, 00:25:39.420 | 4063.6 ms | 4664.0 ms | 2898 ms |
+| Reaction, 00:25:44.085 | 1074.6 ms | 1638.7 ms | 493 ms |
+
+Edit phases were guard 73 ms, registration 634 ms, work 209 ms, checkpoint 998 ms,
+receipt 323 ms, retirement 427 ms and close 0 rounded. Before guard: 234 ms.
+Six R2 writes took 281/276/331/240/323/315 ms (1766 ms total); five reads took
+73/77/148/212/112 ms (622 ms total). These sequential R2 spans occupy about 82%
+of the 2898 ms server interval. They are nested inside the parent phases and must
+not be added to them. Individual I/O spans include any adapter retries; this
+collector does not establish whether each was one provider attempt.
+
+The evidence points toward reducing required storage round trips or their latency,
+while preserving durable intent registration, immutable checkpoints/receipts,
+conditional updates, restore detection and concurrent-operation correctness.
+It does not support bypassing durability, acknowledging unconfirmed writes, or
+claiming that application/database work has no further optimization potential.
+
+One sample per operation again, with all cryptographic read-backs passing and no
+measured failure/timeout or collector replay. Same desktop/unverified-region and
+network limits as the first run. All acknowledgements exceeded one second; no
+percentile claim. Owned-post deletion/404 and signout/old-session 401 passed.
+Rollback to the original version, provider/canonical reconciliation, all 24 assets
+and production preservation were verified, and the lock was released. Evidence,
+including the corrected parser, is archived in primary
+`artifacts/private/p99-write-tracing-r2-20261029/`.
+
+#### Storage-backend investigation after the R2 measurements
+
+The six writes preserve separate immutable intent, batch and receipt records plus
+conditional control updates. Existing recovery and receipt-reconciliation tests
+exercise those independent records. Removing receipts or retiring before durable
+completion would change the recovery contract and is not an accepted optimization.
+The read-only provider query reports the staging journal bucket as WNAM, Standard,
+default jurisdiction. That does not identify an exact data center, but gives no
+obvious configured cross-continent placement mistake to correct.
+
+Investigate an isolated SQLite-backed Durable Object journal-store benchmark
+before changing any active journal. Cloudflare documents transactional, strongly
+consistent storage and 30-day point-in-time recovery in its
+[storage API](https://developers.cloudflare.com/durable-objects/api/sqlite-storage-api/).
+These properties make it a candidate, not evidence of lower hosted latency or
+recovery equivalence. [Location hints](https://developers.cloudflare.com/durable-objects/reference/data-location/)
+are not a regional performance guarantee. Keep the existing R2 journal authoritative.
+
+The first prototype must implement only the existing get/conditional-put contract
+against synthetic keys, with no application binding or member route. Test immutable
+conflicts, compare-and-swap races, lost successful replies, restart persistence and
+failure propagation. Preserve exact bytes, fresh version tokens and atomic
+precondition checks; no deletion, public endpoint, unbounded retries or automatic
+fallback to an older backend. Await storage durability before a successful reply.
+Benchmark the same sequential operation shape and record failures and cold/warm
+conditions. Local/emulated speed is not hosted evidence. Stop this candidate if it
+does not materially reduce the measured round-trip cost.
+
+Promotion would separately require a restore/export tool, immutable-chain and
+receipt proofs, prohibition of restoring the journal behind acknowledged state,
+capacity/retention limits, old/new reader compatibility, and a rollback procedure
+that cannot expose a stale R2 journal after new writes. An asynchronous R2 mirror
+alone cannot authorize rollback. Any migration needs a verified frozen checkpoint
+and explicit authority handoff; dual writers or silent backend fallback are
+unacceptable. Preserve the existing journal as authoritative until every migration
+and recovery gate is demonstrated. No new backend has been provisioned or enabled.

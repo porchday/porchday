@@ -1,4 +1,4 @@
-import {logoutJournalTiming,measureJournalPhase,type JournalTiming} from './journal-timing';
+import {httpJournalTiming,measureJournalPhase,type JournalTiming} from './journal-timing';
 import {phaseTiming, measureJournalRead, type RequestTiming} from './request-timing';
 import postgres from 'postgres';
 import {z} from 'zod';
@@ -344,7 +344,7 @@ export async function withHttpPrivacyJournal<T>(context:HttpJournalContext,work:
     // supply one before any journal intent or application work can start.
     if(context.env.ENVIRONMENT!=='development')throw new JournalError('JOURNAL_EXECUTION_CONTEXT_REQUIRED');
   }
-  const operation=withPrivacyJournal(context.env,work,logoutJournalTiming(context.env,context.req));
+  const operation=withPrivacyJournal(context.env,work,httpJournalTiming(context.env,context.req));
   if(keepAlive)keepAlive(operation.then(()=>undefined,()=>undefined));
   return await operation;
 }
