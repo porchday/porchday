@@ -233,3 +233,39 @@ saved cookie returned 401. Original staging API
 all 24 web assets, runtime settings and production state. The canonical provider
 record was reconciled and the deployment lock released. Evidence is archived in
 the primary checkout's `artifacts/private/p99-write-tracing-20261029/`.
+
+#### Corrected R2 diagnostic, October 29
+
+A second bounded run reused the verified inactive candidate above, without a new
+upload. Every mutation's release header matched the candidate. The corrected
+allowlisted parser retained R2 names; the test required edit work, R2 read and R2
+write evidence before counting the edit as successful.
+
+| Operation start (UTC) | Action to acknowledgement | Including read-back | Mutation server |
+| --- | ---: | ---: | ---: |
+| Post, 00:25:37.093 | 1761.9 ms | 2326.0 ms | 881 ms |
+| Edit, 00:25:39.420 | 4063.6 ms | 4664.0 ms | 2898 ms |
+| Reaction, 00:25:44.085 | 1074.6 ms | 1638.7 ms | 493 ms |
+
+Edit phases were guard 73 ms, registration 634 ms, work 209 ms, checkpoint 998 ms,
+receipt 323 ms, retirement 427 ms and close 0 rounded. Before guard: 234 ms.
+Six R2 writes took 281/276/331/240/323/315 ms (1766 ms total); five reads took
+73/77/148/212/112 ms (622 ms total). These sequential R2 spans occupy about 82%
+of the 2898 ms server interval. They are nested inside the parent phases and must
+not be added to them. Individual I/O spans include any adapter retries; this
+collector does not establish whether each was one provider attempt.
+
+The evidence points toward reducing required storage round trips or their latency,
+while preserving durable intent registration, immutable checkpoints/receipts,
+conditional updates, restore detection and concurrent-operation correctness.
+It does not support bypassing durability, acknowledging unconfirmed writes, or
+claiming that application/database work has no further optimization potential.
+
+One sample per operation again, with all cryptographic read-backs passing and no
+measured failure/timeout or collector replay. Same desktop/unverified-region and
+network limits as the first run. All acknowledgements exceeded one second; no
+percentile claim. Owned-post deletion/404 and signout/old-session 401 passed.
+Rollback to the original version, provider/canonical reconciliation, all 24 assets
+and production preservation were verified, and the lock was released. Evidence,
+including the corrected parser, is archived in primary
+`artifacts/private/p99-write-tracing-r2-20261029/`.
