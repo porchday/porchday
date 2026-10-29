@@ -94,3 +94,30 @@ were not captured, so this remains a timing inference, not a directly recorded
 stale response. Future acceptance must capture those timestamps and verify the
 interval between full passes, in addition to journey probes and scan duration.
 Do not relax health thresholds or relabel this run as repeatable freshness margin.
+
+
+## Exact completion acceptance
+
+`scripts/session-denial-capacity-proof.ts` now provides the additional acceptance
+check. Read the actual v3 progress object under the trial's deployment lease,
+parse it with `exactCandidateProgress`, and persist the sanitized result before
+passing it to `CandidateCapacityProof`. The parser validates the full stored
+shape but excludes the session cursor from retained evidence. A read-only staging
+check confirmed that the operator storage API returns these exact timestamps;
+no Worker or schema change is required.
+
+Capture a healthy baseline before seeding, then construct the proof with the
+confirmed fixture commit time. Every observation must remain healthy and
+monotonic. Every newly observed full-pass completion must be within 300,000
+milliseconds of the preceding completion, including the baseline-to-first interval.
+A failure permanently invalidates that proof. Acceptance requires two completed
+passes that began after fixture commit and each saw at least the full fixture size.
+Repeated reads of one pass cannot satisfy the requirement.
+
+The operator harness still must verify intact fixture rows, authenticated journeys,
+provider/source pins, exact cleanup and recovery. This helper does not establish
+continuous page freshness or unsampled user availability. A missed intermediate
+completion can cause conservative rejection; never interpolate or manufacture it.
+The next harness template incorporates exact reads and this proof, but no new
+capacity run has executed with it yet. Tests reproduce the 302.518-second gap
+missed by periodic probes and enforce the exact 300,000-millisecond boundary.
