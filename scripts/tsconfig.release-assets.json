@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "files": ["release-assets.ts", "release-assets-browser.ts"]
+  "files": ["release-assets.ts", "release-assets-browser.ts", "release-assets-verify.ts"]
 }

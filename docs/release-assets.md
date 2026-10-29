@@ -87,6 +87,27 @@ test. The same actual builds reproduced a non-rendering page without retention
 and a working login form with retention, including the old CSS, React and crypto
 module hashes. Hosted activation and authenticated traffic remain unverified.
 
+Verify deployed assets read-only against the saved package receipt:
+
+```sh
+node scripts/release-assets-verify.ts https://staging.porchday.com /private/release/asset-receipt.json
+```
+
+The verifier accepts only staging and the canonical production origin. It checks
+every public file's exact hash and allowed MIME type, with four concurrent reads,
+ten-second request deadlines and a 25 MiB streamed body cap. It records failures
+alongside successful checks and exits unsuccessfully if any file fails. Redirects
+are rejected. `index.html` and `app-shell.html` use the public `/app-shell` route;
+`_headers` is provider configuration and is explicitly excluded from HTTP checks.
+Unknown file types stop validation for review instead of silently skipping files.
+Six tests cover false HTTP-200 success, shell routing, errors, cancellation,
+concurrency, input restrictions and the streamed body limit.
+
+Read-only checks passed all 24 current public files in staging and production.
+Checking the assembled retention manifest against staging correctly failed the
+two missing old files with `content_type` despite HTTP 200. This is pre-deployment
+evidence; it does not mean the retained package is hosted yet.
+
 Before claiming this fixes deployed continuity, integrate the package and rollback
 artifacts into the reviewed release command, upload through staging, verify every
 retained URL's hash and MIME type, and exercise a previous-release browser before,
