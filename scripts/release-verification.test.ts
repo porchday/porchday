@@ -1,6 +1,6 @@
 import {afterEach,describe,expect,it} from 'vitest';
 import {createHash} from 'node:crypto';
-import {chmodSync,mkdtempSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs';
+import {chmodSync,existsSync,mkdtempSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createReleaseVerifier} from './release-verification.ts';
@@ -40,6 +40,7 @@ describe('shared release journey and asset gate',()=>{
   const release:DeploymentPlan={...plan,worker:frontend?'porchday-staging-edge':plan.worker,...(frontend?{backendVersion:uuid(20),backendReaderFloor:uuid(21)}:{}),assetManifests:{candidate:publicAssetManifestHash(f.options.assets.candidate),baseline:publicAssetManifestHash(f.options.assets.baseline)}};
   const before={stagingVersion:frontend?uuid(20):plan.baselineVersion,stagingRuntimeSource:'c'.repeat(40),stagingAssetsSource:'d'.repeat(40),compatibleRollbackVersions:{staging:frontend?uuid(21):plan.baselineVersion},edgeRouting:{stagingEnabled:frontend||hidden,stagingFrontendVersion:plan.baselineVersion,stagingFrontendSource:'e'.repeat(40)},sourceComposition:'keep'};
   const canonical=join(f.root,'latest-verified-deployment.json');writeFileSync(canonical,JSON.stringify(before),{mode:0o600});
+  if(hidden){expect(()=>FileDeploymentLease.acquire(f.root,release)).toThrow('ASSETS_NOT_PUBLIC_TARGET');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(f.calls).toEqual([]);expect(JSON.parse(readFileSync(canonical,'utf8'))).toEqual(before);return;}
   const journal=new FileRecoveryJournal(join(f.root,'journal'));let current:DeploymentObservation={version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null},lease=FileDeploymentLease.acquire(f.root,release),writes=0;
   try{
    const verify=createReleaseVerifier({...f.options,plan:release,fetch:async(input,init)=>rollback&&current.version===plan.candidateVersion&&String(input).endsWith('/health')?Response.json({status:'unavailable',issues:[]},{status:503}):f.transport(input,init)});
@@ -47,7 +48,6 @@ describe('shared release journey and asset gate',()=>{
    expect(await recoverDeployment(release,journal,ports)).toBe(rollback?'rolled-back':'complete');expect(writes).toBe(rollback?2:1);
    const key=frontend?'staging-edge':'staging',version=rollback?plan.baselineVersion:plan.candidateVersion,proof=verify.assetProof(version)!;expect(proof).toBeTruthy();
    const snapshot=join(f.root,'snapshot.json');writeFileSync(snapshot,JSON.stringify({workers:{staging:{active:before.stagingVersion},[key]:{active:version}}}),{mode:0o600});
-   if(hidden){await expect(lease.finalize(journal,snapshot,proof)).rejects.toThrow('ASSETS_NOT_PUBLIC_TARGET');expect(JSON.parse(readFileSync(canonical,'utf8'))).toEqual(before);return;}
    await expect(lease.finalize(journal,snapshot)).rejects.toThrow('ASSET_PROOF_REQUIRED');expect(JSON.parse(readFileSync(canonical,'utf8'))).toEqual(before);
    const original=readFileSync(proof,'utf8');
    for(const tamper of ['checks','version','manifest']){
