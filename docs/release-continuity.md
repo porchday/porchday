@@ -348,3 +348,23 @@ the lease was released. No production or schema change occurred. This proves
 the controlled hosted recovery path; it does not prove actual provider-outage
 recovery, every-request continuity, signed-in feature UI or physical native
 compatibility. The earlier failed feature rollout remains failed.
+
+
+## Logout summary diagnostic — staging late observation failure
+
+[Evidence](evidence/logout-summary-staging-2026-10-29.json) records the
+diagnostic-only backend activation on the existing staging feature source. The
+controller completed, but a denied-cookie GET failed with `transport_or_response`
+in the first post-terminal sample, without a retained HTTP status. Allowed
+profile/feed reads and readiness passed in that sample. The durable continuity
+gate and owner alert retained the failure; the rollout does not pass continuity
+acceptance and is not eligible for production promotion.
+
+Read-only reconciliation later found denied-cookie HTTP 401 and zero matching
+session rows. The other synthetic session was logged out once, all fixture rows
+were removed, provider state matched the completed canonical record and the lease
+was released. No uncertain mutation was replayed or terminal journal rewritten.
+The diagnostic remains active only in staging pending explicit further
+disposition. Failure cause, summary ingestion and hosted production journal-path
+acceptance remain separate investigations. Staging denial-writer settings and
+production code/settings are unchanged.

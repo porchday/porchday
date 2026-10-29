@@ -1,0 +1,75 @@
+{
+  "environment": "staging",
+  "source": "df24f840c279fb48112e29ef6c5cbfff542b6ea3",
+  "tooling": "8a80b8cd8a1754b243edb03a3570c68525029c3d",
+  "version": "cb35c411-c256-4425-b7e3-2ef74118176a",
+  "activationOperation": "d5bb37aa-725e-48c3-b3e0-3bb298aba0ce",
+  "controllerOutcome": "complete",
+  "continuityAcceptancePassed": false,
+  "samples": 14,
+  "failedSamples": 1,
+  "postCommandSamples": 2,
+  "failedObservations": [
+    {
+      "kind": "sample",
+      "index": 12,
+      "phaseAtStart": "command-terminal",
+      "sample": {
+        "at": "2026-10-29T17:18:29.642Z",
+        "completedAt": "2026-10-29T17:18:30.356Z",
+        "healthy": false,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 424
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 711
+          },
+          {
+            "name": "denied_profile",
+            "ok": false,
+            "failure": "transport_or_response",
+            "durationMs": 39
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 440
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      },
+      "planHash": "efeff71ba83659e7afb9f672d839c6e4d16465e4a626cf152af1527fcd2d6277",
+      "providerPhaseAtStart": "complete",
+      "providerPhase": "complete"
+    }
+  ],
+  "cleanup": {
+    "at": "2026-10-29T17:19:26.564Z",
+    "passed": false,
+    "remainingFixtureRows": 0,
+    "providerUnchanged": true,
+    "activationCompleted": true,
+    "continuityAcceptancePassed": false,
+    "disposition": "activation complete but a post-terminal denied-cookie transport/response sample failed; no replay"
+  },
+  "readOnlyReconciliation": {
+    "at": "2026-10-29T17:19:23.278Z",
+    "primaryStatus": 401,
+    "primarySessionRows": 0
+  },
+  "limitations": [
+    "No response status was retained for the failed transport/response observation; cause remains unproven.",
+    "Later denied-cookie 401 does not erase the failure.",
+    "No activation replay or automatic post-terminal rollback.",
+    "Production source and settings unchanged; staging denial writer remains enabled.",
+    "Summary ingestion and production journal-path acceptance remain open."
+  ]
+}
