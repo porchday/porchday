@@ -299,8 +299,8 @@ read, malformed gate evidence, and process-style reconstruction of the gate.
 
 These are local tests of the production tooling path. The hosted feature rehearsal above
 used the previous tooling and remains failed. The subsequent preparation-stop
-drill below verifies only the pre-dispatch case; hosted post-activation rollback
-still requires a separate drill.
+drill below verifies the pre-dispatch case. A separate hosted post-activation
+rollback drill is recorded after it.
 
 
 ## Hosted preparation-stop drill — October 29, 16:58 UTC
@@ -323,3 +323,28 @@ separate notification-only drill verified that a late failure after a terminal
 local journal still produces an exact GitHub Actions bot comment on issue #3.
 No provider writes were part of that notification drill. Owner inbox receipt
 remains an outstanding check.
+
+
+## Hosted candidate-failure rollback drill — October 29, 17:06 UTC
+
+[Evidence](evidence/continuity-candidate-rollback-staging-2026-10-29.json)
+records a fresh operation using the already verified inactive, byte-identical
+staging edge candidate. After the journal reached `candidate-observed`, real
+protected readiness returned 200/healthy and the observer received one injected
+503. The durable gate drove the existing operation through `rollback-intent`
+and `rolled-back`, with one activation and one baseline rollback.
+
+The maintained verifier checked restored readiness, authenticated journeys,
+assets, provider identity and compatibility before finalization. Canonical
+state records the verified rollback. The observer accepted a changed baseline
+asset-proof reference only after terminal rollback and after validating its
+operation, plan, version, manifest, report and byte hash; ten local rejection
+cases passed before the hosted run. Full provider inventory returned to its
+pre-drill values.
+
+The run retained 41 samples, one controlled failure and two healthy post-command
+samples. Synthetic sessions were revoked, all fixture rows were removed and
+the lease was released. No production or schema change occurred. This proves
+the controlled hosted recovery path; it does not prove actual provider-outage
+recovery, every-request continuity, signed-in feature UI or physical native
+compatibility. The earlier failed feature rollout remains failed.
