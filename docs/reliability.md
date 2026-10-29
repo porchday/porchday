@@ -125,6 +125,12 @@ v2 pass under the deployment lease, or use a separately verified compatible v3
 baseline. Never copy progress timestamps between versions. The [v3-compatible monitoring rollback rehearsal](evidence/session-denial-candidate-rollback-staging-2026-10-29.json)
 passed: a failed local readiness observation triggered actual rollback, restored
 healthy v3 progress, and scheduled cleanup removed a locked synthetic denied row
-within 45.343 seconds after release. Larger live-session capacity and stale-job
-alert/recovery checks remain open. This does not validate every feature migration
-or a real provider outage.
+within 45.343 seconds after release. A subsequent [real staleness drill](evidence/session-denial-stale-staging-2026-10-29.json)
+held one denied-session deletion until page age exceeded 180 seconds. Readiness
+failed; the GitHub bot alert was verified 24.037 seconds after observation while
+the fault remained active. After release, scheduled cleanup recovered and two
+healthy probes established recovery within 60.014 seconds; the recovery comment
+was verified 16.785 seconds later. No timestamps were edited or manual sweeps
+used. Owner inbox receipt remains unverified. Larger live-session capacity and
+other production gates remain open. These drills do not validate every feature
+migration, a stopped scheduler, Mac host loss or a real provider outage.

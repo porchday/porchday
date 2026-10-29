@@ -332,6 +332,15 @@ health survived restoration, and scheduled cleanup removed the row within 45.343
 seconds after lock release. This exercised a version/configuration transition with
 identical application code, not every future feature migration or provider outage.
 
+A [real cleanup-staleness drill](../docs/evidence/session-denial-stale-staging-2026-10-29.json)
+held a synthetic denied-session deletion until actual progress aged past the
+three-minute threshold. Readiness failed while other journey checks passed;
+the exact GitHub bot alert was verified while the lock remained held. Releasing
+the lock allowed scheduled cleanup and two healthy probes to establish recovery
+within 60.014 seconds. No progress timestamps were fabricated or manual sweeps
+invoked. Owner inbox receipt, stopped-scheduler and provider-outage coverage
+remain unverified.
+
 For a delayed legacy rollback, an old v2 binary reads v2 progress, which becomes stale if v2 scans stop. A late
 rollback therefore needs an actual fresh v2 pass or an independently verified
 compatible baseline; copying v3 timestamps into v2 would fabricate evidence.

@@ -504,3 +504,35 @@ This closes the scoped v3-compatible monitoring rollback check. It does not cove
 every future feature/schema change or provider outage. Delayed rollback to v2 still
 requires actual fresh v2 progress. Stale-job alert/recovery, larger live-session
 capacity, remaining hosted interruption/concurrency and device gates stay open.
+
+
+## Real cleanup staleness and alert recovery — October 29, 09:08 UTC
+
+[Hosted evidence](evidence/session-denial-stale-staging-2026-10-29.json) records a
+bounded identity lock on one synthetic denied session in staging. Scheduled
+cleanup could not advance past the locked deletion; actual page progress aged
+past 180 seconds without editing timestamps. Protected readiness returned 503
+with `session_denial_cleanup_stale` at page age 189 seconds. Ordinary cleanup
+remained fresh, and all other synthetic journey checks passed. The denied cookie
+remained rejected while its SQL row was retained.
+
+The Mac staging loop used the shared probe, alert reducer and GitHub relay. The
+exact bot-authored [outage comment](https://github.com/porchday/porchday/issues/52#issuecomment-6492523837)
+was verified 24.037 seconds after the failed observation, while the lock was
+still held and readiness still failed. After lock release, scheduled cleanup
+removed the row and completed a new full pass without manual sweeping. Two
+consecutive healthy probes established recovery at 60.014 seconds after release;
+the exact [recovery comment](https://github.com/porchday/porchday/issues/52#issuecomment-6492551626)
+was verified 16.785 seconds after that observation. These are observed readback
+latencies for this drill, not guaranteed notification deadlines.
+
+The fixture was removed with zero remaining user/member/account/session rows;
+immutable denials were retained. Provider state and production were unchanged,
+the deployment lease was released, and the production monitor remained healthy.
+Preflight passed 25 monitoring/health tests and verified a single lock release
+when watchdog and normal cleanup race.
+
+This closes the scoped real-staleness/alert/scheduled-recovery check. It did not
+stop the scheduler or simulate a provider outage or Mac host loss. Owner inbox
+receipt remains unverified in #52. Larger live-session capacity, hosted
+interruption/concurrency, device checks and the other production gates remain open.
