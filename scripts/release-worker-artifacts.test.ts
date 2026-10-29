@@ -46,6 +46,17 @@ describe('uploaded Worker artifact verification',()=>{
   expect(verifyWorkerArtifacts({...f,actual,allowObservedMapNormalization:true}).mapMode).toBe('observed-provider-normalization');
   for(const patch of [{mappings:'changed'},{names:['changed']},{sourcesContent:['changed','','','','']},{sources:['different',...f.normalized.sources.slice(1)]},{extra:'unreviewed'}])expect(()=>verifyWorkerArtifacts({...f,allowObservedMapNormalization:true,actual:{...actual,'index.js.map':encode({...f.normalized,...patch})}})).toThrow('MAP_CHANGED');
  });
+ it('accepts observed path normalization for complete monitor maps without weakening content checks',()=>{
+  const f=fixture(),map={version:3,sources:['../../apps/monitor/src/index.ts'],sourceRoot:'/reviewed/build',sourcesContent:['complete monitor source'],names:['symbol'],mappings:'AAAA'};
+  const {sourceRoot:_,...rest}=map,normalized={...rest,file:'index.js',sourcesRoot:null,sources:['apps/monitor/src/index.ts']};
+  const expected={...f.expected,'index.js.map':encode(map)},hashes={...f.hashes,'index.js.map':createHash('sha256').update(expected['index.js.map']).digest('hex')};
+  const options={...f,expected,hashes,actual:{...f.actual,'index.js.map':encode(normalized)},allowObservedMapNormalization:true,allowObservedPathNormalization:true};
+  expect(verifyWorkerArtifacts(options).mapMode).toBe('observed-provider-path-normalization');
+  expect(()=>verifyWorkerArtifacts({...options,allowObservedPathNormalization:false})).toThrow('MAP_CHANGED');
+  for(const patch of [{sourcesContent:['altered']},{sources:['other.ts']},{mappings:'BBBB'},{names:['different']},{file:'other.js'},{extra:1}])expect(()=>verifyWorkerArtifacts({...options,actual:{...options.actual,'index.js.map':encode({...normalized,...patch})}})).toThrow('MAP_CHANGED');
+  const incomplete=encode({...map,sourcesContent:[null]});
+  expect(()=>verifyWorkerArtifacts({...options,expected:{...expected,'index.js.map':incomplete},hashes:{...hashes,'index.js.map':createHash('sha256').update(incomplete).digest('hex')},actual:{...options.actual,'index.js.map':encode({...normalized,sourcesContent:['']})}})).toThrow('MAP_CHANGED');
+ });
  it('rejects unexpected modules and malformed maps even when their local hashes match',()=>{
   const f=fixture();expect(()=>verifyWorkerArtifacts({...f,actual:{...f.actual,'extra.js':Buffer.from('extra')}})).toThrow('MODULE_SET_CHANGED');
   const bytes=Buffer.from('{}'),hash=createHash('sha256').update(bytes).digest('hex');

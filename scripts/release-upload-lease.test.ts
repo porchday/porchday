@@ -63,6 +63,47 @@ describe('durable inactive upload lease',()=>{
   try{await lease.dispatchOnce(async()=>{},async()=>{throw Error('lost response');},signal());expect(()=>lease.cancelBeforeDispatch()).toThrow('CANCELLATION_UNSAFE');expect(existsSync(join(f.root,'deployment-lock/upload-intent.json'))).toBe(true);}
   finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
  });
+ it('archives a proved inactive rejection without success, preserves canonical and forbids replay',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan),result={...await verified(),reason:'UPLOAD_CANDIDATE_RESOURCES_CHANGED'};
+  try{
+   await expect(lease.rejectInactive(async()=>result,signal())).rejects.toThrow('INTENT_REQUIRED');
+   await lease.dispatchOnce(async()=>{},async()=>{},signal());
+   await expect(lease.rejectInactive(async()=>{throw Error('active routing changed');},signal())).rejects.toThrow('active routing changed');
+   expect(existsSync(join(f.root,'deployment-lock/upload-rejected.json'))).toBe(false);
+   await expect(lease.rejectInactive(async()=>({...result,version:'unknown'}),signal())).rejects.toThrow('REJECTION_INVALID');
+   const rejected=await lease.rejectInactive(async()=>result,signal());expect(rejected).toMatchObject(result);
+   expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
+   expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+   expect(existsSync(join(f.root,'release-upload-rejected-'+f.plan.operationId+'/upload-intent.json'))).toBe(true);
+   expect(FileUploadLease.completed(f.root,f.plan)).toBe(null);
+   expect(()=>FileUploadLease.acquire(f.root,f.plan)).toThrow('ALREADY_REJECTED');
+   const next=FileUploadLease.acquire(f.root,{...f.plan,operationId:id(9)});next.cancelBeforeDispatch();
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('resumes a durable rejection after interruption without dispatching or converting it to success',async()=>{
+  const f=fixture();let lease=FileUploadLease.acquire(f.root,f.plan);
+  const result={...await verified(),reason:'UPLOAD_CANDIDATE_RESOURCES_CHANGED'};
+  try{
+   await lease.dispatchOnce(async()=>{},async()=>{},signal());
+   const owner=JSON.parse(readFileSync(join(f.root,'deployment-lock/owner.json'),'utf8'));
+   writeFileSync(join(f.root,'deployment-lock/upload-rejected.json'),JSON.stringify({v:1,planHash:owner.planHash,...result})+'\n',{mode:0o600});
+   lease.close();lease=FileUploadLease.acquire(f.root,f.plan);
+   await expect(lease.dispatchOnce(async()=>{},async()=>{throw Error('must not send');},signal())).rejects.toThrow('ALREADY_REJECTED');
+   await expect(lease.reconcile(verified,signal())).rejects.toThrow('ALREADY_REJECTED');
+   await expect(lease.rejectInactive(async()=>({...result,evidenceDigest:'f'.repeat(64)}),signal())).rejects.toThrow('REJECTION_CHANGED');
+   await lease.rejectInactive(async()=>result,signal());
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('cannot reject verified uploads or unexpected lock contents',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan),result={...await verified(),reason:'MISMATCH'};
+  try{
+   await lease.dispatchOnce(async()=>{},async()=>{},signal());
+   writeFileSync(join(f.root,'deployment-lock/unexpected'),'x',{mode:0o600});
+   await expect(lease.rejectInactive(async()=>result,signal())).rejects.toThrow('DIRECTORY_CHANGED');
+   rmSync(join(f.root,'deployment-lock/unexpected'));await lease.reconcile(verified,signal());
+   await expect(lease.rejectInactive(async()=>result,signal())).rejects.toThrow('ALREADY_VERIFIED');lease.release();
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
  it('requires reconciliation, archives evidence and leaves canonical active state unchanged',async()=>{
   const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
   try{
