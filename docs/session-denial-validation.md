@@ -1,6 +1,6 @@
 # Independent session denial: validation gates
 
-As of October 29, 2026, 11:01 UTC, staging version `d06996e3` runs isolated
+As of October 29, 2026, 11:08 UTC, staging version `d06996e3` runs isolated
 runtime `0892b28` with logout writer and cleanup enabled. Production `f613874a`
 retains server runtime `ebc567a4`, with both flags disabled. Current frontend
 assets are `b2b3a06`. The maintained draft PR integrates the tested runtime code;
@@ -14,8 +14,12 @@ over the previous run was only 1.67%, and observed freshness margin was 27 secon
 A bounded six-session denied backlog also recovered through scheduled cleanup;
 that does not establish pilot-scale denied-backlog capacity.
 
-Production enablement still requires repeatable capacity margin, the current
-compatible rollback baseline, remaining hosted interruption/password-change
+The current six-read runtime also passed a compatible rollback rehearsal:
+denial enforcement and unrelated-member access survived both versions, and
+scheduled cleanup recovered after rollback.
+
+Production enablement still requires repeatable capacity margin, pilot-scale
+denied-backlog behavior, remaining hosted interruption/password-change
 concurrency, physical-device checks, storage/cost acceptance and every active
 reader. Existing scoped writer, reader, push, contention and historical rollback
 rehearsals are evidence for their stated scope. Do not weaken the independent
@@ -656,3 +660,24 @@ runtime. It does not prove a pilot-scale denied backlog, hosted Worker terminati
 password-change races, physical-device behavior or monthly availability. Reader
 outcomes with retained SQL rows are the authority-enforcement evidence here;
 the test did not fetch denial object bodies directly.
+
+## Current six-read runtime rollback — October 29, 2026
+
+[Sanitized evidence](evidence/session-denial-six-read-rollback-staging-2026-10-29.json)
+records a completed staging rehearsal on runtime `0892b28`, with `d06996e3` as
+the restored baseline. The inactive candidate retained identical executable,
+schema and 31 public assets, changing only writer/cleanup flags to disabled.
+A locally injected failed readiness observation triggered actual provider rollback.
+
+A real logout published a denial while a synthetic identity lock retained its SQL
+row. The original cookie returned 401 on the candidate and restored baseline;
+the unrelated member returned 200 on both. Actual readiness after rollback was
+healthy with non-null v3 progress. Once the lock was released, scheduled cleanup
+removed the retained row within 15.147 seconds, and a new full pass completed.
+No manual sweep contributed to acceptance. Exact fixture cleanup verified zero
+rows, immutable denials remained, provider state reconciled and the lease released.
+Production was unchanged.
+
+This refreshes the scoped rollback evidence for the current runtime. It does not
+establish safety for arbitrary feature/schema changes, a provider outage, delayed
+legacy-reader rollback, physical devices or the monthly availability objective.
