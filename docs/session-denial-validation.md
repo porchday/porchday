@@ -1,7 +1,7 @@
 # Independent session denial: validation gates
 
 The logout writer and cleanup flags are enabled on staging as of October 29,
-2026, 07:05 UTC, and remain disabled in production. Staging now runs SQL-candidate cleanup runtime `992d24c` on version `7469d433`.
+2026, 07:05 UTC, and remain disabled in production. Staging now runs SQL-candidate cleanup with bounded continuation runtime `2ab27b5` on version `dc9d1321`.
 The scoped staging writer, concurrency and retained-row rollback rehearsals
 below passed; production enablement remains gated.
 Reader enforcement has hosted API evidence and a scoped staging push rehearsal.
@@ -562,3 +562,33 @@ deadline at 10,000 live sessions. A bounded, checkpoint-token continuation chang
 has local control-flow tests; hosted throughput and rollback verification for
 that change remain open before promotion. Do not loosen health thresholds to
 make a large-population scan appear healthy.
+
+
+## Continuation rollout and measured comparison — October 29, 09:33 UTC
+
+[Release evidence](evidence/session-denial-continuation-staging-2026-10-29.json)
+records isolated runtime `2ab27b5`, green required push CI for runtime and tooling,
+48 source-matched bundled files and a verified-inactive upload. The first
+activation plan was rejected at lease acquisition because it omitted the recorded
+denial-reader floor. Its empty journal, absent lease and unchanged provider state
+proved no deployment mutation occurred; the failed plan and bot alert remain
+preserved. A separately reviewed plan acknowledged the floor while retaining
+`7469d433` as its actual rollback target, then completed maintained activation.
+Journeys/readiness, schema/provider and all 29 assets passed. Seven healthy
+post-activation samples observed actual scheduled full-pass advancement within
+66.241 seconds, without manual sweeps. Production remained unchanged.
+
+The [subsequent capacity comparison](evidence/session-denial-continuation-capacity-staging-2026-10-29.json)
+seeded the same 250-session fixture size. Two scheduled passes over 253 candidates
+completed in 12 and 18 seconds, versus 124 and 123 seconds with the previous
+one-page-per-minute runtime. All seven journey samples passed; maximum observed
+page/full-pass age was 59 seconds. All 250 non-denied sessions remained present
+until exact cleanup, which left zero fixture rows. Provider state was unchanged
+during observation and the lease was released.
+
+These successive small-population runs demonstrate removal of the cron wait
+between pages; they do not establish throughput for 10,000 sessions, a large
+denied backlog, concurrent-user load or overlapping release traffic. Queue
+scheduling and per-page work still contribute to full-pass duration. Larger-load
+measurement and compatible rollback of the continuation change remain gates,
+along with the other writer acceptance requirements. Production writers stay off.

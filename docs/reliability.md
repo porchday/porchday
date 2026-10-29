@@ -134,3 +134,15 @@ was verified 16.785 seconds later. No timestamps were edited or manual sweeps
 used. Owner inbox receipt remains unverified. Larger live-session capacity and
 other production gates remain open. These drills do not validate every feature
 migration, a stopped scheduler, Mac host loss or a real provider outage.
+
+
+The [continuation staging release](evidence/session-denial-continuation-staging-2026-10-29.json)
+now runs `2ab27b5`/`dc9d1321`. A confirmed incomplete checkpoint queues another
+bounded page with its ETag; stale messages stop before SQL discovery, and cron
+resumes persisted work after missing continuations. Full passes stop normally.
+Two [253-session passes](evidence/session-denial-continuation-capacity-staging-2026-10-29.json)
+took 12/18 seconds, compared with 124/123 seconds before continuation; all seven
+journey samples passed. This is small-population evidence, not pilot capacity.
+Keep larger-load fixtures scoped and remove them before any rollback to the old
+one-page-per-minute baseline. Acknowledge the canonical denial-reader floor in
+release plans separately from selecting the verified actual rollback target.

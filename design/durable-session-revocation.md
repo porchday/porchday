@@ -350,7 +350,7 @@ Production writers remain disabled pending these and the other acceptance gates.
 
 The one-page-per-minute v3 scheduler cannot cover 10,000 live sessions within the
 five-minute full-pass deadline: it requires at least 100 pages. A small staging
-population does not establish pilot capacity. The pending continuation change
+population does not establish pilot capacity. The continuation change
 retains the 100-candidate page and 20-second work budget, then sends another queue
 message only after successfully checkpointing an incomplete page. The message
 carries the resulting progress ETag. A stale or duplicate token is discarded
@@ -367,8 +367,9 @@ fabricate fresh health or guarantee the five-minute deadline during an outage.
 Local tests drain 10,000 in-memory live candidates in 100 bounded continuations,
 exercise duplicate/CAS races, lost progress replies, failed/late queue sends and
 end-of-pass termination. That is control-flow evidence, not native R2 throughput
-or a hosted capacity claim. Hosted throughput, queue overlap, cost and compatible
-rollback remain required before promoting this change. No schema or progress
+or a hosted capacity claim. The hosted 253-session comparison passed on staging in 12/18 seconds versus
+124/123 seconds before continuation. Larger-population throughput, queue overlap,
+cost and compatible rollback remain required before production promotion. No schema or progress
 format change is needed; old queue consumers ignore the optional token, but
 rollback to one-page-per-minute code is unsuitable for a large live population.
 
