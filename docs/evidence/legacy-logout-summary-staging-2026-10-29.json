@@ -1,0 +1,112 @@
+{
+  "environment": "staging",
+  "runtimeSource": "df24f840c279fb48112e29ef6c5cbfff542b6ea3",
+  "tooling": "9f5b8b42a092538c7a841a448b6d48a54218ff6e",
+  "purpose": "Exercise legacy journal logout with the correlated summary diagnostic, then restore staging writer enablement",
+  "rehearsal": {
+    "activationOperation": "4d334af7-07cd-4edc-ac71-d3c447ea5754",
+    "acceptance": {
+      "at": "2026-10-29T17:38:52.819Z",
+      "passed": true,
+      "environment": "staging",
+      "version": "37b3b158-121f-4fae-8a6b-c0f828dd07db",
+      "runtimeSource": "df24f840c279fb48112e29ef6c5cbfff542b6ea3",
+      "checks": [
+        "existing_allowed_session_and_revoked_cookie_across_code_activation",
+        "existing_session_reads_and_denial_observed_across_code_activation"
+      ],
+      "candidate": "37b3b158-121f-4fae-8a6b-c0f828dd07db",
+      "baseline": "cb35c411-c256-4425-b7e3-2ef74118176a",
+      "remainingFixtureRows": 0,
+      "stagingWriterEnabled": false,
+      "stagingCleanupEnabled": true,
+      "productionWriterEnabled": false,
+      "productionCleanupEnabled": false,
+      "candidateVerifiedAndCleanupInventoryUnchanged": true
+    },
+    "continuity": {
+      "at": "2026-10-29T17:38:44.332Z",
+      "status": "complete",
+      "samples": 13,
+      "failedSamples": 0,
+      "postCommandSamples": 2,
+      "maxStartGapMs": 2003.421333000002
+    },
+    "logout": {
+      "at": "2026-10-29T17:38:50.147Z",
+      "status": 200,
+      "durationMs": 2268
+    }
+  },
+  "summary": {
+    "at": "2026-10-29T17:39:46.620Z",
+    "environment": "staging",
+    "window": {
+      "from": "2026-10-29T17:38:47.874Z",
+      "to": "2026-10-29T17:39:46.620Z"
+    },
+    "data": [
+      {
+        "elapsed_ms": 2098,
+        "confirmed_branch": 1,
+        "rate_limit": 19,
+        "initial_authorization": 170,
+        "guard": 74,
+        "registration": 579,
+        "work": 394,
+        "checkpoint": 150,
+        "receipt": 316,
+        "retirement": 396,
+        "close": 0,
+        "r2_read": 407,
+        "r2_write": 1085,
+        "database_status": 57,
+        "database_page": -1,
+        "sample_weight": 1
+      }
+    ],
+    "observedPoints": 1,
+    "limitations": [
+      "Sampled rows cannot be attributed to a specific synthetic account.",
+      "This staging rehearsal uses the legacy journal path; missing phase is -1, not zero.",
+      "No production latency improvement claim.",
+      "The earlier failed rollout remains failed; this is a separate configuration rehearsal."
+    ]
+  },
+  "limitations": [
+    "Historical failed activation d5bb37aa-725e-48c3-b3e0-3bb298aba0ce remains failed.",
+    "No production code/configuration change or latency improvement demonstrated.",
+    "Sampled analytics cannot identify the synthetic account; nested phases overlap and must not be summed.",
+    "These configuration rollouts do not prove daily feature deployment acceptance or the monthly SLO."
+  ],
+  "restoration": {
+    "activationOperation": "05ca07ec-b6b1-4ab0-8566-4114a29d90ed",
+    "acceptance": {
+      "at": "2026-10-29T17:41:16.957Z",
+      "passed": true,
+      "environment": "staging",
+      "version": "08565d11-0d86-4bab-a691-b557e224b763",
+      "runtimeSource": "df24f840c279fb48112e29ef6c5cbfff542b6ea3",
+      "checks": [
+        "existing_allowed_session_and_revoked_cookie_across_code_activation",
+        "existing_session_reads_and_denial_observed_across_code_activation"
+      ],
+      "candidate": "08565d11-0d86-4bab-a691-b557e224b763",
+      "baseline": "37b3b158-121f-4fae-8a6b-c0f828dd07db",
+      "remainingFixtureRows": 0,
+      "stagingWriterEnabled": true,
+      "stagingCleanupEnabled": true,
+      "productionWriterEnabled": false,
+      "productionCleanupEnabled": false,
+      "candidateVerifiedAndCleanupInventoryUnchanged": true
+    },
+    "continuity": {
+      "at": "2026-10-29T17:41:10.413Z",
+      "status": "complete",
+      "samples": 13,
+      "failedSamples": 0,
+      "postCommandSamples": 2,
+      "maxStartGapMs": 2004.4565409999996
+    }
+  }
+}

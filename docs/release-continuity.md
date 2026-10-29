@@ -384,3 +384,27 @@ The diagnostic remains active only in staging pending explicit further
 disposition. Failure cause, summary ingestion and hosted production journal-path
 acceptance remain separate investigations. Staging denial-writer settings and
 production code/settings are unchanged.
+
+
+## Legacy logout summary and configuration restoration — October 29, 17:41 UTC
+
+[Evidence](evidence/legacy-logout-summary-staging-2026-10-29.json) records two
+separate observed staging operations using byte-identical application code. The
+first disabled new denial publication to exercise the legacy journal logout
+path used by production; the second restored publication. Denial reads and
+cleanup remained enabled throughout. Both operations passed existing-session
+profile/feed reads, revoked-cookie rejection, readiness, candidate journeys and
+two post-command samples. Both sets of synthetic accounts were removed.
+
+The first operation retained 13 healthy samples. Its additional logout returned
+200 in 2,268 ms and the old cookie was rejected. Sampled analytics recorded a
+2,098 ms logout summary with journal phases present, including 1,085 ms of R2
+writes. This verifies correlated legacy-path diagnostic ingestion. These nested
+spans overlap and must not be summed; the sample does not identify the synthetic
+account or explain production's slow tail.
+
+Staging writer and cleanup settings are restored to enabled. Production code
+and configuration are unchanged. The earlier diagnostic rollout's continuity
+failure remains failed. These successful configuration rehearsals do not clear
+that historical failure, prove signed-in feature UI/native compatibility, or
+establish the monthly availability SLO.
