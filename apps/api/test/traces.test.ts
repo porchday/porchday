@@ -141,8 +141,9 @@ test('the summary groups a member\'s own requests by route and server steps by n
  const summary=await (await app.request('/api/v1/traces/summary',{},env)).json();
  expect(summary.routes).toEqual([
   {route:'GET /api/v1/feed',count:1,failed:0,p50_ms:700,p95_ms:700,max_ms:700,server_p50_ms:null},
-  {route:'GET /api/v1/media/:id/bytes',count:3,failed:1,p50_ms:300,p95_ms:300,max_ms:300,server_p50_ms:150},
+  {route:'GET /api/v1/media/:id/bytes',count:3,failed:1,p50_ms:200,p95_ms:300,max_ms:300,server_p50_ms:100},
  ]);
+ // Even-sized samples average the two middle values for the median; p95 is nearest-rank.
  // The failed request's 800 ms step and the "server total" span are left out.
- expect(summary.phases).toEqual([{phase:'r2_media_get',count:2,p50_ms:60,p95_ms:60,max_ms:60}]);
+ expect(summary.phases).toEqual([{phase:'r2_media_get',count:2,p50_ms:50,p95_ms:60,max_ms:60}]);
 });

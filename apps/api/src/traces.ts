@@ -114,7 +114,14 @@ export async function readTrace(env:Pick<Env,'TRACES'>&MetricsEnv,memberId:strin
 /** Bounds one summary read; at most 14 days of one member's traces. */
 export const MAX_SUMMARY_ROWS=20_000;
 const uuidSegment=/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
+/** Nearest-rank tail percentile (p95), as in scripts/query-traces.ts. */
 function percentile(sorted:number[],p:number):number|null {return sorted.length?sorted[Math.min(sorted.length-1,Math.floor(p*sorted.length))]:null;}
+/** The median averages the two middle values of an even-sized sample. */
+function median(sorted:number[]):number|null {
+ if(!sorted.length)return null;
+ const middle=Math.floor(sorted.length/2);
+ return sorted.length%2?sorted[middle]:(sorted[middle-1]+sorted[middle])/2;
+}
 type RequestRow={name:string;route:string|null;duration_ms:number;server_total:number|null;status:number|null;error:string|null};
 /** Route and server step percentiles across a member's retained traces.
  * Times are for successful requests; failures are counted separately. */
@@ -132,9 +139,9 @@ export function summarizeTraces(requests:RequestRow[],steps:{name:string;duratio
   routes:[...routes].map(([route,rows])=>{
    const ok=rows.filter(row=>row.error===null&&(row.status===null||row.status<400));
    const durations=sorted(ok.map(row=>Number(row.duration_ms))),server=sorted(ok.flatMap(row=>row.server_total===null?[]:[Number(row.server_total)]));
-   return {route,count:rows.length,failed:rows.length-ok.length,p50_ms:percentile(durations,0.5),p95_ms:percentile(durations,0.95),max_ms:durations.at(-1)??null,server_p50_ms:percentile(server,0.5)};
+   return {route,count:rows.length,failed:rows.length-ok.length,p50_ms:median(durations),p95_ms:percentile(durations,0.95),max_ms:durations.at(-1)??null,server_p50_ms:median(server)};
   }).sort((x,y)=>(y.p95_ms??-1)-(x.p95_ms??-1)),
-  phases:[...phases].map(([phase,values])=>{const v=sorted(values);return {phase,count:v.length,p50_ms:percentile(v,0.5)!,p95_ms:percentile(v,0.95)!,max_ms:v.at(-1)!};})
+  phases:[...phases].map(([phase,values])=>{const v=sorted(values);return {phase,count:v.length,p50_ms:median(v)!,p95_ms:percentile(v,0.95)!,max_ms:v.at(-1)!};})
    .sort((x,y)=>y.p95_ms-x.p95_ms),
  };
 }

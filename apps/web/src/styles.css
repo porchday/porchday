@@ -4596,9 +4596,14 @@ hr {
   border-radius: 2px;
 }
 .trace-rows {
+  overflow-x: auto;
+}
+/* Rows, axis and milestone lines share one minimum-width canvas, so their
+   percentages resolve against the same width when it scrolls on a phone. */
+.trace-canvas {
   position: relative;
   display: grid;
-  overflow-x: auto;
+  min-width: 34rem;
   --trace-label: min(40%, 18rem);
 }
 .trace-row {
@@ -4606,7 +4611,6 @@ hr {
   grid-template-columns: var(--trace-label) 1fr;
   align-items: center;
   min-height: 1.25rem;
-  min-width: 34rem;
   padding: 0;
   border: 0;
   border-radius: 0;
@@ -4673,7 +4677,6 @@ button.trace-row:focus-visible {
 .trace-marks {
   position: absolute;
   inset: 0 0 0 var(--trace-label);
-  min-width: calc(34rem - var(--trace-label));
   pointer-events: none;
 }
 .trace-marks > span {
