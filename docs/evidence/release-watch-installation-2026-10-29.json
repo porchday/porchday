@@ -1,0 +1,40 @@
+{
+  "at": "2026-10-29T06:22:59.448Z",
+  "source": "30007df67755bde9bc73297a3f9ab7839aa1ad7a",
+  "merge": "7e93fce9c66b1ca68249147b37e1d01e67061a52",
+  "pr": 70,
+  "ci": {
+    "pushVerify": 40828198108,
+    "pushSecretScan": 40828198119,
+    "prVerify": 40828203151,
+    "browser": 40828203033
+  },
+  "label": "com.porchday.release-watch",
+  "running": true,
+  "restartAfterSIGKILL": true,
+  "launchRuns": 2,
+  "drill": {
+    "operationId": "1d84f604-e790-4895-aaf0-61ad9c44c536",
+    "workflowRun": 40828685072,
+    "comment": "https://github.com/porchday/porchday/issues/3#issuecomment-6489542354",
+    "botDeliveryConfirmed": true,
+    "localDeliveryPersisted": true,
+    "duplicateDispatchesObserved": 0,
+    "registrationArchived": true
+  },
+  "leasePresent": false,
+  "canonicalVersions": {
+    "staging": "c6be8a43-f2aa-41f1-900b-814767a1f29f",
+    "production": "3ee85699-feef-4b0c-b264-d5ff13ab6e94"
+  },
+  "productionMonitor": {
+    "incident": false,
+    "lastAt": "2026-10-29T06:22:51.083Z"
+  },
+  "ownerInboxReceipt": "unverified",
+  "limitations": [
+    "Covers registered activation commands, not legacy or inactive-upload operations.",
+    "Mac power/network loss requires outside-host coverage.",
+    "Does not prove monthly 99.99% availability."
+  ]
+}

@@ -595,12 +595,11 @@ node scripts/release-alert-retry.ts /absolute/private/proofs/attention-OPERATION
 This command does not execute deployment recovery or authenticated journeys. A
 notification can remain pending until another read observes the bot comment.
 
-Deployment status: this relay is implemented on the release-tooling branch and must
-reach `main` before it can run. Hosted delivery and owner inbox receipt remain
-unverified. The independent watcher described below implements background retry and overdue
-operation detection, but is not installed yet. SIGKILL, host loss, malformed manifests and unavailable local storage
-can prevent queueing; the production availability monitor remains separate. This
-change alone does not close the unattended-release escalation requirement.
+Deployment status: PR #70 merged and the relay is active on `main`. The installed
+Mac watcher successfully dispatched a labeled notification drill; the Actions bot
+posted the exact comment and the watcher recorded delivery. Owner inbox receipt
+remains unverified. See the installation evidence below. Malformed manifests,
+unavailable local storage and host loss still require separate attention.
 
 ### Independent release watcher
 
@@ -638,8 +637,26 @@ The watcher currently covers activation CLI registrations, not legacy release or
 inactive-upload processes. A two-minute overdue alert may also identify a slow but
 still-running operation; operators must inspect it before acting.
 
-Installation status: implemented and locally verified, not installed as a Mac
-LaunchAgent yet. Hosted relay delivery and owner inbox receipt remain unverified.
-The existing production availability monitor continues independently. Host power or
-network loss still requires coverage outside this Mac; this watcher does not supply
-that coverage.
+### October 29 watcher installation and hosted delivery
+
+The [installation record](evidence/release-watch-installation-2026-10-29.json)
+records LaunchAgent `com.porchday.release-watch`, running on the Mac mini from a
+fixed package of ten source files at `30007df`. The package records hashes and uses
+the existing Node 24.14 runtime. Owner-only logs and registry/delivery stores retain
+operational evidence. All PR checks passed before PR #70 merged at `7e93fce`.
+
+A synthetic notification-only registration exercised the installed watcher. It
+queued an explicit drill, dispatched workflow run 40828685072, observed the exact
+[Actions bot comment](https://github.com/porchday/porchday/issues/3#issuecomment-6489542354),
+and persisted delivery. The watcher was killed with SIGKILL; launchd restarted it,
+and the delivery receipt prevented another dispatch. The synthetic registration
+was archived after verification. No application deployment or synthetic member
+journey occurred in this notification drill. Canonical application versions stayed
+unchanged and the independent production monitor was healthy.
+
+Owner inbox receipt remains **needs verification**. Coverage is registered
+activation commands; legacy and inactive-upload processes are not enrolled. The
+watcher depends on this Mac's power, network and logged-in user LaunchAgent context.
+The existing production availability monitor remains separate, and outside-host
+coverage is still needed for Mac failures. These checks do not establish the
+monthly 99.99% availability objective.
