@@ -1121,7 +1121,7 @@ export function Reactions({
     )
       return;
     changing.current = true;
-    await action.run(async () => {
+    await action.runSave(async () => {
       const chosen = await validateReactionPayload(value);
       if (!mounted.current || current.current !== identity) return;
       const mine = decoded.find(
@@ -1222,7 +1222,7 @@ export function Reactions({
             setSuggested(null);
             setPicker(true);
           }}
-          disabled={!payload || vault.member.status === "restricted"}
+          disabled={action.busy || !payload || vault.member.status === "restricted"}
           aria-label="Add a reaction"
           aria-expanded={picker}
         >
