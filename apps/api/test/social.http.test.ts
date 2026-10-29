@@ -79,6 +79,27 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         const untraced = await traced.request('https://porchday.test/api/v1/feed', { headers: { 'x-test-member': viewer.id } }, env);
         expect(untraced.headers.has('server-timing')).toBe(false);
     });
+    it.skipIf(!process.env.RELEASE_BASELINE_SOCIAL_MODULE)('keeps the deployed social API usable after migration 052 alongside the candidate', async () => {
+        const baseline = await import(/* @vite-ignore */ process.env.RELEASE_BASELINE_SOCIAL_MODULE!);
+        const old = new Hono<{ Bindings: Env; Variables: Variables }>();
+        old.use('*', async(c,next)=>{c.set('memberId',c.req.header('x-test-member')!);c.set('authTime',Date.now());await next();});
+        old.route('/',baseline.createSocialRoutes());
+        const oldRequest=async(member:string,path:string,method='GET',body?:unknown)=>old.request('https://porchday.test'+path,{method,headers:{'x-test-member':member,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})},env);
+        const owner=await person(),recipient=await person();
+        const envelope=await seal(owner,{name:'Old and new API overlap'},{kind:'group',audience:'only_me'}),groupId=envelope.context.id;
+        expect((await oldRequest(owner.id,'/groups','POST',{envelope})).status).toBe(201);
+        const [{handle}]=await sql`select handle from app.profiles where member_id=${recipient.id}`;
+        const invitation=await oldRequest(owner.id,`/groups/${groupId}/invitations`,'POST',{handle});
+        expect(invitation.status).toBe(201);const {id:invitationId}=await invitation.json();
+        const roster=await request(owner.id,`/groups/${groupId}/invitations`);
+        expect(roster.status).toBe(200);expect(roster.data.items).toEqual([expect.objectContaining({id:invitationId,recipient_handle:handle,accepted_at:null})]);
+        expect((await request(recipient.id,`/group-invitations/${invitationId}/accept`,'POST')).status).toBe(200);
+        expect((await oldRequest(recipient.id,`/groups/${groupId}`)).status).toBe(200);
+        expect((await oldRequest(owner.id,'/me?bootstrap=1')).status).toBe(200);
+        expect((await oldRequest(owner.id,'/feed?limit=1')).status).toBe(200);
+        expect((await request(recipient.id,`/groups/${groupId}/invitations`)).status).toBe(403);
+        expect((await oldRequest(owner.id,`/groups/${groupId}/invitations`)).status).toBe(404);
+    },60000);
     it('shows invitation identities and status only to owners, paginates, and updates the latest inviter', async () => {
         const owner=await person(), moderator=await person(), recipient=await person(), outsider=await person();
         const handle=(p: Person) => 't_'+p.id.replaceAll('-','').slice(0,20);

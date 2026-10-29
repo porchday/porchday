@@ -35,3 +35,23 @@ it('defends the telemetry boundary against arbitrary phase data and unavailable 
  env.METRICS={writeDataPoint:()=>Promise.reject(Error('private transport'))} as never;
  await expect(measureJournalPhase(logoutJournalTiming(env,{method:'POST',path:'/api/auth/sign-out'}),'work',async()=>42)).resolves.toBe(42);
 });
+it('retains a request-local numeric phase vector once, with missing distinct from zero',()=>{
+ const writeDataPoint=vi.fn(),env={ENVIRONMENT:'production',LOGOUT_PHASE_TIMING:'true',METRICS:{writeDataPoint}} as unknown as Env;
+ vi.spyOn(performance,'now').mockReturnValueOnce(10).mockReturnValueOnce(20).mockReturnValueOnce(110).mockReturnValueOnce(220);
+ const a=logoutJournalTiming(env,{method:'POST',path:'/api/auth/sign-out'})!,b=logoutJournalTiming(env,{method:'POST',path:'/api/auth/sign-out'})!;
+ a.record('rate_limit',7);a.record('work',20);a.record('work',30);a.record('receipt',0);
+ b.record('work',11);a.record('work',NaN);a.record('private-token' as never,99);
+ a.finish(true);a.record('work',999);a.finish(false);b.finish(false);
+ const summaries=writeDataPoint.mock.calls.map(([p])=>p).filter(p=>p.blobs[2]==='logout_summary');
+ expect(summaries).toEqual([
+ {indexes:['logout_summary:/api/auth/sign-out'],blobs:['porchday_logout_summary_v1','production','logout_summary','/api/auth/sign-out','POST'],doubles:[100,1,7,-1,-1,-1,50,-1,0,-1,-1,-1,-1,-1,-1]},
+ {indexes:['logout_summary:/api/auth/sign-out'],blobs:['porchday_logout_summary_v1','production','logout_summary','/api/auth/sign-out','POST'],doubles:[200,0,-1,-1,-1,-1,11,-1,-1,-1,-1,-1,-1,-1,-1]},
+ ]);
+ expect(JSON.stringify(summaries)).not.toContain('private');
+});
+it.each(['throw','reject','clock'] as const)('summary failure (%s) never escapes or retries delivery',async mode=>{
+ const writeDataPoint=vi.fn(()=>{if(mode==='throw')throw Error('private');return Promise.reject(Error('private'));});
+ const timing=logoutJournalTiming({ENVIRONMENT:'production',LOGOUT_PHASE_TIMING:'true',METRICS:{writeDataPoint}} as unknown as Env,{method:'POST',path:'/api/auth/sign-out'})!;
+ if(mode==='clock')vi.spyOn(performance,'now').mockImplementation(()=>{throw Error('clock');});
+ expect(()=>timing.finish(false)).not.toThrow();timing.finish(true);await Promise.resolve();expect(writeDataPoint).toHaveBeenCalledTimes(mode==='clock'?0:1);
+});

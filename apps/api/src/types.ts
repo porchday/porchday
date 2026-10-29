@@ -15,9 +15,13 @@ export interface Env {
   MEDIA_BACKUP?: R2Bucket;
   MEDIA_BACKUP_ENABLED?: string;
   RECOVERY_JOURNAL?: R2Bucket;
+  /** Enable bounded denial cleanup only after the reader rollout. Never disables readers. */
+  SESSION_DENIAL_CLEANUP_V1?: string;
+  /** Enable only after all consumers and compatible rollback versions enforce denials. */
+  SESSION_DENIAL_WRITER_V1?: string;
   ASSETS: Fetcher;
   EMAIL: SendEmail;
-  JOBS: Queue<{ kind: string; id?: string }>;
+  JOBS: Queue<{ kind: string; id?: string; denialProgressEtag?: string }>;
   APP_URL: string;
   /** Explicit old HTTPS origin retained during a canonical-domain transition. */
   LEGACY_APP_URL?: string;

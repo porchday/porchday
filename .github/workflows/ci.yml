@@ -21,6 +21,7 @@ jobs:
       TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday
       DATABASE_MIGRATION_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday
       PG_LOCAL: 'true'
+      MIGRATION_BOUND_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_migration_bounds_test
       MODERATION_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_moderation_test
       SOCIAL_TEST_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_social_test
       SOCIAL_HTTP_DATABASE_URL: postgres://postgres:porchday-ci-only@localhost:5432/porchday_http_test

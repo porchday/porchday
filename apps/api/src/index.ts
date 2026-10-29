@@ -1,3 +1,4 @@
+import {cleanupDeniedSessionCandidates as cleanupDeniedSessions,enqueueCandidateContinuation} from './session-denial-candidates';
 import { Hono } from 'hono';
 import {requestTimingMiddleware} from './request-timing';
 import { bodyLimit } from 'hono/body-limit';
@@ -126,11 +127,14 @@ export default {
   if(controller.cron==='17 3 * * *'){
    if(env.MEDIA_BACKUP_ENABLED==='true')ctx.waitUntil(env.JOBS.send({kind:'media_backup_start'}));
    ctx.waitUntil(cleanupTraces(env).catch(()=>{}));
-  }else ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
+  }else {
+   ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
+   if(env.SESSION_DENIAL_CLEANUP_V1==='true')ctx.waitUntil(env.JOBS.send({kind:'session_denial_cleanup'}));
+  }
  },
- async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){
+ async queue(batch:MessageBatch<{kind:string;id?:string;denialProgressEtag?:string}>,env:Env){
   await connectionScope('job:queue',async()=>{
-  const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start'].includes(m.body.kind));
+  const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup'].includes(m.body.kind));
   if(cleanup.length){
    let failedPhase:CleanupFailureCode='cleanup_journal_failed';
    try {
@@ -157,10 +161,16 @@ export default {
    for(const message of cleanup)message.ack();
    }catch(error){reportConnectionRefusal(env,error);event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
   }
+  for(const message of batch.messages.filter(m=>m.body.kind==='session_denial_cleanup')){
+   try{const result=await cleanupDeniedSessions(env,message.body.denialProgressEtag);
+    if(result.continuation)await enqueueCandidateContinuation(env,result.continuation);
+    event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
+   catch{event('error',{code:'session_denial_cleanup_retry'},env);message.retry({delaySeconds:60});}
+  }
   for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
    try{if(message.body.kind==='media_backup_start'){await scheduleMediaBackup(env);message.ack();continue;}if(!message.body.id)throw Error('BACKUP_ID_REQUIRED');const result=await processMediaBackup(env,message.body.id);if(result==='busy')message.retry({delaySeconds:60});else message.ack();}
    catch(error){reportConnectionRefusal(env,error);event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
   }
   });
  }
-} satisfies ExportedHandler<Env,{kind:string;id?:string}>;
+} satisfies ExportedHandler<Env,{kind:string;id?:string;denialProgressEtag?:string}>;
