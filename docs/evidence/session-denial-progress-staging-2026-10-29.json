@@ -1,0 +1,166 @@
+{
+  "at": "2026-10-29T08:05:20.152Z",
+  "environment": "staging",
+  "status": "deployed-and-scheduled-progress-verified",
+  "version": "966329b9-3a66-4090-be1c-df759e3aeba6",
+  "runtimeSource": "4b6825e9137bbb94de481674098802929b7a7a7c",
+  "toolingSource": "b06179de46f71fa81852c881bf7f7dd0edbe8708",
+  "baselineVersion": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+  "operationId": "f4885d6f-6860-4ac7-a4cf-c7e1265c0b25",
+  "applicationChanges": [
+    "apps/api/src/operations-health.ts",
+    "apps/api/src/session-denial-cleanup.ts",
+    "apps/api/src/session-denial-progress.ts"
+  ],
+  "verifiedFirstPartyFiles": 47,
+  "schemaFrontendDependenciesAndWranglerConfigUnchanged": true,
+  "publicAssetsVerified": 29,
+  "bootstrap": {
+    "at": "2026-10-29T08:02:27.004Z",
+    "pages": [
+      {
+        "seen": 10,
+        "deleted": 0,
+        "invalid": 0,
+        "advanced": true
+      },
+      {
+        "seen": 8,
+        "deleted": 0,
+        "invalid": 0,
+        "advanced": true
+      }
+    ],
+    "health": {
+      "issues": [],
+      "snapshot": {
+        "page_age_seconds": 0,
+        "pass_age_seconds": 0,
+        "last_pass_duration_seconds": 7,
+        "last_pass_seen": 18,
+        "current_pass_seen": 0,
+        "invalid_records": 0
+      }
+    },
+    "progressSource": "actual-v2-sweep",
+    "manualTimestampWrites": false,
+    "temporaryOperatorRemoved": true
+  },
+  "scheduled": {
+    "at": "2026-10-29T08:04:03.526Z",
+    "observedWithinMs": 46263,
+    "freshPage": true,
+    "freshPass": true,
+    "samples": [
+      {
+        "at": "2026-10-29T08:03:17.587Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 25,
+          "pass_age_seconds": 51,
+          "last_pass_duration_seconds": 7,
+          "last_pass_seen": 18,
+          "current_pass_seen": 10,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:03:28.450Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 35,
+          "pass_age_seconds": 61,
+          "last_pass_duration_seconds": 7,
+          "last_pass_seen": 18,
+          "current_pass_seen": 10,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:03:39.793Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 47,
+          "pass_age_seconds": 73,
+          "last_pass_duration_seconds": 7,
+          "last_pass_seen": 18,
+          "current_pass_seen": 10,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:03:50.085Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 57,
+          "pass_age_seconds": 83,
+          "last_pass_duration_seconds": 7,
+          "last_pass_seen": 18,
+          "current_pass_seen": 10,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T08:04:00.945Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 8,
+          "pass_age_seconds": 8,
+          "last_pass_duration_seconds": 64,
+          "last_pass_seen": 18,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": true,
+        "freshPass": true
+      }
+    ],
+    "manualSweepInvocations": 0,
+    "providerUnchanged": true
+  },
+  "production": {
+    "version": "3ee85699-feef-4b0c-b264-d5ff13ab6e94",
+    "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+    "writerEnabled": false,
+    "cleanupEnabled": false,
+    "monitor": {
+      "incident": false,
+      "lastAt": "2026-10-29T08:05:11.703Z"
+    }
+  },
+  "stagingWriterEnabled": true,
+  "stagingCleanupEnabled": true,
+  "leaseReleased": true,
+  "ci": {
+    "runtimeVerify": 40837157495,
+    "runtimeSecret": 40837157479,
+    "toolingVerify": 40838756718,
+    "toolingSecret": 40838756669
+  },
+  "validation": {
+    "crypto": 20,
+    "generalPassed": 692,
+    "generalEnvironmentSkipped": 191,
+    "postgresAuthAndSessionPassed": 38,
+    "operatorTargetedPassed": 10
+  },
+  "limitations": [
+    "Hosted stalled-job alert/recovery and rollback of the v2 progress-monitor release remain pending.",
+    "History-growth acceptance and remaining writer interruption/device gates remain open.",
+    "Production progress monitoring and writer enablement have not occurred.",
+    "Does not establish monthly availability."
+  ]
+}

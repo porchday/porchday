@@ -1,7 +1,8 @@
 # Independent session denial: validation gates
 
 The logout writer and cleanup flags are enabled on staging as of October 29,
-2026, 07:05 UTC, and remain disabled in production. The scoped staging writer, concurrency and retained-row rollback rehearsals
+2026, 07:05 UTC, and remain disabled in production. Staging now runs progress-monitor runtime `4b6825e` on version `966329b9`.
+The scoped staging writer, concurrency and retained-row rollback rehearsals
 below passed; production enablement remains gated.
 Reader enforcement has hosted API evidence and a scoped staging push rehearsal.
 Writer and cleanup interruption cases, concurrent behavior, device behavior and
@@ -348,7 +349,7 @@ records to satisfy the bound. Track this work in #1.
 ## Local denial-cleanup progress monitoring — October 29, 2026
 
 The source now implements a separate v2 conditional progress record and protected
-readiness integration. [Design, limits and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-implemented-not-deployed)
+readiness integration. [Design, limits and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-staging-deployed)
 describe the page/full-pass distinction and preservation of the old rollback cursor.
 The deployed runtime remains unchanged and does not yet have this monitoring.
 
@@ -388,3 +389,35 @@ All ten targeted tests passed: six DNS/dispatch deadline tests and four native-l
 R2 operator authorization/CAS/media tests. Formatting, secret and diff checks passed.
 Hosted confirmation and the real bootstrap/activation remain pending; this change
 is not evidence that the provider's DNS propagation failure has been eliminated.
+
+## Staging progress monitoring deployed — October 29, 2026
+
+[Deployment evidence](evidence/session-denial-progress-staging-2026-10-29.json)
+records isolated runtime `4b6825e` activated as staging version `966329b9` through
+the maintained controller with tooling `b06179d`. The only application changes
+from deployed `ebc567a4` are cleanup progress, the new v2 progress record and
+operational-health integration. All 47 bundled first-party sources matched the
+commit; schema, frontend, dependencies and retained configuration were unchanged.
+The synthetic login/read/logout/revocation journey, readiness and all 29 public
+assets passed, and activation finalized with the deployment lease released.
+
+Before activation, the actual v2 sweep completed two pages covering 18 retained
+denials with no invalid records. It recorded a seven-second full pass; no completion
+timestamp was fabricated. The scoped operator was removed. Earlier preparation
+failures were preserved and reconciled before retry: an undefined private-script
+scope variable, then a temporary-operator DNS readiness failure. The maintained
+DNS-only retry correction passed local and hosted transport checks before use.
+
+After activation, a read-only observer saw both page and full-pass progress newer
+than its own start within 46.263 seconds. Five protected-readiness samples were
+healthy; the final sample reported a 64-second full pass with 18 records and no
+invalid records. No manual sweep ran during this observation, and provider state
+remained unchanged. Counts describe the completed scan, not an instantaneous
+namespace inventory; keys inserted behind a cursor can require the next pass.
+
+Runtime Verify/secret CI and tooling Verify/secret CI succeeded. Staging retains
+both writer and cleanup flags enabled. Production remains on `ebc567a4`, with
+both flags off; its external monitor reported no incident. Hosted stalled-job
+alert/recovery, rollback of this monitoring release, history-growth acceptance and
+remaining writer/device gates are still open. This does not establish monthly
+availability or authorize production writer enablement.

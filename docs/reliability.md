@@ -84,12 +84,14 @@ remain required before enabling it. This reader evidence does not resolve all
 interrupted privacy operations or establish the availability SLO.
 
 
-## Denial-cleanup readiness signals (pending deployment)
+## Denial-cleanup readiness signals (staging deployed)
 
 The v2 denial-cleanup implementation adds independent protected-readiness checks
 when `SESSION_DENIAL_CLEANUP_V1=true`. Normal cleanup freshness cannot substitute
-for these checks. Deployment is still gated on a real initial sweep and hosted
-verification; the existing runtime does not emit these codes yet.
+for these checks. Staging version `966329b9` emits these codes after a verified real initial sweep
+and scheduled-progress observation. Production has not received this monitoring
+release and keeps the writer/cleanup flags off. Hosted failure-alert and recovery
+verification remain pending.
 
 - `session_denial_cleanup_missing` / `session_denial_cleanup_unavailable`: inspect
   configured storage, permissions and the versioned progress record privately.
@@ -106,4 +108,4 @@ verification; the existing runtime does not emit these codes yet.
 After repair, verify actual scheduled progress, a fresh clean full pass, protected
 readiness and external monitoring. Never manufacture timestamps or reset members'
 sessions/keys. Reader enforcement remains active independently of SQL cleanup.
-See the [progress design and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-implemented-not-deployed).
+See the [progress design and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-staging-deployed).

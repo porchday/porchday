@@ -1,12 +1,13 @@
 # Durable session revocation without a global unfinished operation
 
-Status as of October 29, 2026, 07:25 UTC: denial readers and migration 056 are
+Status as of October 29, 2026, 08:04 UTC: denial readers and migration 056 are
 deployed in staging and production. The request-scoped Better Auth hook covers
 direct SDK calls, member and appeal middleware, prepared authentication and
 endpoint-internal lookups. Web/native push checks denial through session-bound
 preparation functions. The bounded cleanup sweep and separate queue path use
 `SESSION_DENIAL_CLEANUP_V1`; the independent logout writer uses
-`SESSION_DENIAL_WRITER_V1`. Both flags are enabled on staging version `57a5c9f2`
+`SESSION_DENIAL_WRITER_V1`. Both flags are enabled on staging version `966329b9` (runtime `4b6825e`, including
+v2 progress monitoring)
 and remain disabled in production. [Hosted validation and remaining gates](../docs/session-denial-validation.md)
 record normal logout, real identity-lock timeout, scheduled recovery, one hosted
 revocation overlap and automatic compatible-version rollback with a retained SQL
@@ -136,8 +137,8 @@ that transaction. SQL statements have five-second server/lock limits and six-sec
 client read deadlines; failed clients are discarded. A lost commit acknowledgement
 retries the same idempotent deletion, never an auth handler or a broader mutation.
 
-Each invocation visits at most ten records. The deployed v1 cursor is
-`session-denial-maintenance/v1/cursor.json`. The current source uses the separate
+Each invocation visits at most ten records. The prior v1 cursor is
+`session-denial-maintenance/v1/cursor.json`. Staging now uses the separate
 `session-denial-maintenance/v2/progress.json` record described below, leaving v1
 untouched for compatible rollback. Its conditional write advances only after confirmed cleanup
 and wraps at the end, so later inserts before an old cursor are discovered in a
@@ -161,7 +162,7 @@ latency still need measurement before writer activation. This cleanup does not
 resolve ambiguous non-session privacy operations or guarantee cancellation of
 requests authorized before denial publication.
 
-## Independent denial-cleanup health (implemented, not deployed)
+## Independent denial-cleanup health (staging deployed)
 
 V2 writes cursor position and monitoring progress in one conditional update after
 all valid records on a page have confirmed cleanup. It records page completion,
@@ -195,8 +196,10 @@ that the scheduled deployed worker advances v2 afterward. Never seed or repair
 health by fabricating a completion timestamp. An interrupted/unknown preparation
 must be reconciled from actual progress and SQL evidence, not replayed blindly.
 A corrupt v2 record requires a reviewed, evidence-preserving recovery that runs
-actual cleanup; the v1 reset payload is invalid for v2. Hosted startup, stalled-job
-alert delivery, recovery, rollback and history-growth acceptance remain open.
+actual cleanup; the v1 reset payload is invalid for v2. Hosted bootstrap, readiness-gated activation and scheduled page/full-pass progress
+passed on staging on October 29. Stalled-job alert delivery, recovery, rollback of
+this release and history-growth acceptance remain open. Production remains on the
+prior runtime with both flags off.
 
 The v2 sweep uses one progress GET and one CAS PUT per successful page, including
 empty/single-page histories. Full-page worst-case operations remain one LIST,
