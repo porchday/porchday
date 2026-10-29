@@ -29,6 +29,27 @@ The underlying release command still owns bounded execution, leases, one-shot
 provider intents, rollback and unknown-outcome reconciliation. An observation
 failure after activation does not itself authorize another provider write.
 
+The maintained observed activation entry points additionally connect samples to a
+durable promotion gate in `scripts/release-continuity-gate.ts`. The first failed
+sample writes an operation/plan-scoped private record before the caller's sample
+sink runs. Later healthy observations cannot clear it. Recovery, including an
+explicit resume without the observer, reads this same record. A prepared failure
+prevents dispatch; a last-boundary failure after intent remains unconfirmed and
+cannot be replayed. A failure while the candidate is being verified routes through
+the existing compatibility-checked, one-shot rollback and baseline verification.
+Candidate completion and canonical finalization also check the gate.
+
+A failure after the controller has written its terminal outcome is a separate
+attention state: the terminal journal is not rewritten, and no fresh deployment
+is invented. Before canonical finalization, the gate holds promotion for explicit
+reconciliation. If a durable finalization receipt already exists, its historical
+completion can be reconciled, but the command does not report successful promotion
+when a continuity failure is retained. The release watch preserves the queued
+owner alert even after terminal archival. Operators must inspect the original
+operation and current provider state, then prepare a separately reviewed recovery
+only after resolving that disposition. Never delete the failure marker to make
+acceptance pass. A failed rehearsal remains failed even if rollback is verified.
+
 Retain the command's own provider/journal milestones as well. Healthy samples
 around command execution do not independently prove which version was serving,
 that a candidate was reached, or that browser/native/schema overlap worked. The
@@ -262,3 +283,21 @@ version retained. Read-only reconciliation and exact fixture cleanup completed;
 zero synthetic rows remain, canonical/provider state agrees, and the shared lease
 is released. Production is unchanged. Signed-in feature UI, supported native
 clients, production continuity and the remaining reliability gates remain open.
+
+## Continuity stop/rollback gate — local integration verification
+
+The maintained entry point now persists unhealthy samples and checks that gate
+through preparation, provider dispatch, candidate verification and finalization.
+Integration tests exercise the real local deployment lease, journal, finalization
+and observed entry point with simulated provider/network/database ports. They
+cover a failure during preparation (zero provider writes), during candidate
+verification (one activation plus one compatible rollback), an unhealthy rollback
+(retained unresolved state), and a post-terminal failure (durable owner attention,
+no history rewrite or replay). Lower-level tests also cover lost activation
+acknowledgement, the intent/dispatch boundary, failure during the last provider
+read, malformed gate evidence, and process-style reconstruction of the gate.
+
+These are local tests of the production tooling path. The hosted rehearsal above
+used the previous tooling and remains failed. A new bounded staging drill and
+installation of the updated release-watch bundle remain necessary before claiming
+hosted automatic recovery or effective late-failure alert delivery.

@@ -1,3 +1,5 @@
+import {createContinuityGate} from './release-continuity-gate.ts';
+import type {ContinuityCommandEvent} from './release-continuity-command.ts';
 import {readActivationManifest,executeActivationManifest,executeActivationWithContinuity,executeMonitorActivationManifest,executeMonitorActivationWithContinuity,type ActivationManifest} from './release-activation-cli.ts';
 import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
 import {spawnSync} from 'node:child_process';
@@ -213,13 +215,14 @@ describe('read-only terminal finalization orchestration',()=>{
   const canonical=await FileDeploymentLease.completed(f.root,f.plan,f.journal);expect(canonical?.stagingVersion).toBe(rollback?id(1):id(2));expect(canonical?.stagingAssetsSource).toBe(rollback?'b'.repeat(40):'a'.repeat(40));
   expect(f.request).toHaveBeenCalledTimes(1);expect(f.reader.snapshot).toHaveBeenCalledTimes(2);expect(f.client.observe).toHaveBeenCalledTimes(2);
  }finally{f.close();}});
- it.each(['unresolved','assets','identity','inventory','journal','review'])('retains the lease and canonical baseline on %s failure',async kind=>{const f=await finalizationFixture();try{
+ it.each(['unresolved','assets','identity','inventory','journal','review','continuity'])('retains the lease and canonical baseline on %s failure',async kind=>{const f=await finalizationFixture();try{
   if(kind==='unresolved')f.journal.read.mockResolvedValue({...f.state,phase:'candidate-observed'});
   if(kind==='assets')f.request.mockResolvedValue(new Response('wrong',{headers:{'content-type':'text/javascript'}}));
   if(kind==='identity')f.client.observe.mockResolvedValue({version:id(2),deploymentId:id(9),operationId:f.plan.operationId});
   if(kind==='inventory')f.reader.snapshot.mockImplementation(async()=>{const x=structuredClone(f.proof.inventory);x.workers.production.latest=id(9);return x;});
   if(kind==='journal')f.journal.read.mockResolvedValueOnce(f.state).mockResolvedValue({...f.state,revision:99});
   if(kind==='review')writeFileSync(f.testPath,'changed');
+  if(kind==='continuity')createContinuityGate(f.options.directory,f.plan).retain({kind:'sample',sample:{at:new Date().toISOString(),healthy:false}} as ContinuityCommandEvent);
   await expect(finalizePreparedActivation(f.options,AbortSignal.timeout(5000))).rejects.toThrow();
   expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(id(1));expect(()=>f.lease.assert(f.plan)).not.toThrow();
  }finally{f.close();}});
@@ -290,6 +293,12 @@ describe('activation operator command',()=>{
   await lease.finalize(f.journal);if(archived)await lease.release(f.journal);else lease.close();
   const expected=archived?'already-finalized':'resumed-historical-finalization';expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:expected,historical:true});expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
   expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:'already-finalized'});
+ }finally{f.close();}});
+ it.each([false,true])('does not report a late failed continuity check as successful historical promotion (archived=%s)',async archived=>{const f=await cliFixture();try{
+  const lease=FileDeploymentLease.acquire(f.root,f.cli.plan);for(const phase of ['prepared','activation-intent','candidate-observed','complete'] as const)await f.advance(phase);
+  await lease.finalize(f.journal);if(archived)await lease.release(f.journal);else lease.close();
+  createContinuityGate(f.cli.review.execution.proofDirectory,f.cli.plan).retain({kind:'sample',sample:{at:new Date().toISOString(),healthy:false}} as ContinuityCommandEvent);await expect(executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).rejects.toThrow('DEPLOYMENT_CONTINUITY_FAILED');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+  await expect(executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).rejects.toThrow('DEPLOYMENT_CONTINUITY_FAILED');expect((await f.journal.read())?.phase).toBe('complete');
  }finally{f.close();}});
  it('cannot redirect a resumed operation to a fresh journey directory',async()=>{const f=await cliFixture();try{
   const lease=FileDeploymentLease.acquire(f.root,f.cli.plan);await f.advance('prepared');lease.close();
@@ -368,3 +377,73 @@ it('routes the explicit native monitor action through monitor verification and f
  const failures=readdirSync(f.cli.review.execution.proofDirectory).filter(n=>n.startsWith('failure-'));
  expect(failures).toHaveLength(1);expect(JSON.parse(readFileSync(join(f.cli.review.execution.proofDirectory,failures[0]),'utf8')).code).toBe('RELEASE_SCHEMA_TARGET_INVALID');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
 }finally{f.close();}});
+
+describe('observed activation continuity interlock',()=>{
+ it.each(['prepared','candidate','rollback','terminal'])('preserves failures at %s with the real entry point, lease and journals',async boundary=>{
+  const f=await cliFixture();
+  const probePreflight=await import('./release-probe-preflight.ts'),preparation=await import('./release-upload-preparation.ts'),ci=await import('./release-ci.ts'),schema=await import('./release-schema.ts'),provider=await import('./cloudflare-deployment-client.ts'),inventoryModule=await import('./cloudflare-release-reader.ts');
+  try{
+   f.manifest.queues={staging:{id:'1'.repeat(32),name:'porchday-staging-jobs'},production:{id:'2'.repeat(32),name:'porchday-production-jobs'}};
+   const bytes=JSON.stringify(f.manifest);writeFileSync(f.cli.review.execution.uploadManifest.path,bytes);f.cli.review.execution.uploadManifest.sha256=hash(bytes);
+   for(const item of Object.values(f.evidence.assets))item.files['app.js']=hash('module');
+   f.review.publicAssets={candidate:publicAssetManifestHash(f.evidence.assets.candidate),baseline:publicAssetManifestHash(f.evidence.assets.baseline)};f.save();f.cli.plan.assetManifests={...f.review.publicAssets};
+   const inventory=structuredClone(f.proof.inventory);let observed={version:id(1),deploymentId:id(5),operationId:null as string|null},revoked=false;
+   vi.spyOn(preparation,'verifyUploadTooling').mockImplementation(async(_workspace,source)=>({source}));vi.spyOn(ci,'verifyReleaseCi').mockImplementation(async o=>({source:o.source,repository:'porchday/porchday',runs:[]}));vi.spyOn(schema,'captureReleaseSchema').mockImplementation(async()=>structuredClone(f.manifest.evidence.schema));
+   vi.spyOn(probePreflight,'verifyReleaseProbeFixture').mockResolvedValue(undefined);
+   vi.spyOn(inventoryModule.CloudflareReleaseReader.prototype,'snapshot').mockImplementation(async()=>structuredClone(inventory) as any);
+   vi.spyOn(provider.CloudflareDeploymentClient.prototype,'observe').mockImplementation(async()=>({...observed}));
+   const deploy=vi.spyOn(provider.CloudflareDeploymentClient.prototype,'deploy').mockImplementation(async(version,operationId)=>{inventory.workers[f.key].active=version;inventory.workers[f.key].resources=version===id(2)?f.proof.candidate.resources:f.manifest.evidence.resources;observed={version,operationId,deploymentId:id(version===id(2)?7:8)};throw Error('LOST_PROVIDER_REPLY');});
+   const continuityEvents:any[]=[];
+   const request=vi.fn(async(input:any,init:any)=>{const path=new URL(String(input)).pathname;
+    if(init?.headers?.Cookie==='continuity-denied')return Response.json({}, {status:401});
+    if(init?.headers?.Cookie==='continuity-allowed'&&path.endsWith('/me'))return Response.json({id:id(91)},{headers:{'cache-control':'no-store'}});
+    if(path.endsWith('/health'))return Response.json({status:'ok',issues:[]});
+    if(path.endsWith('/get-session'))return Response.json(null);
+    if(path.endsWith('/status'))return Response.json({last_checked_at:new Date().toISOString()});
+    if(path.endsWith('/sign-in/email')){revoked=false;return Response.json({user:{id:id(90)}},{headers:{'set-cookie':'better-auth.session_token=synthetic-token; HttpOnly'}});}
+    if(path.endsWith('/sign-out')){revoked=true;return Response.json({success:true});}
+    if(path.endsWith('/me'))return revoked?Response.json({}, {status:401}):Response.json({id:id(90)},{headers:{'cache-control':'no-store'}});
+    if(path.endsWith('/feed'))return Response.json({items:[]},{headers:{'cache-control':'no-store'}});
+    if(path.endsWith('.js'))return new Response('module',{headers:{'content-type':'text/javascript'}});
+    throw Error('UNEXPECTED_NETWORK_REQUEST');
+   });vi.stubGlobal('fetch',request);
+   const databaseUrl=new URL('postgres://host.pg.psdb.cloud:5432/database?sslmode=verify-full');databaseUrl.username='test.synthetic';databaseUrl.password='synthetic';
+   const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'t'.repeat(32),PORCHDAY_STAGING_DATABASE_MIGRATION_URL:databaseUrl.href};
+   const observedOptions={target:{environment:'staging' as const,memberId:id(91),cookie:'continuity-allowed',deniedCookie:'continuity-denied',healthToken:'h'.repeat(32)},assertScope:()=>{},intervalMs:1000,retain:async(event:any)=>{continuityEvents.push(event);}};
+
+   let failed=false,release!:()=>void;const failedSample=new Promise<void>(r=>{release=r;});
+   const normal=request.getMockImplementation()!;
+   if(boundary==='prepared')vi.spyOn(preparation,'verifyUploadTooling').mockImplementation(async(_w,source)=>{await failedSample;return{source};});
+   if(boundary==='candidate'||boundary==='rollback')request.mockImplementation(async(input,init)=>{
+    if(new URL(String(input)).pathname.endsWith('/health')){
+     if(observed.version===id(2))await failedSample;
+     else if(boundary==='rollback'&&deploy.mock.calls.length===2)return Response.json({status:'unavailable',issues:['synthetic']},{status:503});
+    }
+    return normal(input,init);
+   });
+   const observation={...observedOptions,fetch:async(input:any,init:any)=>{
+    if(new URL(String(input)).pathname.endsWith('/health')&&!failed){
+     const phase=(await f.journal.read())?.phase;
+     if(phase===(boundary==='prepared'?'prepared':boundary==='terminal'?'complete':'candidate-observed')){
+      failed=true;return Response.json({status:'unavailable',issues:['synthetic']},{status:503});
+     }
+    }
+    return normal(input,init);
+   },retain:async(event:any)=>{continuityEvents.push(event);if(event.kind==='sample'&&!event.sample.healthy)release();}};
+   await expect(executeActivationWithContinuity(f.cli,env,observation,AbortSignal.timeout(12000))).rejects.toThrow('CONTINUITY_SAMPLES_FAILED');
+   expect(failed).toBe(true);expect(readdirSync(f.cli.review.execution.proofDirectory).some(n=>n.startsWith('continuity-failure-'))).toBe(true);
+   expect(readdirSync(f.cli.review.execution.proofDirectory).filter(n=>n.startsWith('attention-'))).toHaveLength(1);
+   expect(deploy).toHaveBeenCalledTimes(boundary==='prepared'?0:boundary==='terminal'?1:2);
+   const state=await f.journal.read();expect(state?.phase).toBe(boundary==='prepared'?'prepared':boundary==='terminal'?'complete':boundary==='rollback'?'rollback-intent':'rolled-back');
+   expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(boundary==='terminal'?id(2):id(1));
+   if(boundary==='prepared'){
+    await expect(executeActivationManifest(f.cli,env,AbortSignal.timeout(5000))).rejects.toThrow('DEPLOYMENT_CONTINUITY_FAILED');
+    await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000),'cancel');
+   }else if(boundary==='terminal'){
+    const calls=request.mock.calls.length;await expect(executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).rejects.toThrow('DEPLOYMENT_CONTINUITY_FAILED');expect(request.mock.calls.length).toBe(calls);
+   }else if(boundary==='candidate')expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:'already-finalized'});
+   else expect(await executeActivationManifest(f.cli,env,AbortSignal.timeout(5000))).toMatchObject({status:'attention-required'});
+   expect(deploy).toHaveBeenCalledTimes(boundary==='prepared'?0:boundary==='terminal'?1:2);
+  }finally{vi.restoreAllMocks();vi.unstubAllGlobals();f.close();}
+ },15000);
+});
