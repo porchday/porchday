@@ -9,7 +9,9 @@ const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export function validateReleaseAlert(value:unknown):asserts value is ReleaseAlert{
  const e=value as ReleaseAlert;
  if(!e||Object.keys(e).sort().join(',')!=='at,operationId,planHash,reason,v,worker'||e.v!==1||typeof e.operationId!=='string'||typeof e.planHash!=='string'||typeof e.worker!=='string'||!uuid.test(e.operationId)||!/^[a-f0-9]{64}$/.test(e.planHash)||!releaseAlertReasons.includes(e.reason)||typeof e.at!=='string'||!Number.isFinite(Date.parse(e.at))||new Date(e.at).toISOString()!==e.at)throw Error('RELEASE_ALERT_INVALID');
- deploymentTarget(e.worker);
+ // The relay receives monitor alerts from separately deployed recovery tooling.
+ // Accept only its two exact names; do not broaden application deployment targets.
+ if(!['porchday-monitor-staging','porchday-monitor-production'].includes(e.worker))deploymentTarget(e.worker);
 }
 export function releaseAlertBody(event:ReleaseAlert){
  validateReleaseAlert(event);

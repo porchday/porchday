@@ -19,6 +19,21 @@ describe('release attention alerts',()=>{
   for(const bad of [{...event,password:'secret'},{...event,reason:'private error'},{...event,operationId:[id]},{...event,worker:'arbitrary'},{...event,at:'yesterday'}])expect(()=>validateReleaseAlert(bad)).toThrow();
   expect(releaseAlertBody(event)).toContain('@andyk @bobbyhwilder');expect(releaseAlertBody({...event,reason:'notification-drill'})).toContain('Notification drill: no deployment failure is being reported.');
  });
+ it.each(['porchday-monitor-staging','porchday-monitor-production'])('delivers and reconciles an exact %s notification',async worker=>{
+  const monitorEvent={...event,worker,reason:'notification-drill' as const};
+  expect(()=>validateReleaseAlert(monitorEvent)).not.toThrow();
+  const comments:unknown[]=[];let posts=0;
+  const transport:GitHubTransport=async(method,path,body)=>{
+   if(method==='GET')return path.includes('/comments?')?comments:target;
+   posts++;expect(path).toBe('/repos/porchday/porchday/issues/3/comments');
+   expect(body).toEqual({body:releaseAlertBody(monitorEvent)});comments.push({...body,user:bot});return null;
+  };
+  expect(await deliverReleaseAlert(monitorEvent,{transport,bot:true})).toBe('delivered');
+  expect(await deliverReleaseAlert(monitorEvent,{transport,bot:true})).toBe('delivered');expect(posts).toBe(1);
+ });
+ it.each(['porchday-monitor','porchday-monitor-preview','porchday-monitor-production-edge','porchday-monitor-production-extra','porchday-monitor-production\n'])('rejects unsupported monitor identity %j',worker=>{
+  expect(()=>validateReleaseAlert({...event,worker})).toThrow();
+ });
  it('preserves the first durable alert across repeated failures and rejects changed plans',()=>{
   const d=realpathSync(mkdtempSync(join(tmpdir(),'release-alert-')));try{
    const first=queueReleaseAlert(d,plan,'command-failed',new Date(event.at));
