@@ -121,8 +121,14 @@ monitor state. The [outage comment](https://github.com/porchday/porchday/issues/
 was posted by the Actions bot 10.781 seconds after event creation; the
 [recovery comment](https://github.com/porchday/porchday/issues/52#issuecomment-6484031045)
 followed its event by 8.726 seconds. The drainer reconciled both exact bot bodies
-and emptied its private outbox. Installation into the continuously running Mac
-service remains pending full CI. No production outage was induced, and this drill
+and emptied its private outbox. Following both successful full CI runs, source
+`0872e5ea172d47038004f435c974e94f39bb4b2e` was installed in the continuous Mac
+service at 2026-10-29 00:08:28 UTC. The pinned bundle SHA-256 is
+`8586cca3c455587b450efa2a97d6252272acd727998f63ceeb3ceaa4a055d734`.
+The old process stopped before replacement. Credentials and the complete prior
+observation prefix remained unchanged. Three fresh journeys passed through
+00:09:08.908 UTC with no pending notifications; [installation evidence](https://github.com/porchday/porchday/issues/8#issuecomment-6484104361)
+is recorded in the tracking issue. PR #65 is merged. No production outage was induced, and this drill
 does not establish human receipt or a delivery-time bound.
 
 ## Reproducible availability reports
