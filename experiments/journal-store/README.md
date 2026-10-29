@@ -17,7 +17,7 @@ Run locally with the repository's locked dependencies:
 
 ```sh
 npx --no-install tsc -p experiments/journal-store/tsconfig.json
-node experiments/journal-store/check.mjs
+node --import tsx experiments/journal-store/check.mjs
 ```
 
 The harness uses workerd/SQLite via Miniflare supplied by the locked Wrangler tool.
@@ -35,3 +35,15 @@ against provider guarantees and fault behavior. Restore/export, immutable-chain 
 receipt proof, old/new reader compatibility, capacity, migration and safe rollback
 remain required before any application use. Never fall back from this store to a
 stale R2 checkpoint. The existing R2 journal remains authoritative.
+
+Local fault fixtures use separate test-only classes to fail after SQL insertion
+inside the transaction and at the durability fence. The checks distinguish rollback
+from an uncertain committed write, require 503 without diagnostics, and reconcile
+by reading. These injected failures are not provider crash/power-loss evidence.
+Streaming request bodies are bounded before parsing.
+
+The harness also runs the existing privacy-journal algorithm unchanged through a
+synthetic-key adapter: concurrent intents/completions, independent intent/receipt
+records, rollback rejection, and immutable-chain verification. This exercises
+protocol compatibility locally, not migration or operational recovery. The fault
+fixture module must never be deployed.

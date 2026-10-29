@@ -1,3 +1,5 @@
+import {initializePrivacyJournal,readJournalControl,beginPrivacyIntent,completePrivacyIntent,assertJournalReadable,quarantineJournal,verifyJournalChain} from '../../apps/api/src/privacy-journal.ts';
+import {createHash,randomUUID} from 'node:crypto';
 /** Local workerd/SQLite evidence only. Never contact a hosted service. */
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {build} from 'esbuild';
@@ -6,10 +8,10 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 const dir=await mkdtemp(join(tmpdir(),'porchday-journal-probe-'));
-const {outputFiles}=await build({entryPoints:['experiments/journal-store/worker.ts'],bundle:true,write:false,format:'esm',external:['cloudflare:workers']});
+const {outputFiles}=await build({entryPoints:['experiments/journal-store/fault-fixtures.ts'],bundle:true,write:false,format:'esm',external:['cloudflare:workers']});
 let mf,stub,checks=0;
 async function start(){
- mf=new Miniflare({...convertV4MiniflareOptions({name:'journal-store-probe',modules:true,script:outputFiles[0].text,compatibilityDate:'2026-10-25',durableObjects:{PROBE:{className:'JournalStoreProbe',useSQLite:true}},}),resourcePersistencePath:dir});
+ mf=new Miniflare({...convertV4MiniflareOptions({name:'journal-store-probe',modules:true,script:outputFiles[0].text,compatibilityDate:'2026-10-25',durableObjects:{PROBE:{className:'JournalStoreProbe',useSQLite:true},FAILED_SYNC:{className:'FailedSyncProbe',useSQLite:true},FAILED_TX:{className:'FailedTransactionProbe',useSQLite:true}},}),resourcePersistencePath:dir});
  const namespace=await mf.getDurableObjectNamespace('PROBE');stub=namespace.get(namespace.idFromName('synthetic-contract-check'));
 }
 async function call(path,value,status=200){const r=await stub.fetch('https://probe.invalid/'+path,{method:'POST',body:JSON.stringify(value)});assert.equal(r.status,status);return status===200?r.json():r.text();}
@@ -37,5 +39,35 @@ try{
  await call('put',{key:key+'_overflow',value:'refused',onlyIf:{etagDoesNotMatch:'*'}},503);
  assert.equal(await call('get',{key:key+'_overflow'}),null);checks++;
  assert.deepEqual(await call('get',{key}),recovered);checks++;
+ await call('put',{key,value:'x'.repeat(70000),onlyIf:{etagMatches:recovered.etag}},413);checks++;
+ const normalStub=stub;
+ for(const [binding,persisted] of [['FAILED_SYNC',true],['FAILED_TX',false]]){
+  const namespace=await mf.getDurableObjectNamespace(binding);stub=namespace.get(namespace.idFromName('synthetic-fault'));
+  assert.equal(await call('put',{key,value:'uncertain',onlyIf:{etagDoesNotMatch:'*'}},503),'');checks++;
+  const read=await call('get',{key});assert.equal(read?.value??null,persisted?'uncertain':null);checks++;
+  if(persisted){assert.equal(await call('put',{key,value:'replayed',onlyIf:{etagDoesNotMatch:'*'}}),null);checks++;}
+ }
+ stub=normalStub;
+ // Exercise the existing journal algorithm unchanged against the SQLite adapter.
+ const protocolNamespace=await mf.getDurableObjectNamespace('PROBE');
+ stub=protocolNamespace.get(protocolNamespace.idFromName('synthetic-existing-protocol'));
+ const mapped=name=>'synthetic/'+'b'.repeat(32)+'/'+createHash('sha256').update(name).digest('hex');
+ const store={
+  async get(name){const row=await call('get',{key:mapped(name)});return row?{etag:row.etag,text:async()=>row.value}:null;},
+  put(name,value,options){return call('put',{key:mapped(name),value,onlyIf:options?.onlyIf});},
+ };
+ const generation=randomUUID();let events=[];
+ const db={status:async()=>({generation,sequence:String(events.length),quarantined:false}),page:async after=>events.slice(Number(after),Number(after)+3)};
+ await initializePrivacyJournal(store,db);
+ const initial=await readJournalControl(store);
+ await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
+ const intents=await Promise.all([beginPrivacyIntent(store,db),beginPrivacyIntent(store,db)]);
+ events=Array.from({length:5},(_,i)=>({sequence:String(i+1),id:randomUUID(),occurred_at:new Date().toISOString(),decision:{action:'synthetic'}}));
+ await Promise.all(intents.map(intent=>completePrivacyIntent(store,db,intent)));
+ const completed=await readJournalControl(store);assert.equal(completed.value.sequence,'5');assert.deepEqual(completed.value.pending,[]);checks++;
+ for(const intent of intents){assert.ok(await store.get('intents/'+intent.id+'.json'));assert.ok(await store.get('receipts/'+intent.id+'.json'));}checks++;
+ const saved=events;events=events.slice(0,4);await assert.rejects(()=>assertJournalReadable(store,db),/DATABASE_ROLLBACK_DETECTED/);events=saved;checks++;
+ await quarantineJournal(store,'synthetic_verification');
+ const chain=await verifyJournalChain(store);assert.deepEqual(chain.batches.flat(),events);checks++;
  console.log(JSON.stringify({checks,passed:true,runtime:'local workerd SQLite',hostedLatencyEvidence:false}));
 }finally{await mf?.dispose();await rm(dir,{recursive:true,force:true});}
