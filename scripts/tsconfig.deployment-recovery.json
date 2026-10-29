@@ -14,6 +14,7 @@
     "cloudflare-deployment-client.ts",
     "deployment-recovery-lease.ts",
     "release-verification.ts",
-    "cloudflare-release-reader.ts"
+    "cloudflare-release-reader.ts",
+    "release-schema.ts"
   ]
 }
