@@ -95,7 +95,29 @@ publishes it. Raw observations are retained, and the upload reconciler still
 requires identical snapshots across its repeated reads. Candidate activation
 requires all declared producer registrations. Neither state permits consumers,
 unpausing, foreign producers, changed queue identities or unrelated resource
-changes. Actual hosted behavior remains to be verified by the binding rollout.
+changes. The October 29 staging binding rollout observed all three target producer registrations during inactive upload; activation retained them with 11 continuity samples and zero failures.
 Afterward, consumer attachment and delivery enablement remain separate guarded
 operations; this registration proof does not establish connection headroom or
 capacity acceptance.
+
+
+### Paused consumer creation
+
+`consumerCreation` is a separate immutable plan variant for adding one Worker
+consumer to an existing paused range queue. It cannot be combined with queue
+creation. The baseline snapshot, exact fixed request body and expected inventory
+are hashed before intent. Active and latest Worker bindings must contain the
+matching range binding and retain shared delivery with the verified active
+partition flags. The queue must have exactly its Worker producer and no consumer.
+
+The only admitted new state is one consumer for that same Worker, concurrency
+one, batch size one, eight retries, five-second batch wait and zero retry delay,
+using the same environment's ordinary dead-letter queue. The provider-assigned
+consumer ID is unknown at preparation, so a placeholder appears only in planned
+comparison. Read-only reconciliation pins the real ID and preserves raw evidence;
+subsequent observations cannot replace it. All queue settings (including pause),
+producers and unrelated inventory remain exact. Lost replies never permit another
+send, and finalization resumes through the existing durable receipt protocol.
+Attaching a paused consumer does not authorize delivery or establish aggregate
+database headroom. Each live operator must verify complete catalogue evidence,
+including the dead-letter target, before and after its one create request.
