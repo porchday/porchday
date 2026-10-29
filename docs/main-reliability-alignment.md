@@ -51,3 +51,22 @@ physical-device checks, production latency investigation, and measured monthly
 availability remain outstanding. This change does not establish 99.99% uptime.
 
 Tracking: #3 (release acceptance), #55 (logout latency), and #41 (invitation UI).
+
+## Staging acceptance on October 29
+
+[Recorded evidence](evidence/main-alignment-staging-2026-10-29.json) pins the
+exact runtime source and CI runs. A guarded backend activation passed 13
+continuity samples with zero failures, including two post-terminal samples.
+Existing allowed sessions remained usable, revoked cookies were rejected, and
+all synthetic fixture rows were removed. Protected operational timing appeared
+on authenticated health responses and was absent from anonymous 401 responses.
+A later read observed an actual scheduled cleanup pass advance.
+
+The first private harness attempt stopped before activation because its event
+directory was missing. Its fixtures were reconciled and removed before the
+fresh attempt; the failed result was retained. The new harness requires its
+event directory before creating fixtures. No unknown write was replayed.
+
+This verifies the API source alignment on staging. It does not close the
+already-open browser/new-client feature-release or physical native-device gates,
+and does not promote the candidate to production.
