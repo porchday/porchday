@@ -1,16 +1,23 @@
 # Independent session denial: validation gates
 
-As of October 29, 2026, 11:32 UTC, staging version `4108c561` runs isolated
-runtime `119dff0` with logout writer and cleanup enabled. Production `f613874a`
+As of October 29, 2026, 11:59 UTC, staging version `2120ff4c` runs isolated
+runtime `8634c17` with logout writer and cleanup enabled. Production `f613874a`
 retains server runtime `ebc567a4`, with both flags disabled. Current frontend
 assets are `b2b3a06`. The maintained draft PR integrates the tested runtime code;
 its broader development tree also contains unrelated features and is not the
 deployment source.
 
-The latest two 10,003-candidate scans completed in 198 and 259 seconds with all
-10,000 synthetic sessions intact and all 28 sampled journeys passing. Paired
-read-slot occupancy was 67.04%. However, timing bounds imply a completion interval
-above 300 seconds between sampled checks; continuous freshness is not established.
+The first strict exact-timestamp capacity trial passed: two 10,003-candidate
+scans took 125.272 and 206.815 seconds, with all 10,000 synthetic sessions intact.
+Exact full-pass completion intervals were 185.052 seconds (baseline to first)
+and 255.657 seconds (first to second), both below the unchanged 300-second limit.
+All 22 sampled journeys passed. Exact fixture cleanup, unchanged provider state
+and released lease were verified. This is one successful trial, not repeatable
+capacity margin or complete availability coverage.
+[Evidence](evidence/session-denial-refill-10k-staging-2026-10-29.json).
+
+The preceding fixed-batch run's inferred interval above 300 seconds remains a
+failure of capacity acceptance despite healthy sampled probes.
 [Capacity evidence and limitations](session-denial-capacity.md) remain material.
 A bounded six-session denied backlog also recovered through scheduled cleanup;
 that does not establish pilot-scale denied-backlog capacity.

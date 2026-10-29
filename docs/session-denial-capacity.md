@@ -118,8 +118,8 @@ The operator harness still must verify intact fixture rows, authenticated journe
 provider/source pins, exact cleanup and recovery. This helper does not establish
 continuous page freshness or unsampled user availability. A missed intermediate
 completion can cause conservative rejection; never interpolate or manufacture it.
-The next harness template incorporates exact reads and this proof, but no new
-capacity run has executed with it yet. Tests reproduce the 302.518-second gap
+The hosted bounded-refill result below uses exact reads and this proof.
+Tests reproduce the 302.518-second gap
 missed by periodic probes and enforce the exact 300,000-millisecond boundary.
 
 
@@ -144,3 +144,32 @@ predicted throughput improvement. Validate native storage/SQL behavior and the
 new exact full-pass interval verifier before hosted acceptance. Keep the full
 10,000-session fixture intact through two passes, capture paired occupancy and
 phase evidence in one pinned-runtime window, and reconcile exact cleanup.
+
+
+## First bounded-refill trial with exact completion timestamps
+
+Staging `2120ff4c`, runtime `8634c17`, passed the strict two-pass trial with
+10,000 synthetic sessions intact. Each completed scan saw 10,003 candidates;
+exact durations were 125.272 and 206.815 seconds. Completion intervals, including
+the healthy pre-seed baseline, were 185.052 and 255.657 seconds. The largest
+interval had 44.343 seconds of margin against the unchanged 300-second threshold.
+All 22 sampled authenticated journeys passed. Maximum sampled page/pass ages
+were 53/248 seconds. Exact fixture cleanup left zero rows, provider and canonical
+state stayed unchanged, and the deployment lease was released. No production
+mutation, manual sweep or progress write contributed to the result.
+[Sanitized evidence](evidence/session-denial-refill-10k-staging-2026-10-29.json).
+
+The 125-to-207-second variation matters: this single run does not establish
+repeatable headroom. Exact timestamps close the prior sampling gap for these
+observed full-pass intervals; they do not prove continuous page freshness or
+unsampled user availability. All synthetic sessions belong to one member, and
+none represents a large denied backlog. Repeatable capacity, mixed pilot load,
+backlog recovery and operating-cost acceptance remain separate gates.
+
+Paired occupancy is retained in the evidence with its bounded query window and
+collection time. Available slot time now means group wall time times configured
+workers (up to six), with groups up to 24 candidates; occupied time sums actual
+read observation durations. Only successful groups contribute. This differs
+from the prior batch accounting, and independently sampled phase totals cannot
+be added or divided to infer a speedup. The two runs were not a randomized
+performance comparison.
