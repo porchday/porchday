@@ -1,4 +1,4 @@
-import {cleanupDeniedSessions} from './session-denial-cleanup';
+import {cleanupDeniedSessionCandidates as cleanupDeniedSessions} from './session-denial-candidates';
 import { Hono } from 'hono';
 import {requestTimingMiddleware} from './request-timing';
 import { bodyLimit } from 'hono/body-limit';

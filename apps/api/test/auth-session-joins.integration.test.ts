@@ -16,6 +16,7 @@ import {authRoutes} from '../src/auth-routes';
 import {persistSessionDenial} from '../src/session-denial';
 import {cleanupDeniedSessions,deleteDeniedSession} from '../src/session-denial-cleanup';
 import {denialProgressKey,readDenialCleanupHealth} from '../src/session-denial-progress';
+import {listSessionCandidates,cleanupDeniedSessionCandidates,candidateProgressKey,parseCandidateProgress,readCandidateCleanupHealth} from '../src/session-denial-candidates';
 import type {Env,Variables} from '../src/types';
 
 const base=process.env.TEST_DATABASE_URL;
@@ -250,6 +251,40 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
   expect((await cleanupDeniedSessions(guardedEnv)).deleted).toBe(0);expect(records.size).toBe(2);
   expect((await readDenialCleanupHealth(guardedEnv)).issues).toEqual([]);
  });
+ it('discovers expired and restored SQL sessions through the restricted role with indexed keyset pages',async()=>{
+  const actor=await person(),other=await person(),{pool}=runtimePool(),records=new Map<string,{etag:string;text:string}>();let version=0;
+  const store={get:async(key:string)=>{const row=records.get(key);return row?{etag:row.etag,text:async()=>row.text}:null;},
+   put:async(key:string,text:string,options?:{onlyIf?:{etagDoesNotMatch?:string;etagMatches?:string}})=>{
+    const old=records.get(key),condition=options?.onlyIf;
+    if(condition?.etagDoesNotMatch==='*'&&old||condition?.etagMatches&&condition.etagMatches!==old?.etag)return null;
+    const etag=String(++version);records.set(key,{etag,text});return {etag};
+   }};
+  // More than one page, all synthetic and owned by this disposable database.
+  await owner.query('INSERT INTO public.auth_session(id,"expiresAt",token,"userId") SELECT gen_random_uuid()::text,now()-interval\'1 day\',gen_random_uuid()::text,$1 FROM generate_series(1,110)',[actor.memberId]);
+  await owner.query('UPDATE public.auth_session SET "expiresAt"=now()-interval\'1 day\' WHERE id=$1',[actor.sessionId]);
+  const expected=(await owner.query('SELECT id FROM public.auth_session ORDER BY id')).rows.map(row=>row.id);
+  const first=await listSessionCandidates(pool,null),second=await listSessionCandidates(pool,first.ids.at(-1)!);
+  expect(first.ids).toHaveLength(100);expect(first.more).toBe(true);expect(second.more).toBe(false);
+  expect([...first.ids,...second.ids]).toEqual(expected);expect(expected).toContain(actor.sessionId);
+  await persistSessionDenial(store,actor.sessionId);
+  const candidateEnv={...env,SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:store} as unknown as Env;
+  const sweep=()=>cleanupDeniedSessionCandidates(candidateEnv);
+  let deleted=0;
+  do{deleted+=(await sweep()).deleted;}while(parseCandidateProgress(records.get(candidateProgressKey)!.text).cursor!==null);
+  expect(deleted).toBe(1);expect((await pool.query('SELECT 1 FROM public.auth_session WHERE id=$1',[other.sessionId])).rowCount).toBe(1);
+  await owner.query('INSERT INTO public.auth_session(id,"expiresAt",token,"userId") VALUES($1,now()-interval\'1 day\',$2,$3)',[actor.sessionId,actor.token,actor.memberId]);
+  deleted=0;do{deleted+=(await sweep()).deleted;}while(parseCandidateProgress(records.get(candidateProgressKey)!.text).cursor!==null);
+  expect(deleted).toBe(1);expect((await pool.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(0);
+  expect((await readCandidateCleanupHealth(candidateEnv)).issues).toEqual([]);
+  // Confirm the keyset can use the existing primary-key index. Disabling a
+  // sequential scan here tests index eligibility, not production planner cost.
+  const client=await pool.connect();
+  try{
+   await client.query('BEGIN');await client.query('SET LOCAL enable_seqscan=off');
+   const plan=await client.query('EXPLAIN (FORMAT JSON) SELECT id FROM public.auth_session WHERE id>$1 ORDER BY id LIMIT 101',[first.ids.at(-1)]);
+   expect(JSON.stringify(plan.rows[0]['QUERY PLAN'])).toContain('auth_session_pkey');await client.query('ROLLBACK');
+  }finally{client.release();}
+ });
  it('orders exact cleanup behind an existing identity operation and can retry a lost commit reply',async()=>{
   const actor=await person(),other=await person(),{pool}=runtimePool(),lock=await owner.connect();
   let cleanup:Promise<boolean>|undefined;
@@ -291,9 +326,8 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
     if(request.headers.authorization!=='Bearer '+bearer){response.writeHead(401).end();return;}
     let body='';for await(const chunk of request){body+=chunk;if(body.length>4096)throw Error();}
     const {operation,args}=JSON.parse(body);let result:unknown;
-    if(operation==='get'&&[key,denialProgressKey].includes(args[0])){const row=await bucket.get(args[0]);result=row?{etag:row.etag,value:await row.text()}:null;}
-    else if(operation==='put'&&[key,denialProgressKey].includes(args[0])){if(args[0]===key)publications++;result=await bucket.put(args[0],args[1],args[2]);result=result?{etag:(result as {etag:string}).etag}:null;}
-    else if(operation==='list'&&args[0].prefix==='session-denials/v1/')result={objects:(await bucket.list({prefix:args[0].prefix})).objects.map(row=>({key:row.key})),truncated:false};
+    if(operation==='get'&&(args[0]===candidateProgressKey||/^session-denials\/v1\/[a-f0-9]{64}\.json$/.test(args[0]))){const row=await bucket.get(args[0]);result=row?{etag:row.etag,value:await row.text()}:null;}
+    else if(operation==='put'&&[key,candidateProgressKey].includes(args[0])){if(args[0]===key)publications++;result=await bucket.put(args[0],args[1],args[2]);result=result?{etag:(result as {etag:string}).etag}:null;}
     else throw Error();
     response.setHeader('Content-Type','application/json');response.end(JSON.stringify(result));
    }catch{response.writeHead(500).end();}
@@ -318,15 +352,16 @@ suite('joined session reads through the restricted PostgreSQL auth role',()=>{
    expect(await auth.api.getSession({headers:actor.headers})).toBeNull();
    expect((await auth.api.getSession({headers:other.headers}))?.user.id).toBe(other.memberId);
    for(const deleted of [1,0]){
+    const expectedSeen=Number((await owner.query('SELECT count(*) AS count FROM public.auth_session')).rows[0].count);
     const recovery=start('cleanup'),exited=once(recovery.child,'exit');
-    expect(await recovery.message).toMatchObject({phase:'cleanup-complete',result:{seen:1,deleted,invalid:0}});
+    expect(await recovery.message).toMatchObject({phase:'cleanup-complete',result:{seen:expectedSeen,deleted,invalid:0}});
     expect(await exited).toEqual([0,null]);
    }
    expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[actor.sessionId])).rowCount).toBe(0);
    expect((await auth.api.getSession({headers:other.headers}))?.user.id).toBe(other.memberId);
    expect(await(await bucket.get('control.json'))!.text()).toBe(control);
    expect(await bucket.get(key)).not.toBeNull();expect(publications).toBe(1);
-   expect((await readDenialCleanupHealth({SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:bucket} as unknown as Env)).issues).toEqual([]);
+   expect((await readCandidateCleanupHealth({SESSION_DENIAL_CLEANUP_V1:'true',RECOVERY_JOURNAL:bucket} as unknown as Env)).issues).toEqual([]);
   }finally{
    for(const child of children)if(child.exitCode===null&&child.signalCode===null){const stopped=once(child,'exit');child.kill('SIGKILL');await stopped;}
    server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));await mf.dispose();

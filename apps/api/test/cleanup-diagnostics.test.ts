@@ -10,7 +10,7 @@ vi.mock('../src/social-push',async original=>({...await original<typeof import('
 vi.mock('../src/social-native-push',async original=>({...await original<typeof import('../src/social-native-push')>(),processNativePush:steps.nativePush}));
 vi.mock('../src/email-outbox',async original=>({...await original<typeof import('../src/email-outbox')>(),processAccountEmails:steps.email}));
 vi.mock('../src/operations-health',async original=>({...await original<typeof import('../src/operations-health')>(),recordCleanupSuccess:steps.heartbeat}));
-vi.mock('../src/session-denial-cleanup',()=>({cleanupDeniedSessions:steps.denial}));
+vi.mock('../src/session-denial-candidates',async original=>({...await original<typeof import('../src/session-denial-candidates')>(),cleanupDeniedSessionCandidates:steps.denial}));
 import worker from '../src/index';
 
 describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{

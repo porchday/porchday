@@ -1,5 +1,5 @@
 import {persistSessionDenial} from '../src/session-denial';
-import {cleanupDeniedSessions} from '../src/session-denial-cleanup';
+import {cleanupDeniedSessionCandidates as cleanupDeniedSessions} from '../src/session-denial-candidates';
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
 import { Pool, Client } from "pg";
