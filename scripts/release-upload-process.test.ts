@@ -15,7 +15,7 @@ describe('bounded upload subprocess',()=>{
   try{
    const factory=(value:unknown)=>{
     const bytes=JSON.stringify(value);writeFileSync(configPath,bytes,{mode:0o600});
-    return createWranglerUploadProcess({workspace:process.cwd(),receipt:{} as ReleaseWranglerReceipt,configPath,configSha256:createHash('sha256').update(bytes).digest('hex'),worker:'porchday-staging',accountId,apiToken:'synthetic-test-token',privateLogDirectory:root});
+    return createWranglerUploadProcess({workspace:process.cwd(),inputs:{bundle:{directory:root,entry:'index.js',files:{}},assets:null},receipt:{} as ReleaseWranglerReceipt,configPath,configSha256:createHash('sha256').update(bytes).digest('hex'),worker:'porchday-staging',accountId,apiToken:'synthetic-test-token',privateLogDirectory:root});
    };
    for(const patch of [{name:'porchday-production'},{account_id:'b'.repeat(32)},{no_bundle:false},{build:{command:'unreviewed'}},{env:{}},{containers:[]},{exports:{}},{workers_dev:true},{preview_urls:true}])await expect(factory({...config,...patch})('11111111-1111-1111-1111-111111111111',base.signal)).rejects.toThrow('UPLOAD_PROCESS_CONFIG_UNREVIEWED');
    const send=factory(config);writeFileSync(configPath,'changed');await expect(send('11111111-1111-1111-1111-111111111111',base.signal)).rejects.toThrow('UPLOAD_PROCESS_CONFIG_CHANGED');

@@ -4,6 +4,7 @@ import {lstatSync,readFileSync} from 'node:fs';
 import {dirname,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyReleaseWrangler,type ReleaseWranglerReceipt} from './release-wrangler.ts';
+import {verifyReleaseUploadInputs,type ReleaseUploadInputs} from './release-upload-inputs.ts';
 import {deploymentTarget} from './deployment-recovery.ts';
 
 const guard=fileURLToPath(new URL('./release-process-guard.mjs',import.meta.url));
@@ -33,7 +34,7 @@ export async function runReleaseProcess(options:{args:string[];cwd:string;env:No
  });
 }
 
-export type WranglerUploadProcessOptions={workspace:string;receipt:ReleaseWranglerReceipt;configPath:string;configSha256:string;worker:string;accountId:string;apiToken:string;privateLogDirectory:string};
+export type WranglerUploadProcessOptions={workspace:string;inputs:ReleaseUploadInputs;receipt:ReleaseWranglerReceipt;configPath:string;configSha256:string;worker:string;accountId:string;apiToken:string;privateLogDirectory:string};
 /** Supply this callback only to FileUploadLease.dispatchOnce after full authorization. */
 export function createWranglerUploadProcess(options:WranglerUploadProcessOptions):(operationId:string,signal:AbortSignal)=>Promise<void>{
  const pinned=structuredClone(options);deploymentTarget(pinned.worker);
@@ -44,6 +45,7 @@ export function createWranglerUploadProcess(options:WranglerUploadProcessOptions
   const bytes=readFileSync(pinned.configPath);if(sha(bytes)!==pinned.configSha256)throw Error('UPLOAD_PROCESS_CONFIG_CHANGED');
   let config:Record<string,unknown>;try{config=JSON.parse(bytes.toString());}catch{throw Error('UPLOAD_PROCESS_CONFIG_INVALID');}
   if(!config||typeof config!=='object'||Array.isArray(config)||config.name!==pinned.worker||config.account_id!==pinned.accountId||config.no_bundle!==true||config.build!==undefined||config.env!==undefined||config.containers!==undefined||config.exports!==undefined||config.workers_dev!==false||config.preview_urls!==false)throw Error('UPLOAD_PROCESS_CONFIG_UNREVIEWED');
+  verifyReleaseUploadInputs(config,pinned.inputs);
   const cli=verifyReleaseWrangler(pinned.workspace,pinned.receipt);
   const env:NodeJS.ProcessEnv={CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false',WRANGLER_LOG_SANITIZE:'true',WRANGLER_LOG_PATH:pinned.privateLogDirectory,CLOUDFLARE_API_TOKEN:pinned.apiToken,CLOUDFLARE_ACCOUNT_ID:pinned.accountId};
   for(const key of ['PATH','HOME','TMPDIR'])if(process.env[key])env[key]=process.env[key];

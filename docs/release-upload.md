@@ -84,8 +84,15 @@ config's SHA-256 and target/account, verifies the pinned CLI receipt and spawns
 `versions upload` without a shell. It supplies the operation UUID as the upload
 message for later provider reconciliation. It refuses build hooks, alternate
 environments, container/export configuration, bundling and enabled preview URLs.
-The caller must still verify every referenced executable, source map and asset
-against preparation evidence immediately before dispatch.
+The transport now requires a `ReleaseUploadInputs` manifest and rechecks the complete
+private executable, source-map and asset directories before starting Wrangler.
+Config paths must match those manifest roots. Extra, missing or changed files,
+symlinks, public permissions and additional module discovery fail before spawn.
+The check bounds directory depth, file count and byte volume. Source/CI authorization
+must still bind these manifests into the release plan; hashes alone do not prove
+build provenance. The release owner must prevent concurrent edits while Wrangler
+reads the files; this preflight does not provide a filesystem snapshot or prove
+hosted asset publication.
 
 The child receives an explicit environment containing only the required provider
 credentials, PATH/HOME/TMPDIR, CI/output controls and a private Wrangler log directory.
