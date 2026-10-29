@@ -229,3 +229,11 @@ for a local, network-free browser check. It covers visible text/image success,
 offscreen content, failure to decode, expiry eligibility, unmount cancellation,
 CSS-hidden content, background tabs and one-shot recording. This is functional
 browser verification, not a physical phone latency claim.
+
+Visible-photo regression coverage also replaces an already decoded offscreen
+image with an intercepted, delayed response and moves it into view. The old helper
+incorrectly marked success while the replacement was pending. The helper now
+requires a complete, nonempty image whose current source matches the successful
+decode, checked again at both animation frames. The replacement test first failed
+on the old helper and then passed with the fix; all 13 local Chromium checks pass.
+This validates milestone eligibility, not physical-phone timing.
