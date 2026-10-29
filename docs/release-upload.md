@@ -110,3 +110,30 @@ tests reject target/hash drift and unreviewed execution settings before spawn.
 These tests use synthetic child programs and make no provider writes. The complete
 normal release command still needs source/CI authorization and concrete provider
 reconciliation before this transport can be exercised on a hosted candidate.
+
+## Read-only upload discovery and inventory isolation
+
+`CloudflareReleaseReader.uploadedVersion` searches the provider's returned recent
+version list for exactly one `porchday-upload:<operation UUID>` annotation. It
+then fetches that version and requires its ID and annotation to agree with the
+list. Missing or multiple matches fail unresolved. Discovery is bounded to the
+returned list (at most 100 entries); it does not paginate indefinitely or infer
+identity from whichever version happens to be latest. An old operation falling
+outside the returned list requires further read-only investigation, never another
+upload. Calls retain the reader's GET-only transport, concurrency, retry, deadline
+and body-size limits.
+
+`assertInactiveUploadSnapshot` compares complete before/after inventories with
+deterministic object-key ordering. Only the selected Worker's latest version and
+exact reviewed settings may change. The candidate must differ from the previous
+active and latest IDs. All active resources, other Workers, domains, queues and
+schedules must stay identical. Pass reviewed settings from preparation evidence;
+do not copy the post-upload settings to manufacture an expected result. Baseline
+provenance and freshness still require the release lease and authorizer.
+
+This check passed the saved before/after inventories from the October 28 staging
+rollback drill with its explicitly reviewed APP_URL change. A live GET-only
+negative check on October 29 returned unresolved for an absent operation. Neither
+check performed an upload or activation. Matching annotations and resource isolation
+do not verify executable/source-map bytes or uploaded asset content. Those checks
+remain required before writing a reconciled upload receipt and activating it.

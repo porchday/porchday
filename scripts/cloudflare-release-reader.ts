@@ -22,6 +22,23 @@ export function releaseSettings(value:unknown):ObjectValue{
  if(placement&&typeof placement==='object'&&!Array.isArray(placement)&&(Object.keys(placement).length===0||JSON.stringify(placement)==='{"mode":"off"}'))result.placement=null;
  return{...result,bindings:bindings(input.bindings).sort((a,b)=>String(a.name)<String(b.name)?-1:String(a.name)>String(b.name)?1:0)};
 }
+function canonical(value:unknown):string{
+ if(value===null||typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))return JSON.stringify(value);
+ if(Array.isArray(value))return '['+value.map(canonical).join(',')+']';
+ if(value&&typeof value==='object')return '{'+Object.entries(value).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([key,item])=>JSON.stringify(key)+':'+canonical(item)).join(',')+'}';
+ throw Error('RELEASE_INVENTORY_INVALID');
+}
+/** Resource isolation check, not executable or asset verification. */
+export function assertInactiveUploadSnapshot(before:unknown,after:unknown,worker:Worker,version:string,expectedSettings:unknown):void{
+ if(!workers.includes(worker)||!uuid.test(version))throw Error('RELEASE_UPLOAD_TARGET_INVALID');
+ const prior=object(before),observed=object(after),priorWorkers=object(prior.workers),observedWorkers=object(observed.workers);
+ for(const snapshot of [prior,observed])if(Object.keys(snapshot).sort().join(',')!=='domains,queues,schedules,workers'||!Array.isArray(snapshot.domains))throw Error('RELEASE_INVENTORY_INVALID');
+ for(const inventory of [priorWorkers,observedWorkers])if(Object.keys(inventory).sort().join(',')!==[...workers].sort().join(','))throw Error('RELEASE_INVENTORY_INVALID');
+ const target=object(priorWorkers[worker]);
+ if(typeof target.active!=='string'||!uuid.test(target.active)||typeof target.latest!=='string'||!uuid.test(target.latest)||version===target.active||version===target.latest)throw Error('RELEASE_UPLOAD_NOT_NEW_INACTIVE_VERSION');
+ const expected={...prior,workers:{...priorWorkers,[worker]:{...target,latest:version,settings:releaseSettings(expectedSettings)}}};
+ if(canonical(observed)!==canonical(expected))throw Error('RELEASE_UPLOAD_INVENTORY_CHANGED');
+}
 class RetryableRead extends Error{}
 
 /** Read-only provider inventory. No API for mutations; credentials never enter errors or snapshots. */
@@ -70,6 +87,22 @@ export class CloudflareReleaseReader{
  async version(worker:Worker,version:string,signal:AbortSignal):Promise<ObjectValue>{
   if(!uuid.test(version))throw Error('RELEASE_VERSION_INVALID');const value=object(await this.get(this.base(worker)+'/versions/'+version,signal)),resources=object(value.resources);
   if(value.id!==version)throw Error('RELEASE_VERSION_MISMATCH');bindings(resources.bindings);object(resources.script);object(resources.script_runtime);return resources;
+ }
+ /** Bounded discovery only. An absent/ambiguous operation never authorizes another POST. */
+ async uploadedVersion(worker:Worker,operationId:string,signal:AbortSignal):Promise<{version:string;resources:ObjectValue}>{
+  if(!uuid.test(operationId))throw Error('RELEASE_UPLOAD_OPERATION_INVALID');
+  const message='porchday-upload:'+operationId;
+  const listed=object(await this.get(this.base(worker)+'/versions',signal)).items;
+  if(!Array.isArray(listed)||listed.length>100)throw Error('RELEASE_UPLOAD_LIST_INVALID');
+  const matches=listed.filter(item=>{
+   const value=object(item);if(typeof value.id!=='string'||!uuid.test(value.id))throw Error('RELEASE_UPLOAD_LIST_INVALID');
+   return value.annotations!==undefined&&object(value.annotations)['workers/message']===message;
+  });
+  if(matches.length!==1)throw Error('RELEASE_UPLOAD_UNRESOLVED');
+  const version=object(matches[0]).id as string,value=object(await this.get(this.base(worker)+'/versions/'+version,signal));
+  if(value.id!==version||object(value.annotations)['workers/message']!==message)throw Error('RELEASE_UPLOAD_IDENTITY_CHANGED');
+  const resources=object(value.resources);bindings(resources.bindings);object(resources.script);object(resources.script_runtime);
+  return{version,resources};
  }
  async snapshot(signal:AbortSignal){
   const scope=new AbortController();signal=AbortSignal.any([signal,scope.signal]);

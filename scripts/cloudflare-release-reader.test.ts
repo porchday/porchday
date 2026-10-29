@@ -1,5 +1,5 @@
 import {describe,it,expect} from 'vitest';
-import {CloudflareReleaseReader,releaseSettings} from './cloudflare-release-reader.ts';
+import {CloudflareReleaseReader,releaseSettings,assertInactiveUploadSnapshot} from './cloudflare-release-reader.ts';
 const active='11111111-0000-4000-8000-000000000000',latest='22222222-0000-4000-8000-000000000000';
 const token='synthetic-only-provider-test-token',queues={staging:{id:'b'.repeat(32),name:'porchday-staging-jobs'},production:{id:'c'.repeat(32),name:'porchday-production-jobs'}};
 const options={accountId:'a'.repeat(32),apiToken:token,queues};
@@ -21,6 +21,37 @@ function fixture(){
  return{transport,calls,maximum:()=>maximum};
 }
 describe('read-only release provider inventory',()=>{
+ it('discovers exactly one operation-annotated upload and confirms identity on the detail read',async()=>{
+  const operation='33333333-0000-4000-8000-000000000000',annotations={'workers/message':'porchday-upload:'+operation};let calls=0;
+  const fetcher:typeof fetch=async(input,init)=>{calls++;expect(init?.method).toBe('GET');return String(input).endsWith('/versions')?reply({items:[{id:active,annotations:{}},{id:latest,annotations}]}):reply({id:latest,annotations,resources:{script:{etag:'candidate'},script_runtime:{},bindings:[]}});};
+  const result=await new CloudflareReleaseReader({...options,fetch:fetcher}).uploadedVersion('staging',operation,AbortSignal.timeout(5000));expect(result.version).toBe(latest);expect(calls).toBe(2);
+ });
+ it('never guesses a version when an upload is absent, duplicated or changes identity',async()=>{
+  const operation='33333333-0000-4000-8000-000000000000',annotations={'workers/message':'porchday-upload:'+operation};
+  for(const items of [[],[{id:latest,annotations:{} }],[{id:latest,annotations},{id:active,annotations}]]){
+   let calls=0;const reader=new CloudflareReleaseReader({...options,fetch:async()=>{calls++;return reply({items});}});
+   await expect(reader.uploadedVersion('staging',operation,AbortSignal.timeout(5000))).rejects.toThrow('UPLOAD_UNRESOLVED');expect(calls).toBe(1);
+  }
+  const reader=new CloudflareReleaseReader({...options,fetch:async input=>String(input).endsWith('/versions')?reply({items:[{id:latest,annotations}]}):reply({id:latest,annotations:{'workers/message':'different operation'}})});
+  await expect(reader.uploadedVersion('staging',operation,AbortSignal.timeout(5000))).rejects.toThrow('UPLOAD_IDENTITY_CHANGED');
+ });
+ it('permits only the reviewed latest-version/settings change and preserves all active and unrelated resources',async()=>{
+  const f=fixture(),before=await new CloudflareReleaseReader({...options,fetch:f.transport}).snapshot(AbortSignal.timeout(5000));
+  const candidate='44444444-0000-4000-8000-000000000000',settings=releaseSettings({bindings:[{name:'APP_URL',type:'plain_text',text:'https://reviewed.example'}]});
+  const after=structuredClone(before);after.workers.staging.latest=candidate;after.workers.staging.settings=settings;
+  assertInactiveUploadSnapshot(before,after,'staging',candidate,settings);
+  for(const mutate of [
+   (value:typeof after)=>{value.workers.staging.active=candidate;},
+   (value:typeof after)=>{value.workers.production.latest=candidate;},
+   (value:typeof after)=>{value.domains=[];},
+   (value:typeof after)=>{value.queues={};},
+   (value:typeof after)=>{value.schedules={};},
+   (value:typeof after)=>{value.workers.staging.resources.script={etag:'unexpected'};},
+   (value:typeof after)=>{value.workers.staging.settings=releaseSettings({bindings:[]});},
+  ]){const changed=structuredClone(after);mutate(changed);expect(()=>assertInactiveUploadSnapshot(before,changed,'staging',candidate,settings)).toThrow('INVENTORY_CHANGED');}
+  expect(()=>assertInactiveUploadSnapshot(before,after,'staging',active,settings)).toThrow('NOT_NEW_INACTIVE_VERSION');
+  const missing=structuredClone(after);delete missing.workers.production;expect(()=>assertInactiveUploadSnapshot(before,missing,'staging',candidate,settings)).toThrow('INVENTORY_INVALID');
+ });
  it('cancels the rest of an inventory after a permanent failure',async()=>{
   let calls=0,cancelled=0;
   const transport:typeof fetch=async(_input,init)=>{
