@@ -4,6 +4,7 @@ import {Hono} from 'hono';
 import type {Env,Variables} from '../src/types';
 const database=vi.hoisted(()=>({query:Object.assign(vi.fn(),{end:vi.fn()})}));
 vi.mock('postgres',()=>({default:()=>database.query}));
+import {logoutJournalTiming} from '../src/journal-timing';
 import {withHttpPrivacyJournal,privacyReadGuard,privacyMutationMiddleware,readJournalControl,type JournalStore} from '../src/privacy-journal';
 
 function deferred<T=void>(){
@@ -71,6 +72,17 @@ describe('HTTP privacy operations retain one awaited durability lifecycle',()=>{
   expect(originalSettled).toBe(false);expect(observerSettled).toBe(false);
   closeGate.resolve();await expect(original).resolves.toBe(42);await expect(ctx.pending[0]).resolves.toBeUndefined();
   expect(work).toHaveBeenCalledTimes(1);expect([...store.rows.keys()].filter(k=>k.startsWith('intents/'))).toHaveLength(1);
+ });
+ it('shares caller phase timing through journal completion in one summary',async()=>{
+  const writeDataPoint=vi.fn();env.LOGOUT_PHASE_TIMING='true';env.METRICS={writeDataPoint} as never;
+  const req={method:'POST',path:'/api/auth/sign-out'},timing=logoutJournalTiming(env,req)!;
+  timing.record('initial_authorization',321);
+  await expect(withHttpPrivacyJournal({env,req,executionCtx:execution()},async()=>42,timing)).resolves.toBe(42);
+  timing.finish(true);
+  const summaries=writeDataPoint.mock.calls.map(([p])=>p).filter(p=>p.blobs[2]==='logout_summary');expect(summaries).toHaveLength(1);
+  expect(summaries[0].doubles[1]).toBe(1);expect(summaries[0].doubles[3]).toBe(321);
+  for(const n of summaries[0].doubles.slice(4,11))expect(n).toBeGreaterThanOrEqual(0);
+  expect(JSON.stringify(summaries)).not.toMatch(/synthetic|generation|sequence/);
  });
  it('propagates an unknown work error unchanged while the retained observer fulfills',async()=>{
   const ctx=execution(),failure=Error('synthetic private SQL details');

@@ -492,8 +492,16 @@ export function createSocialRoutes() {
             return {ok: true};
         }));
     });
+    app.get('/groups/:id/invitations', async c => {
+        const after = cursor(c.req.query('cursor'));
+        return c.json(await tx(c, async db => {
+            const rows = await db`select *,to_char(expires_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_at from app.owner_group_invitations(${id(c.req.param('id'))},${after?.at ?? null}::text::timestamptz,${after?.id ?? null}::uuid)`;
+            const items = rows.slice(0, 30), last = items.at(-1);
+            return {items: items.map(({cursor_at, ...item}: any) => item), next_cursor: rows.length > 30 && last ? btoa(JSON.stringify({at: last.cursor_at, id: last.id})) : null};
+        }));
+    });
     app.post('/groups/:id/invitations', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), envelope: envelopeSchema.optional() })); return c.json(await tx(c, async (db) => { const [recipient] = await db `select * from app.lookup_handle(${b.handle})`; if (!recipient)
-        fail('NOT_FOUND', 404); const inviteId = crypto.randomUUID(); await db `insert into app.group_invitations(id,group_id,inviter,recipient,envelope) values(${inviteId},${id(c.req.param('id'))},${c.get('memberId')},${recipient.id},${b.envelope ? db.json(b.envelope) : null}) on conflict(group_id,recipient) do update set id=excluded.id,expires_at=now()+interval '7 days',accepted_at=null`; return { id: inviteId }; }), 201); });
+        fail('NOT_FOUND', 404); const inviteId = crypto.randomUUID(); await db `insert into app.group_invitations(id,group_id,inviter,recipient,envelope) values(${inviteId},${id(c.req.param('id'))},${c.get('memberId')},${recipient.id},${b.envelope ? db.json(b.envelope) : null}) on conflict(group_id,recipient) do update set id=excluded.id,inviter=excluded.inviter,expires_at=now()+interval '7 days',accepted_at=null`; return { id: inviteId }; }), 201); });
     app.post('/group-invitations/:id/accept', async (c) => c.json(await tx(c, async (db) => { const [r] = await db `select app.accept_group_invitation(${id(c.req.param('id'))}) as id`; return r; })));
     app.put('/groups/:id/members/:memberId', async (c) => { const b = await body(c, z.object({ role: z.enum(['owner', 'moderator', 'member']) })); return c.json(await tx(c, async (db) => { await db `select app.change_group_member(${id(c.req.param('id'))},${id(c.req.param('memberId'))},${b.role})`; return { ok: true }; })); });
     app.delete('/groups/:id/members/:memberId', async (c) => c.json(await tx(c, async (db) => { await db `select app.change_group_member(${id(c.req.param('id'))},${id(c.req.param('memberId'))},'remove')`; return { ok: true }; })));

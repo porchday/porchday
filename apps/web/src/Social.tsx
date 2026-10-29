@@ -60,7 +60,8 @@ import { EmojiGlyph, EmojiPicker } from "./EmojiPicker";
 import { decodeReactions, type DecodedReaction } from "./reaction-read";
 import { validateCustomEmojiPixels } from "./emoji-images";
 import type { CustomEmoji } from "./emoji-library";
-import { markOnce, traced } from "./tracing";
+import { currentTraceId, markOnce, traced } from "./tracing";
+import { observeVisibleMilestone } from "./visible-milestone";
 export function TimerSelect({
   value,
   onChange,
@@ -458,6 +459,7 @@ export function Feed({
   canModerate?: boolean;
 }) {
   const [rows, setRows] = useState<SocialObject[]>([]);
+  const [singleDetails, setSingleDetails] = useState<Json | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [version, setVersion] = useState(0);
@@ -485,6 +487,7 @@ export function Feed({
       } catch (e) {
         if (attempt === loadVersion.current && accessLost(e)) {
           setRows([]);
+          setSingleDetails(null);
           setCursor(null);
           setLoaded(true);
         }
@@ -492,6 +495,7 @@ export function Feed({
       }
       if (attempt !== loadVersion.current) return;
       const next = singleId ? [r.post] : items<SocialObject>(r);
+      setSingleDetails(singleId ? r : null);
       setRows((old) =>
         more
           ? [...old, ...next.filter((n) => !old.some((o) => o.id === n.id))]
@@ -553,6 +557,7 @@ export function Feed({
               row={row}
               onChange={refresh}
               expanded={!!singleId}
+              initialDetails={singleId ? singleDetails : null}
               canModerate={canModerate}
             />
           ))
@@ -602,17 +607,20 @@ export function Feed({
 }
 export function PostCard({
   row,
+  initialDetails,
   onChange,
   expanded = false,
   canModerate = false,
 }: {
   row: SocialObject;
+  initialDetails?: Json | null;
   onChange: () => void;
   expanded?: boolean;
   canModerate?: boolean;
 }) {
   const vault = useVault();
   const [content, setContent] = useState<Content | null>(null);
+  const readableRef = useRef<HTMLParagraphElement>(null);
   const [error, setError] = useState("");
   const [showComments, setShowComments] = useState(expanded);
   const [showReport, setShowReport] = useState(false);
@@ -623,7 +631,15 @@ export function PostCard({
   const [editText, setEditText] = useState("");
   const [editTimer, setEditTimer] = useState("inherit");
   const { ref: cardRef, near: cardNear } = useNearViewport<HTMLElement>();
-  const [details, setDetails] = useState<Json | null>(null);
+  // Reuse only the matching response that already authorized this post view.
+  const seed = initialDetails?.post?.id === row.id &&
+    initialDetails.post.envelope?.ciphertext === row.envelope.ciphertext ? initialDetails : null;
+  const detailScope = vault.member.id + ":" + vault.device.id + ":" + row.id + ":" + row.envelope.ciphertext;
+  const [detailState, setDetailState] = useState<{ scope: string; value: Json | null }>(() => ({ scope: detailScope, value: seed }));
+  const details = detailState.scope === detailScope ? detailState.value : null;
+  const detailRequest = useRef<{ scope: string; generation: number; pending: Promise<void> | null }>({ scope: detailScope, generation: 0, pending: null });
+  if (detailRequest.current.scope !== detailScope)
+    detailRequest.current = { scope: detailScope, generation: 0, pending: null };
   const initialDetailsId = useRef("");
   const [unavailable, setUnavailable] = useState(false);
   const action = useAction();
@@ -644,26 +660,56 @@ export function PostCard({
       alive = false;
     };
   }, [row.id, row.envelope.ciphertext]);
-  async function loadDetails() {
-    try {
-      const d = await get(`/posts/${row.id}`);
-      setDetails(d);
-    } catch (e) {
-      if (accessLost(e)) {
-        setUnavailable(true);
-        setContent(null);
-        setDetails(null);
+  function loadDetails(fresh = true): Promise<void> {
+    const state = detailRequest.current;
+    // A completed mutation from an earlier render must not refresh a new post.
+    if (state.scope !== detailScope) return Promise.resolve();
+    // Initial visibility and opening comments may share a pending read. A read
+    // after a mutation must start after that mutation, never reuse an older one.
+    if (!fresh && state.pending) return state.pending;
+    const generation = ++state.generation;
+    const current = () => detailRequest.current === state && state.generation === generation;
+    const pending = (async () => {
+      try {
+        const d = await get(`/posts/${row.id}`);
+        if (current()) setDetailState({ scope: detailScope, value: d });
+      } catch (e) {
+        if (!current()) return;
+        if (accessLost(e)) {
+          setUnavailable(true);
+          setContent(null);
+          setDetailState({ scope: detailScope, value: null });
+        }
+        throw e;
+      } finally {
+        if (current()) state.pending = null;
       }
-      throw e;
-    }
+    })();
+    state.pending = pending;
+    return pending;
   }
   useEffect(() => {
-    if ((cardNear || expanded) && initialDetailsId.current !== row.id) {
-      initialDetailsId.current = row.id;
-      loadDetails().catch(() => {});
+    const state = detailRequest.current;
+    if (seed) {
+      initialDetailsId.current = detailScope;
+      setDetailState({ scope: detailScope, value: seed });
     }
-  }, [row.id, cardNear, expanded]);
+    return () => { state.generation++; state.pending = null; };
+  }, [detailScope, seed]);
+  useEffect(() => {
+    if ((cardNear || expanded) && initialDetailsId.current !== detailScope) {
+      initialDetailsId.current = detailScope;
+      loadDetails(false).catch(() => {});
+    }
+  }, [detailScope, cardNear, expanded]);
   const expiry = row.effective_expires_at || row.expires_at;
+  useEffect(() => {
+    const element = readableRef.current;
+    if (!currentTraceId() || !element || !content || error || unavailable || edit || !content.text) return;
+    return observeVisibleMilestone(element,
+      () => !expiry || Date.parse(expiry) > Date.now(),
+      () => markOnce("first-readable-post"));
+  }, [content, error, unavailable, edit, expiry]);
   const own = row.author_id === vault.member.id;
   async function remove() {
     if (
@@ -858,7 +904,7 @@ export function PostCard({
       ) : (
         <>
           <ReshareProvenance content={content} />
-          <p className="post-text">{content.text}</p>
+          <p ref={readableRef} className="post-text">{content.text}</p>
           {content.media && (
             <div
               className={`post-photos photos-${Math.min(content.media.length, 3)}`}
@@ -882,7 +928,7 @@ export function PostCard({
           className="text-button comment-toggle"
           onClick={() => {
             setShowComments(!showComments);
-            if (!details) loadDetails();
+            if (!showComments) void action.run(() => loadDetails(false));
           }}
         >
           <Icon name="comment" size={18} />
@@ -893,7 +939,7 @@ export function PostCard({
       {showComments && (
         <Comments
           postRow={row}
-          initial={details?.comments}
+          details={details}
           onChange={loadDetails}
           canModerate={canModerate}
         />
@@ -923,7 +969,8 @@ export function PostCard({
 export function EncryptedPhoto({ media }: { media: MediaPayload }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
-  const [opened, setOpened] = useState<{ id: string; url: string } | null>(
+  const imageRef = useRef<HTMLImageElement>(null);
+  const [opened, setOpened] = useState<{ id: string; url: string; expiresAt: number | null } | null>(
     null,
   );
   const [error, setError] = useState("");
@@ -950,14 +997,14 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
         const bytes = base64ToBytes(payload.bytes);
         const { blob } = await traced("photo decode", () => validatedPhoto(bytes), { bytes: bytes.length });
         if (!alive) return;
-        markOnce("first-photo");
         const expiry = envelope.context.expiresAt
           ? Date.parse(envelope.context.expiresAt)
           : null;
         if (expiry !== null && expiry <= Date.now())
           throw new Error("This photo expired.");
         objectUrl = URL.createObjectURL(blob);
-        setOpened({ id: media.id, url: objectUrl });
+        markOnce("photo-decoded");
+        setOpened({ id: media.id, url: objectUrl, expiresAt: expiry });
         const checkExpiry = () => {
           if (expiry === null || !alive) return;
           const remaining = expiry - Date.now();
@@ -984,9 +1031,17 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [media.id, near]);
+  useEffect(() => {
+    const element = imageRef.current;
+    if (!currentTraceId() || !element || !url || !opened) return;
+    return observeVisibleMilestone(element,
+      () => element.getAttribute("src") === url && (opened.expiresAt === null || opened.expiresAt > Date.now()),
+      () => markOnce("first-visible-photo"));
+  }, [url, opened]);
   return <div ref={photoRef}>{url ? (
     <figure>
       <img
+        ref={imageRef}
         src={url}
         alt={media.alt || "Shared photo (no description provided)"}
         loading="lazy"
@@ -1066,7 +1121,7 @@ export function Reactions({
     )
       return;
     changing.current = true;
-    await action.run(async () => {
+    await action.runSave(async () => {
       const chosen = await validateReactionPayload(value);
       if (!mounted.current || current.current !== identity) return;
       const mine = decoded.find(
@@ -1167,7 +1222,7 @@ export function Reactions({
             setSuggested(null);
             setPicker(true);
           }}
-          disabled={!payload || vault.member.status === "restricted"}
+          disabled={action.busy || !payload || vault.member.status === "restricted"}
           aria-label="Add a reaction"
           aria-expanded={picker}
         >
@@ -1195,40 +1250,30 @@ export function Reactions({
 }
 export function Comments({
   postRow,
-  initial,
+  details,
   onChange,
   canModerate = false,
 }: {
   postRow: SocialObject;
-  initial?: SocialObject[];
+  details: Json | null;
   onChange: () => Promise<void>;
   canModerate?: boolean;
 }) {
-  const [comments, setComments] = useState<SocialObject[]>(initial || []);
-  const [reactions, setReactions] = useState<Json[]>([]);
+  const comments = (details?.comments || []) as SocialObject[];
+  const reactions = (details?.comment_reactions || details?.reactions || []) as Json[];
   const [reply, setReply] = useState<SocialObject | null>(null);
   const [tick, setTick] = useState(0);
   const action = useAction();
   async function refresh() {
     await action.run(async () => {
-      try {
-        const r = await get(`/posts/${postRow.id}`);
-        setComments(r.comments || []);
-        setReactions(r.comment_reactions || r.reactions || []);
-      } catch (e) {
-        if (accessLost(e)) {
-          setComments([]);
-          setReactions([]);
-          setReply(null);
-          await onChange().catch(() => {});
-        }
+      try { await onChange(); }
+      catch (e) {
+        if (accessLost(e)) setReply(null);
         throw e;
       }
-      await onChange();
     });
   }
   useEffect(() => {
-    refresh();
     const t = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(t);
   }, [postRow.id]);

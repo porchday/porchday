@@ -585,7 +585,7 @@ authRoutes.all("/*", async (c) => {
       }
     };
     const response = proof?.journal
-      ? await withHttpPrivacyJournal(c, work)
+      ? await withHttpPrivacyJournal(c, work, logoutTiming)
       : await work();
     committedAndConfirmed = true;
     // The shared callback describes both steps. Show completion only after the
@@ -632,6 +632,7 @@ authRoutes.all("/*", async (c) => {
       503,
     );
   } finally {
+    logoutTiming?.finish(committedAndConfirmed);
     // Reads and MFA/session-only operations cannot enqueue mail. Cron/queue
     // retries remain responsible for previously queued delivery failures.
     if (committedAndConfirmed && authMailRoutes.has(path))

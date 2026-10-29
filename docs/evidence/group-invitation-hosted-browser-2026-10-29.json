@@ -1,0 +1,56 @@
+{
+  "environment": "staging",
+  "runtimeSource": "df24f840c279fb48112e29ef6c5cbfff542b6ea3",
+  "frontendSource": "d6fd3faca61d2d5c350d62f4e8ad5bcd50cc8f32",
+  "tooling": "f92bc4a6a0d8b107b611842c66671b5e6549c5a9",
+  "result": {
+    "at": "2026-10-29T18:09:39.673Z",
+    "passed": true,
+    "environment": "staging",
+    "runtimeSource": "df24f840c279fb48112e29ef6c5cbfff542b6ea3",
+    "remainingFixtureRows": 0,
+    "providerUnchanged": true,
+    "browserVerified": true,
+    "nativeVerified": false
+  },
+  "browser": {
+    "at": "2026-10-29T18:09:30.994Z",
+    "passed": true,
+    "checks": [
+      "normal_login",
+      "recovery_unlock",
+      "encrypted_group_name_decrypted",
+      "connection_picker_selected",
+      "invite_submitted_once",
+      "owner_roster_recipient_and_inviter"
+    ],
+    "nativeVerified": false
+  },
+  "api": {
+    "at": "2026-10-29T18:09:35.651Z",
+    "passed": true,
+    "checks": [
+      "encrypted_group_created",
+      "pending_owner_roster_recipient_and_inviter",
+      "invitation_accepted",
+      "accepted_owner_roster",
+      "recipient_group_read",
+      "nonowner_denied_before_and_after_acceptance"
+    ],
+    "browserVerified": true,
+    "nativeVerified": false
+  },
+  "cleanup": {
+    "at": "2026-10-29T18:09:38.182Z",
+    "remainingFixtureRows": 0
+  },
+  "screenshotSha256": "16b660aa8fe4563c4354858764b93107302152f669c08a76365108e3ec376098",
+  "limitations": [
+    "No deployment occurred during this rehearsal; it does not prove old/new client overlap across a release.",
+    "Native/physical-device and scheduled feature-release acceptance remain open.",
+    "Initial synthetic profile background setup displayed an unconfirmed notice; profile initialization acceptance is not claimed.",
+    "Minimal synthetic group payload omitted description; screenshot retains Loading group text under a decrypted group name.",
+    "Two previous harness attempts remain failed; each was reconciled and cleaned before a new fixture.",
+    "No production feature promotion or monthly SLO claim."
+  ]
+}

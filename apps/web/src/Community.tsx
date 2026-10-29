@@ -1,3 +1,4 @@
+import { GroupInviteForm } from "./GroupInviteForm";
 import { invitationHandle, notificationPath } from "./invitation-notification";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
@@ -593,12 +594,32 @@ export function Groups() {
     </>
   );
 }
+export function GroupInvitationList({ invitations }: { invitations: Json[] }) {
+  return invitations.length ? (
+    <ul className="form-stack">
+      {invitations.map(invitation => (
+        <li key={invitation.id}>
+          <strong>{invitation.recipient_handle ? `@${invitation.recipient_handle}` : "Unavailable member"}</strong>
+          {" · Invited by "}{invitation.inviter_handle ? `@${invitation.inviter_handle}` : "Unavailable member"}
+          <small>{" · "}{invitation.accepted_at ? "Accepted" : Date.parse(invitation.expires_at) > Date.now() ? "Pending" : "Expired"}</small>
+        </li>
+      ))}
+    </ul>
+  ) : <p>No group invitations yet.</p>;
+}
+
 export function GroupDetail({ id }: { id: string }) {
   const vault = useVault();
   const [data, setData] = useState<Json | null>(null);
   const [content, setContent] = useState<Content | null>(null);
   const [manage, setManage] = useState(false);
-  const [handle, setHandle] = useState("");
+  const [invitations, setInvitations] = useState<Json[]>([]);
+  const [invitationCursor, setInvitationCursor] = useState<string | null>(null);
+  async function loadInvitations(more = false) {
+    const result = await get(`/groups/${id}/invitations${more && invitationCursor ? `?cursor=${encodeURIComponent(invitationCursor)}` : ""}`);
+    setInvitations(previous => more ? [...previous, ...result.items] : result.items);
+    setInvitationCursor(result.next_cursor);
+  }
   const [image, setImage] = useState<PendingAsset | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const uploadAsset = useAssetUpload();
@@ -606,6 +627,8 @@ export function GroupDetail({ id }: { id: string }) {
   async function refresh() {
     const r = await get(`/groups/${id}`);
     setData(r);
+    if (r.group.owner_id === vault.member.id) await loadInvitations();
+    else { setInvitations([]); setInvitationCursor(null); }
     try {
       setContent(await vault.open(r.group));
     } catch {
@@ -688,28 +711,15 @@ export function GroupDetail({ id }: { id: string }) {
           <h2>Group members</h2>
           {["owner", "moderator"].includes(myRole) &&
             vault.member.status !== "restricted" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  action.run(async () => {
-                    await post(`/groups/${id}/invitations`, {
-                      handle: handle.replace(/^@/, ""),
-                    });
-                    setHandle("");
-                  }, "Invitation sent. Share the group details again after they join.");
+              <GroupInviteForm
+                key={id}
+                memberId={vault.member.id}
+                members={data.members}
+                onInvite={async handle => {
+                  await post(`/groups/${id}/invitations`, { handle });
+                  await refresh();
                 }}
-                className="inline-form"
-              >
-                <Field
-                  label="Invite by exact handle"
-                  value={handle}
-                  onChange={(e) => setHandle(e.target.value)}
-                  required
-                />
-                <Button variant="primary compact" busy={action.busy}>
-                  Invite
-                </Button>
-              </form>
+              />
             )}
           {data.members.map((m: Json) => {
             const handle =
@@ -789,6 +799,14 @@ export function GroupDetail({ id }: { id: string }) {
               </div>
             );
           })}
+          {own && (
+            <section aria-label="Group invitations">
+              <h3>Group invitations</h3>
+              <p>The latest invitation for each person.</p>
+              <GroupInvitationList invitations={invitations} />
+              {invitationCursor && <Button busy={action.busy} onClick={() => action.run(() => loadInvitations(true))}>Load more invitations</Button>}
+            </section>
+          )}
           {own && vault.member.status !== "restricted" && (
             <>
               <Field
