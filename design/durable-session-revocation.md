@@ -1,6 +1,6 @@
 # Durable session revocation without a global unfinished operation
 
-Status as of October 29, 2026, 07:05 UTC: denial readers and migration 056 are
+Status as of October 29, 2026, 07:25 UTC: denial readers and migration 056 are
 deployed in staging and production. The request-scoped Better Auth hook covers
 direct SDK calls, member and appeal middleware, prepared authentication and
 endpoint-internal lookups. Web/native push checks denial through session-bound
@@ -8,9 +8,10 @@ preparation functions. The bounded cleanup sweep and separate queue path use
 `SESSION_DENIAL_CLEANUP_V1`; the independent logout writer uses
 `SESSION_DENIAL_WRITER_V1`. Both flags are enabled on staging version `57a5c9f2`
 and remain disabled in production. [Hosted validation and remaining gates](../docs/session-denial-validation.md)
-record normal logout, real identity-lock timeout and scheduled recovery, with exact
-synthetic cleanup. Hosted interruption/concurrency/rollback, device and capacity
-acceptance remain incomplete. This does not resolve #1, #55 or the 99.99% objective.
+record normal logout, real identity-lock timeout, scheduled recovery, one hosted
+revocation overlap and automatic compatible-version rollback with a retained SQL
+row, with exact synthetic cleanup. Hosted interruption, remaining concurrency
+orderings, device and capacity acceptance remain incomplete. This does not resolve #1, #55 or the 99.99% objective.
 It is the first scoped application of a write-ahead denial model; other privacy
 mutations retain the existing independent journal and quarantine behavior.
 

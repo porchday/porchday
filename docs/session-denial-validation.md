@@ -1,7 +1,7 @@
 # Independent session denial: validation gates
 
 The logout writer and cleanup flags are enabled on staging as of October 29,
-2026, 07:05 UTC, and remain disabled in production. The scoped staging rehearsal
+2026, 07:05 UTC, and remain disabled in production. The scoped staging writer, concurrency and retained-row rollback rehearsals
 below passed; production enablement remains gated.
 Reader enforcement has hosted API evidence and a scoped staging push rehearsal.
 Writer and cleanup interruption cases, concurrent behavior, device behavior and
@@ -274,3 +274,36 @@ particular server scheduling. The hosted revocation-first success case and hoste
 password-change races remain unverified; controlled password-change orderings have
 separate local PostgreSQL coverage. Rollback, hosted interruption, device and
 history-growth acceptance remain open.
+
+## Hosted rollback with a retained SQL session — October 29, 2026
+
+[Scoped rollback evidence](evidence/session-denial-rollback-staging-2026-10-29.json)
+records the maintained activation controller rolling staging candidate `ca9a4b50`
+back to baseline `57a5c9f2`. Both use byte-identical runtime `ebc567a4`, unchanged
+schema and the same 29 public assets. The candidate changes only the writer and
+cleanup flags from true to false; rollback restores both to true.
+
+A real logout encountered an identity lock held only for an isolated synthetic
+member and returned 503 after publishing its denial. The SQL session row remained
+present. During candidate verification, the old cookie returned 401, the exact SQL
+row was still present, and a separate synthetic member returned 200. A hash-pinned
+operator preload then injected a local readiness 503 observation to trigger the
+controller's automatic rollback. No hosted application fault was introduced.
+
+After provider confirmation of rollback, the same checks again returned 401 for
+the denied cookie and 200 for the separate member, with the SQL row still present.
+Real readiness, the durable release journey and all public asset hashes passed;
+the controller finalized the rollback and archived its lease. The row remained
+present until the isolated lock was released. Scheduled cleanup was observed to
+remove it within 40.326 seconds, using five-second polling and no manual session
+deletion. The denied cookie still returned 401 after cleanup.
+
+Both synthetic members and their session/account rows were removed, and the
+cleanup inventory matched the finalized provider snapshot. Final readiness was
+200/healthy; production flags remained off and external monitoring reported no
+incident. The staging writer and cleanup flags remain enabled on the baseline.
+
+This closes the scoped compatible-version rollback check with an uncleaned denial.
+It does not prove rollback to incompatible readers or every future release, hosted
+Worker interruption, all concurrency orderings, physical-device behavior, larger
+history bounds or monthly availability. Those acceptance gates remain open.
