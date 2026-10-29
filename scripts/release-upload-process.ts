@@ -15,7 +15,7 @@ export async function runReleaseProcess(options:{args:string[];cwd:string;env:No
  options.signal.throwIfAborted();const timeout=options.timeoutMs??240000;if(!Number.isSafeInteger(timeout)||timeout<1||timeout>240000)throw Error('UPLOAD_PROCESS_TIMEOUT_INVALID');
  if(sha(readFileSync(guard))!==GUARD_SHA256)throw Error('UPLOAD_PROCESS_GUARD_CHANGED');
  return new Promise((resolve,reject)=>{
-  const child=spawn(process.execPath,['--import',guard,...options.args],{cwd:options.cwd,env:options.env,stdio:['ignore','pipe','pipe','ipc'],shell:false});
+  const child=spawn(process.execPath,['--import',guard,...options.args],{cwd:options.cwd,env:options.env,stdio:['ignore','pipe','pipe','pipe','ipc'],shell:false});
   let reason:string|undefined,bytes=0,output='',killTimer:ReturnType<typeof setTimeout>|undefined;
   const stop=(code:string)=>{if(reason)return;reason=code;child.kill('SIGTERM');killTimer=setTimeout(()=>child.kill('SIGKILL'),1000);};
   const abort=()=>stop('UPLOAD_PROCESS_CANCELLED');options.signal.addEventListener('abort',abort,{once:true});
@@ -51,4 +51,4 @@ export function createWranglerUploadProcess(options:WranglerUploadProcessOptions
  };
 }
 
-const GUARD_SHA256='d741a0881b0ef4dbd0b33a3ef593537278305aa4730c7fd89432c66fbf3a7193';
+const GUARD_SHA256='8bd7a47f14ea20b29cfcfc91e4b2d1f92cba3e810c4ea83c4590c6289f8c9f3e';

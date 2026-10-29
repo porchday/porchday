@@ -29,6 +29,9 @@ describe('bounded upload subprocess',()=>{
  it('returns sanitized failures without subprocess diagnostics',async()=>{
   await expect(runReleaseProcess({...base,args:['-e',"console.error('synthetic secret value');process.exit(2)"]})).rejects.toThrow(/^UPLOAD_PROCESS_OUTCOME_UNKNOWN$/);
  });
+ it('allows normal IPC cleanup without losing successful process completion',async()=>{
+  expect(await runReleaseProcess({...base,args:['-e',"process.disconnect();setTimeout(()=>console.log('finished'),50)"]})).toEqual({versionHint:null});
+ });
  it('stops excessive output and never returns it',async()=>{
   await expect(runReleaseProcess({...base,args:['-e',"process.stdout.write('x'.repeat(2*1024*1024));setInterval(()=>{},1000)"]})).rejects.toThrow('UPLOAD_PROCESS_OUTPUT_LIMIT');
  });
@@ -44,11 +47,11 @@ describe('bounded upload subprocess',()=>{
   const running=new AbortController(),timer=setTimeout(()=>running.abort(),150);
   try{await expect(runReleaseProcess({...base,signal:running.signal,args:['-e','setInterval(()=>{},1000)']})).rejects.toThrow('UPLOAD_PROCESS_CANCELLED');}finally{clearTimeout(timer);}
  });
- it('terminates an uploader after its controller is killed',async()=>{
+ it.each([false,true])('terminates an uploader after controller death, with prior IPC cleanup=%s',async disconnect=>{
   const root=mkdtempSync(join(tmpdir(),'porchday-orphan-')),ready=join(root,'ready'),exited=join(root,'exited');let controller:ReturnType<typeof spawn>|undefined;
   const waitFor=async(path:string)=>{const until=Date.now()+5000;while(!existsSync(path)){if(Date.now()>until)throw Error('fixture timeout');await new Promise(done=>setTimeout(done,20));}};
   try{
-   const program=`require('fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));process.on('exit',()=>require('fs').writeFileSync(${JSON.stringify(exited)},'exited'));setInterval(()=>{},1000);`;
+   const program=`${disconnect?'process.disconnect();':''}require('fs').writeFileSync(${JSON.stringify(ready)},String(process.pid));process.on('exit',()=>require('fs').writeFileSync(${JSON.stringify(exited)},'exited'));setInterval(()=>{},1000);`;
    const code=`import {runReleaseProcess} from ${JSON.stringify(new URL('./release-upload-process.ts',import.meta.url).href)};await runReleaseProcess({cwd:process.cwd(),env:{},signal:new AbortController().signal,args:['-e',${JSON.stringify(program)}]});`;
    controller=spawn(process.execPath,['--input-type=module','-e',code],{stdio:'ignore'});await waitFor(ready);
    const stopped=once(controller,'exit');controller.kill('SIGKILL');await stopped;await waitFor(exited);expect(readFileSync(exited,'utf8')).toBe('exited');

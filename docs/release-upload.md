@@ -90,10 +90,10 @@ against preparation evidence immediately before dispatch.
 The child receives an explicit environment containing only the required provider
 credentials, PATH/HOME/TMPDIR, CI/output controls and a private Wrangler log directory.
 It does not inherit NODE_OPTIONS or other arbitrary parent variables. A pinned
-preload guard sets a private umask and exits on controller IPC disconnect. This
+preload guard sets a private umask and monitors a dedicated inherited control pipe. This
 prevents a killed controller leaving the uploader running indefinitely. It cannot
 undo a request that reached the provider; the durable intent still requires
-reconciliation. The IPC channel is unreferenced so normal CLI exit is not delayed.
+reconciliation. The control pipe and IPC channel are unreferenced so normal CLI exit is not delayed. Wrangler intentionally disconnects IPC in its finally block; that cleanup must not be mistaken for controller death. Closing the separate control pipe still terminates the uploader after controller death, including after normal IPC cleanup.
 
 Execution has a four-minute deadline and a one-MiB combined stdout/stderr cap.
 Cancellation, timeout or excessive output sends SIGTERM, then SIGKILL after one
@@ -105,7 +105,7 @@ stdout can yield an untrusted version hint, but the upload callback discards it:
 provider/artifact reconciliation is mandatory even after exit code zero.
 
 Subprocess tests cover normal exit, nonzero exit, output overflow, timeout/SIGKILL,
-cancellation and real controller SIGKILL followed by uploader exit. Configuration
+cancellation, normal IPC cleanup and real controller SIGKILL followed by uploader exit both before and after IPC cleanup. Configuration
 tests reject target/hash drift and unreviewed execution settings before spawn.
 These tests use synthetic child programs and make no provider writes. The complete
 normal release command still needs source/CI authorization and concrete provider
