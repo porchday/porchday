@@ -34,3 +34,8 @@ interleaved owners, per-member lock release and bounded-prefix progress. Local
 validation passed 72 focused tests and 485 API tests, with 28 API tests skipped.
 Hosted Hyperdrive acceptance and a combined live-session/denied-backlog workload
 remain required before making a capacity claim or enabling production writers.
+
+Hosted activation passed 12 continuity samples with zero failures on October 29.
+The [combined 10,000-live-session/400-denial trial](evidence/denial-cleanup-combined-staging-2026-10-29.md)
+failed the existing full-pass freshness limit. Cleanup and recovery were verified;
+production enablement remains blocked by capacity acceptance.
