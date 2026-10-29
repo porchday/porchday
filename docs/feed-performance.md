@@ -474,3 +474,38 @@ snapshot and canonical deployment record were reconciled, synthetic sessions
 were revoked, and the deployment lock was released. Private evidence is retained
 at the primary checkout's `artifacts/private/p99-feed-preparation-20261028/`.
 Production promotion and all p99 acceptance gates remain outstanding.
+
+### October 29 bounded write-path baseline
+
+Between 00:13:01.671 and 00:13:09.403 UTC, one synthetic staging account created
+one new `only_me` text post, edited it once and added one reaction. Each operation
+was independently read back, signature-verified and decrypted. The post had a
+10-minute deadline, was deleted through the normal endpoint after measurement,
+and subsequently returned 404. The session was signed out and its saved cookie
+returned 401. No existing content, recipients, keys or relationships changed.
+
+| Operation | Samples | Action to acknowledgement | Action through decrypted read-back | Write request server duration |
+| --- | ---: | ---: | ---: | ---: |
+| Text post | 1 | 1172.8 ms | 2300.5 ms | 504 ms |
+| Text edit | 1 | 3214.6 ms | 3859.1 ms | 2721 ms |
+| Reaction | 1 | 972.5 ms | 1569.2 ms | 401 ms |
+
+The action interval begins before audience lookup/encryption/signing and ends
+when the mutation's successful response has been consumed. The read-back column
+adds an independent verification request and decryption; do not confuse that
+extra validation cost with the user's acknowledgement interval. `pd-total` is
+server handling for the mutation only. All three attempts succeeded; no retries,
+failures or timeouts occurred. This is a diagnostic desktop sample with tracing,
+unverified geography/network and a tiny self-only audience. No percentile or
+representative mobile/write-load conclusion follows. Posting and editing missed
+the one-second acknowledgement target in these observations; the reaction was
+close to it, which does not establish p99 compliance.
+
+Provider snapshots before and after matched, including staging API
+`f504e9c9-04ab-414f-9a75-daeed914144d`, settings and production state. The shared
+lock was released after cleanup verification. Private script, intent, individual
+samples, cleanup and provider evidence were archived in the primary checkout's
+`artifacts/private/p99-write-latency-20261029/`. No production load was generated.
+The edit's server duration merits phase-level investigation while preserving its
+privacy-journal and content-lifecycle checks; this sample does not identify which
+individual phase caused that delay.
