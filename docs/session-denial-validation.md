@@ -223,3 +223,27 @@ path. Hosted lost replies, late publication/Worker termination, concurrent passw
 and session changes, rollback with an uncleaned denial, physical devices and larger
 history bounds remain separate gates. Staging enablement is not production
 acceptance or evidence that the monthly availability objective has been achieved.
+
+## Local concurrent credential-change acceptance — October 29, 2026
+
+The auth-journal PostgreSQL suite now controls both publication orderings between
+logout and password change through the real application auth router:
+
+- Password change commits while logout publication is paused: the password change
+  and logout both return 200. The old cookie remains denied, and only the new
+  password permits a fresh login.
+- Logout publishes and completes after password-change preflight but before its
+  journal intent is written: the password change rechecks authorization and returns
+  401 without changing credentials. The old cookie remains denied, and only the
+  original password permits a fresh login.
+
+Both cases verify another member stays authenticated and global privacy control
+is active with no pending intents. All 24 auth-journal tests passed in a newly
+created loopback PostgreSQL database, removed afterward. Denial and journal
+storage are injected in memory; these are not hosted concurrency results.
+
+The test request helper now gives each request its own `waitUntil` queue, matching
+Workers request ownership. Previously the shared test queue could make completed
+logout wait for a deliberately paused password-change request. This was a harness
+deadlock, not evidence of a deployed application defect. Hosted concurrency,
+rollback with retained SQL rows and the remaining production gates stay open.
