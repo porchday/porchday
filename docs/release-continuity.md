@@ -40,6 +40,33 @@ failed samples, command rejection, terminal-evidence failure and rollback status
 Deployment-tooling type checking, native Node import, formatting and secret scans
 also passed. These tests use synthetic transports and make no provider writes.
 
+## Maintained activation integration
+
+New harnesses can call `executeActivationWithContinuity(manifest, env,
+observation, signal)` from `scripts/release-activation-cli.ts`. This binds the
+coordinator to `executeActivationManifest`, including fixture preflight, exact
+source/CI/artifact/schema gates, real shared leases, durable provider/journey
+intents, recovery, final evidence and canonical finalization. It registers the
+independent release watch, rejects a mismatched observation environment, and
+refuses to manufacture new coverage for an operation already past `prepared`.
+Interrupted operations must use their original explicit reconciliation path.
+
+The observation object supplies pinned synthetic sessions, `assertScope`, and a
+durable `retain` sink as described above; it cannot substitute a deployment
+callback. Check fixture lifetime, immutable input pins and ownership during lease
+handoff/finalization in `assertScope`. Preserve provider milestones and the
+original operation's journals. Do not clean fixtures while the returned promise
+is pending, and do not replay it after an unknown result. An archived completion
+is historical evidence, never a new observed activation.
+
+Composition tests use the actual activation controller, file journals, SQLite
+lease, canonical finalization and continuity probes with simulated provider/DB
+boundaries. They cover successful activation despite a lost provider reply,
+preflight rejection with zero deployment/login writes, and rejection of an
+already completed operation before any new request. The command-line `activate`
+entry remains available for original operation reconciliation; hosted adoption
+of this new observed entry point remains outstanding.
+
 ## Probe and watch primitives
 
 `scripts/release-continuity.ts` provides a bounded read-only observer for a

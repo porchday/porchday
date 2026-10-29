@@ -17,6 +17,7 @@ import {registerReleaseWatch} from './release-watch.ts';
 import {queueReleaseAlert,deliverReleaseAlert,type ReleaseAlert} from './release-alerts.ts';
 import {CloudflareDeploymentClient} from './cloudflare-deployment-client.ts';
 import {verifyReleaseProbeFixture,withReleaseProbePreflight} from './release-probe-preflight.ts';
+import {runCommandWithContinuity} from './release-continuity-command.ts';
 
 export type ActivationManifest={version:1;plan:DeploymentPlan;review:ActivationReviewEvidence&{execution:ActivationExecution}};
 const hash=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
@@ -39,6 +40,30 @@ function validate(manifest:ActivationManifest){
 }
 export function readActivationManifest(path:string):ActivationManifest{const manifest=JSON.parse(privateBytes(path).toString()) as ActivationManifest;validate(manifest);return manifest;}
 function readPinned(file:{path:string;sha256:string}){const bytes=privateBytes(file.path);if(hash(bytes)!==file.sha256)throw Error('ACTIVATION_MANIFEST_FILE_CHANGED');return bytes;}
+
+/** New observed activation using the real durable command, not an arbitrary
+ * mutation callback. The harness owns pinned fixtures, durable sample retention
+ * and scope checks spanning lease handoff/finalization. Resuming a historical
+ * operation cannot manufacture a fresh observed release acceptance. */
+export async function executeActivationWithContinuity(
+ input:ActivationManifest,env:NodeJS.ProcessEnv,
+ observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,
+ signal:AbortSignal,
+){
+ signal.throwIfAborted();const manifest=structuredClone(input);validate(manifest);
+ if(observation.target.environment!==deploymentTarget(manifest.plan.worker).environment)throw Error('ACTIVATION_CONTINUITY_SCOPE_CHANGED');
+ const e=manifest.review.execution;
+ // Reject history before network reads; use the existing explicit reconciliation
+ // entry point for interrupted operations and preserve their original evidence.
+ const state=await new FileRecoveryJournal(e.journalDirectory).read();
+ if(state&&(state.phase!=='prepared'||state.planHash!==deploymentPlanHash(manifest.plan))||await FileDeploymentLease.completed(e.root,manifest.plan,{read:async()=>state,write:async()=>{throw Error('ACTIVATION_CONTINUITY_READ_ONLY');}}))throw Error('ACTIVATION_CONTINUITY_REQUIRES_RECONCILIATION');
+ registerReleaseWatch({plan:manifest.plan,root:e.root,journalDirectory:e.journalDirectory,proofDirectory:e.proofDirectory});
+ return await runCommandWithContinuity({...observation,runCommand:async commandSignal=>{
+  const result=await executeActivationManifest(manifest,env,commandSignal);
+  if(result.status==='finalized'&&(result.outcome==='complete'||result.outcome==='rolled-back'))return result.outcome;
+  return 'attention-required';
+ }},signal);
+}
 
 /** Explicit activate/resume. Archived completion and durable finalization resume need no credentials. */
 export async function executeActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,action:'activate'|'cancel'='activate'){

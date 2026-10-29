@@ -1,4 +1,4 @@
-import {readActivationManifest,executeActivationManifest,type ActivationManifest} from './release-activation-cli.ts';
+import {readActivationManifest,executeActivationManifest,executeActivationWithContinuity,type ActivationManifest} from './release-activation-cli.ts';
 import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
 import {spawnSync} from 'node:child_process';
 import {finalizePreparedActivation} from './release-activation-finalize.ts';
@@ -247,6 +247,21 @@ async function cliFixture(){
  return{...f,path,cli:manifest,journal,advance};
 }
 describe('activation operator command',()=>{
+ it('failed observed baseline leaves the activation journal and shared lease untouched',async()=>{const f=await cliFixture();try{
+  const canonical=readFileSync(join(f.root,'latest-verified-deployment.json'));
+  const request=vi.fn(async()=>Response.json({}, {status:503})),events:any[]=[];
+  await expect(executeActivationWithContinuity(f.cli,{}, {target:{environment:'staging',memberId:id(91),cookie:'continuity-allowed',deniedCookie:'continuity-denied',healthToken:'h'.repeat(32)},assertScope:()=>{},fetch:request,retain:async e=>{events.push(e);}},AbortSignal.timeout(5000))).rejects.toThrow('CONTINUITY_BASELINE_FAILED');
+  expect(request).toHaveBeenCalledTimes(4);expect(events).toHaveLength(1);expect(await f.journal.read()).toBeNull();expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+  expect(readFileSync(join(f.root,'latest-verified-deployment.json'))).toEqual(canonical);
+ }finally{f.close();}});
+ it.each(['environment','intent','aborted'])('observed entry point rejects %s before observer requests',async failure=>{const f=await cliFixture();try{
+  const request=vi.fn(),controller=new AbortController();
+  if(failure==='intent'){await f.advance('prepared');await f.advance('activation-intent');}
+  if(failure==='aborted')controller.abort();
+  const observation={target:{environment:failure==='environment'?'production' as const:'staging' as const,memberId:id(91),cookie:'continuity-allowed',deniedCookie:'continuity-denied',healthToken:'h'.repeat(32)},assertScope:()=>{},fetch:request,retain:vi.fn(async()=>{})};
+  await expect(executeActivationWithContinuity(f.cli,{},observation,controller.signal)).rejects.toThrow();
+  expect(request).not.toHaveBeenCalled();expect(observation.retain).not.toHaveBeenCalled();expect(existsSync(join(f.root,'release-watches'))).toBe(false);
+ }finally{f.close();}});
  it('pins paths and private probe/config evidence, rejecting overlapping state directories',async()=>{const f=await cliFixture();try{
   expect(readActivationManifest(f.path)).toEqual(f.cli);f.cli.review.execution.journeyDirectory=f.cli.review.execution.journalDirectory;f.cli.plan.evidenceDigest=activationReviewHash(f.cli.review);writeFileSync(f.path,JSON.stringify(f.cli));expect(()=>readActivationManifest(f.path)).toThrow('DIRECTORY_OVERLAP');
   chmodSync(f.path,0o644);expect(()=>readActivationManifest(f.path)).toThrow('PERMISSIONS');
@@ -284,7 +299,7 @@ describe('activation operator command',()=>{
 });
 
 describe('complete activation command composition',()=>{
- it.each([[false,false],[true,false],[false,true]])('uses the real journals and lease (lostLogin=%s, missingFixture=%s)',async(lostLogin,missingFixture)=>{
+ it.each([[false,false,false],[true,false,false],[false,true,false],[false,false,true],[false,true,true]])('uses the real journals and lease (lostLogin=%s, missingFixture=%s, observed=%s)',async(lostLogin,missingFixture,withObservation)=>{
   const f=await cliFixture();
   const probePreflight=await import('./release-probe-preflight.ts'),preparation=await import('./release-upload-preparation.ts'),ci=await import('./release-ci.ts'),schema=await import('./release-schema.ts'),provider=await import('./cloudflare-deployment-client.ts'),inventoryModule=await import('./cloudflare-release-reader.ts');
   try{
@@ -298,7 +313,10 @@ describe('complete activation command composition',()=>{
    vi.spyOn(inventoryModule.CloudflareReleaseReader.prototype,'snapshot').mockImplementation(async()=>structuredClone(inventory) as any);
    vi.spyOn(provider.CloudflareDeploymentClient.prototype,'observe').mockImplementation(async()=>({...observed}));
    const deploy=vi.spyOn(provider.CloudflareDeploymentClient.prototype,'deploy').mockImplementation(async(version,operationId)=>{inventory.workers[f.key].active=version;inventory.workers[f.key].resources=f.proof.candidate.resources;observed={version,operationId,deploymentId:id(7)};throw Error('LOST_PROVIDER_REPLY');});
-   const request=vi.fn(async(input:any)=>{const path=new URL(String(input)).pathname;
+   const continuityEvents:any[]=[];
+   const request=vi.fn(async(input:any,init:any)=>{const path=new URL(String(input)).pathname;
+    if(init?.headers?.Cookie==='continuity-denied')return Response.json({}, {status:401});
+    if(init?.headers?.Cookie==='continuity-allowed'&&path.endsWith('/me'))return Response.json({id:id(91)},{headers:{'cache-control':'no-store'}});
     if(path.endsWith('/health'))return Response.json({status:'ok',issues:[]});
     if(path.endsWith('/get-session'))return Response.json(null);
     if(path.endsWith('/status'))return Response.json({last_checked_at:new Date().toISOString()});
@@ -311,13 +329,16 @@ describe('complete activation command composition',()=>{
    });vi.stubGlobal('fetch',request);
    const databaseUrl=new URL('postgres://host.pg.psdb.cloud:5432/database?sslmode=verify-full');databaseUrl.username='test.synthetic';databaseUrl.password='synthetic';
    const env={CLOUDFLARE_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_API_TOKEN:'t'.repeat(32),PORCHDAY_STAGING_DATABASE_MIGRATION_URL:databaseUrl.href};
+   const observedOptions={target:{environment:'staging' as const,memberId:id(91),cookie:'continuity-allowed',deniedCookie:'continuity-denied',healthToken:'h'.repeat(32)},assertScope:()=>{},intervalMs:1000,retain:async(event:any)=>{continuityEvents.push(event);}};
+   const execute=()=>withObservation?executeActivationWithContinuity(f.cli,env,observedOptions,AbortSignal.timeout(10000)):executeActivationManifest(f.cli,env,AbortSignal.timeout(10000));
    if(missingFixture){
-    await expect(executeActivationManifest(f.cli,env,AbortSignal.timeout(10000))).rejects.toThrow('RELEASE_PROBE_FIXTURE_INVALID');
-    expect(preflight).toHaveBeenCalledTimes(1);expect(deploy).not.toHaveBeenCalled();expect(logins).toBe(0);expect(request).not.toHaveBeenCalled();
+    await expect(execute()).rejects.toThrow(withObservation?'CONTINUITY_COMMAND_UNVERIFIED':'RELEASE_PROBE_FIXTURE_INVALID');
+    expect(preflight).toHaveBeenCalledTimes(1);expect(deploy).not.toHaveBeenCalled();expect(logins).toBe(0);if(withObservation)expect(continuityEvents.filter(e=>e.kind==='sample')).toHaveLength(3);else expect(request).not.toHaveBeenCalled();
     expect(observed.version).toBe(id(1));expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).stagingVersion).toBe(id(1));
     expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000),'cancel')).toMatchObject({status:'cancelled-before-intent'});expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);return;
    }
-   const result=await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000));expect(result.status).toBe(lostLogin?'attention-required':'finalized');expect(deploy).toHaveBeenCalledTimes(1);expect(logins).toBe(1);
+   const result=await execute();expect(result.status).toBe(withObservation?'complete':lostLogin?'attention-required':'finalized');
+   if(withObservation){expect(result).toMatchObject({postCommandSamples:2,failedSamples:0});const count=request.mock.calls.length;await expect(execute()).rejects.toThrow('REQUIRES_RECONCILIATION');expect(request.mock.calls.length).toBe(count);}expect(deploy).toHaveBeenCalledTimes(1);expect(logins).toBe(1);
    if(lostLogin){expect(await executeActivationManifest(f.cli,env,AbortSignal.timeout(10000))).toMatchObject({status:'attention-required',outcome:'verification-unavailable'});expect(logins).toBe(1);expect(preflight).toHaveBeenCalledTimes(1);expect(deploy).toHaveBeenCalledTimes(1);expect(existsSync(join(f.root,'deployment-lock'))).toBe(true);}
    else{const count=request.mock.calls.length;expect(await executeActivationManifest(f.cli,{},AbortSignal.timeout(5000))).toMatchObject({status:'already-finalized'});expect(request.mock.calls.length).toBe(count);expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);expect(JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'))).toMatchObject({stagingVersion:id(2),stagingAssetsSource:'a'.repeat(40)});}
   }finally{vi.restoreAllMocks();vi.unstubAllGlobals();f.close();}
