@@ -119,12 +119,12 @@ an over-limit UTF-8 value without overwriting committed data. This does not prov
 that every possible journal record fits: the prototype remains deliberately bounded,
 and production migration still requires a complete record-size/capacity policy.
 
-The next hosted controller uses a synthetic 200-event batch and control documents
+The larger-record hosted controller uses a synthetic 200-event batch and control documents
 with 255 existing/256 registered pending intents, plus schema-shaped intents and
 receipts. It retains the same five-read/six-write budget, verifies control read-back
 bytes, and reports numeric record sizes. These shapes exercise payload cost, not
 255 live concurrent operations or the full production protocol. The tiny-string
-measurements above remain labeled as such; larger-record hosted evidence is pending.
+measurements above remain labeled as such; larger-record evidence follows below.
 
 Receipt-recovery checks additionally interrupt the final retirement write after
 an immutable receipt is stored. With the unchanged journal reconciliation code,
@@ -132,3 +132,34 @@ a valid receipt's checkpoint ancestry permits clearing the stale pending intent;
 a receipt with a forged generation is rejected and the pending intent remains.
 These are local injected failures with synthetic records, not hosted crash or
 operational restore evidence.
+
+## Larger-record hosted diagnostic
+
+Source `813decd` passed full CI (40796362543). A fresh isolated deployment, using
+Chromium 156.0.8078.4 with the same single-use request constraints, measured the
+sequence from 00:51:50.378 to 00:51:50.974 UTC on October 29, 2026. Every operation
+succeeded. Control records were 22,058–22,346 bytes, the batch 78,800 bytes,
+the intent 91 bytes and the receipt 332 bytes.
+
+| Operation | Durations | Total |
+| --- | --- | ---: |
+| Five reads | 14, 14, 14, 15, 15 ms | 72 ms |
+| Six writes | 42, 49, 234, 52, 47, 54 ms | 478 ms |
+| Measured storage sequence | | 550 ms |
+| Setup plus sequence | | 596 ms |
+| Browser request through consumed response | | 1,187 ms |
+
+The batch write took 234 ms. The larger-payload observation was slower than the
+tiny-string observation, but these independent single samples do not isolate
+payload cost statistically. Neither sample establishes a percentile or meets the
+complete-app-edit acceptance criterion. Lease creation precedes measured setup;
+result persistence follows the measured interval. Actual app work, region, mobile
+network conditions, object placement and live concurrency remain unmeasured.
+
+Cleanup verified endpoint disablement, deletion of only the owned synthetic
+namespace and Worker, restoration of the original inventory, and unchanged
+application provider state. The shared deployment lock was released. Seventeen
+receipts and helper files are archived privately under
+`journal-store-large-20261029`, excluding credentials. No production requests or
+application bindings changed. The R2 journal remains authoritative; durability,
+restore, migration, capacity, safe rollback and all goal acceptance gates remain open.
