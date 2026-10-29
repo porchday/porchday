@@ -67,6 +67,7 @@
       {
         "queue": "porchday-staging-jobs",
         "max_batch_size": 1,
+        "max_concurrency": 4,
         "max_batch_timeout": 5,
         "max_retries": 8,
         "dead_letter_queue": "porchday-staging-jobs-dead-letter"

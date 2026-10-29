@@ -3,7 +3,9 @@ import {randomUUID} from 'node:crypto';
 import {readFile,readdir} from 'node:fs/promises';
 import {Pool} from 'pg';
 import {deleteDeniedSession} from '../src/session-denial-cleanup';
-import {denialPartitions,listPartitionCandidates} from '../src/session-denial-partitions';
+import {denialPartitions,listPartitionCandidates,partitionProgressKey,parsePartitionProgress} from '../src/session-denial-partitions';
+import {cleanupDenialPartition} from '../src/session-denial-runtime';
+import type {Env} from '../src/types';
 import {persistSessionDenial} from '../src/session-denial';
 import {drainSessionCandidates,listSessionCandidates,candidateProgressKey,parseCandidateProgress} from '../src/session-denial-candidates';
 import {deleteDeniedSessionBatch,denialDeleteBatchLimit} from '../src/session-denial-batch';
@@ -51,6 +53,20 @@ describe('denial batch bounds',()=>{
   // Failed read-only transactions must be discarded; later valid work recovers.
   expect((await listPartitionCandidates(runtime,2,'a')).ids).toEqual(expected.slice(expected.indexOf('a')+1,expected.indexOf('a')+101));
   await owner.query('DELETE FROM public.auth_session WHERE "userId"=$1',[member]);await owner.query('DELETE FROM public.auth_user WHERE id=$1',[member]);
+ });
+ it('runs three independent ranges and an overlapping duplicate against real SQL without deleting live sessions',async()=>{
+  const denied:string[]=[],live:string[]=[],members:string[]=[];for(let n=0;n<12;n++){const member=await person();members.push(member);denied.push(...await sessions(member,35));live.push(...await sessions(member,1));}
+  const records=new Map<string,{etag:string;text:string}>();let version=0;
+  const store={get:async(key:string)=>{const row=records.get(key);return row?{etag:row.etag,text:async()=>row.text}:null;},put:async(key:string,text:string,options?:{onlyIf?:{etagMatches?:string;etagDoesNotMatch?:string}})=>{
+   const old=records.get(key),condition=options?.onlyIf;if(condition?.etagDoesNotMatch==='*'&&old||condition?.etagMatches&&condition.etagMatches!==old?.etag)return null;
+   const etag=String(++version);records.set(key,{etag,text});return {etag};
+  }};
+  for(const id of denied)await persistSessionDenial(store,id);
+  const env={SESSION_DENIAL_CLEANUP_V1:'true',SESSION_DENIAL_PARTITIONS_V1:'active',HYPERDRIVE_AUTH:{connectionString:runtime.options.connectionString},RECOVERY_JOURNAL:store} as unknown as Env;
+  const outcomes=await Promise.allSettled([0,1,2,0].map(partition=>cleanupDenialPartition(env,partition)));for(const outcome of outcomes){expect(outcome.status).toBe('fulfilled');if(outcome.status==='fulfilled')expect(outcome.value.continuation).toBeUndefined();}
+  expect(await remaining(denied)).toBe(0);expect(await remaining(live)).toBe(12);expect(records.has(candidateProgressKey)).toBe(false);
+  for(const partition of denialPartitions)expect(parsePartitionProgress(records.get(partitionProgressKey(partition))!.text,partition).cursor).toBeNull();
+  await owner.query('DELETE FROM public.auth_session WHERE "userId"=ANY($1::text[])',[members]);await owner.query('DELETE FROM public.auth_user WHERE id=ANY($1::text[])',[members]);
  });
  it('amortizes a same-member backlog while retaining unrelated sessions and idempotence',async()=>{
   const member=await person(),ids=await sessions(member,24),unrelated=await sessions(member,1);calls=0;

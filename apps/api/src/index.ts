@@ -1,3 +1,4 @@
+import {denialCleanupMode,scheduleDenialCleanup,cleanupDenialPartition,enqueuePartitionContinuation} from './session-denial-runtime';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions,enqueueCandidateContinuation} from './session-denial-candidates';
 import { Hono } from 'hono';
 import {requestTimingMiddleware} from './request-timing';
@@ -13,7 +14,7 @@ import {createIntegrationConsentRoutes,createIntegrationTokenRoutes} from './soc
 import { cleanupExpired, withMember } from './db';
 import { authPool } from './auth';
 import { event,normalizedRoute,type CleanupFailureCode } from './telemetry';
-import type {Env,Variables} from './types';
+import type {Env,Variables,DenialJob} from './types';
 import {scheduleMediaBackup,processMediaBackup} from './media-backup';
 import {cleanupDeletedIdentities} from './identity-cleanup';
 import {cleanupAuthenticationMetadata} from './metadata-cleanup';
@@ -129,12 +130,12 @@ export default {
    ctx.waitUntil(cleanupTraces(env).catch(()=>{}));
   }else {
    ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
-   if(env.SESSION_DENIAL_CLEANUP_V1==='true')ctx.waitUntil(env.JOBS.send({kind:'session_denial_cleanup'}));
+   ctx.waitUntil(scheduleDenialCleanup(env));
   }
  },
- async queue(batch:MessageBatch<{kind:string;id?:string;denialProgressEtag?:string}>,env:Env){
+ async queue(batch:MessageBatch<DenialJob>,env:Env){
   await connectionScope('job:queue',async()=>{
-  const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup'].includes(m.body.kind));
+  const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup','session_denial_cleanup_partition'].includes(m.body.kind));
   if(cleanup.length){
    let failedPhase:CleanupFailureCode='cleanup_journal_failed';
    try {
@@ -161,9 +162,13 @@ export default {
    for(const message of cleanup)message.ack();
    }catch(error){reportConnectionRefusal(env,error);event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
   }
-  for(const message of batch.messages.filter(m=>m.body.kind==='session_denial_cleanup')){
-   try{const result=await cleanupDeniedSessions(env,message.body.denialProgressEtag);
-    if(result.continuation)await enqueueCandidateContinuation(env,result.continuation);
+  for(const message of batch.messages.filter(m=>['session_denial_cleanup','session_denial_cleanup_partition'].includes(m.body.kind))){
+   try{
+    const partitioned=message.body.kind==='session_denial_cleanup_partition',mode=denialCleanupMode(env);
+    // Drain old-mode deliveries without restarting their obsolete scan namespace.
+    if(partitioned&&mode==='disabled'||!partitioned&&mode==='active'){message.ack();continue;}
+    const result=partitioned?await cleanupDenialPartition(env,message.body.denialPartition,message.body.denialProgressEtag):await cleanupDeniedSessions(env,message.body.denialProgressEtag);
+    if(result.continuation){if(partitioned)await enqueuePartitionContinuation(env,message.body.denialPartition as 0|1|2,result.continuation);else await enqueueCandidateContinuation(env,result.continuation);}
     event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
    catch{event('error',{code:'session_denial_cleanup_retry'},env);message.retry({delaySeconds:60});}
   }
@@ -173,4 +178,4 @@ export default {
   }
   });
  }
-} satisfies ExportedHandler<Env,{kind:string;id?:string;denialProgressEtag?:string}>;
+} satisfies ExportedHandler<Env,DenialJob>;

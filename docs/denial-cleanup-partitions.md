@@ -39,31 +39,42 @@ reports any slow or invalid range, and retains the existing 180-second page and
 Reported counts summarize separate range passes, not a transactional snapshot of
 all sessions at one instant.
 
-The core is not yet connected to cron, queue delivery or operational health. It
-has not been deployed and does not establish throughput improvement.
+The core is now connected to cron, queue delivery and operational health through
+`session-denial-runtime.ts`. The mode binding is absent by default, preserving v3
+behavior. The integration has not been deployed and does not establish hosted
+throughput improvement.
 
-## Required integration and admission
+## Runtime integration and required deployment admission
 
 1. Bound queue consumer concurrency before enabling parallel partitions. The
    current verified queue has batch size one and no explicit concurrency cap.
-   Plan a cap of four concurrent invocations on the shared staging jobs queue,
-   then verify actual database connection usage and expiry/email progress under
-   load. This is a proposed cap, not a deployed setting or demonstrated capacity.
+   Staging and production Wrangler source configs now specify a maximum of four
+   concurrent invocations. Those settings have not been applied to the provider.
+   Verify the deployed cap before enabling the mode, then measure database
+   connection usage and expiry/email progress under load. Source configuration
+   alone is not admission evidence.
    Duplicate deliveries must remain bounded by that cap; CAS alone only prevents
    conflicting checkpoint publication and does not prevent duplicate SQL work.
-2. Add explicit disabled, shadow and active modes. Disabled mode retains current
-   behavior. Shadow mode initializes independent v4 evidence alongside v3 on a
-   small staging fixture. Only after every v4 range is verified should active mode
-   replace v3 scheduling and readiness. Invalid mode/partition values must fail
-   closed. Old queue messages and stale continuation tokens must not fan out.
+2. `SESSION_DENIAL_PARTITIONS_V1` implements disabled (also the absent default),
+   shadow and active modes. Shadow runs independent v4 ranges alongside v3 on a
+   small staging fixture; readiness remains v3 during initialization. Active mode
+   replaces v3 scheduling and requires every v4 range for readiness. Invalid
+   modes, or partition opt-in without cleanup enabled, fail closed. Obsolete v3
+   deliveries in active mode and v4 deliveries in disabled mode are acknowledged
+   without restarting their namespaces. Only after every v4 range is verified
+   should the operator activate the new mode.
 3. Keep authority reads at six per invocation, SQL serial within each invocation,
    per-member lock release, and the existing 20-second work-start budget. Send at
    most one continuation for the selected range after its successful CAS. Cron
    starts exactly the three fixed ranges; it does not derive new ranges from
    queue payloads. A lost send is recovered through ordinary cron resumption.
-4. Give each partition an invocation-local pool that uses no more than one SQL
-   connection. The queue cap must cover duplicates and overlapping cron ticks,
-   not just the three nominal ranges. Do not raise existing shared pool limits.
+4. Each partition uses an invocation-local pool with `max:1`, closed on both
+   success and failure. Existing shared pool limits are unchanged. Continuation
+   tokens include the version and partition; cross-range tokens fail before SQL.
+   Queue sends have a five-second reply bound and late replies do not cause a
+   local resend. Cron attempts all fixed sends and reports any failure. The
+   deployed queue cap must cover duplicates and overlapping cron ticks, not just
+   the three nominal ranges.
 5. Verify rollback compatibility explicitly. A retained v3 checkpoint can become
    stale after active mode stops v3 scheduling; merely retaining its bytes does
    not prove an old worker would immediately pass readiness. Activation and
@@ -115,5 +126,18 @@ A separate disposable PostgreSQL 17 database held 10,000 synthetic sessions.
 EXPLAIN of the six actual helper query texts and parameters (first and resumed
 page for each range), executed through the restricted auth role, used the existing
 `auth_session_pkey` index in every case. This is local planner evidence, not a
-hosted plan or latency measurement. No runtime integration, parallel-capacity
-claim, production change or new resource setting is included in these results.
+hosted plan or latency measurement. No hosted parallel-capacity claim, production change or applied provider setting
+is included in these core results.
+
+The runtime integration focused suite passed 102 tests, including a restricted-role
+PostgreSQL run of three partitions plus an overlapping duplicate. It deleted all
+420 denied sessions, retained all 12 live sessions and completed independent v4
+checkpoints without creating v3 evidence. Unit and worker-route tests cover mode
+transitions, obsolete deliveries, scoped tokens, send failure/timeout, pool cleanup
+and missing/stalled range health. This local overlap test does not establish the
+provider's consumer cap, hosted throughput, other-job fairness or rollback safety.
+
+The integrated full API suite passed 542 tests with one skipped (57 files).
+Typecheck, formatting, secret and diff checks also passed. The source deployment
+configs specify the consumer cap; no queue setting, mode flag or worker version
+was changed by this local validation.

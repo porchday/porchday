@@ -4,7 +4,7 @@ import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env,Variables} from './types';
 import {trackPostgres} from './connection-metrics';
-import {readCandidateCleanupHealth as readDenialCleanupHealth} from './session-denial-candidates';
+import {readManagedDenialCleanupHealth as readDenialCleanupHealth} from './session-denial-runtime';
 
 const count=z.number().int().nonnegative();
 export const operationalSnapshotSchema=z.object({
@@ -47,7 +47,7 @@ async function operationsDb<T>(env:Pick<Env,'HYPERDRIVE_JOBS'>,work:(sql:ReturnT
  try{return await measureOperationsPhase(timing,'operations_snapshot',()=>work(sql));}finally{await measureOperationsPhase(timing,'operations_close',()=>sql.end({timeout:1}));}
 }
 export const recordCleanupSuccess=(env:Pick<Env,'HYPERDRIVE_JOBS'>)=>operationsDb(env,async sql=>{await sql`select app.record_cleanup_success()`;});
-type HealthEnvironment=Pick<Env,'HYPERDRIVE_JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'MEDIA_BACKUP_ENABLED'|'MEDIA_BACKUP'|'RECOVERY_JOURNAL'|'SESSION_DENIAL_CLEANUP_V1'>>;
+type HealthEnvironment=Pick<Env,'HYPERDRIVE_JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'MEDIA_BACKUP_ENABLED'|'MEDIA_BACKUP'|'RECOVERY_JOURNAL'|'SESSION_DENIAL_CLEANUP_V1'|'SESSION_DENIAL_PARTITIONS_V1'>>;
 export const readOperationalHealth=async(env:HealthEnvironment,timing?:RequestTiming)=>{
  const [database,denialCleanup]=await Promise.all([operationsDb(env,async sql=>{
  const [row]=await sql`select app.operational_snapshot_v3() as value,app.media_backup_health() as backup`;
