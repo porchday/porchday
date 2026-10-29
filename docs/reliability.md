@@ -67,3 +67,18 @@ rollback before any COMMIT attempt now supplies completion evidence to the
 privacy journal. Uncertain commits, lost rollback replies and receipt failures
 remain unresolved. This closes a reproduced defect; it does not prove the cause
 of the earlier incident or solve durable recovery for every interrupted request.
+
+## Production session-denial reader verification
+
+[Nine hosted production checks](evidence/session-denial-production-2026-10-29.json)
+verified that an immutable denial rejects the exact synthetic session while its
+SQL row remains present. A separate session remained usable, and fresh login
+worked with the denied cookie. Test sessions were removed and the immutable
+denial retained. An uncertain publication response was reconciled by exact
+read-only record comparison; the write was not replayed. No application version,
+writer/cleanup flag, schema or routing changed during this verification.
+
+The independent logout writer remains disabled. Hosted push enforcement,
+writer/cleanup failure and concurrency cases, device behavior and cost acceptance
+remain required before enabling it. This reader evidence does not resolve all
+interrupted privacy operations or establish the availability SLO.
