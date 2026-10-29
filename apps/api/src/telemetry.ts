@@ -6,7 +6,7 @@ import {JOURNAL_IO_CODES} from './journal-io';
  * No request/response objects, headers, URLs, identifiers, SQL or error objects.
  */
 const journalPhases=new Set<string>(JOURNAL_PHASES);
-const names=new Set(['journal_phase','request','job','email','error','feed_phase','trace_store','db_conn','db_snapshot']);
+const names=new Set(['journal_phase','request','job','email','error','feed_phase','trace_store','db_conn','db_snapshot','denial_cleanup_phase']);
 export const CONNECTION_ROLES=['auth','social','jobs'] as const;
 export type ConnectionRole=typeof CONNECTION_ROLES[number];
 const CONNECTION_CODES=[...CONNECTION_ROLES.flatMap(role=>[role+'_open',role+'_close',role+'_open_at_response']),'refused_53300','refused_53400','refused_hyperdrive','connect_timeout'];
@@ -24,6 +24,8 @@ export const CLEANUP_FAILURE_CODES=['cleanup_journal_failed','cleanup_expiry_fai
 export type JournalFailureCode=typeof JOURNAL_FAILURE_CODES[number];
 export type CleanupFailureCode=typeof CLEANUP_FAILURE_CODES[number];
 const feedPhases=new Set<string>(FEED_PHASES);
+export const DENIAL_CLEANUP_PHASES=['progress_read','sql_list','authority_batches','sql_delete','progress_write','pool_close','total','enqueue'] as const;
+const denialCleanupPhases=new Set<string>(DENIAL_CLEANUP_PHASES);
 const codes=new Set(['session_denial_cleanup_complete','session_denial_cleanup_invalid','session_denial_cleanup_retry','accepted','send_failed','auth_failed','request_failed','cleanup_complete','cleanup_retry','outbox_retry','outbox_delivered','email_outbox_retry','recovery_email_retry','media_backup_retry','journal_not_initialized','restore_quarantined','database_rollback_detected','journal_not_configured','journal_unavailable','journal_store_read_failed','journal_control_invalid','journal_database_read_failed','journal_database_status_invalid',...JOURNAL_FAILURE_CODES,...CLEANUP_FAILURE_CODES,...JOURNAL_IO_CODES,...TRACE_STORE_CODES,...CONNECTION_CODES,...SNAPSHOT_CODES]);
 const methods=new Set(['GET','HEAD','POST','PUT','PATCH','DELETE','OPTIONS']);
 const environments=new Set(['development','staging','production']);
@@ -33,9 +35,14 @@ const routes=new Set(['/health','/api/operations/health','/api/v1/feed','/api/v1
  * closes, how long the connection stayed open after the response. */
 type Fields={route?:string;method?:string;status?:number;durationMs?:number;code?:string;environment?:string;count?:number;detailMs?:number};
 type MetricsEnvironment=Pick<Env,'ENVIRONMENT'|'METRICS'|'FEED_PHASE_TIMING'|'LOGOUT_PHASE_TIMING'>;
-export function event(name:'journal_phase'|'request'|'job'|'email'|'error'|'feed_phase'|'trace_store'|'db_conn'|'db_snapshot',fields:Fields={},env?:MetricsEnvironment):void{
+export function event(name:'journal_phase'|'request'|'job'|'email'|'error'|'feed_phase'|'trace_store'|'db_conn'|'db_snapshot'|'denial_cleanup_phase',fields:Fields={},env?:MetricsEnvironment):void{
  try{
   if(!names.has(name))return;
+  if(name==='denial_cleanup_phase'){
+   if(env?.ENVIRONMENT!=='staging'||!fields.code||!denialCleanupPhases.has(fields.code))return;
+   if(typeof fields.durationMs!=='number'||!Number.isFinite(fields.durationMs)||fields.durationMs<0||fields.durationMs>3_600_000||!Number.isInteger(fields.count)||fields.count!<0||fields.count!>1_000_000)return;
+   fields={code:fields.code,durationMs:fields.durationMs,count:fields.count};
+  }
   if(name==='journal_phase'){
    if(env?.LOGOUT_PHASE_TIMING!=='true'||!['staging','production'].includes(env.ENVIRONMENT)||fields.route!=='/api/auth/sign-out'||fields.method!=='POST'||!fields.code||!journalPhases.has(fields.code))return;
    if(typeof fields.durationMs!=='number'||!Number.isFinite(fields.durationMs)||fields.durationMs<0||fields.durationMs>3_600_000)return;
@@ -52,7 +59,7 @@ export function event(name:'journal_phase'|'request'|'job'|'email'|'error'|'feed
   if(typeof fields.route==='string'&&routes.has(fields.route))safe.route=fields.route;
   else if((name==='db_conn'||name==='db_snapshot')&&typeof fields.route==='string'&&(['job:cron','job:queue'].includes(fields.route)||(fields.route.length<=100&&ROUTE_PATTERN.test(fields.route))))safe.route=fields.route;
   if(fields.method&&methods.has(fields.method))safe.method=fields.method;
-  if(fields.code&&(name==='journal_phase'?journalPhases:name==='feed_phase'?feedPhases:codes).has(fields.code))safe.code=fields.code;
+  if(fields.code&&(name==='denial_cleanup_phase'?denialCleanupPhases:name==='journal_phase'?journalPhases:name==='feed_phase'?feedPhases:codes).has(fields.code))safe.code=fields.code;
   const environment=env?.ENVIRONMENT??fields.environment;
   if(environment&&environments.has(environment))safe.environment=environment;
   if(Number.isInteger(fields.status)&&fields.status!>=100&&fields.status!<=599)safe.status=fields.status!;

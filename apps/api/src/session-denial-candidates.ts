@@ -1,3 +1,4 @@
+import {CandidateTimings} from './session-denial-timing';
 import type {Pool} from 'pg';
 import type {JournalStore} from './privacy-journal';
 import {sessionDenied,SessionDenialError} from './session-denial';
@@ -56,17 +57,17 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
  * later. Failed/unknown SQL leaves progress unchanged and is safely repeated.
  */
 export interface CandidateSweepResult{seen:number;deleted:number;invalid:number;advanced:boolean;continuation?:string}
-export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,workDeadline?:number):Promise<CandidateSweepResult>{
+export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,workDeadline?:number,timing=new CandidateTimings()):Promise<CandidateSweepResult>{
  const startedAt=Date.now(),deadline=workDeadline??startedAt+20000;
  if(!Number.isSafeInteger(deadline)||deadline<=startedAt||deadline>startedAt+20000)throw new DenialCleanupError();
  if(expectedProgressEtag!==undefined&&(typeof expectedProgressEtag!=='string'||!expectedProgressEtag||expectedProgressEtag.length>256))throw new DenialCleanupError();
- const saved=await boundedIO(async()=>{const object=await store.get(candidateProgressKey);return object?{etag:object.etag,text:await object.text()}:null;});
+ const saved=await timing.run('progress_read',()=>boundedIO(async()=>{const object=await store.get(candidateProgressKey);return object?{etag:object.etag,text:await object.text()}:null;}));
  // A delayed/duplicate continuation cannot restart a completed pass or fan out.
  // Cron jobs have no token and resume current persisted work after a lost send.
  if(expectedProgressEtag!==undefined&&saved?.etag!==expectedProgressEtag)return {seen:0,deleted:0,invalid:0,advanced:false};
  const previous=saved?parseCandidateProgress(saved.text):null;
  if(previous&&previous.pageCompletedAt>startedAt)throw new DenialCleanupError();
- const cursor=previous?.cursor??null,page=await list(cursor);
+ const cursor=previous?.cursor??null,page=await timing.run('sql_list',()=>list(cursor));
  if(!Array.isArray(page.ids)||page.ids.length>candidatePageSize||typeof page.more!=='boolean'||page.more&&!page.ids.length||
   page.ids.some(id=>typeof id!=='string'||!id||id.length>8192||id===cursor)||new Set(page.ids).size!==page.ids.length)throw new DenialCleanupError();
  const result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
@@ -75,14 +76,14 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
   if(Date.now()>=deadline){stopped=true;break;}
   // Only reads run concurrently. Late reads cannot dispatch a SQL deletion.
   const batch=page.ids.slice(offset,offset+5);
-  const authority=await Promise.all(batch.map(async id=>{
+  const authority=await timing.run('authority_batches',()=>Promise.all(batch.map(async id=>{
    try{return await boundedIO(()=>sessionDenied(store,id));}
    catch(error){if(error instanceof SessionDenialError&&['SESSION_DENIAL_INVALID','SESSION_DENIAL_ID_INVALID'].includes(error.code))return 'invalid' as const;throw new DenialCleanupError();}
-  }));
+  })));
   for(let i=0;i<batch.length;i++){
    if(Date.now()>=deadline){stopped=true;break;}
    if(authority[i]==='invalid')result.invalid++;
-   else if(authority[i]&&await cleanup(batch[i]))result.deleted++;
+   else if(authority[i]&&await timing.run('sql_delete',()=>cleanup(batch[i])))result.deleted++;
    result.seen++;
   }
   if(stopped)break;
@@ -95,7 +96,7 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
  const progress:CandidateProgress={v:3,strategy:'sql-session-keyset',cursor:next,pageCompletedAt:completedAt,
   passStartedAt:next?passStartedAt:null,passSeen:next?seen:0,passInvalid:next?invalid:0,
   lastPass:next?(previous?.lastPass??null):{completedAt,durationMs:completedAt-passStartedAt,seen,invalid}};
- const updated=await boundedIO(()=>store.put(candidateProgressKey,JSON.stringify(progress),{onlyIf:saved?{etagMatches:saved.etag}:{etagDoesNotMatch:'*'}}));
+ const updated=await timing.run('progress_write',()=>boundedIO(()=>store.put(candidateProgressKey,JSON.stringify(progress),{onlyIf:saved?{etagMatches:saved.etag}:{etagDoesNotMatch:'*'}})));
  result.advanced=!!updated&&next!==cursor;
  // Only the confirmed CAS winner can request the next bounded page. Completed
  // passes stop here; the normal cron starts the next pass.
@@ -107,11 +108,11 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
  * At most five pages share one 20-second work-start budget and pool. Every page
  * commits its own CAS checkpoint before another page begins. Stop on a lost CAS,
  * stale token or full-pass completion; never start another pass in this batch. */
-export async function drainSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string):Promise<CandidateSweepResult>{
+export async function drainSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,timing=new CandidateTimings()):Promise<CandidateSweepResult>{
  const deadline=Date.now()+20000,result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
  let token=expectedProgressEtag;
  for(let page=0;page<5&&Date.now()<deadline;page++){
-  const current=await sweepSessionCandidates(store,list,cleanup,token,deadline);
+  const current=await sweepSessionCandidates(store,list,cleanup,token,deadline,timing);
   result.seen+=current.seen;result.deleted+=current.deleted;result.invalid+=current.invalid;result.advanced ||= current.advanced;
   delete result.continuation;
   if(!current.continuation)return result;
@@ -123,18 +124,21 @@ export async function drainSessionCandidates(store:JournalStore,list:(after:stri
 export async function cleanupDeniedSessionCandidates(env:Env,expectedProgressEtag?:string):Promise<CandidateSweepResult>{
  if(env.SESSION_DENIAL_CLEANUP_V1!=='true')return {seen:0,deleted:0,invalid:0,advanced:false};
  if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
- const pool=authPool(env);
- try{return await drainSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id),expectedProgressEtag);}
- finally{await pool.end();}
+ const timing=new CandidateTimings();
+ try{return await timing.run('total',async()=>{
+  const pool=authPool(env);
+  try{return await drainSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id),expectedProgressEtag,timing);}
+  finally{await timing.run('pool_close',()=>pool.end());}
+ });}finally{timing.flush(env);}
 }
 
 /** A timed-out send can still arrive. The checkpoint token makes its eventual
  * delivery harmless if a retry or the next cron has already advanced progress. */
-export async function enqueueCandidateContinuation(env:Pick<Env,'JOBS'>,etag:string){
- let timer:ReturnType<typeof setTimeout>|undefined;
- try{await Promise.race([env.JOBS.send({kind:'session_denial_cleanup',denialProgressEtag:etag}),new Promise<never>((_,reject)=>{
+export async function enqueueCandidateContinuation(env:Pick<Env,'JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'METRICS'>>,etag:string){
+ const timing=new CandidateTimings();let timer:ReturnType<typeof setTimeout>|undefined;
+ try{await timing.run('enqueue',()=>Promise.race([env.JOBS.send({kind:'session_denial_cleanup',denialProgressEtag:etag}),new Promise<never>((_,reject)=>{
   timer=setTimeout(()=>reject(new DenialCleanupError()),5000);
- })]);}finally{if(timer!==undefined)clearTimeout(timer);}
+ })]));}finally{if(timer!==undefined)clearTimeout(timer);timing.flush(env as Pick<Env,'ENVIRONMENT'|'METRICS'>);}
 }
 
 /** No fallback to v2: a fresh history scan cannot prove candidate progress.

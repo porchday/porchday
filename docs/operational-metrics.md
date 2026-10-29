@@ -293,3 +293,24 @@ Analytics Engine accepts at most [250 points per Worker invocation](https://deve
 Repeated I/O observations during extreme journal contention can consume that
 budget. Bound or aggregate these diagnostics before using them for stress-test
 acceptance; missing phases are unknown, not zero-duration successes.
+
+### Staging session denial cleanup timings
+
+`denial_cleanup_phase` emits at most one aggregate point per observed phase per
+cleanup invocation, only in staging. Fixed codes are `progress_read`, `sql_list`,
+`authority_batches`, `sql_delete`, `progress_write`, `pool_close`, `total` and
+`enqueue`. The usual duration field is cumulative wall milliseconds; count is
+phase attempts, including failures. Authority duration measures each concurrent
+batch as a whole, not the sum of individual object latencies. SQL list includes
+connection acquisition and its read-only transaction. Total includes pool close;
+enqueue is measured separately. No member/session IDs, ETags, SQL or error text
+are emitted. Telemetry failures do not affect cleanup results.
+
+Use `node --import tsx scripts/query-metrics.ts staging denial-cleanup-phases`
+with private operator credentials to read fixed aggregates over the last 15 minutes.
+Compare weighted phase durations and counts across the same staging time window.
+Total overlaps its component phases and must not be added to them. Enqueue is
+send-observation latency, not queue delivery time. Missing telemetry does not
+prove zero work or healthy progress. These measurements diagnose the failed
+10,000-session capacity trials; they do not change the five-read concurrency,
+20-second work budget, CAS checkpoints or full-pass freshness requirements.
