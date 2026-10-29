@@ -197,3 +197,29 @@ problem is a hypothesis, not a diagnosed cause. Preserve both failures and add
 fixed collection-stage diagnostics to future harnesses before another trial.
 The one successful trial does not establish repeatable margin, and the observed
 12-second margin warrants further investigation before production enablement.
+
+## Retaining failures during collection
+
+`scripts/session-denial-capacity-observation.ts` supplies `observeCapacityStage`
+for the probe, health, fixture-count and exact-progress steps. Supply an
+append-only durable event sink and a separate private result sink. The helper
+awaits the start record before dispatch, retains the result before returning,
+and writes a completion marker. A failure identifies the fixed stage and whether
+the operation or retention failed; error classification uses a small allowlist.
+Messages, stacks, causes, SQL, tokens and result values are never copied into
+diagnostic events. The private result sink still needs the harness's existing
+sanitization and access controls.
+
+A start-record failure dispatches no operation. Later failures never replay the
+operation, even if the result was received but retaining evidence failed. The
+thrown fixed error also reports whether its failure record was confirmed. An
+unmatched start remains an unknown outcome after process termination. None of
+these records authorizes another login, fixture insert or provider mutation.
+
+Retain every component before starting the next one, then submit the complete
+sample to the unchanged exact-timestamp verifier. A partial sample cannot satisfy
+the two-pass gate. The helper has no transport timeout or automatic recovery;
+the harness retains bounded requests, the shared lease, exact fixture cleanup
+and read-only reconciliation. Nine fault-injection tests cover ordering, each
+collection stage, evidence-write failures and error redaction. The future private
+template uses this helper, but it has not yet completed a hosted trial.
