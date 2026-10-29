@@ -98,3 +98,39 @@ outage comment is verified, the queued recovery event can be dispatched immediat
 These intervals are scheduling targets, not delivery guarantees. Slow requests,
 GitHub availability and recipient preferences still apply. The source correction
 has local tests; installation and a live bot-delivery drill remain to be verified.
+
+## Reproducible availability reports
+
+Run the read-only reporter with Node 24:
+
+```sh
+node scripts/availability-report.ts --state-dir "$HOME/.config/porchday-external-monitor/state"
+```
+
+Use `--as-of 2026-10-28T23:43:40.000Z` for a fixed cutoff, `--month 2026-10`
+for a calendar month, and `--environment staging` for staging history. Output
+contains a UTC monthly report and a rolling 30-day report. The monthly error
+budget uses the full calendar month; month-to-date coverage uses elapsed time.
+The rolling window always spans 30 days ending at the cutoff.
+
+Each completed 20-second UTC bucket receives at most one time weight. Any failed
+sample in a bucket makes that bucket failed, even if another sample succeeds.
+Buckets without a completed observation, gaps and the current incomplete bucket
+remain unknown. Future or unfinished observations cannot establish coverage.
+This is a sampled estimate of login, authorized reads, logout/revocation and
+readiness—not continuous uptime or complete core-journey availability.
+
+Read `coveragePercent` alongside `sampledSuccessRatePercent`; the latter uses only
+observed buckets and must never be presented as a whole-month success rate.
+`estimatedFailedSeconds` is a bucket estimate, not a claim about exact outage
+start/end times. The report always leaves the broader SLO unestablished because
+these probes omit encrypted writes, mail delivery and independent regional
+coverage. Earlier incidents also remain part of the actual SLO even if they
+precede this monitor's collection.
+
+The reporter opens private history read-only, bounds each input at its opening
+size, and includes byte counts and SHA-256 digests. Concurrent appends belong to a
+later report. Malformed observations, mismatched monthly files, nonprivate files
+and a torn trailing record stop reporting; they are never discarded to improve
+availability. Preserve the input byte prefixes alongside retained reports to
+reproduce a fixed snapshot. The reporter does not delete history or post alerts.
