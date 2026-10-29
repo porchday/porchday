@@ -1,3 +1,4 @@
+import {withBrowserAcceptance,type BrowserAcceptance} from './release-browser-gate.ts';
 import {createContinuityGate} from './release-continuity-gate.ts';
 import {waitForMonitorRecovery} from './release-monitor-recovery-wait.ts';
 import {verifyMonitorRead} from './release-monitor-verification.ts';
@@ -52,7 +53,7 @@ function readPinned(file:{path:string;sha256:string}){const bytes=privateBytes(f
 async function executeScopedActivationWithContinuity(
  monitor:boolean,input:ActivationManifest,env:NodeJS.ProcessEnv,
  observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,
- signal:AbortSignal,
+ signal:AbortSignal,browserAcceptance?:BrowserAcceptance,
 ){
  signal.throwIfAborted();const manifest=structuredClone(input);validate(manifest,monitor);
  if(observation.target.environment!==recoveryTarget(manifest.plan.worker).environment)throw Error('ACTIVATION_CONTINUITY_SCOPE_CHANGED');
@@ -69,21 +70,21 @@ async function executeScopedActivationWithContinuity(
   if(event.kind==='sample'&&!event.sample.healthy)queueReleaseAlert(e.proofDirectory,manifest.plan,'command-failed');
   await observation.retain(event);
  },runCommand:async commandSignal=>{
-  const result=await executeScopedActivationManifest(manifest,env,commandSignal,monitor);
+  const result=await executeScopedActivationManifest(manifest,env,commandSignal,monitor,'activate',browserAcceptance);
   if(result.status==='finalized'&&(result.outcome==='complete'||result.outcome==='rolled-back'))return result.outcome;
   return 'attention-required';
  }},signal);
 }
 
-export async function executeActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal){
- return executeScopedActivationWithContinuity(false,input,env,observation,signal);
+export async function executeActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal,browserAcceptance?:BrowserAcceptance){
+ return executeScopedActivationWithContinuity(false,input,env,observation,signal,browserAcceptance);
 }
 export async function executeMonitorActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal){
  return executeScopedActivationWithContinuity(true,input,env,observation,signal);
 }
 
 /** Explicit activate/resume. Archived completion and durable finalization resume need no credentials. */
-async function executeScopedActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,monitor:boolean,action:'activate'|'cancel'='activate'){
+async function executeScopedActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,monitor:boolean,action:'activate'|'cancel'='activate',browserAcceptance?:BrowserAcceptance){
  const manifest=structuredClone(input);validate(manifest,monitor);signal.throwIfAborted();if(!['activate','cancel'].includes(action))throw Error('ACTIVATION_ARGUMENTS');
  const {plan,review}=manifest,e=review.execution,journal=new FileRecoveryJournal(e.journalDirectory),gate=createContinuityGate(e.proofDirectory,plan);
  if(await FileDeploymentLease.completed(e.root,plan,journal)){if(action==='cancel')throw Error('DEPLOYMENT_ALREADY_FINALIZED');if((await journal.read())?.phase==='complete')gate.assertPromotion();return{status:'already-finalized' as const,historical:true,operationId:plan.operationId};}
@@ -112,7 +113,7 @@ async function executeScopedActivationManifest(input:ActivationManifest,env:Node
   const verify=createReleaseVerifier({plan,config,assets:review.assets,directory:e.proofDirectory,journey:{directory:e.journeyDirectory,assertLease:s=>{lease.assert(plan,s);}}});
   const incidentRecovery=monitor&&review.monitor?.incidentRecovery!==undefined;
   const monitoredVerify:DeploymentPorts['verify']=async(v,s)=>{if(incidentRecovery&&v===plan.candidateVersion&&!await waitForMonitorRecovery({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s))return 'unhealthy';const result=await verify(v,s);if(result==='healthy'&&monitor)await verifyMonitorRead({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);return result;};
-  const reviewed=createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>{if(v===plan.candidateVersion)gate.assertPromotion();return client.deploy(v,id,s);},verify:monitoredVerify}});
+  const reviewed=createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>{if(v===plan.candidateVersion)gate.assertPromotion();return client.deploy(v,id,s);},verify:withBrowserAcceptance(plan,e.proofDirectory,monitoredVerify,browserAcceptance)}});
   const authorized:DeploymentPorts={...reviewed,authorize:async(p,d,s)=>{await reviewed.authorize(p,d,s);if(monitor&&d==='activate')await verifyMonitorRead({plan,review,version:plan.baselineVersion,phase:'before-activation',directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);}};
   const ports=withReleaseProbePreflight(authorized,s=>verifyReleaseProbeFixture({...database,config,signal:s}));
   const combine=(s:AbortSignal)=>AbortSignal.any([signal,s]);

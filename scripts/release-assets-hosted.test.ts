@@ -2,6 +2,11 @@ import {describe,it,expect} from 'vitest';
 import {createHash} from 'node:crypto';
 import {chromium,type Browser,type Route} from 'playwright';
 import {beginHostedAssetTransition,hostedDocumentMatches} from './release-assets-hosted.ts';
+import {mkdtempSync,realpathSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {createBrowserGate,withBrowserAcceptance} from './release-browser-gate.ts';
+import {recoverDeployment,type DeploymentPlan,type DeploymentObservation,type RecoveryState} from './deployment-recovery.ts';
 const sha=(text:string)=>createHash('sha256').update(text).digest('hex');
 const origin='https://staging.porchday.com';
 const form=`document.body.innerHTML='<label for="email">Email address</label><input id="email" type="email"><input type="password">';`;
@@ -50,6 +55,19 @@ describe('hosted release evidence boundaries',()=>{
  });
 });
 describe.skipIf(process.env.RELEASE_ASSET_BROWSER_TESTS!=='1')('hosted observer with real Chromium and synthetic transport',()=>{
+ for(const fault of ['none','exception'] as const)it(`uses real browser ${fault} evidence in the recovery decision before completion`,async()=>{
+  const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
+  const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging-edge',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64),backendVersion:uuid(7),backendReaderFloor:uuid(7)};
+  const root=realpathSync(mkdtempSync(join(tmpdir(),'browser-recovery-'))),f=fixture(fault);
+  const observer=await beginHostedAssetTransition({origin,...f});let state:RecoveryState|null=null,current:DeploymentObservation={version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null},deploys=0;
+  try{
+   createBrowserGate(root,plan).require();
+   const result=await recoverDeployment(plan,{read:async()=>state,write:async(_old,next)=>{state=next;}},{authorize:async()=>{},observe:async()=>({...current}),deploy:async(version,operationId)=>{deploys++;f.switch();current={version,operationId,deploymentId:uuid(version===plan.candidateVersion?5:6)};},verify:withBrowserAcceptance(plan,root,async()=> 'healthy',async()=>{
+    expect(state?.phase).toBe('candidate-observed');return (await observer.finish()).passed?'healthy':'unhealthy';
+   })},{sleep:async()=>{}});
+   expect(result).toBe(fault==='none'?'complete':'rolled-back');expect(deploys).toBe(fault==='none'?1:2);expect(current.version).toBe(fault==='none'?plan.candidateVersion:plan.baselineVersion);
+  }finally{await observer.close();rmSync(root,{recursive:true,force:true});}
+ });
  for(const fault of ['none','exception','mime','old-bytes','shell'] as const)it(`records the full two-context result: ${fault}`,async()=>{
   const f=fixture(fault),observer=await beginHostedAssetTransition({origin,...f});
   expect(observer.baselineReceipt.authenticated).toBe(false);f.switch();const report=await observer.finish();

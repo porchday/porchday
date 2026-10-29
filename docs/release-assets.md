@@ -202,8 +202,8 @@ The wrapper rejects completed or non-prepared operations, checks the permanent
 continuity gate, and writes an exclusive, fsynced intent. It prepares the hosted
 browser and durably records its baseline before recording command intent and
 dispatching the maintained controller exactly once. Controller observations also
-check that the browser remains connected. Only a completed candidate command
-proceeds to browser acceptance. Complete command and browser results are retained
+check that the browser remains connected until candidate browser verification
+begins. Complete command and browser results are retained
 separately; failures retain a fixed, redacted attention disposition and queue the
 existing release alert locally. Delivery still requires the existing alert relay.
 
@@ -212,16 +212,40 @@ failed before dispatch. Never delete receipts to retry a started or uncertain
 operation. Preserve the original journal and reconcile its outcome read-only.
 Cancellation and browser closure are mandatory; a failed close is also attention.
 
-Browser acceptance occurs **after deployment finalization**. A failure there does
-not automatically roll back, rewrite the completed journal, or dispatch again.
-In-command authenticated continuity retains the existing recovery controller;
-post-finalization browser failure requires reviewed recovery. This entry point is
-not yet adopted by scheduled releases or verified across a new hosted deployment.
+Browser acceptance now occurs **inside candidate verification, before completion
+and finalization**. A required, operation-and-plan-bound browser gate is written
+before dispatch. The existing API/asset verifier must first return healthy; browser
+evidence can only downgrade that result. A confirmed browser failure returns
+unhealthy and enters the existing compatible rollback path, including fresh
+provider observation, authorization and restored-baseline verification. The failed
+candidate observer does not gate baseline verification. Inconclusive browser
+results, cancellation or exceptions remain unknown and require reconciliation.
+
+Required, claimed and result receipts are private, exclusive and fsynced. Resume
+reads the same receipts even through the ordinary activation entry point. A lost
+browser, interrupted claim or missing result cannot be silently accepted or
+re-executed. An absent browser requirement preserves compatibility for earlier
+operations; eligible new frontend releases must use this wrapper to enroll.
+Browser work observes the controller's existing verification deadline. Browser
+closure after its check is expected and does not cancel rollback or the remaining
+authenticated continuity samples.
+
+The earlier wrapper commit collected browser acceptance after finalization; this
+revision moves it before the recovery decision. It is not yet adopted by scheduled
+releases or verified across a new hosted deployment. Local recovery tests with
+real Chromium and synthetic transport demonstrate both successful completion and
+rollback on a fresh-client exception; they do not mutate a provider or establish
+hosted rollback timing. The 45-second candidate-verification limit is unchanged.
 
 Nine wrapper tests cover receipt ordering, one-time dispatch, historical-state
 rejection, failed baseline persistence, rollback/unknown/error outcomes, browser
-acceptance failure, observer liveness and failed closure. Together with the hosted
-and local browser observers and continuity/activation checks, 57 tests pass;
-asset and deployment-recovery TypeScript checks also pass. Wrapper tests use
-mocked controller/browser boundaries and real private filesystem receipts; they
+acceptance failure, observer liveness and failed closure. Durable-gate tests cover
+missing/claimed evidence, cancellation, record integrity, failed API verification,
+resume without replay and all three recovery outcomes. Wrapper tests use mocked
+controller/browser boundaries and real private filesystem receipts; they
 do not establish hosted deployment or signed-in client continuity.
+
+The final combined run passed all **94 tests across eight suites**, including the
+two Chromium-to-recovery cases. Asset and deployment-recovery TypeScript checks,
+module imports, formatting, secret scanning and diff checks passed. No hosted
+deployment was made for this change.

@@ -1,3 +1,4 @@
+import {createBrowserGate} from './release-browser-gate.ts';
 import {constants,openSync,closeSync,fsyncSync,writeFileSync,lstatSync,realpathSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {readActivationManifest,executeActivationWithContinuity} from './release-activation-cli.ts';
@@ -9,9 +10,8 @@ import {queueReleaseAlert} from './release-alerts.ts';
 import {createContinuityGate} from './release-continuity-gate.ts';
 
 /** Frontend releases use the maintained durable controller exactly once, with
- * browser preparation/evidence before dispatch and browser acceptance afterward.
- * Browser failures after finalization are separate attention evidence, never a
- * fabricated rollback or rewritten successful deployment journal.
+ * browser preparation before dispatch and durable candidate browser acceptance
+ * inside verification, before completion and compatible rollback decisions.
  */
 export async function executeFrontendActivationWithClients(path:string,env:NodeJS.ProcessEnv,
  observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
@@ -30,16 +30,21 @@ export async function executeFrontendActivationWithClients(path:string,env:NodeJ
  };
  // Existing intent is never overwritten, including after a pre-dispatch failure.
  retain('intent',{candidateVersion:plan.candidateVersion,baselineVersion:plan.baselineVersion});
+ createBrowserGate(e.proofDirectory,plan).require();
  let browser:Awaited<ReturnType<typeof beginHostedAssetTransition>>|undefined;
+ let browserStarted=false,report:Awaited<ReturnType<Awaited<ReturnType<typeof beginHostedAssetTransition>>['finish']>>|undefined;
  let phase:'before-command'|'command-started'|'command-returned'='before-command';
  try{
   browser=await beginHostedAssetTransition({origin:target.environment==='staging'?'https://staging.porchday.com':'https://porchday.org',baseline:review.assets.baseline,candidate:review.assets.candidate,signal});
   retain('baseline',browser.baselineReceipt);signal.throwIfAborted();
   retain('command-intent',{automaticRetry:false});phase='command-started';
-  const command=await executeActivationWithContinuity(manifest,env,{...observation,assertScope:()=>{browser!.assertOpen();observation.assertScope();}},signal);phase='command-returned';retain('command-result',command);
+  const command=await executeActivationWithContinuity(manifest,env,{...observation,assertScope:()=>{if(!browserStarted)browser!.assertOpen();observation.assertScope();}},signal,async candidateSignal=>{
+   browserStarted=true;const cancel=()=>{void browser!.close().catch(()=>{});};candidateSignal.addEventListener('abort',cancel,{once:true});
+   try{candidateSignal.throwIfAborted();report=await browser!.finish();candidateSignal.throwIfAborted();retain('browser-result',report);return report.passed?'healthy':'unhealthy';}
+   finally{candidateSignal.removeEventListener('abort',cancel);}
+  });phase='command-returned';retain('command-result',command);
   if(command.status!=='complete')throw Error('FRONTEND_OBSERVATION_CANDIDATE_NOT_COMPLETE');
-  const report=await browser.finish();retain('browser-result',report);
-  if(!report.passed)throw Error('FRONTEND_OBSERVATION_BROWSER_FAILED');
+  if(!report?.passed)throw Error('FRONTEND_OBSERVATION_BROWSER_FAILED');
   return{command,browser:report};
  }catch{
   // Only a fixed disposition is retained. Provider/browser exceptions may contain
