@@ -1,9 +1,9 @@
 # Independent session denial: validation gates
 
 The logout writer and cleanup flags remain disabled in staging and production.
-Reader enforcement has hosted API evidence; hosted push enforcement, writer and
-cleanup interruption cases, concurrent behavior, device behavior and storage-cost
-acceptance remain open. This work must not weaken the independent privacy journal
+Reader enforcement has hosted API evidence and a scoped staging push rehearsal.
+Writer and cleanup interruption cases, concurrent behavior, device behavior and
+storage-cost acceptance remain open. This work must not weaken the independent privacy journal
 or silently treat an unknown commit as complete. Track #1 and #55.
 
 ## Scoped push verification
@@ -46,3 +46,32 @@ for read-only reconciliation. Keep canonical immutable denial objects; scope SQL
 cleanup to the manifest and verify it before removing the operator. Do not enable
 writer/cleanup flags from this one check: the remaining failure, concurrency,
 rollback-reader, device and cost gates are separate requirements.
+
+## Hosted staging push rehearsal — October 29, 2026
+
+[Sanitized evidence](evidence/session-denial-push-staging-2026-10-29.json) records
+six successful hosted cases using helpers from source `832b182`. Web and native
+push each suppressed a denied session, allowed an independent session through an
+intercepted provider transport, and retried without sending when denial authority
+was unavailable. Both SQL session rows remained present during enforcement.
+
+Two synthetic members supplied four delivery envelopes through the existing
+staging jobs connection and `app.prepare_*_delivery` functions. The migration
+connection could not switch to the jobs role; the rehearsal stopped, reconciled
+the committed fixture by exact IDs, and continued with the dedicated jobs
+connection. It did not repeat fixture creation. Synthetic outbox jobs were held
+with `next_retry = 'infinity'` inside their creation transaction, so a process
+interruption could not expose them to background claimers. No shared queue claim
+function was called in staging.
+
+The expiring, authenticated temporary operator accepted only the pinned synthetic
+session/subscription envelopes and one immutable denial record. Native workerd
+scope checks passed locally before upload. All provider sends were intercepted;
+there were zero actual provider requests. Exact fixture cleanup, operator removal,
+and unchanged provider deployment/configuration snapshots were verified. The
+canonical denial record remains immutable. Production runtime and the disabled
+writer/cleanup flags were unchanged.
+
+This completes the scoped hosted push-enforcement check. It does not demonstrate
+physical-device delivery, a production queue end-to-end test, writer/cleanup
+interruption recovery, or the monthly availability objective.
