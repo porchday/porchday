@@ -1,13 +1,28 @@
 # Independent session denial: validation gates
 
-The logout writer and cleanup flags are enabled on staging as of October 29,
-2026, 07:05 UTC, and remain disabled in production. Staging now runs SQL-candidate cleanup with bounded continuation runtime `2ab27b5` on version `dc9d1321`.
-The scoped staging writer, concurrency and retained-row rollback rehearsals
-below passed; production enablement remains gated.
-Reader enforcement has hosted API evidence and a scoped staging push rehearsal.
-Writer and cleanup interruption cases, concurrent behavior, device behavior and
-storage-cost acceptance remain open. This work must not weaken the independent privacy journal
-or silently treat an unknown commit as complete. Track #1 and #55.
+As of October 29, 2026, 11:01 UTC, staging version `d06996e3` runs isolated
+runtime `0892b28` with logout writer and cleanup enabled. Production `f613874a`
+retains server runtime `ebc567a4`, with both flags disabled. Current frontend
+assets are `b2b3a06`. The maintained draft PR integrates the tested runtime code;
+its broader development tree also contains unrelated features and is not the
+deployment source.
+
+Two full 10,003-candidate scans with all 10,000 synthetic sessions intact passed
+in 217 and 254 seconds. All 29 journey probes passed, but the mean improvement
+over the previous run was only 1.67%, and observed freshness margin was 27 seconds.
+[Capacity evidence and limitations](session-denial-capacity.md) remain material.
+A bounded six-session denied backlog also recovered through scheduled cleanup;
+that does not establish pilot-scale denied-backlog capacity.
+
+Production enablement still requires repeatable capacity margin, the current
+compatible rollback baseline, remaining hosted interruption/password-change
+concurrency, physical-device checks, storage/cost acceptance and every active
+reader. Existing scoped writer, reader, push, contention and historical rollback
+rehearsals are evidence for their stated scope. Do not weaken the independent
+privacy journal or treat an unknown commit as complete. Track #1, #9 and #55.
+
+The dated sections below preserve historical implementation and deployment
+states; they do not override this current status or the canonical release record.
 
 ## Scoped push verification
 
@@ -619,3 +634,25 @@ It stops on full-pass completion, stale token or CAS loss, and returns the last
 confirmed continuation when the page/time bound is reached. Each SQL/R2 deadline
 and denial-authority check remains in place. Native process-recovery tests now
 exercise this batch helper. This change is not yet deployed or hosted-validated.
+
+## Hosted bounded denied backlog — October 29, 2026
+
+[Evidence](evidence/session-denial-backlog-staging-2026-10-29.json) records six real
+logout requests under one synthetic member's identity lock, with at most two
+requests in flight. Each returned the expected 503 from blocked SQL cleanup.
+Every original cookie then returned 401 while all six SQL rows remained present.
+The unrelated synthetic member remained usable, and protected readiness stayed
+healthy. The test respected existing auth rate limits and changed none of them.
+
+The lock was held for 21.594 seconds. After release, scheduled cleanup removed all
+six denied rows within 27.923 seconds; no manual sweep or denied-row deletion
+contributed to that acceptance. All old cookies still returned 401 afterward.
+Exact fixture cleanup verified zero rows for both synthetic members, immutable
+denials were retained, and provider/canonical state was unchanged. The deployment
+lease was released; there were no production mutations.
+
+This completes a bounded multi-session backlog recovery rehearsal on the current
+runtime. It does not prove a pilot-scale denied backlog, hosted Worker termination,
+password-change races, physical-device behavior or monthly availability. Reader
+outcomes with retained SQL rows are the authority-enforcement evidence here;
+the test did not fetch denial object bodies directly.
