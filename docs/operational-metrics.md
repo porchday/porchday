@@ -364,3 +364,5 @@ representative latency distribution or availability denominator. Do not calculat
 p95 or success rate from these selected rows. Compare enclosing phases within a
 row; R2/database columns overlap them. An empty view means no observed summary
 points, not healthy logout. Use external journey evidence to confirm outcomes.
+
+The [October 29 production transaction diagnostic rollout](evidence/logout-work-timing-production-2026-10-29.md) verified all six successful transaction subphases and retained the existing correlated-summary schema. This is deployed observability evidence, not a latency correction.
