@@ -278,7 +278,11 @@ export function bytesToBase64(data: Uint8Array): string {
 }
 export function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
   const binary = atob(value);
-  return Uint8Array.from(binary, c => c.charCodeAt(0));
+  // Copy directly: Uint8Array.from(string, callback) allocates/iterates through
+  // every character before constructing the byte array, costly for photos.
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
 }
 export function utf8Encode(value: string): Uint8Array { return ENCODER.encode(value); }
 export function utf8Decode(value: Uint8Array): string { return DECODER.decode(value); }
