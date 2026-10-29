@@ -1,0 +1,282 @@
+{
+  "at": "2026-10-29T08:11:34.616Z",
+  "passed": true,
+  "environment": "staging",
+  "version": "966329b9-3a66-4090-be1c-df759e3aeba6",
+  "runtimeSource": "4b6825e9137bbb94de481674098802929b7a7a7c",
+  "faultHealth": {
+    "at": "2026-10-29T08:11:25.906Z",
+    "status": 503,
+    "issues": [
+      "session_denial_cleanup_unavailable"
+    ],
+    "normalCleanupAge": 27,
+    "denialCleanup": null
+  },
+  "failedProbe": {
+    "v": 1,
+    "at": "2026-10-29T08:11:25.907Z",
+    "environment": "staging",
+    "healthy": false,
+    "checks": [
+      {
+        "name": "anonymous_session",
+        "status": 200,
+        "ok": true,
+        "durationMs": 894
+      },
+      {
+        "name": "authorized_feed",
+        "status": 200,
+        "ok": true,
+        "durationMs": 438
+      },
+      {
+        "name": "authorized_profile",
+        "status": 200,
+        "ok": true,
+        "durationMs": 459
+      },
+      {
+        "name": "login",
+        "status": 200,
+        "ok": true,
+        "durationMs": 890
+      },
+      {
+        "name": "logout",
+        "status": 200,
+        "ok": true,
+        "durationMs": 680
+      },
+      {
+        "name": "monitor_freshness",
+        "status": 200,
+        "ok": true,
+        "durationMs": 79
+      },
+      {
+        "name": "protected_readiness",
+        "status": 503,
+        "ok": false,
+        "durationMs": 797
+      },
+      {
+        "name": "revocation",
+        "status": 401,
+        "ok": true,
+        "durationMs": 159
+      }
+    ],
+    "durationMs": 2192,
+    "scope": "login_authorized_reads_logout_and_readiness"
+  },
+  "recoveries": [
+    {
+      "v": 1,
+      "at": "2026-10-29T08:11:29.854Z",
+      "environment": "staging",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 487
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 383
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 327
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 517
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 734
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 51
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 269
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 216
+        }
+      ],
+      "durationMs": 1851,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T08:11:31.706Z",
+      "environment": "staging",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 366
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 361
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 308
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 597
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 660
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 50
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 241
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 169
+        }
+      ],
+      "durationMs": 1790,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    }
+  ],
+  "alertEvents": [
+    {
+      "id": "denial-health-outage-3d09ec51-b25f-48c2-8943-b4c0fd9bedbe",
+      "kind": "outage",
+      "at": "2026-10-29T08:11:25.907Z",
+      "failedChecks": [
+        "protected_readiness"
+      ]
+    },
+    {
+      "id": "denial-health-recovery-159c8ae6-fafe-4349-ba16-61332ab8d7d6",
+      "kind": "recovery",
+      "at": "2026-10-29T08:11:31.706Z",
+      "failedChecks": []
+    }
+  ],
+  "temporaryOperatorRemoved": true,
+  "leaseReleased": true,
+  "providerUnchanged": true,
+  "denialAuthorityWrites": 0,
+  "productionMutations": 0,
+  "restoration": {
+    "at": "2026-10-29T08:11:28.792Z",
+    "exactSavedBytes": true,
+    "orLaterValidProgress": false,
+    "manualTimestampChanges": false
+  },
+  "scope": "Actual progress-record read failure, not a stopped scheduler or injected stale timestamp",
+  "notificationVerification": {
+    "at": "2026-10-29T08:13:09.677Z",
+    "results": [
+      {
+        "kind": "outage",
+        "eventId": "denial-health-outage-3d09ec51-b25f-48c2-8943-b4c0fd9bedbe",
+        "observedAt": "2026-10-29T08:11:25.907Z",
+        "deliveredAt": "2026-10-29T08:12:21Z",
+        "commentUrl": "https://github.com/porchday/porchday/issues/52#issuecomment-6491483640",
+        "bot": "github-actions[bot]",
+        "drill": true
+      },
+      {
+        "kind": "recovery",
+        "eventId": "denial-health-recovery-159c8ae6-fafe-4349-ba16-61332ab8d7d6",
+        "observedAt": "2026-10-29T08:11:31.706Z",
+        "deliveredAt": "2026-10-29T08:12:26Z",
+        "commentUrl": "https://github.com/porchday/porchday/issues/52#issuecomment-6491485261",
+        "bot": "github-actions[bot]",
+        "drill": true
+      }
+    ],
+    "ownerInboxVerified": false,
+    "dispatchAfterFaultRestoration": true
+  },
+  "finalHealth": {
+    "at": "2026-10-29T08:12:51.107Z",
+    "status": 200,
+    "issues": [],
+    "denialCleanup": {
+      "page_age_seconds": 1,
+      "pass_age_seconds": 1,
+      "last_pass_duration_seconds": 117,
+      "last_pass_seen": 21,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    },
+    "normalCleanupAge": 60,
+    "scheduledFullPassAfterRestore": true
+  },
+  "localScopeVerification": {
+    "at": "2026-10-29T08:11:54.264Z",
+    "passed": true,
+    "sourceSha256": "5d637cea0a3d4a957b817f29f0ee4daca81fff249f086fad859c46bbb2e856ce",
+    "unauthorizedBlocked": true,
+    "denialAndControlAccessBlocked": true,
+    "conditionalFaultAndExactRestoreVerified": true,
+    "providerWrites": 0,
+    "earlierInlineHarnessFailure": "Miniflare worker inherited --input-type=module; file-based harness used instead"
+  },
+  "productionMonitor": {
+    "incident": false,
+    "lastAt": "2026-10-29T08:13:51.748Z"
+  },
+  "limitations": [
+    "Fault was a malformed staging progress record, not a stopped scheduler, stale-heartbeat timeout or storage-provider outage.",
+    "Exact saved progress was conditionally restored without changing timestamps; immutable denial authority was inaccessible to the operator.",
+    "GitHub drill notifications were dispatched after restoration, so this does not measure automatic outage-to-notification latency.",
+    "Bot-authored comments were verified; owner inbox receipt remains unverified.",
+    "Earlier inline local harness failed under inherited --input-type=module; the file-based scope harness passed after the hosted drill.",
+    "Does not establish monthly availability."
+  ]
+}

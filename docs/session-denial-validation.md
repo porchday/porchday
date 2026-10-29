@@ -421,3 +421,38 @@ both flags off; its external monitor reported no incident. Hosted stalled-job
 alert/recovery, rollback of this monitoring release, history-growth acceptance and
 remaining writer/device gates are still open. This does not establish monthly
 availability or authorize production writer enablement.
+
+## Hosted progress-read failure and notification drill — October 29, 2026
+
+[Scoped evidence](evidence/session-denial-health-failure-staging-2026-10-29.json)
+records a bounded failure in staging's v2 operational-progress record. A temporary
+operator could access only that exact key and disposable CAS probes; denial and
+global-control namespaces were inaccessible. The test saved the original bytes
+and ETag privately, conditionally wrote an invalid progress schema, then restored
+the exact saved bytes with a conditional write. No timestamps were fabricated.
+
+Protected readiness returned 503 with only `session_denial_cleanup_unavailable`
+while ordinary cleanup was 27 seconds old. The real external synthetic probe
+failed only protected readiness; login, authorized reads, logout/revocation and
+other checks passed. After exact restoration, readiness returned 200, two probes
+were healthy, and the shared alert reducer produced outage and recovery events.
+A later scheduled full pass completed after restoration with no manual sweep:
+117 seconds over 21 observed records, no invalid records. Operator teardown,
+unchanged provider state and released lease were verified; production was unchanged.
+
+The existing GitHub relay subsequently delivered both events as clearly labeled
+notification drills. Exact bot-authored [outage](https://github.com/porchday/porchday/issues/52#issuecomment-6491483640)
+and [recovery](https://github.com/porchday/porchday/issues/52#issuecomment-6491485261)
+comments were verified. Dispatch occurred after restoration, so this does not
+measure automatic outage-to-notification latency. Owner inbox receipt remains
+unverified under #52's `needs verification` label.
+
+The first inline local scope harness failed because a Miniflare worker inherited
+`--input-type=module`; the file-based harness subsequently passed authorization,
+namespace exclusion, conditional fault/restore and stale-CAS checks. The hosted
+result above is independent evidence, not a claim that the initial harness passed.
+
+This verifies a real progress-read failure, independent readiness detection,
+recovery and the shared notification path. A stopped scheduler, the three-minute
+staleness threshold, a provider storage outage and monitoring-release rollback
+were not exercised. History-growth and the remaining production gates stay open.

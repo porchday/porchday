@@ -109,3 +109,10 @@ After repair, verify actual scheduled progress, a fresh clean full pass, protect
 readiness and external monitoring. Never manufacture timestamps or reset members'
 sessions/keys. Reader enforcement remains active independently of SQL cleanup.
 See the [progress design and rollout requirements](../design/durable-session-revocation.md#independent-denial-cleanup-health-staging-deployed).
+
+A staging progress-read failure/recovery drill on October 29 verified readiness
+failure while ordinary cleanup remained healthy, recovery after exact conditional
+restoration, and subsequent scheduled full-pass progress. The shared GitHub relay
+published both events as drills; bot comments were verified, but owner inbox
+receipt remains pending in #52. Notification dispatch followed restoration, so
+this does not measure automatic alert latency. See the [scoped evidence](evidence/session-denial-health-failure-staging-2026-10-29.json).
