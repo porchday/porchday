@@ -22,14 +22,19 @@ process.once('message',async(input:{action:'publish'|'cleanup';url:string;bearer
    setInterval(()=>{},1000);
   }else{
    pool=new Pool({connectionString:input.database,max:1});
-   const result={seen:0,deleted:0,invalid:0};let complete=false;
+   const result={seen:0,deleted:0,invalid:0};let complete=false,token:string|undefined,firstToken:string|undefined;
    for(let page=0;page<10;page++){
-    const current=await sweepSessionCandidates(store,after=>listSessionCandidates(pool!,after),id=>deleteDeniedSession(pool!,id));
+    const current=await sweepSessionCandidates(store,after=>listSessionCandidates(pool!,after),id=>deleteDeniedSession(pool!,id),token);
     result.seen+=current.seen;result.deleted+=current.deleted;result.invalid+=current.invalid;
+    token=current.continuation;firstToken??=token;
     const progress=await store.get(candidateProgressKey);
-    if(progress&&parseCandidateProgress(await progress.text()).cursor===null){complete=true;break;}
+    if(!token&&progress&&parseCandidateProgress(await progress.text()).cursor===null){complete=true;break;}
    }
    if(!complete)throw Error('TEST_PASS_INCOMPLETE');
+   if(firstToken){
+    const stale=await sweepSessionCandidates(store,async()=>{throw Error('STALE_TOKEN_REACHED_SQL');},async()=>{throw Error('STALE_TOKEN_REACHED_DELETE');},firstToken);
+    if(stale.seen!==0||stale.continuation)throw Error('STALE_TOKEN_NOT_IGNORED');
+   }
    await pool.end();pool=undefined;process.send?.({phase:'cleanup-complete',result});process.disconnect();
   }
  }catch{await pool?.end().catch(()=>{});process.send?.({phase:'failed'});process.exitCode=1;process.disconnect();}
