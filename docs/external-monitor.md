@@ -8,7 +8,7 @@ The owner selected **GitHub issue notifications to repository owners** for alert
 
 The synthetic identity must be a dedicated UUID with the matching `UUID@example.test` address and no relationships, posts, staff access or real-member content. Its fixture is operator-provisioned; never substitute a member's credentials. No database or Cloudflare deployment credentials are passed to the daemon. The configuration contains only the synthetic credentials, protected-readiness token, production environment and dedicated issue number. Files require owner-only permissions.
 
-One failed cycle queues an outage notification. Two consecutive successful cycles, at most 45 seconds apart, queue recovery. State and pending notifications survive restart. The Mac reporter dispatches the Actions bot relay and acknowledges delivery only after reading the exact bot-authored comment; uncertain dispatches remain in the persistent outbox. Unchanged failures do not repeatedly mention the owners. Notification failures remain queued and are retried after at least 60 seconds; probe collection continues independently. Public comments contain fixed checks and aggregate outcomes only. Ordinary comments and engineering issues are never deleted or closed by this monitor.
+One failed cycle queues an outage notification. Two consecutive successful cycles, at most 45 seconds apart, queue recovery. State and pending notifications survive restart. The Mac reporter dispatches the Actions bot relay and acknowledges delivery only after reading the exact bot-authored comment; uncertain dispatches remain in the persistent outbox. Unchanged failures do not repeatedly mention the owners. Notification failures remain queued. The reporter source polls read-back every five seconds independently of probes; only relay dispatch attempts have a durable 60-second cooldown. A failed GET does not consume that cooldown. Probe collection continues independently. See the installation evidence below for the currently verified release. Public comments contain fixed checks and aggregate outcomes only. Ordinary comments and engineering issues are never deleted or closed by this monitor.
 
 Every observation is retained in an append-only UTC monthly JSONL file. Gaps in timestamps are unknown, not healthy; a restart does not reset prior failures. These observations measure this probe's scope, not complete application availability. Do not compute a whole-month success percentage by silently dropping unobserved time. Keep at least 30 days and completed-month reports before any retention change.
 
@@ -22,7 +22,7 @@ Investigate a failed check through [the reliability runbook](reliability.md) and
 
 ## Limits and outstanding acceptance
 
-- A Mac launch agent depends on that Mac being awake, logged in, connected and running its pinned Node and GitHub CLI installations. It is an external vantage point, not a highly available monitoring service. A hosted backup is configured and its manual execution is verified; actual scheduled execution still needs observation.
+- The owner selected the Mac mini as the continuous host and authorized keeping it awake. A Mac launch agent still depends on that Mac being logged in, connected and running its pinned Node and GitHub CLI installations. It is an external vantage point, not a highly available monitoring service. A hosted backup is configured and its manual execution is verified; actual scheduled execution still needs observation.
 - GitHub API availability and the owners' GitHub notification settings govern delivery. A successful comment write does not prove an inbox notification, operator response or a guaranteed delivery time. GitHub is independent of Cloudflare, but this is not a dedicated paging service.
 - A nominal 20-second interval plus 10-second deadline targets detection within 30 seconds while running. Scheduling, sleep and transport delays prevent a guaranteed bound. A five-minute scheduled GitHub job alone cannot meet that objective.
 - Encrypted writes/deletes, mail delivery and independent regional coverage are not yet included. No automatic production recovery is performed. These checks do not prove 99.99% monthly availability.
@@ -48,7 +48,7 @@ The original Mac installation posts through the operator's GitHub account. GitHu
 
 The upgraded Mac monitor routes notifications through `.github/workflows/external-monitor-relay.yml`. The Mac submits only validated event metadata and an explicit drill flag; the main-branch workflow posts the fixed notification as `github-actions[bot]`. It receives no application credentials. Dispatch is restricted to the two verified repository owners, and delivery is confined to #52. The source does not remove an event from the Mac's persistent outbox until it reads the exact bot-authored comment. Dispatch acceptance alone is not delivery. Repeated dispatches and workflow reruns reconcile the same event rather than repeating owner mentions.
 
-This relay avoids reliance on the operator's own-activity preference, but normal notification settings and GitHub Actions/API availability still govern delivery. The action queue adds latency; a pending event is reconciled or redispatched after at least 60 seconds while probes continue. The hosted backup already posts directly as the Actions bot to #53. The relay, Mac upgrade and bot-authored drills are verified below. Human acknowledgement and the second owner’s receipt remain unverified.
+This relay avoids reliance on the operator's own-activity preference, but normal notification settings and GitHub Actions/API availability still govern delivery. The action queue adds latency; a pending event is reconciled by read-only polling, with redispatch limited to once per 60 seconds while probes continue. The hosted backup already posts directly as the Actions bot to #53. The relay, Mac upgrade and bot-authored drills are verified below. Human acknowledgement and the second owner’s receipt remain unverified.
 
 ## Initial October 28 installation
 
@@ -76,6 +76,60 @@ At 21:26:02 UTC the Mac bundle was upgraded to the same reviewed release source,
 The ongoing watch also revealed **17 retained whole-journey deadline failures** before the bundle upgrade. The initial ten occurred between 21:11 and 21:15 UTC; subsequent failures are retained through the 21:30 evidence snapshot. Logout or the subsequent revocation observation exhausted the shared ten-second budget. A check attempted with an already-aborted signal does not prove failed revocation. Sampled server metrics showed sign-out p95 around 7.8 seconds with no sampled sign-out 5xx, and read-only follow-up found an active journal, no pending intents and no SQL quarantine. The cause is still unconfirmed in [#55](https://github.com/porchday/porchday/issues/55). The relay upgrade did not change the application or fix its latency; the later healthy cycles do not close that investigation.
 
 See the [sanitized acceptance evidence](evidence/external-backup-2026-10-28.json). The production API release remained `44afbb8d-3133-4aac-8663-efd6fb5feb47`; this release deployed monitoring workflows and a local monitor bundle, not application Workers or production migrations. No monthly SLO achievement is claimed.
+
+### Mac mini sleep prevention (October 28)
+
+The owner chose to keep the existing Mac mini awake instead of provisioning a
+new host. AC idle sleep was already disabled (`sleep 0`). The separate launch
+agent `com.porchday.monitor-keepawake` now runs `/usr/bin/caffeinate -is` with
+`RunAtLoad` and `KeepAlive`. This holds idle-system and AC system-sleep assertions;
+it leaves display sleep enabled. The monitor itself was not restarted, and its
+observation history and notification outbox were preserved.
+
+Inspect the assertion with `pmset -g assertions` and the service with
+`launchctl print gui/$(id -u)/com.porchday.monitor-keepawake`. The plist is in
+`~/Library/LaunchAgents/com.porchday.monitor-keepawake.plist`; a reproducible
+template is checked in under `scripts/macos/`. To intentionally
+stop sleep prevention, boot out that agent; bootstrap the same plist to resume.
+It restarts after login, not before login. Power loss, network loss, explicit
+shutdown, logout and host failure remain monitoring gaps. No new paid service was
+added; existing Mac power and network costs remain. This does not establish
+redundant monitoring or the monthly availability target.
+
+### Relay reconciliation latency correction
+
+Real outage comments at 23:17 and 23:27 UTC arrived 20.197 and 97.182 seconds
+after their probe start times. For the slower event, GitHub created the relay
+workflow at 23:28:31 UTC and its comment at 23:28:41 UTC. Local logs show an earlier
+pending notification at 23:27:23.989 UTC and the next attempt at 23:28:31.665 UTC.
+Most of this delay therefore preceded workflow creation. The initiating request
+failure is not classified further by the retained logs.
+
+The former reporter applied a 60-second delay to every failure and every accepted
+but unconfirmed dispatch. Recovery also waited behind that reconciliation. The
+new source separates read-back polling from dispatch: it records a relay attempt
+durably before POST, reconciles every five seconds without dispatching again, and
+permits another dispatch only after 60 seconds. A restart retains that cooldown.
+Failed reads can be retried promptly because they did not attempt a POST. When an
+outage comment is verified, the queued recovery event can be dispatched immediately.
+
+These intervals are scheduling targets, not delivery guarantees. Slow requests,
+GitHub availability and recipient preferences still apply. The source correction
+passes 54 combined monitor/report tests. A separate, explicitly labeled drill
+outbox exercised the new drainer at source `b2a8bf2` without changing production
+monitor state. The [outage comment](https://github.com/porchday/porchday/issues/52#issuecomment-6484026838)
+was posted by the Actions bot 10.781 seconds after event creation; the
+[recovery comment](https://github.com/porchday/porchday/issues/52#issuecomment-6484031045)
+followed its event by 8.726 seconds. The drainer reconciled both exact bot bodies
+and emptied its private outbox. Following both successful full CI runs, source
+`0872e5ea172d47038004f435c974e94f39bb4b2e` was installed in the continuous Mac
+service at 2026-10-29 00:08:28 UTC. The pinned bundle SHA-256 is
+`8586cca3c455587b450efa2a97d6252272acd727998f63ceeb3ceaa4a055d734`.
+The old process stopped before replacement. Credentials and the complete prior
+observation prefix remained unchanged. Three fresh journeys passed through
+00:09:08.908 UTC with no pending notifications; [installation evidence](https://github.com/porchday/porchday/issues/8#issuecomment-6484104361)
+is recorded in the tracking issue. PR #65 is merged. No production outage was induced, and this drill
+does not establish human receipt or a delivery-time bound.
 
 ## Reproducible availability reports
 

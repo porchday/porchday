@@ -2,7 +2,7 @@ import type {Observation} from './external-monitor-probe.ts';
 
 export const checkNames = ['protected_readiness','anonymous_session','legacy_anonymous_session','monitor_freshness','login','authorized_profile','authorized_feed','logout','revocation','backup_execution'] as const;
 export type AlertEvent = {id:string;kind:'outage'|'recovery';at:string;failedChecks:string[]};
-export type AlertState = {v:1;incident:boolean;healthyStreak:number;lastAt:string|null;pending:AlertEvent[]};
+export type AlertState = {v:1;incident:boolean;healthyStreak:number;lastAt:string|null;pending:AlertEvent[];lastRelayAttempt?:{id:string;at:string}};
 export const initialState = ():AlertState=>({v:1,incident:false,healthyStreak:0,lastAt:null,pending:[]});
 
 /** Reduce only validated, fixed-format observations. No response bodies enter the outbox. */

@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "files": [
+    "deployment-recovery.ts",
+    "deployment-recovery-journal.ts",
+    "cloudflare-deployment-client.ts",
+    "deployment-recovery-lease.ts"
+  ]
+}
