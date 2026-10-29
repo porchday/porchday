@@ -33,10 +33,11 @@ denial is removed, and no authentication or deadline requirement changes.
 Regression coverage includes interleaved owners in reverse member-ID order,
 normal deadline stops, scalar fallback, already-absent rows, prefix checkpoints
 with live sessions between denials, no-progress groups after a completed group,
-invalid prefix claims, rollback and unknown commit reconciliation. Hosted
-throughput improvement and the combined pilot workload remain unverified.
+invalid prefix claims, rollback and unknown commit reconciliation. The subsequent staging comparison verified earlier checkpoint progress; the
+combined pilot workload remains unverified.
 
 Local validation: 49 focused tests passed against a disposable PostgreSQL 17
 instance. The full API suite passed 482 tests, with 28 skipped. API typechecking,
-first-party formatting, secret scanning and diff checks passed. This is local
-correctness evidence; a fresh guarded rollout and workload trial are still needed.
+first-party formatting, secret scanning and diff checks passed. The fresh guarded rollout and 100-member trial are recorded in
+[staging evidence](evidence/denial-cleanup-prefix-staging-2026-10-29.md). Broader
+capacity and production enablement remain separate gates.
