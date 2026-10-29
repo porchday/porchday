@@ -28,8 +28,7 @@ export async function deleteDeniedSessionBatch(pool:Pool,ids:readonly string[],w
  };
  try{
   if(expired())return finish();
-  await query('BEGIN READ ONLY');transaction=true;
-  await query("SET LOCAL statement_timeout='5s'");
+  transaction=true;await query("BEGIN READ ONLY; SET LOCAL statement_timeout='5s'");
   const targets=await query('SELECT id,"userId" AS member_id FROM public.auth_session WHERE id=ANY($1::text[]) ORDER BY id',[ids]);
   const owners=new Map<string,string>();
   for(const row of targets.rows){
@@ -42,8 +41,9 @@ export async function deleteDeniedSessionBatch(pool:Pool,ids:readonly string[],w
   // guarantees useful prefix progress without holding multiple member locks.
   for(const id of ids){const member=owners.get(id);if(member===undefined){completed.add(id);continue;}const group=members.get(member)??[];group.push(id);members.set(member,group);}
   for(const [memberId,sessionIds] of members){
-   if(expired())break;await query('BEGIN');transaction=true;
-   await query("SET LOCAL statement_timeout='5s'");await query("SET LOCAL lock_timeout='5s'");
+   if(expired())break;transaction=true;
+   // No member values are interpolated into this static multi-statement setup.
+   await query("BEGIN; SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='5s'");
    await query("SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",[memberId]);
    // Recheck the captured owner after obtaining its lock. A moved/replaced row
    // cannot be deleted under another member's identity lock.

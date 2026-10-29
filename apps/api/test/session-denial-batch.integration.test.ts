@@ -11,12 +11,13 @@ const base=process.env.TEST_DATABASE_URL,suffix=randomUUID().replaceAll('-','');
 const database='porchday_denial_batch_'+suffix,role='porchday_denial_batch_role_'+suffix;
 let admin:Pool,owner:Pool,runtime:Pool,calls=0;
 let before:((sql:string)=>Promise<void>)|undefined,after:((sql:string)=>Promise<void>)|undefined;
+let inspectSetup=false,failInsideSetup=false;const setupObservations:{readonly:string;statement:string;lock:string}[]=[];
 async function person(){const id=randomUUID();await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$2,$3,true)',[id,'Synthetic batch',id+'@example.test']);return id;}
 async function sessions(member:string,count:number){const ids=Array.from({length:count},()=>randomUUID());await restore(member,ids);return ids;}
 async function restore(member:string,ids:string[]){for(const id of ids)await owner.query("INSERT INTO public.auth_session(id,\"expiresAt\",token,\"userId\") VALUES($1,now()+interval '7 days',$2,$3)",[id,randomUUID(),member]);}
 async function remaining(ids:string[]){return Number((await owner.query('SELECT count(*) AS n FROM public.auth_session WHERE id=ANY($1::text[])',[ids])).rows[0].n);}
 function deferred(){let resolve!:()=>void;const promise=new Promise<void>(r=>{resolve=r;});return {promise,resolve};}
-afterEach(()=>{before=undefined;after=undefined;vi.restoreAllMocks();});
+afterEach(()=>{before=undefined;after=undefined;inspectSetup=false;failInsideSetup=false;setupObservations.length=0;vi.restoreAllMocks();});
 
 describe('denial batch bounds',()=>{
  it('refuses oversized, duplicate or malformed authority lists before SQL',async()=>{
@@ -32,7 +33,9 @@ describe('denial batch bounds',()=>{
   url.pathname='/postgres';admin=new Pool({connectionString:url.href,max:1});await admin.query('CREATE DATABASE '+database);url.pathname='/'+database;owner=new Pool({connectionString:url.href,max:3});
   for(const name of(await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())await owner.query(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
   await owner.query(`CREATE ROLE ${role} LOGIN PASSWORD 'synthetic-denial-batch' IN ROLE porchday_auth`);url.username=role;url.password='synthetic-denial-batch';runtime=new Pool({connectionString:url.href,max:1});
-  runtime.on('connect',client=>{const original=client.query.bind(client);client.query=(async(input:{text:string;values?:unknown[]})=>{calls++;await before?.(input.text);const result=await original(input);await after?.(input.text);return result;}) as typeof client.query;});
+  runtime.on('connect',client=>{const original=client.query.bind(client);client.query=(async(input:{text:string;values?:unknown[]})=>{calls++;await before?.(input.text);const result=await original(failInsideSetup&&input.text.startsWith('BEGIN;')?{...input,text:input.text+'; SELECT 1/0'}:input);
+   if(inspectSetup&&(input.text.startsWith('BEGIN')||input.text==='COMMIT'||input.text==='ROLLBACK'))setupObservations.push((await original("SELECT current_setting('transaction_read_only') AS readonly,current_setting('statement_timeout') AS statement,current_setting('lock_timeout') AS lock")).rows[0]);
+   await after?.(input.text);return result;}) as typeof client.query;});
  },30000);
  afterAll(async()=>{
   if(runtime)await runtime.end();if(owner)await owner.end();
@@ -42,14 +45,14 @@ describe('denial batch bounds',()=>{
   const member=await person(),ids=await sessions(member,24),unrelated=await sessions(member,1);calls=0;
   for(const id of ids)expect(await deleteDeniedSession(runtime,id)).toBe(true);const scalarCalls=calls;
   await restore(member,ids);calls=0;expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual({completed:ids.length,deleted:new Set(ids)});const batchCalls=calls;
-  expect(batchCalls).toBeLessThanOrEqual(scalarCalls/4);expect(await remaining(ids)).toBe(0);expect(await remaining(unrelated)).toBe(1);
+  expect(scalarCalls).toBe(120);expect(batchCalls).toBe(7);expect(batchCalls).toBeLessThanOrEqual(scalarCalls/4);expect(await remaining(ids)).toBe(0);expect(await remaining(unrelated)).toBe(1);
   expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual({completed:ids.length,deleted:new Set()});
   console.log(JSON.stringify({denialBatchComparison:{sessions:24,members:1,scalarSqlCalls:scalarCalls,batchSqlCalls:batchCalls,networkLatencyInjected:false}}));
  });
  it('bounds round trips for a backlog spread across 24 distinct members',async()=>{
   const ids:string[]=[];for(let n=0;n<24;n++)ids.push(...await sessions(await person(),1));
   calls=0;expect(await deleteDeniedSessionBatch(runtime,ids)).toEqual({completed:ids.length,deleted:new Set(ids)});
-  expect(calls).toBe(148);expect(await remaining(ids)).toBe(0);
+  expect(calls).toBe(99);expect(await remaining(ids)).toBe(0);
  });
  it('drains real SQL candidates using verified authority and leaves live sessions intact',async()=>{
   const member=await person(),ids=await sessions(member,120),live=await sessions(member,4);
@@ -69,6 +72,35 @@ describe('denial batch bounds',()=>{
   expect(token).toBeUndefined();expect(total).toBe(120);expect(await remaining(ids)).toBe(0);expect(await remaining(live)).toBe(4);
   expect(parseCandidateProgress(records.get(candidateProgressKey)!.text).cursor).toBeNull();
   expect(records.size).toBe(121); // Immutable denials survive cleanup.
+ });
+ it('retains local timeouts and read-only metadata setup, resetting settings on every commit',async()=>{
+  const ids=await sessions(await person(),4);inspectSetup=true;
+  await deleteDeniedSessionBatch(runtime,ids);
+  expect(setupObservations).toEqual([
+   {readonly:'on',statement:'5s',lock:'0'}, {readonly:'off',statement:'0',lock:'0'},
+   {readonly:'off',statement:'5s',lock:'5s'}, {readonly:'off',statement:'0',lock:'0'},
+  ]);
+  setupObservations.length=0;const scalar=await sessions(await person(),1);await deleteDeniedSession(runtime,scalar[0]);
+  expect(setupObservations).toEqual([{readonly:'off',statement:'5s',lock:'5s'},{readonly:'off',statement:'0',lock:'0'}]);
+ });
+ it('rolls back a server error inside compound setup without leaving settings or deletions behind',async()=>{
+  for(const count of [1,4]){
+   const ids=await sessions(await person(),count);let rollbacks=0;inspectSetup=true;failInsideSetup=true;
+   before=async sql=>{if(sql==='ROLLBACK')rollbacks++;};
+   await expect(deleteDeniedSessionBatch(runtime,ids)).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
+   before=undefined;failInsideSetup=false;expect(rollbacks).toBe(1);expect(setupObservations.at(-1)).toEqual({readonly:'off',statement:'0',lock:'0'});expect(await remaining(ids)).toBe(count);
+   expect((await deleteDeniedSessionBatch(runtime,ids)).deleted.size).toBe(count);
+  }
+ });
+ it('rolls back an acknowledged setup when its reply is lost, before deleting any session',async()=>{
+  for(const count of [1,4]){
+   const ids=await sessions(await person(),count);let rollbacks=0;
+   before=async sql=>{if(sql==='ROLLBACK')rollbacks++;};
+   after=async sql=>{if(sql.startsWith('BEGIN;'))throw Error('lost setup reply');};
+   await expect(deleteDeniedSessionBatch(runtime,ids)).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
+   before=undefined;after=undefined;expect(rollbacks).toBe(1);expect(await remaining(ids)).toBe(count);
+   expect((await deleteDeniedSessionBatch(runtime,ids)).deleted.size).toBe(count);
+  }
  });
  it('rolls back the member group when deletion fails before commit',async()=>{
   const ids=await sessions(await person(),4);before=async sql=>{if(sql.startsWith('DELETE'))throw Error('synthetic transport failure');};
@@ -93,7 +125,7 @@ describe('denial batch bounds',()=>{
  it('acknowledges already-absent IDs without starting an owner transaction after the deadline',async()=>{
   const ids=Array.from({length:4},()=>randomUUID());let now=Date.now();const deadline=now+20000;vi.spyOn(Date,'now').mockImplementation(()=>now);
   after=async sql=>{if(sql==='COMMIT')now=deadline;};calls=0;
-  expect(await deleteDeniedSessionBatch(runtime,ids,deadline)).toEqual({completed:4,deleted:new Set()});expect(calls).toBe(4);
+  expect(await deleteDeniedSessionBatch(runtime,ids,deadline)).toEqual({completed:4,deleted:new Set()});expect(calls).toBe(3);
  });
  it('keeps scalar fallback progress when its first confirmed commit exhausts the budget',async()=>{
   const ids=await sessions(await person(),3);let now=Date.now();const deadline=now+20000;vi.spyOn(Date,'now').mockImplementation(()=>now);

@@ -72,7 +72,7 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
   const config={text,values,query_timeout:6000};return client.query(config);
  };
  try{
-  await query('BEGIN READ ONLY');await query("SET LOCAL statement_timeout='5s'");
+  await query("BEGIN READ ONLY; SET LOCAL statement_timeout='5s'");
   const result=await query(after===null?'SELECT id FROM public.auth_session ORDER BY id LIMIT $1':
    'SELECT id FROM public.auth_session WHERE id>$2 ORDER BY id LIMIT $1',[candidatePageSize+1,...(after===null?[]:[after])]);
   await query('COMMIT');
