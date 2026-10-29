@@ -243,7 +243,15 @@ SQL, error text or response header is added. Failed operations emit elapsed time
 but that timing is not success evidence. Missing points do not establish success.
 Telemetry errors are ignored without replaying work or changing its outcome.
 
-The enclosing phases are `guard`, `registration`, `work`, `checkpoint`, `receipt`,
+Before the mutation journal begins, `read_guard` measures the outer privacy
+readability check, `read_guard_close` its awaited connection close, `rate_limit`
+the rate-limit query (including pool acquisition), and `initial_authorization`
+the initial session and member-status checks. These phases also apply when the
+independent session-denial writer is enabled. They do not measure body parsing,
+rate-limit key hashing, or the entire HTTP lifetime. Aggregate points cannot
+correlate an individual slow request or distinguish pool wait from SQL execution.
+
+The enclosing mutation-journal phases are `guard`, `registration`, `work`, `checkpoint`, `receipt`,
 `retirement` (pending-list removal), and `close`. Nested `r2_read`, `r2_write`,
 `database_status` and `database_page` points measure individual I/O operations,
 including the existing adapter's retry delays. R2 reads include consuming the body.
@@ -293,3 +301,69 @@ Analytics Engine accepts at most [250 points per Worker invocation](https://deve
 Repeated I/O observations during extreme journal contention can consume that
 budget. Bound or aggregate these diagnostics before using them for stress-test
 acceptance; missing phases are unknown, not zero-duration successes.
+
+### Staging session denial cleanup timings
+
+`denial_cleanup_phase` emits at most one aggregate point per observed phase per
+cleanup invocation, only in staging. Fixed codes are `progress_read`, `sql_list`,
+`authority_batches`, `sql_delete`, `progress_write`, `pool_close`, `total` and
+`enqueue`. The usual duration field is cumulative wall milliseconds; count is
+phase attempts, including failures. Authority duration measures each concurrent
+batch as a whole, not the sum of individual object latencies. SQL list includes
+connection acquisition and its read-only transaction. Total includes pool close;
+enqueue is measured separately. No member/session IDs, ETags, SQL or error text
+are emitted. Telemetry failures do not affect cleanup results.
+
+Use `node --import tsx scripts/query-metrics.ts staging denial-cleanup-phases`
+with private operator credentials to read fixed aggregates over the last 15 minutes.
+Compare weighted phase durations and counts across the same staging time window.
+Total overlaps its component phases and must not be added to them. Enqueue is
+send-observation latency, not queue delivery time. Missing telemetry does not
+prove zero work or healthy progress. These measurements diagnose the failed
+10,000-session capacity trials; they do not change the configured read concurrency,
+20-second work budget, CAS checkpoints or full-pass freshness requirements.
+
+
+`denial_cleanup_authority` adds one staging-only point per invocation that has
+successfully observed at least one complete authority batch. Double2 is available
+slot milliseconds (each launched read's start through batch completion), double3
+is the number of reads, and double4 is occupied slot milliseconds (the sum of
+individual bounded-read observation durations). Both durations share one sampled
+point. Partial batches include only actual reads; they do not count unused slots.
+The event carries no identifiers, errors, routes or arbitrary dimensions.
+
+Use `node --import tsx scripts/query-metrics.ts staging denial-cleanup-authority`.
+For the same pinned-runtime window, occupied / available slot milliseconds estimates
+observed batch occupancy; the remainder measures time after reads settle while
+waiting for the rest of their batch. It is not a predicted speedup, backend R2
+service time, or proof that a rolling pipeline is safe. Zero available time gives
+an undefined ratio. Failed batches remain represented in `authority_batches` but
+are excluded from occupancy: some observations may still be pending after failure.
+Their late completions cannot add another occupancy point. This selection must be
+reported with any measurements; successful batches do not represent failure latency.
+
+
+For the bounded-refill runtime, `authority_batches` counts read groups of up to
+24 candidates, rather than fixed groups of up to six. Do not compare milliseconds
+per group across these runtimes as though the work units were equal. Paired
+occupancy retains actual read count and summed bounded-read observation time;
+available time is group wall time multiplied by the configured worker count,
+`min(6, group size)`. This includes idle worker tails at the group barrier. Failed
+groups are excluded from occupancy as before. Always pin the runtime/time window
+and report these definitions with a comparison.
+
+Staging verification on October29 at13:03UTC confirmed all four pre-journal
+phases after deployment of `770071b`. In the13:01:49–13:02:00UTC window, one
+point per phase reported read_guard106ms, read_guard_close0ms, rate_limit17ms
+and initial_authorization169ms; one logout request point reported200/689ms.
+Initial queries were empty before ingestion. This verifies emission, not
+individual-request correlation or the cause of prior production delays.
+See [staging evidence](evidence/logout-prejournal-continuity-staging-2026-10-29.json).
+
+Production emission was verified after the successful13:26UTC rollout of
+`c2f8bf5` as `3896cab5`. The13:26:35–13:27:35UTC aggregate window contains all
+four new phases: observed maxima read_guard66ms, read_guard_close0ms,
+rate_limit82ms, initial_authorization313ms. Three logout request points were200,
+maximum4095ms. Sampling weights differ by phase, and nested phases overlap;
+these values cannot be summed into a request or used to diagnose earlier delays.
+[Production evidence](evidence/logout-prejournal-production-verified-2026-10-29.json).

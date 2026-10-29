@@ -1,0 +1,24 @@
+{
+  "at": "2026-10-29T13:17:39.803Z",
+  "results": [
+    {
+      "name": "deleted_fixture",
+      "outcome": "RELEASE_PROBE_FIXTURE_INVALID",
+      "expected": "RELEASE_PROBE_FIXTURE_INVALID",
+      "passed": true
+    },
+    {
+      "name": "active_monitor_fixture",
+      "outcome": "passed",
+      "expected": "passed",
+      "passed": true
+    }
+  ],
+  "providerWrites": 0,
+  "loginRequests": 0,
+  "databaseWrites": 0,
+  "limitations": [
+    "Read-only fixture identity and credential-presence check; does not verify password validity or guarantee account survives until the journey.",
+    "Original failed production rollout remains rejected and rolled back; this tooling change has not been used for a new rollout."
+  ]
+}

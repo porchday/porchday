@@ -1,3 +1,6 @@
+import {logoutJournalTiming,measureJournalPhase} from './journal-timing';
+import {publishSessionDenial} from './session-denial';
+import {deleteDeniedSession} from './session-denial-cleanup';
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { getSignedCookie } from "hono/cookie";
@@ -79,6 +82,8 @@ const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 type Authorization = {
   memberId: string;
   journal: boolean;
+  sessionId?: string;
+  auth?: ReturnType<typeof createAuth>;
   changedEmailUser?: { id: string; email: string; newEmail: string };
   emailTokenHash?: string;
 };
@@ -217,7 +222,8 @@ async function authorize(
       reject("ACCOUNT_UNAVAILABLE", 403);
     return { memberId: account.id, journal: true };
   }
-  const session = await createAuth(c.env, pool, undefined, true).api.getSession(
+  const auth = createAuth(c.env, pool, undefined, true);
+  const session = await auth.api.getSession(
     {
       headers: request.headers,
       query: { disableRefresh: true, disableCookieCache: true },
@@ -239,7 +245,7 @@ async function authorize(
       ["hold", "deleted", "deleting", "suspended"].includes(status)
     )
       reject("ACCOUNT_UNAVAILABLE", 403);
-    return { memberId: session.user.id, journal: true };
+    return { memberId: session.user.id, sessionId: session.session.id, auth, journal: true };
   }
   if (factorChecks.has(path)) {
     // Hono verifies the same standard HMAC-SHA256 signed-cookie format as
@@ -300,6 +306,7 @@ authRoutes.all("/*", async (c) => {
   if (c.req.method !== expectedMethod)
     return c.json({ error: { code: "METHOD_NOT_ALLOWED" } }, 405);
   const physicalPool = authPool(c.env);
+  const logoutTiming = logoutJournalTiming(c.env,c.req);
   let committedAndConfirmed = false;
   try {
     // Commit the rate limit before any operation transaction or R2 write.
@@ -307,12 +314,12 @@ authRoutes.all("/*", async (c) => {
     const key = await hashToken(
       c.env.BETTER_AUTH_SECRET + "|" + ip + "|" + path,
     );
-    const limited = await physicalPool.query(
+    const limited = await measureJournalPhase(logoutTiming,'rate_limit',()=>physicalPool.query(
       `INSERT INTO public.auth_rate_limits(key,count,expires_at) VALUES($1,1,now()+interval '1 minute')
       ON CONFLICT(key) DO UPDATE SET count=CASE WHEN auth_rate_limits.expires_at<now() THEN 1 ELSE auth_rate_limits.count+1 END,
       expires_at=CASE WHEN auth_rate_limits.expires_at<now() THEN now()+interval '1 minute' ELSE auth_rate_limits.expires_at END RETURNING count`,
       [key],
-    );
+    ));
     if (limited.rows[0].count > (path === "get-session" ? 60 : 10))
       reject("RATE_LIMIT", 429);
     let incoming: Record<string, unknown> = {};
@@ -340,8 +347,19 @@ authRoutes.all("/*", async (c) => {
         reject("INVALID_CODE");
     }
     const proof = sensitive(path)
-      ? await authorize(c, physicalPool, path, incoming)
+      ? await measureJournalPhase(logoutTiming,'initial_authorization',()=>authorize(c, physicalPool, path, incoming))
       : null;
+    if(path==='sign-out'&&c.env.SESSION_DENIAL_WRITER_V1==='true'){
+      if(!proof?.sessionId||!proof.auth)reject('UNAUTHORIZED',401);
+      if(c.env.SESSION_DENIAL_CLEANUP_V1!=='true')throw Error('SESSION_DENIAL_CLEANUP_REQUIRED');
+      // Independent publication precedes SQL, outside any transaction/lock. The
+      // ordinary global read guard still ran before this route. Do not register
+      // a global unfinished intent for this exact independently denied session.
+      await publishSessionDenial(c.env,proof.sessionId);
+      await deleteDeniedSession(physicalPool,proof.sessionId);
+      const response=await proof.auth.api.clearDeniedSessionCookies({headers:c.req.raw.headers,asResponse:true});
+      committedAndConfirmed=true;return response;
+    }
     let memberToLock = proof?.memberId;
     if (!memberToLock && typeof incoming.email === "string")
       memberToLock = (
@@ -547,7 +565,8 @@ authRoutes.all("/*", async (c) => {
         };
         const response = await handle();
         // The journal wrapper observes the committed database cursor. No R2
-        // operation happens while this request holds SQL/advisory locks.
+        // mutation happens while this request holds SQL/advisory locks. Session
+        // denial reads are bounded and repeat during in-transaction authorization.
         commitAttempted = true;
         await client.query("COMMIT");
         transaction = false;

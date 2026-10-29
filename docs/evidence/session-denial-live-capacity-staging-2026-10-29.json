@@ -1,0 +1,118 @@
+{
+  "at": "2026-10-29T09:17:01.379Z",
+  "passed": true,
+  "environment": "staging",
+  "runtimeSource": "992d24c190db9d67283afc8df883e2b3761e8d14",
+  "toolingSource": "d2fb41bd1063d872d188d573afc0fc3444aebccc",
+  "version": "7469d433-c4fd-456b-8e61-3f84192f5bb1",
+  "syntheticSessions": 250,
+  "syntheticMembers": 1,
+  "seededAt": "2026-10-29T09:11:13.900Z",
+  "passCompletions": [
+    {
+      "observedAt": "2026-10-29T09:13:56.456Z",
+      "completedLower": 1793265232456,
+      "startLower": 1793265108456,
+      "durationSeconds": 124,
+      "seen": 253
+    },
+    {
+      "observedAt": "2026-10-29T09:16:56.097Z",
+      "completedLower": 1793265415097,
+      "startLower": 1793265292097,
+      "durationSeconds": 123,
+      "seen": 253
+    }
+  ],
+  "healthySamples": 18,
+  "latencies": {
+    "anonymous_session": {
+      "samples": 18,
+      "medianMs": 342,
+      "p95Ms": 772,
+      "maxMs": 772
+    },
+    "authorized_feed": {
+      "samples": 18,
+      "medianMs": 429,
+      "p95Ms": 577,
+      "maxMs": 577
+    },
+    "authorized_profile": {
+      "samples": 18,
+      "medianMs": 302,
+      "p95Ms": 389,
+      "maxMs": 389
+    },
+    "login": {
+      "samples": 18,
+      "medianMs": 570,
+      "p95Ms": 1134,
+      "maxMs": 1134
+    },
+    "logout": {
+      "samples": 18,
+      "medianMs": 663,
+      "p95Ms": 837,
+      "maxMs": 837
+    },
+    "monitor_freshness": {
+      "samples": 18,
+      "medianMs": 92,
+      "p95Ms": 156,
+      "maxMs": 156
+    },
+    "protected_readiness": {
+      "samples": 18,
+      "medianMs": 296,
+      "p95Ms": 570,
+      "maxMs": 570
+    },
+    "revocation": {
+      "samples": 18,
+      "medianMs": 188,
+      "p95Ms": 323,
+      "maxMs": 323
+    }
+  },
+  "maxPageAgeSeconds": 47,
+  "maxPassAgeSeconds": 167,
+  "intermediatePassSeen": [
+    0,
+    100,
+    200
+  ],
+  "remainingFixtureRows": 0,
+  "manualSweepInvocations": 0,
+  "progressWrites": 0,
+  "providerUnchanged": true,
+  "productionMutations": 0,
+  "leaseReleased": true,
+  "scope": {
+    "population": "250 unexpired SQL sessions owned by one synthetic member, plus existing staging sessions",
+    "load": "Serial external login/read/logout/revocation/readiness probes every approximately 20 seconds; not concurrent-user load",
+    "cleanup": "Real existing scheduled one-page-per-minute runtime; no manual sweeps",
+    "continuationChangeDeployed": false,
+    "productionChanged": false,
+    "pilot10000UsersVerified": false,
+    "deniedBacklogThroughputVerified": false
+  },
+  "databaseSnapshotDuring": {
+    "environment": "staging",
+    "checked_at": "2026-10-29T09:12:30.708Z",
+    "database_bytes": 14128819,
+    "server_connection_limit": 25,
+    "reserved_connections": 3,
+    "server_connections": 7,
+    "database_connections": 6,
+    "active_connections": 1,
+    "idle_transaction_connections": 0,
+    "superuser_connections": 2,
+    "auth_connections": 1,
+    "social_connections": 1,
+    "jobs_connections": 1,
+    "other_connections": 2
+  },
+  "databaseSnapshotLimit": "Point-in-time counts, not continuous peak connection headroom or CPU/storage utilization.",
+  "scriptSha256": "a739f0a8d928b09ed7469283b24d882403c211c3f05eb9b8faef9d125d4b549c"
+}

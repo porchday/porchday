@@ -1,0 +1,180 @@
+{
+  "classification": "Repeat trial not accepted: evidence collection stopped before the second full-pass completion was retained",
+  "runtimeCommit": "8634c17551d3b68c39d0bc5aeb8a547a8cc2e322",
+  "toolingCommit": "5c06c6090e2d37da1461e538b34751fcf857a9f8",
+  "stagingVersion": "2120ff4c-a65f-4435-bf87-385d6a279bb8",
+  "toolingCI": {
+    "source": "5c06c6090e2d37da1461e538b34751fcf857a9f8",
+    "repository": "porchday/porchday",
+    "runs": [
+      {
+        "workflow": ".github/workflows/ci.yml",
+        "workflowSha256": "ec948b5d3cb00ac4b23c63cfded556d427247ee9cef78eb1a7c0c13433e852d9",
+        "runId": 40869635261,
+        "attempt": 1,
+        "jobId": 123433100527,
+        "url": "https://github.com/porchday/porchday/actions/runs/40869635261"
+      },
+      {
+        "workflow": ".github/workflows/secret-scan.yml",
+        "workflowSha256": "ab299ff0f86f66a18e6b4dcd005281d3486160095470c84418e9d8bb819877f7",
+        "runId": 40869635254,
+        "attempt": 1,
+        "jobId": 123433100409,
+        "url": "https://github.com/porchday/porchday/actions/runs/40869635254"
+      }
+    ]
+  },
+  "seededAt": "2026-10-29T12:05:01.139Z",
+  "intactSyntheticSessions": 10000,
+  "savedHealthySamples": 25,
+  "firstExactPass": {
+    "completedAt": 1793275779107,
+    "durationMs": 226166,
+    "seen": 10003,
+    "invalid": 0
+  },
+  "baselineToFirstIntervalMs": 287644,
+  "firstIntervalMarginMs": 12356,
+  "lastSavedSampleAt": "2026-10-29T12:13:04.490Z",
+  "lastSavedExactProgress": {
+    "requestedAt": 1793275984076,
+    "observedAt": 1793275984490,
+    "progress": {
+      "pageCompletedAt": 1793275983305,
+      "passStartedAt": 1793275790231,
+      "passSeen": 9800,
+      "passInvalid": 0,
+      "lastPass": {
+        "completedAt": 1793275779107,
+        "durationMs": 226166,
+        "seen": 10003,
+        "invalid": 0
+      }
+    }
+  },
+  "failure": {
+    "at": "2026-10-29T12:13:41.214Z",
+    "code": "REQUIRES_PRIVATE_INSPECTION"
+  },
+  "reconciliation": {
+    "at": "2026-10-29T12:14:06.653Z",
+    "failureCode": "REQUIRES_PRIVATE_INSPECTION",
+    "fixtureRows": 0,
+    "scheduledHealthRecovered": true,
+    "healthyRecoveryProbes": 2,
+    "providerUnchanged": true,
+    "productionMutations": 0,
+    "leaseReleased": true
+  },
+  "pairedOccupancy": {
+    "at": "2026-10-29T12:14:48.705Z",
+    "environment": "staging",
+    "runtimeSource": "8634c17551d3b68c39d0bc5aeb8a547a8cc2e322",
+    "window": {
+      "from": "2026-10-29T12:05:02.000Z",
+      "toExclusive": "2026-10-29T12:13:41.000Z"
+    },
+    "querySha256": "982f4f2e18523f7e557556f6a40341dccb8a3655d69d7e5bdc6bd89fc7da04a9",
+    "row": {
+      "observed_points": 48,
+      "estimated_events": 48,
+      "available_slot_ms": 1782851,
+      "occupied_slot_ms": 1550394,
+      "observed_reads": 21006
+    },
+    "occupancyRatio": 0.8696150155004541,
+    "limitations": [
+      "Paired slot totals share sampling weights, but are sampled estimates.",
+      "Only successfully settled bounded read groups contribute; failed groups are excluded.",
+      "Available slot time is group wall time times min(6, group size) configured workers; read count is actual started reads.",
+      "Observation occupancy is not R2 service time or predicted pipeline speedup.",
+      "Flush timestamps may include boundary-crossing work.",
+      "Missing telemetry is not zero work; production and post-cleanup recovery are excluded."
+    ]
+  },
+  "phaseAggregates": {
+    "at": "2026-10-29T12:14:48.697Z",
+    "environment": "staging",
+    "runtimeSource": "8634c17551d3b68c39d0bc5aeb8a547a8cc2e322",
+    "window": {
+      "from": "2026-10-29T12:05:02.000Z",
+      "toExclusive": "2026-10-29T12:13:41.000Z"
+    },
+    "querySha256": "f93289fc5dd8afd1dc9b5c5d5a1277f1db45cfe456edb563792079383c7b6746",
+    "rows": [
+      {
+        "phase": "authority_batches",
+        "observed_points": 26,
+        "estimated_events": 52,
+        "estimated_total_ms": 336640,
+        "estimated_attempts": 1140,
+        "invocation_p95_ms": 8538
+      },
+      {
+        "phase": "enqueue",
+        "observed_points": 27,
+        "estimated_events": 40,
+        "estimated_total_ms": 7826,
+        "estimated_attempts": 40,
+        "invocation_p95_ms": 274
+      },
+      {
+        "phase": "pool_close",
+        "observed_points": 27,
+        "estimated_events": 73,
+        "estimated_total_ms": 0,
+        "estimated_attempts": 73,
+        "invocation_p95_ms": 0
+      },
+      {
+        "phase": "progress_read",
+        "observed_points": 28,
+        "estimated_events": 57,
+        "estimated_total_ms": 30420,
+        "estimated_attempts": 253,
+        "invocation_p95_ms": 701
+      },
+      {
+        "phase": "progress_write",
+        "observed_points": 27,
+        "estimated_events": 54,
+        "estimated_total_ms": 55863,
+        "estimated_attempts": 230,
+        "invocation_p95_ms": 1470
+      },
+      {
+        "phase": "sql_list",
+        "observed_points": 17,
+        "estimated_events": 31,
+        "estimated_total_ms": 25493,
+        "estimated_attempts": 147,
+        "invocation_p95_ms": 1279
+      },
+      {
+        "phase": "total",
+        "observed_points": 22,
+        "estimated_events": 42,
+        "estimated_total_ms": 375863,
+        "estimated_attempts": 42,
+        "invocation_p95_ms": 11372
+      }
+    ],
+    "limitations": [
+      "Sampled phase aggregates, not per-request traces.",
+      "Points are timestamped at invocation flush; boundary-crossing work may contribute.",
+      "Total overlaps component phases; do not add them.",
+      "Enqueue measures send observation, not delivery latency.",
+      "Missing points may reflect ingestion delay or unavailable telemetry; not zero work.",
+      "Cleanup/recovery after fixture removal is excluded from this window."
+    ]
+  },
+  "limitations": [
+    "No second completion was retained; this neither proves it did not occur nor authorizes interpolation.",
+    "The harness did not retain the failing collection stage or a specific error class. The generic failure cannot identify the failed dependency or operation.",
+    "A production monitor cycle timed out across initial paths in the same period; shared network-path failure is a hypothesis, not an established cause.",
+    "Recovery after fixture removal does not establish 10k capacity.",
+    "All 25 saved samples retained 10k rows and healthy journeys, but unsaved in-flight observations are unknown.",
+    "Production was not changed. Repeatable capacity margin, mixed workload and operating-cost acceptance remain open."
+  ]
+}

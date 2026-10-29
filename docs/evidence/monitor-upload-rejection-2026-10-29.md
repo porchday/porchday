@@ -1,0 +1,15 @@
+# Monitor upload rejection and safe release recovery
+
+The staging monitor upload operation `faa1fa2a-7089-48fa-bdf7-911b4593e039` uploaded candidate `297720b4-67e8-494c-a00b-4cf2fbf32eab` once. It did not activate it. Source was `685d891628f57b12c460db5b9fc4e0d390e0d6b9`; exact source and tooling (`8a259a22e2db97a85e5431e4b5229067e2f211ac`) Verify and Secret History CI had passed.
+
+Post-upload reconciliation rejected the immutable plan because `resources.script.last_deployed_from` was `wrangler`, while the preparation expected `api`. Read-only inspection found this was the only comparable resource difference. The original plan was not edited or marked successful, and the upload was never replayed.
+
+A further artifact check exposed a verifier limitation: observed provider source-map normalization was supported only for bundles with four known missing dependency sources. The monitor has complete source content. The verifier now also accepts complete maps under the existing explicit normalization opt-ins, requiring exact executable bytes, source contents, mappings, names and the exact observed path/filename transformation. Unexpected missing content and substantive map changes remain rejected.
+
+`FileUploadLease.rejectInactive` now permits a controller to archive a known inactive failed upload after read-only reconciliation. It requires durable intent, excludes concurrent operations and verified success, retains a private evidence digest and reason, and archives the original owner and intent as rejected. Reacquiring a rejected operation cannot dispatch it again. Failed verification leaves the persistent lock. A durable rejection interrupted before archival cannot be converted into upload success or replayed.
+
+The original operation was resolved through this path with no provider mutations. Fresh provider snapshots before and after artifact reads proved every active Worker, domain, queue, schedule and active resource unchanged; only the planned inactive version/settings change was permitted. Candidate identity was re-read, executable bytes matched, normalized map source provenance matched the six committed monitor files, and the staging database schema fingerprint remained unchanged. The canonical active deployment file was not modified. Private evidence digest: `88e850d20121f8b675ff9faa23aff5a73be8dff2792d5c8bdfcd79d95d60e81d`.
+
+Validation: 49 focused tests passed across upload lease, reconciliation, CLI, upload orchestration and artifact verification. These cover rejection evidence retention, replay prevention, interrupted rejection, invalid proof, successful-upload exclusion and source-map content drift. Provider evidence remains in the private monitor-freshness scope; no secrets or member data belong in issues.
+
+Remaining: a fresh release must explicitly expect Wrangler uploader metadata and use the corrected verifier with exact tooling CI. It must account for the rejected inactive candidate in its baseline inventory, then pass staging continuity and monitor-history checks before production consideration. This is not monitor activation or evidence of achieving the monthly SLO.

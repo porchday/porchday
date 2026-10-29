@@ -87,6 +87,23 @@ test. The same actual builds reproduced a non-rendering page without retention
 and a working login form with retention, including the old CSS, React and crypto
 module hashes. Hosted activation and authenticated traffic remain unverified.
 
+For an already-open tab, add `--open-tab`:
+
+```sh
+node scripts/release-assets-browser.ts /private/old-build /private/new-build /private/assembled-assets --open-tab
+```
+
+This mode renders the old login document first, verifies its actual lazy modules
+have not been requested, retains a typed form value, and then switches the server
+to the target package. The same page imports those cold modules without reload.
+A separate browser context renders the target login page with no old cache.
+The negative control must fail the old lazy import while both documents remain
+rendered; the retained package must load it with exact old entrypoint bytes and
+no old-page errors. Run the same sequence in reverse with the rollback package.
+The result labels this byte coverage explicitly; it is not a full module-graph
+hash check. This remains a local unauthenticated asset test, not proof of signed-in
+feature behavior, encryption or native-client compatibility.
+
 Verify deployed assets read-only against the saved package receipt:
 
 ```sh

@@ -1,7 +1,7 @@
 import {constants,openSync,closeSync,fsyncSync,fstatSync,readFileSync,writeFileSync,linkSync,unlinkSync,realpathSync,lstatSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {join,isAbsolute} from 'node:path';
-import {deploymentPlanHash,deploymentTarget,type DeploymentPlan} from './deployment-recovery.ts';
+import {deploymentPlanHash,recoveryTarget,type DeploymentPlan} from './deployment-recovery.ts';
 import {ghTransport,type GitHubTransport} from './external-monitor-github.ts';
 export const releaseAlertReasons=['activation-unconfirmed','rollback-unconfirmed','verification-unavailable','observation-unavailable','concurrent-change','command-failed','release-overdue','release-state-unreadable','notification-drill'] as const;
 export type ReleaseAlert={v:1;operationId:string;planHash:string;worker:string;reason:typeof releaseAlertReasons[number];at:string};
@@ -9,7 +9,7 @@ const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 export function validateReleaseAlert(value:unknown):asserts value is ReleaseAlert{
  const e=value as ReleaseAlert;
  if(!e||Object.keys(e).sort().join(',')!=='at,operationId,planHash,reason,v,worker'||e.v!==1||typeof e.operationId!=='string'||typeof e.planHash!=='string'||typeof e.worker!=='string'||!uuid.test(e.operationId)||!/^[a-f0-9]{64}$/.test(e.planHash)||!releaseAlertReasons.includes(e.reason)||typeof e.at!=='string'||!Number.isFinite(Date.parse(e.at))||new Date(e.at).toISOString()!==e.at)throw Error('RELEASE_ALERT_INVALID');
- deploymentTarget(e.worker);
+ recoveryTarget(e.worker);
 }
 export function releaseAlertBody(event:ReleaseAlert){
  validateReleaseAlert(event);

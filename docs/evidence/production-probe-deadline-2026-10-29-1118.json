@@ -1,0 +1,491 @@
+{
+  "observedFailureAt": "2026-10-29T11:18:12.742Z",
+  "classification": "One synthetic journey reached its shared ten-second deadline while observing logout; revocation check had no remaining time",
+  "rootCause": "Unproven",
+  "originalCookieOutcome": "Unverified in failed cycle; no successful authorization response observed",
+  "recovery": "Two subsequent complete probes passed at11:18:32 and11:18:52UTC without intervention",
+  "productionVersion": "f613874a-e0ca-456b-824b-16daa7a9f4ce",
+  "productionRuntimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "observations": [
+    {
+      "v": 1,
+      "at": "2026-10-29T11:17:52.741Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 487
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 582
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 318
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 687
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 818
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2310
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 209
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 187
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 175
+        }
+      ],
+      "durationMs": 3893,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T11:18:12.742Z",
+      "environment": "production",
+      "healthy": false,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 468
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 568
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 321
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 407
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 782
+        },
+        {
+          "name": "logout",
+          "ok": false,
+          "durationMs": 8646,
+          "failure": "deadline"
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 208
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 213
+        },
+        {
+          "name": "revocation",
+          "ok": false,
+          "durationMs": 0,
+          "failure": "deadline"
+        }
+      ],
+      "durationMs": 10004,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T11:18:32.743Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1123
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 914
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 410
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 448
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1436
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 3085
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 234
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 758
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 203
+        }
+      ],
+      "durationMs": 5644,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T11:18:52.745Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 435
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 572
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 321
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 646
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 1061
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2294
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 254
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 183
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 165
+        }
+      ],
+      "durationMs": 4106,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T11:19:12.747Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 574
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 686
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 333
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 830
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 736
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 2913
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 245
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 378
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 213
+        }
+      ],
+      "durationMs": 4554,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    {
+      "v": 1,
+      "at": "2026-10-29T11:19:32.748Z",
+      "environment": "production",
+      "healthy": true,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 440
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 613
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 399
+        },
+        {
+          "name": "legacy_anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 480
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 780
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 3070
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 218
+        },
+        {
+          "name": "protected_readiness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 202
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 187
+        }
+      ],
+      "durationMs": 4655,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    }
+  ],
+  "databaseFollowup": {
+    "environment": "production",
+    "checked_at": "2026-10-29T11:19:40.019Z",
+    "database_bytes": 14571187,
+    "server_connection_limit": 25,
+    "reserved_connections": 3,
+    "server_connections": 10,
+    "database_connections": 8,
+    "active_connections": 1,
+    "idle_transaction_connections": 0,
+    "superuser_connections": 2,
+    "auth_connections": 3,
+    "social_connections": 1,
+    "jobs_connections": 1,
+    "other_connections": 3
+  },
+  "boundedRequestWindow": {
+    "at": "2026-10-29T11:20:06.462Z",
+    "window": {
+      "from": "2026-10-29T11:18:10Z",
+      "toExclusive": "2026-10-29T11:18:35Z"
+    },
+    "data": [
+      {
+        "status": 200,
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 9308
+      }
+    ],
+    "limitations": [
+      "Sampled aggregate window, not a trace of the failed client request.",
+      "Missing observations do not prove absence or zero latency."
+    ]
+  },
+  "boundedPhaseWindow": {
+    "at": "2026-10-29T11:20:07.362Z",
+    "window": {
+      "from": "2026-10-29T11:18:10Z",
+      "toExclusive": "2026-10-29T11:18:35Z"
+    },
+    "data": [
+      {
+        "phase": "r2_write",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 208
+      },
+      {
+        "phase": "work",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 906
+      },
+      {
+        "phase": "close",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 0
+      },
+      {
+        "phase": "registration",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 542
+      },
+      {
+        "phase": "retirement",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 281
+      },
+      {
+        "phase": "database_status",
+        "observed_points": "2",
+        "estimated_events": "4",
+        "max_observed_ms": 39
+      }
+    ],
+    "limitations": [
+      "Sampled aggregate window, not a trace of the failed client request.",
+      "Missing observations do not prove absence or zero latency."
+    ]
+  },
+  "outageAlert": "https://github.com/porchday/porchday/issues/52#issuecomment-6495219294",
+  "recoveryAlert": "https://github.com/porchday/porchday/issues/52#issuecomment-6495230856",
+  "botCommentsVerified": true,
+  "ownerInboxVerified": false,
+  "productionMutations": 0,
+  "limits": [
+    "One sampled server200logout took9308ms in the25second window; cannot uniquely correlate it to the failed synthetic request.",
+    "Sampled phases do not explain total server latency and missing phases are unknown.",
+    "Postincident10of25connections snapshot is not peak allocation.",
+    "Original unknown logout was not replayed; monitor deadline was not relaxed.",
+    "Production was unchanged; only staging diagnostic release occurred, and no10k load was started."
+  ]
+}

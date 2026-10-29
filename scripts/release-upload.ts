@@ -1,3 +1,4 @@
+import {uploadTarget} from './release-upload-target.ts';
 import {readFileSync} from 'node:fs';
 import {join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
@@ -27,7 +28,7 @@ export function createPreparedUpload(options:Options){
   assert(plan,signal);await verifyUploadPreparation(workspace,evidence.preparation,signal);assert(plan,signal);
   await verifyReleaseCi({workspace,source:evidence.source,pins:evidence.ci,signal});assert(plan,signal);
   const schema=await captureReleaseSchema({...database,expectedMigrations:evidence.schema.migrations,signal});assertReleaseSchema(schema,evidence.schema);assert(plan,signal);
-  await verifyWorkerSourceProvenance({workspace,source:evidence.source,application:'api',map:readFileSync(join(evidence.artifacts.directory,evidence.artifacts.entry+'.map')),expectedPaths:evidence.artifacts.sourcePaths,signal});assert(plan,signal);
+  await verifyWorkerSourceProvenance({workspace,source:evidence.source,application:uploadTarget(evidence.worker).application,map:readFileSync(join(evidence.artifacts.directory,evidence.artifacts.entry+'.map')),expectedPaths:evidence.artifacts.sourcePaths,signal});assert(plan,signal);
   if(!isDeepStrictEqual(await reader.snapshot(signal),evidence.before))throw Error('UPLOAD_BASELINE_CHANGED');assert(plan,signal);
  };
  const send=createWranglerUploadProcess({workspace,inputs:evidence.preparation.inputs,receipt:evidence.preparation.wrangler,configPath:evidence.preparation.configPath,configSha256:evidence.preparation.configSha256,worker:evidence.worker,accountId:options.accountId,apiToken:options.apiToken,privateLogDirectory:options.privateLogDirectory});

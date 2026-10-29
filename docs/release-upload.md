@@ -660,3 +660,21 @@ watcher depends on this Mac's power, network and logged-in user LaunchAgent cont
 The existing production availability monitor remains separate, and outside-host
 coverage is still needed for Mac failures. These checks do not establish the
 monthly 99.99% availability objective.
+
+### Continuity failure disposition
+
+Observed releases retain `continuity-failure-<operation>.json` in their proof
+directory. This marker is permanent evidence for that operation. Before dispatch,
+it stops promotion; after candidate dispatch, recovery uses the original durable
+operation and the existing compatible rollback checks. A failure between intent
+and dispatch can leave `activation-unconfirmed` with zero writes; reconcile it
+read-only rather than sending the intent again. Pre-intent preparations may use
+the existing explicit cancellation command after checking their state.
+
+If the terminal journal or finalization receipt already exists, preserve it. A
+late continuity failure blocks a successful promotion report and remains actionable
+through the release watch, even after archival. This state needs explicit review
+of provider identity, canonical state and retained evidence; it does not authorize
+a new deployment ID or rewriting the terminal journal. A verified rollback still
+requires its own healthy baseline verification. Never clear the marker or discard
+the failed observation to make a later run green.

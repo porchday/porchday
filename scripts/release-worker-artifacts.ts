@@ -24,7 +24,7 @@ export function verifyWorkerArtifacts(options:{entry:'index.js'|'edge.js';expect
  if(!Buffer.from(expected[entry+'.map']).equals(actual[entry+'.map'])){
   if(!options.allowObservedMapNormalization||Object.keys(local).sort().join(',')!=='mappings,names,sourceRoot,sources,sourcesContent,version'||typeof local.sourceRoot!=='string'||!local.sourceRoot)throw Error('RELEASE_WORKER_MAP_CHANGED');
   const sources=local.sources as string[],contents=local.sourcesContent as (string|null)[],missing=sources.filter((_,index)=>contents[index]===null);
-  if(missing.length!==4||missingSources.some(suffix=>missing.filter(path=>path.endsWith('/'+suffix)||path===suffix).length!==1))throw Error('RELEASE_WORKER_MAP_CHANGED');
+  if(missing.length!==0&&(missing.length!==4||missingSources.some(suffix=>missing.filter(path=>path.endsWith('/'+suffix)||path===suffix).length!==1)))throw Error('RELEASE_WORKER_MAP_CHANGED');
   const normalized={...local,file:'',sourcesRoot:null,sourcesContent:contents.map(value=>value??'')};delete (normalized as Record<string,unknown>).sourceRoot;
   if(canonical(normalized)===canonical(remote))mapMode='observed-provider-normalization';
   else{

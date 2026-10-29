@@ -1,0 +1,172 @@
+{
+  "at": "2026-10-29T09:07:43.158Z",
+  "passed": true,
+  "environment": "staging",
+  "version": "7469d433-c4fd-456b-8e61-3f84192f5bb1",
+  "runtimeSource": "992d24c190db9d67283afc8df883e2b3761e8d14",
+  "toolingSource": "6e92abacd1dc6f094308044f84dd3044cf499ddb",
+  "baselineHealth": {
+    "at": "2026-10-29T09:03:11.386Z",
+    "status": 200,
+    "issues": [],
+    "normalCleanupAge": 18,
+    "denialCleanup": {
+      "page_age_seconds": 17,
+      "pass_age_seconds": 17,
+      "last_pass_duration_seconds": 1,
+      "last_pass_seen": 3,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    }
+  },
+  "faultHealth": {
+    "at": "2026-10-29T09:06:03.507Z",
+    "status": 503,
+    "issues": [
+      "session_denial_cleanup_stale"
+    ],
+    "normalCleanupAge": 9,
+    "denialCleanup": {
+      "page_age_seconds": 189,
+      "pass_age_seconds": 189,
+      "last_pass_duration_seconds": 1,
+      "last_pass_seen": 3,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    }
+  },
+  "failedProbe": {
+    "v": 1,
+    "at": "2026-10-29T09:05:59.446Z",
+    "environment": "staging",
+    "healthy": false,
+    "checks": [
+      {
+        "name": "anonymous_session",
+        "status": 200,
+        "ok": true,
+        "durationMs": 345
+      },
+      {
+        "name": "authorized_feed",
+        "status": 200,
+        "ok": true,
+        "durationMs": 343
+      },
+      {
+        "name": "authorized_profile",
+        "status": 200,
+        "ok": true,
+        "durationMs": 284
+      },
+      {
+        "name": "login",
+        "status": 200,
+        "ok": true,
+        "durationMs": 533
+      },
+      {
+        "name": "logout",
+        "status": 200,
+        "ok": true,
+        "durationMs": 656
+      },
+      {
+        "name": "monitor_freshness",
+        "status": 200,
+        "ok": true,
+        "durationMs": 124
+      },
+      {
+        "name": "protected_readiness",
+        "status": 503,
+        "ok": false,
+        "durationMs": 381
+      },
+      {
+        "name": "revocation",
+        "status": 401,
+        "ok": true,
+        "durationMs": 2320
+      }
+    ],
+    "durationMs": 3858,
+    "scope": "login_authorized_reads_logout_and_readiness"
+  },
+  "staleObservedAfterLockMs": 166439,
+  "outageNotification": {
+    "at": "2026-10-29T09:06:23.483Z",
+    "eventId": "stale-outage-5ce65495-a1f8-480e-88c3-e636bee8ecac",
+    "kind": "outage",
+    "exactBotCommentVerified": true,
+    "observedToReadbackMs": 24037,
+    "lockStillHeld": true,
+    "url": "https://github.com/porchday/porchday/issues/52#issuecomment-6492523837"
+  },
+  "alertWhileStalled": {
+    "at": "2026-10-29T09:06:24.030Z",
+    "status": 503,
+    "issues": [
+      "session_denial_cleanup_stale"
+    ],
+    "normalCleanupAge": 29,
+    "denialCleanup": {
+      "page_age_seconds": 209,
+      "pass_age_seconds": 209,
+      "last_pass_duration_seconds": 1,
+      "last_pass_seen": 3,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    }
+  },
+  "lockReleasedAt": "2026-10-29T09:06:24.075Z",
+  "scheduledHealth": {
+    "at": "2026-10-29T09:07:26.297Z",
+    "status": 200,
+    "issues": [],
+    "normalCleanupAge": 36,
+    "denialCleanup": {
+      "page_age_seconds": 15,
+      "pass_age_seconds": 15,
+      "last_pass_duration_seconds": 1,
+      "last_pass_seen": 3,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    }
+  },
+  "recoveryNotification": {
+    "at": "2026-10-29T09:07:40.874Z",
+    "eventId": "stale-recovery-a1d7f2cc-34c4-4bec-ba70-e7ee553e3f24",
+    "kind": "recovery",
+    "exactBotCommentVerified": true,
+    "observedToReadbackMs": 16785,
+    "lockStillHeld": false,
+    "url": "https://github.com/porchday/porchday/issues/52#issuecomment-6492551626"
+  },
+  "recoveryObservedAfterReleaseMs": 60014,
+  "healthyRecoveryProbes": 2,
+  "remainingFixtureRows": 0,
+  "denialsRetained": true,
+  "progressTimestampWrites": 0,
+  "manualSweepInvocations": 0,
+  "providerUnchanged": true,
+  "productionMutations": 0,
+  "leaseReleased": true,
+  "scope": {
+    "fault": "Identity advisory lock prevents deletion of one synthetic denied SQL session; real scheduled cleanup progress ages past threshold",
+    "stoppedScheduler": false,
+    "providerOutage": false,
+    "timestampInjection": false,
+    "monitor": "Private staging loop on the Mac using shared probe, reducer and GitHub relay",
+    "ownerInboxVerified": false
+  },
+  "preflight": {
+    "testsPassed": 25,
+    "singleLockReleaseVerified": true,
+    "scriptSha256": "c5a4bae7087d55228fe3335a82a501baeead5c7ed7e5e946d533e6f88f16e4eb"
+  },
+  "productionMonitorAfter": {
+    "incident": false,
+    "lastAt": "2026-10-29T09:07:31.989Z"
+  }
+}

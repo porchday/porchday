@@ -1,0 +1,143 @@
+{
+  "local": {
+    "at": "2026-10-29T06:52:12.721Z",
+    "source": "365d49351a6bdc1812e464040a19e52b4db00ebb",
+    "nativeLocalR2": true,
+    "sql": "counted callback only; no SQL or hosted writes",
+    "scheduledIntervalSeconds": 60,
+    "results": [
+      {
+        "retainedRecords": 1,
+        "recordsSeen": 1,
+        "cleanupCallbacks": 1,
+        "pages": 1,
+        "operations": {
+          "get": 2,
+          "put": 0,
+          "list": 1
+        },
+        "canonicalObjectBytes": 82,
+        "nominalFullPassMinutes": 1,
+        "maxLocalPageMs": 16.93,
+        "totalLocalMs": 16.93
+      },
+      {
+        "retainedRecords": 10,
+        "recordsSeen": 10,
+        "cleanupCallbacks": 10,
+        "pages": 1,
+        "operations": {
+          "get": 11,
+          "put": 0,
+          "list": 1
+        },
+        "canonicalObjectBytes": 82,
+        "nominalFullPassMinutes": 1,
+        "maxLocalPageMs": 46.22,
+        "totalLocalMs": 46.22
+      },
+      {
+        "retainedRecords": 11,
+        "recordsSeen": 11,
+        "cleanupCallbacks": 11,
+        "pages": 2,
+        "operations": {
+          "get": 13,
+          "put": 2,
+          "list": 2
+        },
+        "canonicalObjectBytes": 82,
+        "nominalFullPassMinutes": 2,
+        "maxLocalPageMs": 47.22,
+        "totalLocalMs": 56.64
+      },
+      {
+        "retainedRecords": 100,
+        "recordsSeen": 100,
+        "cleanupCallbacks": 100,
+        "pages": 10,
+        "operations": {
+          "get": 110,
+          "put": 10,
+          "list": 10
+        },
+        "canonicalObjectBytes": 82,
+        "nominalFullPassMinutes": 10,
+        "maxLocalPageMs": 50.19,
+        "totalLocalMs": 355.47
+      },
+      {
+        "retainedRecords": 1000,
+        "recordsSeen": 1000,
+        "cleanupCallbacks": 1000,
+        "pages": 100,
+        "operations": {
+          "get": 1100,
+          "put": 100,
+          "list": 100
+        },
+        "canonicalObjectBytes": 82,
+        "nominalFullPassMinutes": 100,
+        "maxLocalPageMs": 119.77,
+        "totalLocalMs": 3127.8
+      }
+    ]
+  },
+  "hostedInventory": {
+    "at": "2026-10-29T06:52:51.605Z",
+    "results": [
+      {
+        "environment": "staging",
+        "complete": true,
+        "objects": 3,
+        "bytes": 246,
+        "pages": 1,
+        "storageClass": "Standard",
+        "crons": [
+          "* * * * *",
+          "17 3 * * *"
+        ]
+      },
+      {
+        "environment": "production",
+        "complete": true,
+        "objects": 1,
+        "bytes": 82,
+        "pages": 1,
+        "storageClass": "Standard",
+        "crons": [
+          "* * * * *",
+          "17 3 * * *"
+        ]
+      }
+    ],
+    "namespaceBodiesRead": 0,
+    "namespaceMutations": 0,
+    "applicationDeploymentChanges": 0,
+    "temporaryOperatorsRemoved": true,
+    "leaseReleased": true
+  },
+  "model": {
+    "monthDays": 30,
+    "successfulScheduledPages": 43200,
+    "retryAndDuplicateDeliveriesIncluded": false,
+    "maximumPageRecords": 10,
+    "maxScheduledClassAOperations": 86400,
+    "maxScheduledClassBOperations": 475200,
+    "maxScheduledCleanupCallbacks": 432000,
+    "maxAbsentSessionSqlStatements": 2160000,
+    "unitRatesCheckedAt": "2026-10-29",
+    "standardStorageUsdPerGbMonth": 0.015,
+    "classAUsdPerMillion": 4.5,
+    "classBUsdPerMillion": 0.36,
+    "unroundedMaxScheduledR2OperationUsd": 0.559872,
+    "excludes": [
+      "request-path reads",
+      "logout publications",
+      "retries and duplicate deliveries",
+      "queue and Worker usage",
+      "database usage",
+      "account-wide usage and billing rounding"
+    ]
+  }
+}

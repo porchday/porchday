@@ -2,6 +2,7 @@ import {initialState,observe,publicStatus,probe,alertText,type MonitorState,type
 import {renderStatusPage} from './status-page';
 import {recordAvailability,availabilitySummary,type AvailabilityHistory} from './availability';
 import {checkMetrics,initialMetrics,publicMetrics,metricsAlertText,type MetricsConfig,type MetricsState} from './metrics';
+import {readStatus} from './read-status';
 
 export interface Env extends MetricsConfig {STATE:DurableObjectNamespace;ENVIRONMENT:Environment;OPERATIONS_HEALTH_TOKEN:string;MONITOR_RECIPIENT:string;EMAIL_FROM:string;EMAIL:SendEmail}
 const headers={'content-type':'application/json','cache-control':'no-store','x-content-type-options':'nosniff','content-security-policy':"default-src 'none'; frame-ancestors 'none'",'referrer-policy':'no-referrer'};
@@ -21,7 +22,7 @@ export class Monitor {
         if(status.status==='operational'&&(metrics?.latency.status==='degraded'||metrics?.errors.status==='degraded'))status.status='degraded';
         return json({...status,metrics_monitoring:publicMetrics(metrics??initialMetrics()),availability:availabilitySummary(history)});
       }
-      catch{return json({status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'},503);}
+      catch{console.log(JSON.stringify({event:'monitor',code:'status_storage_read_failed',environment:this.env.ENVIRONMENT}));return json({status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'},503);}
     }
     if(request.method!=='POST'||path!=='/tick')return json({error:'not_found'},404);
     // A single low-frequency object serializes check+state+alert work. Its own
@@ -68,7 +69,7 @@ export default {
     const path=new URL(request.url).pathname;
     if(request.method!=='GET'||!['/','/status'].includes(path))return json({error:'not_found'},404);
     try{
-      const response=await stub(env).fetch('https://monitor.internal/status');
+      const response=await readStatus(env.STATE);
       return path==='/status'?response:renderStatusPage(await response.json(),response.status);
     }catch{
       const unavailable={status:'unknown',last_checked_at:null,metrics_monitoring:'unavailable'};

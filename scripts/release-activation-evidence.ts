@@ -5,7 +5,7 @@ import {isDeepStrictEqual} from 'node:util';
 import {FileUploadLease,uploadPlanHash} from './release-upload-lease.ts';
 import {comparableReleaseResources,uploadReconciliationEvidenceHash} from './release-upload-reconcile.ts';
 import {assertInactiveUploadSnapshot} from './cloudflare-release-reader.ts';
-import {deploymentTarget,type DeploymentPlan} from './deployment-recovery.ts';
+import {recoveryTarget,type DeploymentPlan} from './deployment-recovery.ts';
 import type {UploadManifest} from './release-upload-cli.ts';
 
 type Resource=UploadManifest['evidence']['resources'];
@@ -38,7 +38,7 @@ export function readCompletedUpload(manifest:UploadManifest,proofPath:string){
   ||proof.artifacts?.entry!==e.artifacts.entry||proof.artifacts.hashes?.[e.artifacts.entry]!==e.artifacts.hashes[e.artifacts.entry]
   ||!isDeepStrictEqual(proof.schema,e.schema)
   ||!proof.provenance.files||!isDeepStrictEqual(Object.keys(proof.provenance.files).sort(),[...e.artifacts.sourcePaths].sort()))throw Error('ACTIVATION_UPLOAD_PROOF_INVALID');
- const key=deploymentTarget(plan.worker).key as 'staging'|'production'|'staging-edge'|'production-edge';
+ const key=recoveryTarget(plan.worker).key as 'staging'|'production'|'staging-edge'|'production-edge'|'monitor-staging'|'monitor-production';
  assertInactiveUploadSnapshot(e.before,proof.inventory,key,completed.version,e.settings);
  const baseline=(e.before as Inventory).workers[key];
  if(!baseline?.resources||!proof.candidate.resources)throw Error('ACTIVATION_UPLOAD_PROOF_INVALID');
@@ -54,7 +54,7 @@ export type CompletedUpload=ReturnType<typeof readCompletedUpload>;
  * This does not claim that an inactive candidate's settings became the restored runtime's settings.
  */
 export function assertActivationInventory(upload:CompletedUpload,plan:DeploymentPlan,version:string,observed:unknown){
- const target=deploymentTarget(plan.worker);
+ const target=recoveryTarget(plan.worker);
  if(plan.worker!==upload.worker||plan.candidateSource!==upload.source||plan.candidateVersion!==upload.candidateVersion||plan.baselineVersion!==upload.baselineVersion
   ||![upload.candidateVersion,upload.baselineVersion].includes(version))throw Error('ACTIVATION_UPLOAD_PLAN_CHANGED');
  const expected=structuredClone(upload.inventory),worker=expected.workers[target.key];

@@ -1,3 +1,4 @@
+import {persistSessionDenial} from '../src/session-denial';
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { randomBytes, randomUUID } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
@@ -213,6 +214,7 @@ suite("Native push HTTP authorization, durable delivery and revocation", () => {
     jobsUrl.username = "porchday_native_push_jobs_test";
     jobsUrl.password = "push-test-jobs";
     env = {
+      ENVIRONMENT:'development',
       ...config,
       HYPERDRIVE_SOCIAL: { connectionString: socialUrl.href },
       HYPERDRIVE_JOBS: { connectionString: jobsUrl.href },
@@ -536,4 +538,46 @@ suite("Native push HTTP authorization, durable delivery and revocation", () => {
       }),
     ).rejects.toMatchObject({ code: "42501" });
   });
+  it('suppresses a denied SQL session while delivering for a different session',async()=>{
+    const a=await seed(),b=await seed(),one=device(),two=device();
+    await request(a,'/native-push/subscriptions','POST',one);await request(b,'/native-push/subscriptions','POST',two);
+    const first=await notification(a.id,b.id);await notification(b.id,a.id);
+    const records=new Map<string,string>();
+    const store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,
+      put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};}};
+    await persistSessionDenial(store,a.session);
+    const send=vi.fn(async()=>new Response(null,{status:200}));
+    expect(await processNativePush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:store as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:1});
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(send.mock.calls)).not.toContain(a.session);expect(JSON.stringify(send.mock.calls)).not.toContain(b.session);
+    expect(await sql`select id from public.auth_session where id=${a.session}`).toHaveLength(1);
+    expect((await sql`select outcome from app.native_push_outbox where notification_id=${first}`)[0].outcome).toBe('failed');
+  });
+  it('never sends on unknown denial state and can retry after storage recovers',async()=>{
+    const a=await seed(),b=await seed();await request(a,'/native-push/subscriptions','POST',device());
+    const n=await notification(a.id,b.id),send=vi.fn(async()=>new Response(null,{status:200}));
+    for(const mode of ['missing','failure','malformed']){
+      const binding=mode==='missing'?undefined:{get:async()=>{if(mode==='failure')throw Error('private storage error');return {etag:'record',text:async()=>'{}'};}} as unknown as R2Bucket;
+      expect(await processNativePush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:binding},send as typeof fetch)).toEqual({sent:0,retried:1,skipped:0});
+      expect(send).not.toHaveBeenCalled();
+      expect((await sql`select completed_at from app.native_push_outbox where notification_id=${n}`)[0].completed_at).toBeNull();
+      await sql`update app.native_push_outbox set next_retry=now() where notification_id=${n}`;
+    }
+    expect(await processNativePush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:{get:async()=>null} as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:0});
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+  it('keeps old preparation JSON compatible and restricts the session-bound projection to jobs',async()=>{
+    const a=await seed(),b=await seed(),subscription=device();await request(a,'/native-push/subscriptions','POST',subscription);await notification(a.id,b.id);
+    const result=await sql.begin(async db=>{
+      await db`set local role porchday_jobs`;
+      const [job]=await db`select * from app.claim_native_push(20)`;
+      const [row]=await db`select app.prepare_native_push_delivery(${job.id},${job.lease}) as delivery,app.prepare_native_push(${job.id},${job.lease}) as legacy`;
+      expect((await db`select app.prepare_native_push_delivery(${job.id},${randomUUID()}) as delivery`)[0].delivery).toBeNull();
+      await db`select app.finish_native_push(${job.id},${job.lease},'failed',60)`;
+      return row;
+    });
+    expect(result.delivery).toEqual({sessionId:a.session,subscription});expect(result.legacy).toEqual(subscription);
+    await expect(sql.begin(async db=>{await db`set local role porchday_social`;return db`select app.prepare_native_push_delivery(${randomUUID()},${randomUUID()})`;})).rejects.toMatchObject({code:'42501'});
+  });
+
 });

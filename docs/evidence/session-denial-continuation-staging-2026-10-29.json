@@ -1,0 +1,253 @@
+{
+  "at": "2026-10-29T09:31:04.143Z",
+  "passed": true,
+  "environment": "staging",
+  "runtimeSource": "2ab27b57a377543dadd97947e0db16cbe22221ff",
+  "toolingSource": "4b63134e8c26335ff1bbddff05f11e91cdd1fe50",
+  "version": "dc9d1321-54e4-4dae-bd9c-0887fc1b6bb4",
+  "baseline": "7469d433-c4fd-456b-8e61-3f84192f5bb1",
+  "uploadOperation": "f25ca0f3-b814-44b2-8708-583e13ec244e",
+  "activationOperation": "ec862138-929f-42ee-b15a-c718da64bdc9",
+  "activationOutcome": "complete",
+  "firstPartyFiles": 48,
+  "artifactHashes": {
+    "index.js": "cb0eecc68f4a12f271a91689bd6106fd4751e4bea8257e9b4504b1aeac61cf9e",
+    "index.js.map": "611956ce45be726fd0ed78cd7fe837064f773606a2fb1243b339f9ca9bf2ccbb"
+  },
+  "runtimeFilesChanged": [
+    "apps/api/src/index.ts",
+    "apps/api/src/session-denial-candidates.ts",
+    "apps/api/src/types.ts"
+  ],
+  "localValidation": {
+    "cryptoPassed": 20,
+    "generalPassed": 714,
+    "generalSkipped": 192,
+    "nativePostgresPassed": 15,
+    "logs": {
+      "general": "9b87b6de0bc89e29922ab89da8adc290780a6e685dd49c57633a263f56cb3f98",
+      "native": "bfe1cfe22f50e091280db21d4c1e08fbbfe9d9e1d4d990e8416d56c2819023a1"
+    }
+  },
+  "requiredPushCi": {
+    "runtime": {
+      "verify": {
+        "runId": 40848698568,
+        "attempt": 1,
+        "workflowSha256": "12de4ec4c9c1409a3f1ffea59c8d5e871f386267a4607dc2c42c489cdd4a6a29"
+      },
+      "history": {
+        "runId": 40848698550,
+        "attempt": 1,
+        "workflowSha256": "ab299ff0f86f66a18e6b4dcd005281d3486160095470c84418e9d8bb819877f7"
+      }
+    },
+    "tooling": {
+      "verify": {
+        "runId": 40849117769,
+        "attempt": 1,
+        "workflowSha256": "ec948b5d3cb00ac4b23c63cfded556d427247ee9cef78eb1a7c0c13433e852d9"
+      },
+      "history": {
+        "runId": 40849117855,
+        "attempt": 1,
+        "workflowSha256": "ab299ff0f86f66a18e6b4dcd005281d3486160095470c84418e9d8bb819877f7"
+      }
+    }
+  },
+  "journey": {
+    "at": "2026-10-29T09:29:40.379Z",
+    "status": "healthy",
+    "checks": [
+      {
+        "name": "protected_readiness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "anonymous_session",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "monitor_freshness",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "login",
+        "ok": true
+      },
+      {
+        "name": "authorized_profile",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "authorized_feed",
+        "ok": true,
+        "status": 200
+      },
+      {
+        "name": "revocation",
+        "ok": true,
+        "status": 401
+      },
+      {
+        "name": "logout",
+        "ok": true,
+        "status": 200
+      }
+    ],
+    "logoutReconciled": false,
+    "authenticatedAt": "2026-10-29T09:29:41.537Z",
+    "authenticatedChecksReused": false
+  },
+  "retainedAssetsVerified": 29,
+  "schemaProviderVerified": true,
+  "scheduledProgress": {
+    "at": "2026-10-29T09:31:04.143Z",
+    "passed": true,
+    "version": "dc9d1321-54e4-4dae-bd9c-0887fc1b6bb4",
+    "runtimeSource": "2ab27b57a377543dadd97947e0db16cbe22221ff",
+    "observedWithinMs": 66241,
+    "freshPage": true,
+    "freshPass": true,
+    "samples": [
+      {
+        "at": "2026-10-29T09:29:58.379Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 51,
+          "pass_age_seconds": 51,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T09:30:08.612Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 61,
+          "pass_age_seconds": 61,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T09:30:19.524Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 72,
+          "pass_age_seconds": 72,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T09:30:30.138Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 82,
+          "pass_age_seconds": 82,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T09:30:40.950Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 93,
+          "pass_age_seconds": 93,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T09:30:51.190Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 104,
+          "pass_age_seconds": 104,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": false,
+        "freshPass": false
+      },
+      {
+        "at": "2026-10-29T09:31:01.548Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 6,
+          "pass_age_seconds": 6,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        },
+        "freshPage": true,
+        "freshPass": true
+      }
+    ],
+    "manualSweepInvocations": 0,
+    "providerUnchanged": true
+  },
+  "preflightFailure": {
+    "at": "2026-10-29T09:29:27.818Z",
+    "failedOperation": "e8869704-ae43-4f11-b559-d9dd010fd24e",
+    "code": "DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED",
+    "journalEmpty": true,
+    "leaseAbsent": true,
+    "activeBaselineUnchanged": true,
+    "uploadedCandidateInactive": true,
+    "providerSnapshotSha256": "b8e2ebf06ac930b60aab1624051f18f31165fc92a434984d7e41bdd648818942",
+    "canonicalSha256": "ae4d233fee45b85c98b4d72e7cac30c2249fa487bd631348501ff405f2b52851",
+    "conclusion": "Lease acquisition rejected the plan before journal preparation or provider dispatch. This is a known pre-mutation failure, not an uncertain activation. Preserve the immutable failed plan/watch/alert; use a newly reviewed plan acknowledging the reader floor while retaining the actual rollback target."
+  },
+  "preflightAlert": {
+    "url": "https://github.com/porchday/porchday/issues/3#issuecomment-6493002763",
+    "exactBotCommentVerified": true,
+    "ownerInboxVerified": false
+  },
+  "productionUnchanged": true,
+  "schemaChanges": false,
+  "frontendChanges": false,
+  "flagsChanged": false,
+  "limits": [
+    "Scheduled observation covers the small existing population, not multi-page throughput",
+    "Large population and denied-backlog performance, queue overlap and compatible rollback remain separate gates",
+    "Canonical reader floor is acknowledged; actual rollback target is the v3 baseline",
+    "No monthly availability claim"
+  ]
+}

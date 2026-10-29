@@ -82,3 +82,67 @@ The independent logout writer remains disabled. Hosted push enforcement,
 writer/cleanup failure and concurrency cases, device behavior and cost acceptance
 remain required before enabling it. This reader evidence does not resolve all
 interrupted privacy operations or establish the availability SLO.
+
+
+## Denial-cleanup readiness signals (staging deployed)
+
+The v3 SQL-candidate denial-cleanup implementation adds independent protected-readiness checks
+when `SESSION_DENIAL_CLEANUP_V1=true`. Normal cleanup freshness cannot substitute
+for these checks. Staging version `7469d433` (runtime `992d24c`) emits these codes after a verified real initial sweep
+and scheduled-progress observation. Production has not received this monitoring
+release and keeps the writer/cleanup flags off. Hosted failure-alert and recovery
+verification remain pending.
+
+- `session_denial_cleanup_missing` / `session_denial_cleanup_unavailable`: inspect
+  configured storage, permissions and the versioned progress record privately.
+  Missing, corrupt, future-dated or timed-out evidence must not be marked healthy.
+- `session_denial_cleanup_stale`: no confirmed page in three minutes. Inspect the
+  minute schedule, queue delivery/retries, independent storage and SQL lock/errors.
+- `session_denial_pass_stale` / `session_denial_pass_slow`: full-pass completion or
+  traversal exceeded the five-minute operational limit. Inspect remaining SQL session count,
+  cursor advancement and repeated page failures even if page health is fresh.
+- `session_denial_cleanup_invalid`: preserve private evidence and investigate record
+  integrity. The alert clears only after a complete clean pass. Never delete or
+  expire denial authority as a way to clear an alert.
+
+After repair, verify actual scheduled progress, a fresh clean full pass, protected
+readiness and external monitoring. Never manufacture timestamps or reset members'
+sessions/keys. Reader enforcement remains active independently of SQL cleanup.
+See the [progress design and rollout requirements](../design/durable-session-revocation.md#sql-candidate-discovery-staging-deployed).
+
+The earlier v2 staging progress-read failure/recovery drill on October 29 verified readiness
+failure while ordinary cleanup remained healthy, recovery after exact conditional
+restoration, and subsequent scheduled full-pass progress. The shared GitHub relay
+published both events as drills; bot comments were verified, but owner inbox
+receipt remains pending in #52. Notification dispatch followed restoration, so
+this does not measure automatic alert latency. See the [scoped evidence](evidence/session-denial-health-failure-staging-2026-10-29.json).
+
+The [v3 staging rollout](evidence/session-denial-candidate-staging-2026-10-29.json)
+verified actual scheduled full-pass advancement over the current three-session
+population. V3 uses `session-denial-maintenance/v3/sql-sessions.json`; it never
+refreshes v2 progress. Before a delayed rollback to v2, perform and verify a real
+v2 pass under the deployment lease, or use a separately verified compatible v3
+baseline. Never copy progress timestamps between versions. The [v3-compatible monitoring rollback rehearsal](evidence/session-denial-candidate-rollback-staging-2026-10-29.json)
+passed: a failed local readiness observation triggered actual rollback, restored
+healthy v3 progress, and scheduled cleanup removed a locked synthetic denied row
+within 45.343 seconds after release. A subsequent [real staleness drill](evidence/session-denial-stale-staging-2026-10-29.json)
+held one denied-session deletion until page age exceeded 180 seconds. Readiness
+failed; the GitHub bot alert was verified 24.037 seconds after observation while
+the fault remained active. After release, scheduled cleanup recovered and two
+healthy probes established recovery within 60.014 seconds; the recovery comment
+was verified 16.785 seconds later. No timestamps were edited or manual sweeps
+used. Owner inbox receipt remains unverified. Larger live-session capacity and
+other production gates remain open. These drills do not validate every feature
+migration, a stopped scheduler, Mac host loss or a real provider outage.
+
+
+The [continuation staging release](evidence/session-denial-continuation-staging-2026-10-29.json)
+now runs `2ab27b5`/`dc9d1321`. A confirmed incomplete checkpoint queues another
+bounded page with its ETag; stale messages stop before SQL discovery, and cron
+resumes persisted work after missing continuations. Full passes stop normally.
+Two [253-session passes](evidence/session-denial-continuation-capacity-staging-2026-10-29.json)
+took 12/18 seconds, compared with 124/123 seconds before continuation; all seven
+journey samples passed. This is small-population evidence, not pilot capacity.
+Keep larger-load fixtures scoped and remove them before any rollback to the old
+one-page-per-minute baseline. Acknowledge the canonical denial-reader floor in
+release plans separately from selecting the verified actual rollback target.

@@ -152,6 +152,15 @@ remain unknown. Future or unfinished observations cannot establish coverage.
 This is a sampled estimate of login, authorized reads, logout/revocation and
 readiness—not continuous uptime or complete core-journey availability.
 
+The combined totals retain every failed check, including monitor freshness.
+`evidenceGroups.applicationJourney` reports login, authorized reads, logout,
+revocation, readiness and anonymous-session checks separately;
+`evidenceGroups.monitorFreshness` reports the hosted monitor dependency. Both use
+the same completed buckets, gaps and conservative duplicate handling. These
+breakdowns explain failures without changing alert behavior or counting a
+monitor failure alone as an application outage. Failures can overlap, so do not
+add group failure times to obtain the combined total.
+
 Read `coveragePercent` alongside `sampledSuccessRatePercent`; the latter uses only
 observed buckets and must never be presented as a whole-month success rate.
 `estimatedFailedSeconds` is a bucket estimate, not a claim about exact outage

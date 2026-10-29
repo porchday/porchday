@@ -1,0 +1,614 @@
+{
+  "at": "2026-10-29T09:42:00.860Z",
+  "environment": "staging",
+  "runtimeSource": "2ab27b57a377543dadd97947e0db16cbe22221ff",
+  "version": "dc9d1321-54e4-4dae-bd9c-0887fc1b6bb4",
+  "toolingSource": "85cdddc9a8ce5561340422793f0aa1880040e499",
+  "capacityPassed": false,
+  "syntheticSessions": 10000,
+  "syntheticMembers": 1,
+  "fixtureCreated": {
+    "at": "2026-10-29T09:36:52.625Z",
+    "members": 1,
+    "sessions": 10000
+  },
+  "failure": {
+    "at": "2026-10-29T09:40:55.328Z",
+    "code": "CAPACITY_JOURNEY_OR_HEALTH_FAILED"
+  },
+  "failedSample": {
+    "at": "2026-10-29T09:40:55.319Z",
+    "observation": {
+      "v": 1,
+      "at": "2026-10-29T09:40:52.662Z",
+      "environment": "staging",
+      "healthy": false,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 415
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 380
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 268
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 595
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 720
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 121
+        },
+        {
+          "name": "protected_readiness",
+          "status": 503,
+          "ok": false,
+          "durationMs": 387
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 225
+        }
+      ],
+      "durationMs": 1922,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    "health": {
+      "at": "2026-10-29T09:40:54.877Z",
+      "status": 503,
+      "issues": [
+        "session_denial_pass_stale"
+      ],
+      "normalCleanupAge": 1,
+      "denialCleanup": {
+        "page_age_seconds": 2,
+        "pass_age_seconds": 302,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 9000,
+        "invalid_records": 0
+      }
+    },
+    "fixtureSessions": 10000
+  },
+  "healthySamplesBeforeFailure": 12,
+  "progressSamples": [
+    {
+      "at": "2026-10-29T09:36:54.654Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 61,
+        "pass_age_seconds": 61,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 0,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:37:15.442Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 2,
+        "pass_age_seconds": 82,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 600,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:37:35.433Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 1,
+        "pass_age_seconds": 102,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 1400,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:37:55.060Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 0,
+        "pass_age_seconds": 121,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 2300,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:38:15.062Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 3,
+        "pass_age_seconds": 141,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 3000,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:38:35.056Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 2,
+        "pass_age_seconds": 161,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 3800,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:38:55.125Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 0,
+        "pass_age_seconds": 181,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 4600,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:39:15.214Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 2,
+        "pass_age_seconds": 201,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 5300,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:39:35.247Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 0,
+        "pass_age_seconds": 221,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 6200,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:39:55.573Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 3,
+        "pass_age_seconds": 242,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 6900,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:40:15.096Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 2,
+        "pass_age_seconds": 261,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 7600,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:40:35.217Z",
+      "healthy": true,
+      "progress": {
+        "page_age_seconds": 0,
+        "pass_age_seconds": 281,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 8400,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    },
+    {
+      "at": "2026-10-29T09:40:55.319Z",
+      "healthy": false,
+      "progress": {
+        "page_age_seconds": 2,
+        "pass_age_seconds": 302,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 9000,
+        "invalid_records": 0
+      },
+      "fixtureSessions": 10000
+    }
+  ],
+  "databaseSnapshot": {
+    "environment": "staging",
+    "checked_at": "2026-10-29T09:38:21.726Z",
+    "database_bytes": 17618611,
+    "server_connection_limit": 25,
+    "reserved_connections": 3,
+    "server_connections": 9,
+    "database_connections": 8,
+    "active_connections": 1,
+    "idle_transaction_connections": 0,
+    "superuser_connections": 2,
+    "auth_connections": 2,
+    "social_connections": 1,
+    "jobs_connections": 1,
+    "other_connections": 3
+  },
+  "fixtureCleanup": {
+    "at": "2026-10-29T09:40:56.563Z",
+    "remainingRows": 0
+  },
+  "recoverySamples": [
+    {
+      "at": "2026-10-29T09:40:58.651Z",
+      "observation": {
+        "v": 1,
+        "at": "2026-10-29T09:40:56.568Z",
+        "environment": "staging",
+        "healthy": false,
+        "checks": [
+          {
+            "name": "anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 264
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 397
+          },
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 257
+          },
+          {
+            "name": "login",
+            "status": 200,
+            "ok": true,
+            "durationMs": 552
+          },
+          {
+            "name": "logout",
+            "status": 200,
+            "ok": true,
+            "durationMs": 648
+          },
+          {
+            "name": "monitor_freshness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 64
+          },
+          {
+            "name": "protected_readiness",
+            "status": 503,
+            "ok": false,
+            "durationMs": 258
+          },
+          {
+            "name": "revocation",
+            "status": 401,
+            "ok": true,
+            "durationMs": 189
+          }
+        ],
+        "durationMs": 1786,
+        "scope": "login_authorized_reads_logout_and_readiness"
+      },
+      "health": {
+        "at": "2026-10-29T09:40:58.651Z",
+        "status": 503,
+        "issues": [
+          "session_denial_pass_stale"
+        ],
+        "normalCleanupAge": 4,
+        "denialCleanup": {
+          "page_age_seconds": 0,
+          "pass_age_seconds": 305,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 9200,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T09:41:18.820Z",
+      "observation": {
+        "v": 1,
+        "at": "2026-10-29T09:41:16.569Z",
+        "environment": "staging",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 339
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 566
+          },
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 446
+          },
+          {
+            "name": "login",
+            "status": 200,
+            "ok": true,
+            "durationMs": 562
+          },
+          {
+            "name": "logout",
+            "status": 200,
+            "ok": true,
+            "durationMs": 693
+          },
+          {
+            "name": "monitor_freshness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 93
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 434
+          },
+          {
+            "name": "revocation",
+            "status": 401,
+            "ok": true,
+            "durationMs": 174
+          }
+        ],
+        "durationMs": 2000,
+        "scope": "login_authorized_reads_logout_and_readiness"
+      },
+      "health": {
+        "at": "2026-10-29T09:41:18.820Z",
+        "status": 200,
+        "issues": [],
+        "normalCleanupAge": 25,
+        "denialCleanup": {
+          "page_age_seconds": 19,
+          "pass_age_seconds": 19,
+          "last_pass_duration_seconds": 246,
+          "last_pass_seen": 9200,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T09:41:38.661Z",
+      "observation": {
+        "v": 1,
+        "at": "2026-10-29T09:41:36.570Z",
+        "environment": "staging",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 334
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 479
+          },
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 286
+          },
+          {
+            "name": "login",
+            "status": 200,
+            "ok": true,
+            "durationMs": 538
+          },
+          {
+            "name": "logout",
+            "status": 200,
+            "ok": true,
+            "durationMs": 682
+          },
+          {
+            "name": "monitor_freshness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 118
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 268
+          },
+          {
+            "name": "revocation",
+            "status": 401,
+            "ok": true,
+            "durationMs": 186
+          }
+        ],
+        "durationMs": 1891,
+        "scope": "login_authorized_reads_logout_and_readiness"
+      },
+      "health": {
+        "at": "2026-10-29T09:41:38.661Z",
+        "status": 200,
+        "issues": [],
+        "normalCleanupAge": 45,
+        "denialCleanup": {
+          "page_age_seconds": 39,
+          "pass_age_seconds": 39,
+          "last_pass_duration_seconds": 246,
+          "last_pass_seen": 9200,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T09:41:58.662Z",
+      "observation": {
+        "v": 1,
+        "at": "2026-10-29T09:41:56.572Z",
+        "environment": "staging",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "anonymous_session",
+            "status": 200,
+            "ok": true,
+            "durationMs": 448
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 460
+          },
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 281
+          },
+          {
+            "name": "login",
+            "status": 200,
+            "ok": true,
+            "durationMs": 575
+          },
+          {
+            "name": "logout",
+            "status": 200,
+            "ok": true,
+            "durationMs": 625
+          },
+          {
+            "name": "monitor_freshness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 72
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 412
+          },
+          {
+            "name": "revocation",
+            "status": 401,
+            "ok": true,
+            "durationMs": 188
+          }
+        ],
+        "durationMs": 1850,
+        "scope": "login_authorized_reads_logout_and_readiness"
+      },
+      "health": {
+        "at": "2026-10-29T09:41:58.662Z",
+        "status": 200,
+        "issues": [],
+        "normalCleanupAge": 7,
+        "denialCleanup": {
+          "page_age_seconds": 10,
+          "pass_age_seconds": 10,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    }
+  ],
+  "reconciliation": {
+    "at": "2026-10-29T09:42:00.860Z",
+    "failureCode": "CAPACITY_JOURNEY_OR_HEALTH_FAILED",
+    "fixtureRows": 0,
+    "scheduledHealthRecovered": true,
+    "healthyRecoveryProbes": 3,
+    "providerUnchanged": true,
+    "productionMutations": 0,
+    "leaseReleased": true
+  },
+  "manualSweepInvocations": 0,
+  "progressTimestampWrites": 0,
+  "scriptSha256": "adc46137bb8a3da347266dba74f60d198ad6379d9fa455640541d3a3d473709c",
+  "interpretation": [
+    "The full-pass freshness deadline failed while page progress and ordinary cleanup stayed fresh.",
+    "This measures unexpired non-denied SQL candidate traversal, not 10000 concurrent users or a denied-row deletion backlog.",
+    "Removal of all synthetic rows changed the population; the subsequent 9200-observation completion does not prove a full 10000-session scan.",
+    "A later fresh one-second pass covered the remaining three sessions and all recovery probes were healthy.",
+    "One aggregate database snapshot does not establish peak connection/CPU headroom.",
+    "No production mutation, authority relaxation or deadline increase occurred."
+  ]
+}

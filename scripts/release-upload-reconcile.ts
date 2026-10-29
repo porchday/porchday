@@ -3,7 +3,7 @@ import {isAbsolute,join} from 'node:path';
 import {isDeepStrictEqual} from 'node:util';
 import {createHash} from 'node:crypto';
 import {verifyUploadPreparation,assertPreparationBundle,type UploadPreparation} from './release-upload-preparation.ts';
-import {deploymentTarget} from './deployment-recovery.ts';
+import {uploadTarget} from './release-upload-target.ts';
 import {FileUploadLease,uploadPlanHash,type UploadPlan} from './release-upload-lease.ts';
 import {CloudflareReleaseReader,assertInactiveUploadSnapshot} from './cloudflare-release-reader.ts';
 import {assertReleaseSchema,captureReleaseSchema,type ReleaseSchemaFingerprint} from './release-schema.ts';
@@ -44,7 +44,7 @@ function persist(directory:string,name:string,body:string){
 /** Concrete read-only reconciliation; call through lease.reconcile to record its durable result. */
 export function createUploadReconciler(options:{workspace:string;proofDirectory:string;evidence:UploadReconciliationEvidence;lease:FileUploadLease;reader:Pick<CloudflareReleaseReader,'snapshot'|'uploadedVersion'|'script'>;database:{connection:string;branchId:string};checks?:{ci:typeof verifyReleaseCi;schema:typeof captureReleaseSchema}}){
  const evidence=structuredClone(options.evidence),digest=uploadReconciliationEvidenceHash(evidence),checks=options.checks??{ci:verifyReleaseCi,schema:captureReleaseSchema},database={...options.database};
- const {workspace,proofDirectory,lease,reader}=options,target=deploymentTarget(evidence.worker),key=target.key as 'staging'|'production'|'staging-edge'|'production-edge';
+ const {workspace,proofDirectory,lease,reader}=options,target=uploadTarget(evidence.worker),key=target.key;
  if(evidence.version!==1||!isAbsolute(workspace)||!isAbsolute(proofDirectory)||!/^[a-z0-9]+$/.test(evidence.databaseBranchId)||database.branchId!==evidence.databaseBranchId||evidence.artifacts.entry!==(target.frontend?'edge.js':'index.js'))throw Error('UPLOAD_EVIDENCE_INVALID');
  return async(plan:Readonly<UploadPlan>,signal:AbortSignal)=>{
   const assert=()=>lease.assertPlan(plan,signal);assert();
@@ -63,7 +63,7 @@ export function createUploadReconciler(options:{workspace:string;proofDirectory:
   privateDirectory(evidence.artifacts.directory);
   const expected=Object.fromEntries([evidence.artifacts.entry,evidence.artifacts.entry+'.map'].map(name=>[name,privateBytes(join(evidence.artifacts.directory,name))]));
   const artifacts=verifyWorkerArtifacts({...evidence.artifacts,expected,actual});
-  const provenance=await verifyWorkerSourceProvenance({workspace,source:plan.source,application:'api',map:actual[evidence.artifacts.entry+'.map'],expectedPaths:evidence.artifacts.sourcePaths,signal});assert();
+  const provenance=await verifyWorkerSourceProvenance({workspace,source:plan.source,application:target.application,map:actual[evidence.artifacts.entry+'.map'],expectedPaths:evidence.artifacts.sourcePaths,signal});assert();
   const finalSchema=await schema();
   const proof=canonical({version:1,planHash:uploadPlanHash(plan),candidate,inventory:after,artifacts,provenance,schema:finalSchema,ci,...(preparation?{preparation}:{})})+'\n';
   if(Buffer.byteLength(proof)>16*1024*1024)throw Error('UPLOAD_PROOF_TOO_LARGE');

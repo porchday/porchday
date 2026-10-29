@@ -1,0 +1,56 @@
+{
+  "at": "2026-10-29T07:14:37.698Z",
+  "passed": true,
+  "environment": "staging",
+  "version": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+  "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "checks": [
+    "overlapping_logout_and_other_session_revocation_complete",
+    "secondary_session_matches_confirmed_revocation_outcome",
+    "unrelated_member_remains_usable",
+    "global_privacy_active_no_pending_intents"
+  ],
+  "observed": {
+    "at": "2026-10-29T07:14:32.552Z",
+    "logoutStatus": 200,
+    "revokeStatus": 401,
+    "secondaryStatus": 200,
+    "otherMemberStatus": 200
+  },
+  "remainingFixtureRows": 0,
+  "stagingWriterEnabled": true,
+  "stagingCleanupEnabled": true,
+  "productionWriterEnabled": false,
+  "productionCleanupEnabled": false,
+  "providerUnchangedDuringAcceptance": true,
+  "requests": [
+    {
+      "path": "sign-out",
+      "startedAt": "2026-10-29T07:14:29.813Z",
+      "durationMs": 1338,
+      "status": 200
+    },
+    {
+      "path": "revoke-other-sessions",
+      "startedAt": "2026-10-29T07:14:29.814Z",
+      "durationMs": 1427,
+      "status": 401
+    }
+  ],
+  "finalReadiness": {
+    "at": "2026-10-29T07:15:10.224Z",
+    "status": 200,
+    "healthy": true,
+    "issues": []
+  },
+  "temporaryOperatorRemoved": true,
+  "leaseReleased": true,
+  "emailsRequested": false,
+  "limitations": [
+    "One observed hosted request ordering: logout 200, competing revocation 401.",
+    "Does not establish server-side scheduling or every interleaving.",
+    "Hosted password-change races were not exercised; no security-notification email was requested.",
+    "Rollback, hosted interruption, physical-device and larger-history gates remain open.",
+    "Does not establish monthly availability."
+  ]
+}

@@ -109,3 +109,20 @@ describe('private durable journal',()=>{
   finally{rmSync(directory,{recursive:true,force:true});}
  });
 });
+
+it('keeps the45-second bound for ordinary releases and permits only explicit monitor recovery a120-second candidate budget',async()=>{
+ vi.useFakeTimers();
+ for(const scoped of [false,true]){
+  const f=fixture(),monitor={...plan,worker:'porchday-monitor-staging'};
+  f.ports.verify=vi.fn((_version,signal)=>new Promise(resolve=>{const timer=setTimeout(()=>resolve('healthy'),60000);signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});}));
+  const pending=recoverDeployment(monitor,f.journal,f.ports,{sleep:async()=>{},...(scoped?{monitorRecoveryObservation:true}:{})});
+  await vi.advanceTimersByTimeAsync(60001);expect(await pending).toBe(scoped?'complete':'verification-unavailable');expect(f.ports.deploy).toHaveBeenCalledTimes(1);
+ }
+ const f=fixture();await expect(recoverDeployment(plan,f.journal,f.ports,{monitorRecoveryObservation:true})).rejects.toThrow('MONITOR_RECOVERY_SCOPE_INVALID');expect(f.ports.deploy).not.toHaveBeenCalled();
+});
+it('snapshots the recovery budget option before asynchronous authorization',async()=>{
+ vi.useFakeTimers();const f=fixture(),options:{monitorRecoveryObservation?:boolean}={};
+ f.ports.authorize=vi.fn(async()=>{options.monitorRecoveryObservation=true;});
+ f.ports.verify=vi.fn((_version,signal)=>new Promise(resolve=>{const timer=setTimeout(()=>resolve('healthy'),60000);signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});}));
+ const pending=recoverDeployment(plan,f.journal,f.ports,options);await vi.advanceTimersByTimeAsync(60001);expect(await pending).toBe('verification-unavailable');expect(f.ports.deploy).toHaveBeenCalledTimes(1);
+});

@@ -1,0 +1,61 @@
+{
+  "at": "2026-10-29T06:42:21.941Z",
+  "source": "832b18264400a751e2ab59d0fa7a75d896c4db89",
+  "passed": true,
+  "environment": "staging",
+  "checks": [
+    {
+      "kind": "web",
+      "case": "denied",
+      "outcome": "failed",
+      "interceptedSends": 0
+    },
+    {
+      "kind": "web",
+      "case": "independent",
+      "outcome": "sent",
+      "interceptedSends": 1
+    },
+    {
+      "kind": "web",
+      "case": "authority-unavailable",
+      "outcome": "retry",
+      "interceptedSends": 0
+    },
+    {
+      "kind": "native",
+      "case": "denied",
+      "outcome": "failed",
+      "interceptedSends": 0
+    },
+    {
+      "kind": "native",
+      "case": "independent",
+      "outcome": "sent",
+      "interceptedSends": 1
+    },
+    {
+      "kind": "native",
+      "case": "authority-unavailable",
+      "outcome": "retry",
+      "interceptedSends": 0
+    }
+  ],
+  "restrictedRoleEnvelopes": 4,
+  "retainedSqlSessionsDuringDenial": 2,
+  "remainingFixtureRows": 0,
+  "providerNetworkRequests": 0,
+  "temporaryOperatorRemoved": true,
+  "runtimeUnchanged": true,
+  "writerEnabled": false,
+  "cleanupEnabled": false,
+  "denialRetained": true,
+  "leaseReleased": true,
+  "scope": "Hosted native R2 and pinned per-delivery helpers; real dedicated jobs-role SQL preparation; provider transports intercepted.",
+  "limitations": [
+    "No physical-device or provider-delivery proof",
+    "No shared queue claims performed",
+    "Writer and cleanup flags remain disabled",
+    "Does not establish monthly availability"
+  ]
+}

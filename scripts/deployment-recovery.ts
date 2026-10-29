@@ -27,8 +27,16 @@ export function deploymentTarget(worker:string){
  const match=/^porchday-(staging|production)(-edge)?$/.exec(worker);if(!match)throw new RecoveryError('DEPLOYMENT_TARGET_INVALID');
  return{environment:match[1] as 'staging'|'production',frontend:!!match[2],key:match[1]+(match[2]??'')};
 }
+/** Low-level recovery includes monitors; application entry points continue to
+ * call deploymentTarget and cannot activate a monitor with API-only evidence. */
+export function recoveryTarget(worker:string){
+ const match=/^porchday-monitor-(staging|production)$/.exec(worker);
+ if(match)return {environment:match[1] as 'staging'|'production',frontend:false,monitor:true,key:'monitor-'+match[1]};
+ return {...deploymentTarget(worker),monitor:false};
+}
 export function deploymentPlanHash(plan:DeploymentPlan):string{
- const target=deploymentTarget(plan.worker);
+ const target=recoveryTarget(plan.worker);
+ if(target.monitor&&plan.assetManifests!==undefined)throw new RecoveryError('DEPLOYMENT_MONITOR_ASSETS_FORBIDDEN');
  if(plan.assetManifests!==undefined&&(!plan.assetManifests||Object.keys(plan.assetManifests).sort().join(',')!=='baseline,candidate'||![plan.assetManifests.candidate,plan.assetManifests.baseline].every(value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value))))throw new RecoveryError('DEPLOYMENT_ASSET_PLAN_INVALID');
  if(!id.test(plan.operationId)||![plan.candidateVersion,plan.baselineVersion,plan.baselineDeploymentId].every(x=>id.test(x))||plan.candidateVersion===plan.baselineVersion||! /^[a-f0-9]{40}$/.test(plan.candidateSource)||! /^[a-f0-9]{64}$/.test(plan.evidenceDigest)||!Array.isArray(plan.compatibleRollbackVersions)||!plan.compatibleRollbackVersions.every(x=>id.test(x))||!plan.compatibleRollbackVersions.includes(plan.baselineVersion)
   ||(target.frontend?typeof plan.backendVersion!=='string'||!id.test(plan.backendVersion)||typeof plan.backendReaderFloor!=='string'||!id.test(plan.backendReaderFloor):plan.backendVersion!==undefined||plan.backendReaderFloor!==undefined))throw new RecoveryError('DEPLOYMENT_PLAN_OR_ROLLBACK_FLOOR_INVALID');
@@ -74,7 +82,11 @@ export function rollbackOperationId(operationId:string):string{
 }
 
 /** Resume with the same plan/journal after interruption. An existing intent is never sent again. */
-export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>}={}):Promise<RecoveryResult>{
+export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>;monitorRecoveryObservation?:boolean;promotionAllowed?:()=>boolean}={}):Promise<RecoveryResult>{
+ if(options.monitorRecoveryObservation!==undefined&&(options.monitorRecoveryObservation!==true||!recoveryTarget(plan.worker).monitor))throw new RecoveryError('DEPLOYMENT_MONITOR_RECOVERY_SCOPE_INVALID');
+ const monitorRecoveryObservation=options.monitorRecoveryObservation===true;
+ const promotionAllowed=options.promotionAllowed??(()=>true);
+ const assertPromotion=()=>{if(!promotionAllowed())throw new RecoveryError('DEPLOYMENT_CONTINUITY_FAILED');};
  const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
  const rollbackId=rollbackOperationId(plan.operationId);
  let state=await journal.read();if(state){validateRecoveryState(state);if(state.planHash!==hash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');}
@@ -85,9 +97,11 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  const restored=(x:DeploymentObservation)=>x.version===plan.baselineVersion&&x.operationId===rollbackId;
  if(!state)await advance('prepared');
  if(state!.phase==='prepared'){
+  assertPromotion();
   await bounded(10000,signal=>ports.authorize(plan,'activate',signal));const before=await observe();if(!before)return 'observation-unavailable';if(!original(before))return 'concurrent-change';
+  assertPromotion();
   await advance('activation-intent');
-  try{await bounded(10000,signal=>ports.deploy(plan.candidateVersion,plan.operationId,signal));}catch{/* Outcome may be committed; only observation can reconcile it. */}
+  try{await bounded(10000,signal=>{assertPromotion();return ports.deploy(plan.candidateVersion,plan.operationId,signal);});}catch{/* Outcome may be committed; only observation can reconcile it. */}
  }
  if(state!.phase==='activation-intent'){
   const observed=await observe(x=>!original(x));if(!observed)return 'observation-unavailable';
@@ -96,11 +110,11 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  }
  if(state!.phase==='candidate-observed'){
   const observed=await observe();if(!observed)return 'observation-unavailable';if(!candidate(observed)||observed.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
-  let health:'healthy'|'unhealthy'|'unknown';try{health=await bounded(45000,signal=>ports.verify(plan.candidateVersion,signal));}catch{health='unknown';}
+  let health:'healthy'|'unhealthy'|'unknown';try{health=promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
   if(health!=='healthy'&&health!=='unhealthy')return 'verification-unavailable';
   if(health==='healthy'){
    const after=await observe();if(!after)return 'observation-unavailable';if(!candidate(after)||after.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
-   await advance('complete');return 'complete';
+   if(promotionAllowed()){await advance('complete');return 'complete';}
   }
   await bounded(10000,signal=>ports.authorize(plan,'rollback',signal));const before=await observe();if(!before)return 'observation-unavailable';if(!candidate(before)||before.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
   await advance('rollback-intent');

@@ -1,0 +1,199 @@
+{
+  "classification": "bounded hosted denied-session backlog recovery",
+  "result": {
+    "at": "2026-10-29T11:01:02.249Z",
+    "passed": true,
+    "environment": "staging",
+    "runtimeSource": "0892b284f709293b0d68aeaa5b4b06cdbf6c2f28",
+    "version": "d06996e3-2b78-47f7-a04e-cace08bd6ec1",
+    "toolingSource": "1fc8c77fff59433c694ac4207683a76760f4e8be",
+    "checks": [
+      "six_original_cookies_denied_while_six_sql_rows_retained",
+      "unrelated_member_healthy_during_contention",
+      "scheduled_cleanup_drained_six_denied_rows"
+    ],
+    "deniedBacklog": 6,
+    "syntheticMembers": 2,
+    "scheduledDrainMs": 27923,
+    "remainingFixtureRows": 0,
+    "manualSweepInvocations": 0,
+    "manualDeniedRowDeletions": 0,
+    "denialObjectsRetained": true,
+    "providerUnchanged": true,
+    "productionMutations": 0,
+    "leaseReleased": true,
+    "limitations": [
+      "Six denied sessions, not pilot-scale denied-backlog capacity.",
+      "Auth-route outcomes while exact SQL rows remain provide reader-enforcement evidence; denial bodies were not fetched directly.",
+      "No hosted Worker termination or physical-device claim."
+    ]
+  },
+  "retainedRowsUnderLock": {
+    "at": "2026-10-29T11:00:28.092Z",
+    "retainedDeniedRows": 6,
+    "originalCookiesRejected": 6,
+    "unrelatedMemberHealthy": true,
+    "lockHeldMs": 21594
+  },
+  "lockReleased": {
+    "at": "2026-10-29T11:00:28.129Z"
+  },
+  "logoutOutcomes": [
+    {
+      "at": "2026-10-29T11:00:12.050Z",
+      "index": 0,
+      "status": 503,
+      "durationMs": 5541
+    },
+    {
+      "at": "2026-10-29T11:00:12.215Z",
+      "index": 1,
+      "status": 503,
+      "durationMs": 5701
+    },
+    {
+      "at": "2026-10-29T11:00:19.310Z",
+      "index": 2,
+      "status": 503,
+      "durationMs": 5752
+    },
+    {
+      "at": "2026-10-29T11:00:19.247Z",
+      "index": 3,
+      "status": 503,
+      "durationMs": 5684
+    },
+    {
+      "at": "2026-10-29T11:00:26.468Z",
+      "index": 4,
+      "status": 503,
+      "durationMs": 5897
+    },
+    {
+      "at": "2026-10-29T11:00:26.372Z",
+      "index": 5,
+      "status": 503,
+      "durationMs": 5794
+    }
+  ],
+  "drainSamples": [
+    {
+      "at": "2026-10-29T11:00:28.442Z",
+      "remainingDeniedRows": 6,
+      "elapsedMs": 309,
+      "health": {
+        "at": "2026-10-29T11:00:28.442Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 36,
+          "pass_age_seconds": 36,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T11:00:34.110Z",
+      "remainingDeniedRows": 6,
+      "elapsedMs": 5977,
+      "health": {
+        "at": "2026-10-29T11:00:34.110Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 42,
+          "pass_age_seconds": 42,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T11:00:39.403Z",
+      "remainingDeniedRows": 6,
+      "elapsedMs": 11270,
+      "health": {
+        "at": "2026-10-29T11:00:39.403Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 47,
+          "pass_age_seconds": 47,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T11:00:44.942Z",
+      "remainingDeniedRows": 6,
+      "elapsedMs": 16809,
+      "health": {
+        "at": "2026-10-29T11:00:44.942Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 53,
+          "pass_age_seconds": 53,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T11:00:50.458Z",
+      "remainingDeniedRows": 6,
+      "elapsedMs": 22325,
+      "health": {
+        "at": "2026-10-29T11:00:50.458Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 58,
+          "pass_age_seconds": 58,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 3,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    },
+    {
+      "at": "2026-10-29T11:00:56.044Z",
+      "remainingDeniedRows": 0,
+      "elapsedMs": 27911,
+      "health": {
+        "at": "2026-10-29T11:00:56.044Z",
+        "status": 200,
+        "issues": [],
+        "progress": {
+          "page_age_seconds": 5,
+          "pass_age_seconds": 5,
+          "last_pass_duration_seconds": 1,
+          "last_pass_seen": 10,
+          "current_pass_seen": 0,
+          "invalid_records": 0
+        }
+      }
+    }
+  ],
+  "fixtureCleanup": {
+    "at": "2026-10-29T11:00:58.053Z",
+    "remainingRows": 0,
+    "denialObjectsRetained": true
+  },
+  "limitations": [
+    "Six denied sessions, not pilot-scale denied-backlog capacity.",
+    "Actual logout routes and original-cookie reads were tested; denial object bodies were not fetched directly.",
+    "No hosted Worker termination, password-change race, device or monthly SLO proof."
+  ]
+}

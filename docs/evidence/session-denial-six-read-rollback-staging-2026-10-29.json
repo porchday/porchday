@@ -1,0 +1,149 @@
+{
+  "at": "2026-10-29T11:07:56.629Z",
+  "passed": true,
+  "environment": "staging",
+  "runtimeSource": "0892b284f709293b0d68aeaa5b4b06cdbf6c2f28",
+  "toolingSource": "43e813cb7f43f56735f9dac192bc216a96102cfa",
+  "candidate": "040a40d9-210b-4a69-adf0-a0c0a4e78fb4",
+  "restored": "d06996e3-2b78-47f7-a04e-cace08bd6ec1",
+  "uploadOperation": "347bca73-3565-4333-956e-9b011e2c714a",
+  "activationOperation": "7ccec737-184a-4b8d-bd98-62ec83b8c02e",
+  "activationOutcome": "rolled-back",
+  "scope": {
+    "identicalApplicationCode": true,
+    "onlyCandidateConfigChanges": [
+      "SESSION_DENIAL_WRITER_V1=true -> false",
+      "SESSION_DENIAL_CLEANUP_V1=true -> false"
+    ],
+    "migrationChanges": false,
+    "frontendChanges": false,
+    "productionChanges": false,
+    "readinessFault": "Local candidate-verification observation; no hosted readiness outage injected"
+  },
+  "initialHealth": {
+    "at": "2026-10-29T11:06:49.894Z",
+    "status": 200,
+    "issues": [],
+    "progress": {
+      "page_age_seconds": 0,
+      "pass_age_seconds": 0,
+      "last_pass_duration_seconds": 1,
+      "last_pass_seen": 3,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    }
+  },
+  "retainedRowChecks": [
+    {
+      "at": "2026-10-29T11:07:07.954Z",
+      "planHash": "561e43065ac08e8db6905a8497124bcf068971575aa3d35e6470f61bf434909a",
+      "operationId": "7ccec737-184a-4b8d-bd98-62ec83b8c02e",
+      "phase": "candidate-observed",
+      "deniedStatus": 401,
+      "otherStatus": 200,
+      "otherOwnerMatched": true,
+      "retainedRows": 1,
+      "passed": true
+    },
+    {
+      "at": "2026-10-29T11:07:24.133Z",
+      "planHash": "561e43065ac08e8db6905a8497124bcf068971575aa3d35e6470f61bf434909a",
+      "operationId": "7ccec737-184a-4b8d-bd98-62ec83b8c02e",
+      "phase": "rollback-intent",
+      "deniedStatus": 401,
+      "otherStatus": 200,
+      "otherOwnerMatched": true,
+      "retainedRows": 1,
+      "passed": true
+    }
+  ],
+  "readinessFault": {
+    "at": "2026-10-29T11:07:07.955Z",
+    "planHash": "561e43065ac08e8db6905a8497124bcf068971575aa3d35e6470f61bf434909a",
+    "operationId": "7ccec737-184a-4b8d-bd98-62ec83b8c02e",
+    "kind": "local-readiness-observation",
+    "injectedStatus": 503,
+    "remoteRequestSent": false
+  },
+  "restoredHealth": {
+    "at": "2026-10-29T11:07:24.367Z",
+    "status": 200,
+    "issues": [],
+    "progress": {
+      "page_age_seconds": 35,
+      "pass_age_seconds": 35,
+      "last_pass_duration_seconds": 1,
+      "last_pass_seen": 3,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    },
+    "passed": true
+  },
+  "scheduledCleanup": {
+    "at": "2026-10-29T11:07:52.468Z",
+    "observedWithinMs": 15147,
+    "manualSessionDeletion": false
+  },
+  "scheduledHealth": {
+    "at": "2026-10-29T11:07:52.838Z",
+    "status": 200,
+    "issues": [],
+    "progress": {
+      "page_age_seconds": 2,
+      "pass_age_seconds": 2,
+      "last_pass_duration_seconds": 2,
+      "last_pass_seen": 5,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    },
+    "manualSweepInvocations": 0,
+    "newFullPassAfterLockRelease": true
+  },
+  "fixtureCleanup": {
+    "at": "2026-10-29T11:07:54.672Z",
+    "remainingFixtureRows": 0,
+    "denialsRetained": true
+  },
+  "checks": [
+    "denied_cookie_and_retained_sql_row_with_writer_cleanup_disabled",
+    "denied_cookie_and_retained_sql_row_after_automatic_rollback",
+    "unrelated_member_usable_in_both_versions",
+    "restored_scheduled_cleanup_removed_retained_row",
+    "restored_v3_health_and_new_scheduled_full_pass"
+  ],
+  "artifact": {
+    "firstPartyFiles": 49,
+    "sourceAndLiveBaselineVerified": true,
+    "publicAssetsPassed": 31,
+    "secretsAndAssetsInherited": true
+  },
+  "localFaultHarness": {
+    "at": "2026-10-29T11:05:14.355Z",
+    "passed": true,
+    "sourceSha256": "73621d042a23e818e09fefe9373049b0caafe665094c9a89dd83db41814f9173",
+    "localCandidateFailureInjected": true,
+    "realBaselineTransportPreserved": true,
+    "missingV3ProgressRejected": true,
+    "providerRequests": 0,
+    "databaseConnections": 0
+  },
+  "limitations": [
+    "This rehearsal changed deployment identity and two enable flags, not application code or schema.",
+    "It verifies a real controller/provider rollback triggered by a local failed readiness observation, not a provider outage or every future feature migration.",
+    "This verifies the current six-read v3 runtime as the restored baseline; it does not verify delayed rollback to legacy v2.",
+    "Repeatable capacity margin, pilot-scale denied backlog, remaining hosted interruption/password concurrency, device and storage/cost gates remain open.",
+    "Production writer and cleanup flags remain disabled; monthly 99.99% availability is not established."
+  ],
+  "ci": {
+    "runtime": {
+      "verify": 40858647995,
+      "secretScan": 40858648170
+    },
+    "tooling": {
+      "verify": 40862155943,
+      "secretScan": 40862155951
+    },
+    "exactPushRunsPassed": true
+  },
+  "leaseReleased": true
+}

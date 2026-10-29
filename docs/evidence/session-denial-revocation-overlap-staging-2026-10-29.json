@@ -1,0 +1,112 @@
+{
+  "at": "2026-10-29T07:30:14.355Z",
+  "environment": "staging",
+  "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "toolingSource": "c497764330552efd8da2520feeab04480b3e6a37",
+  "trials": [
+    {
+      "at": "2026-10-29T07:28:39.560Z",
+      "passed": true,
+      "environment": "staging",
+      "version": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+      "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+      "checks": [
+        "revocation_launched_before_overlapping_logout",
+        "secondary_session_matches_confirmed_revocation_outcome",
+        "unrelated_member_remains_usable",
+        "global_privacy_active_no_pending_intents"
+      ],
+      "observed": {
+        "at": "2026-10-29T07:28:34.595Z",
+        "logoutStatus": 200,
+        "revokeStatus": 401,
+        "secondaryStatus": 200,
+        "otherMemberStatus": 200,
+        "overlapMs": 1340
+      },
+      "remainingFixtureRows": 0,
+      "stagingWriterEnabled": true,
+      "stagingCleanupEnabled": true,
+      "productionWriterEnabled": false,
+      "productionCleanupEnabled": false,
+      "providerUnchangedDuringAcceptance": true,
+      "logoutLaunchDelayMs": 250,
+      "requests": [
+        {
+          "path": "sign-out",
+          "startedAt": "2026-10-29T07:28:31.131Z",
+          "durationMs": 1340,
+          "status": 200
+        },
+        {
+          "path": "revoke-other-sessions",
+          "startedAt": "2026-10-29T07:28:30.877Z",
+          "durationMs": 2342,
+          "status": 401
+        }
+      ],
+      "temporaryOperatorRemoved": true
+    },
+    {
+      "at": "2026-10-29T07:29:18.265Z",
+      "passed": true,
+      "environment": "staging",
+      "version": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+      "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+      "checks": [
+        "revocation_launched_before_overlapping_logout",
+        "secondary_session_matches_confirmed_revocation_outcome",
+        "unrelated_member_remains_usable",
+        "global_privacy_active_no_pending_intents"
+      ],
+      "observed": {
+        "at": "2026-10-29T07:29:13.901Z",
+        "logoutStatus": 200,
+        "revokeStatus": 200,
+        "secondaryStatus": 401,
+        "otherMemberStatus": 200,
+        "overlapMs": 719
+      },
+      "remainingFixtureRows": 0,
+      "stagingWriterEnabled": true,
+      "stagingCleanupEnabled": true,
+      "productionWriterEnabled": false,
+      "productionCleanupEnabled": false,
+      "providerUnchangedDuringAcceptance": true,
+      "logoutLaunchDelayMs": 1250,
+      "requests": [
+        {
+          "path": "sign-out",
+          "startedAt": "2026-10-29T07:29:11.260Z",
+          "durationMs": 719,
+          "status": 200
+        },
+        {
+          "path": "revoke-other-sessions",
+          "startedAt": "2026-10-29T07:29:10.006Z",
+          "durationMs": 2743,
+          "status": 200
+        }
+      ],
+      "temporaryOperatorRemoved": true
+    }
+  ],
+  "finalReadiness": {
+    "at": "2026-10-29T07:30:14.355Z",
+    "status": 200,
+    "healthy": true,
+    "issues": []
+  },
+  "productionMonitor": {
+    "incident": false,
+    "lastAt": "2026-10-29T07:29:51.509Z"
+  },
+  "leaseReleased": true,
+  "emailsRequested": false,
+  "limitations": [
+    "Wall-clock request overlap does not establish every internal ordering or every possible interleaving.",
+    "Hosted password-change races and Worker interruption were not exercised.",
+    "Physical-device, cleanup-health monitoring and larger-history gates remain open.",
+    "Does not establish monthly availability."
+  ]
+}

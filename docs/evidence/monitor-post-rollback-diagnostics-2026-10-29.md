@@ -1,0 +1,15 @@
+# Monitor failure attribution after rollback
+
+A bounded production tail ran15:50:45.361–15:52:20.844UTC on2026-10-29, after the original monitor had been restored and the prior operation finalized rolled-back. It captured11 internal-error exceptions on Monitor `/status` and one on `/tick`, plus two successful internal status invocations. The outer scheduled invocation logged `check_failed` and returned an `ok` outcome because its handler catches the failure. An outer Worker `ok` outcome therefore does not establish a successful observation.
+
+Eight public comparisons at roughly10-second spacing showed production seven503 responses and one200 with an observation159seconds old. Staging returned200 with fresh observations in all eight reads. These are a short comparison window, not fleet-wide failure rates. Application journeys in the independent monitor continued passing in the latest inspected sample while monitor freshness failed.
+
+The evidence confirms failures on both read and scheduled-observation paths. It does not identify the underlying platform/storage cause. The previous candidate’s bounded read retry and75-second observation window did not restore production monitoring; do not repeat that deployment as a proven repair or reset the object/history. Cloudflare documents internal-error reference IDs as useful for support correlation in its [Durable Objects release notes](https://developers.cloudflare.com/durable-objects/release-notes/#2025-02-11). A private support draft retains12 reference IDs and the exact times; it has not been sent. No credentials, member data or raw request headers are included in the draft or this public evidence.
+
+## Availability attribution
+
+The read-only availability reporter now adds `evidenceGroups.applicationJourney` and `evidenceGroups.monitorFreshness`. Combined totals, alerts, failed input records, unknown gaps and release gates remain unchanged. Each group retains any failed sample in a completed20-second bucket; missing or unfinished observations never become healthy coverage. This prevents a monitor-only failure from being described as demonstrated application downtime while preserving its operational significance.
+
+At cutoff15:52:40UTC,3416 retained observations yielded6820estimated combined failed seconds,1560application-journey failed seconds and5640monitor-freshness failed seconds. Group failures overlap and must not be added. All groups had only2.758% month-to-date coverage;2408060seconds remained unknown. Application samples alone exceed October’s267.84-second error budget. These are weighted sample-bucket estimates, not exact outage durations or a full-month availability rate. The broader99.99% SLO remains unestablished.
+
+Validation: nine report tests and the availability-report TypeScript project passed. Tests cover attribution, duplicate samples, gaps, unfinished observations, strict input validation, private input handling and unchanged combined estimates. The production history was read without modification; the report retains input byte bounds and digests.

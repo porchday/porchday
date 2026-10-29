@@ -296,9 +296,10 @@ export function isPrivacyMutation(method:string,path:string):boolean {
 export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
   let resources:ReturnType<typeof runtime>=null;
   const timing=phaseTiming(c);
+  const logoutTiming=logoutJournalTiming(c.env,c.req);
   try {
     resources=runtime(c.env);
-    if(resources)await measureFeedPhase(timing,'journal_check',()=>assertJournalReadable(resources!.store,resources!.db,c.get('requestTiming')));
+    if(resources)await measureJournalPhase(logoutTiming,'read_guard',()=>measureFeedPhase(timing,'journal_check',()=>assertJournalReadable(resources!.store,resources!.db,c.get('requestTiming'))));
   } catch(error) {
     const codes:Record<string,string>={JOURNAL_NOT_INITIALIZED:'journal_not_initialized',RESTORE_QUARANTINED:'restore_quarantined',DATABASE_ROLLBACK_DETECTED:'database_rollback_detected',JOURNAL_NOT_CONFIGURED:'journal_not_configured',JOURNAL_STORE_READ_FAILED:'journal_store_read_failed',JOURNAL_CONTROL_INVALID:'journal_control_invalid',JOURNAL_DATABASE_READ_FAILED:'journal_database_read_failed',JOURNAL_DATABASE_STATUS_INVALID:'journal_database_status_invalid'};
     event('error',{code:error instanceof JournalError?(codes[error.code]||'journal_unavailable'):'journal_unavailable'},c.env);
@@ -307,7 +308,7 @@ export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables
       ?'Porchday is temporarily unavailable while we resolve a service problem. Your password is not the cause.'
       :'Porchday could not complete a required safety check. Please try again shortly.';
     return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message}},503);
-  } finally {if(resources)await measureFeedPhase(timing,'journal_close',()=>resources!.close());}
+  } finally {if(resources)await measureJournalPhase(logoutTiming,'read_guard_close',()=>measureFeedPhase(timing,'journal_close',()=>resources!.close()));}
   await next();
 });
 function knownRollback(error:unknown):boolean {

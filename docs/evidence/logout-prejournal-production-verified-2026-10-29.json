@@ -1,0 +1,766 @@
+{
+  "classification": "Production diagnostic code activation and sampled existing-session continuity verified",
+  "runtimeCommit": "c2f8bf5781b4dc38c4ebc01923eafc83a8485d0b",
+  "toolingCommit": "3599019da52f5952084c965362fc8c4bd9a2d0e1",
+  "requiredPushCI": {
+    "runtimeVerify": 40878668474,
+    "runtimeSecrets": 40878668509,
+    "toolingVerify": 40881020730,
+    "toolingSecrets": 40881020747
+  },
+  "uploadOperation": "3632c842-4e2c-4e3d-befb-3a1ef7118c66",
+  "activationOperation": "2538dee7-4b4e-4408-bcc1-ac9f3c3a9087",
+  "verifiedFirstPartySources": 46,
+  "retainedPublicAssets": 31,
+  "result": {
+    "at": "2026-10-29T13:26:45.160Z",
+    "passed": true,
+    "environment": "production",
+    "version": "3896cab5-a6e1-4f4f-80dd-3fe0c9757dea",
+    "runtimeSource": "c2f8bf5781b4dc38c4ebc01923eafc83a8485d0b",
+    "checks": [
+      "existing_allowed_session_and_revoked_cookie_across_code_activation",
+      "existing_session_reads_and_denial_observed_across_code_activation"
+    ],
+    "candidate": "3896cab5-a6e1-4f4f-80dd-3fe0c9757dea",
+    "baseline": "f613874a-e0ca-456b-824b-16daa7a9f4ce",
+    "remainingFixtureRows": 0,
+    "stagingWriterEnabled": true,
+    "stagingCleanupEnabled": true,
+    "productionWriterEnabled": false,
+    "productionCleanupEnabled": false,
+    "candidateVerifiedAndCleanupInventoryUnchanged": true
+  },
+  "continuity": {
+    "at": "2026-10-29T13:26:38.311Z",
+    "report": {
+      "reason": "stopped",
+      "samples": 13,
+      "failedSamples": 0,
+      "maxStartGapMs": 2003.7881249999991
+    },
+    "samples": 13,
+    "postReleaseSamples": 2
+  },
+  "window": {
+    "from": "2026-10-29T13:26:13.476Z",
+    "through": "2026-10-29T13:26:38.304Z",
+    "activationDispatchedAt": "2026-10-29T13:26:14.222Z",
+    "activationCommandCompletedAt": "2026-10-29T13:26:34.377Z"
+  },
+  "samples": [
+    {
+      "index": 0,
+      "phaseAtStart": "before_activation",
+      "phase": "before_activation",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:13.476Z",
+        "completedAt": "2026-10-29T13:26:14.209Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 411
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 731
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 169
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 180
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 1,
+      "phaseAtStart": "prepared",
+      "phase": "prepared",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:15.478Z",
+        "completedAt": "2026-10-29T13:26:16.135Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 430
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 657
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 194
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 158
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 2,
+      "phaseAtStart": "prepared",
+      "phase": "prepared",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:17.482Z",
+        "completedAt": "2026-10-29T13:26:18.197Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 431
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 713
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 185
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 164
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 3,
+      "phaseAtStart": "prepared",
+      "phase": "prepared",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:19.484Z",
+        "completedAt": "2026-10-29T13:26:20.134Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 394
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 649
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 171
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 162
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 4,
+      "phaseAtStart": "activation-intent",
+      "phase": "candidate-observed",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:21.488Z",
+        "completedAt": "2026-10-29T13:26:22.515Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 405
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 1023
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 156
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 151
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 5,
+      "phaseAtStart": "candidate-observed",
+      "phase": "candidate-observed",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:23.490Z",
+        "completedAt": "2026-10-29T13:26:24.532Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 1041
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 975
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 701
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 474
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 6,
+      "phaseAtStart": "candidate-observed",
+      "phase": "candidate-observed",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:25.492Z",
+        "completedAt": "2026-10-29T13:26:26.249Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 400
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 755
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 204
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 166
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 7,
+      "phaseAtStart": "candidate-observed",
+      "phase": "candidate-observed",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:27.495Z",
+        "completedAt": "2026-10-29T13:26:28.199Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 486
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 700
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 163
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 166
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 8,
+      "phaseAtStart": "candidate-observed",
+      "phase": "candidate-observed",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:29.496Z",
+        "completedAt": "2026-10-29T13:26:30.274Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 384
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 778
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 144
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 217
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 9,
+      "phaseAtStart": "complete",
+      "phase": "complete",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:31.498Z",
+        "completedAt": "2026-10-29T13:26:32.164Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 523
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 666
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 152
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 166
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 10,
+      "phaseAtStart": "complete",
+      "phase": "complete",
+      "afterReleaseAtStart": false,
+      "afterRelease": false,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:33.499Z",
+        "completedAt": "2026-10-29T13:26:34.347Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 451
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 847
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 153
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 153
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 11,
+      "phaseAtStart": "complete",
+      "phase": "complete",
+      "afterReleaseAtStart": true,
+      "afterRelease": true,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:35.501Z",
+        "completedAt": "2026-10-29T13:26:36.118Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 484
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 617
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 165
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 167
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    },
+    {
+      "index": 12,
+      "phaseAtStart": "complete",
+      "phase": "complete",
+      "afterReleaseAtStart": true,
+      "afterRelease": true,
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "sample": {
+        "at": "2026-10-29T13:26:37.502Z",
+        "completedAt": "2026-10-29T13:26:38.304Z",
+        "healthy": true,
+        "checks": [
+          {
+            "name": "authorized_profile",
+            "status": 200,
+            "ok": true,
+            "durationMs": 548
+          },
+          {
+            "name": "authorized_feed",
+            "status": 200,
+            "ok": true,
+            "durationMs": 802
+          },
+          {
+            "name": "denied_profile",
+            "status": 401,
+            "ok": true,
+            "durationMs": 165
+          },
+          {
+            "name": "protected_readiness",
+            "status": 200,
+            "ok": true,
+            "durationMs": 166
+          }
+        ],
+        "scope": "existing_session_reads_denial_and_readiness"
+      }
+    }
+  ],
+  "releaseJourneys": [
+    {
+      "at": "2026-10-29T13:26:28.435Z",
+      "operationId": "2538dee7-4b4e-4408-bcc1-ac9f3c3a9087",
+      "planHash": "661d7caced32ff2d9be8a3fc95cca94e4d007c375f255b16ca9de7defd02dee1",
+      "version": "3896cab5-a6e1-4f4f-80dd-3fe0c9757dea",
+      "attemptId": "2644f55c-15c7-4ea6-af54-67d75bc2f08a",
+      "kind": "journey",
+      "detail": {
+        "at": "2026-10-29T13:26:23.262Z",
+        "status": "healthy",
+        "checks": [
+          {
+            "name": "protected_readiness",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "anonymous_session",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "monitor_freshness",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "legacy_anonymous_session",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "login",
+            "ok": true
+          },
+          {
+            "name": "authorized_profile",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "authorized_feed",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "revocation",
+            "ok": true,
+            "status": 401
+          },
+          {
+            "name": "logout",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "logoutReconciled": false,
+        "authenticatedAt": "2026-10-29T13:26:24.107Z",
+        "authenticatedChecksReused": false
+      }
+    }
+  ],
+  "cleanup": {
+    "at": "2026-10-29T13:26:43.466Z",
+    "remainingFixtureRows": 0,
+    "revokedSessionsRemainAbsent": true
+  },
+  "stagingUnchanged": true,
+  "leaseReleased": true,
+  "limitations": [
+    "Thirteen healthy samples establish sampled continuity only, not unsampled uptime or monthly SLO.",
+    "Diagnostic backend code only; frontend/native/schema feature overlap remains unverified.",
+    "No failure injected. Prior rejected rollout and operator-directed rollback remain separate evidence.",
+    "Production writer/cleanup remain disabled. Diagnostics do not establish the cause or resolution of historical latency.",
+    "All four pre-journal phases observed in a bounded production window after ingestion/sampling. Aggregate points do not correlate individual requests or establish historical cause or latency improvement."
+  ],
+  "hostedPhaseTelemetry": {
+    "at": "2026-10-29T13:28:07.462Z",
+    "window": {
+      "from": "2026-10-29T13:26:35Z",
+      "toExclusive": "2026-10-29T13:27:35Z"
+    },
+    "data": [
+      {
+        "phase": "r2_write",
+        "observed_points": "5",
+        "estimated_events": "9",
+        "max_observed_ms": 284
+      },
+      {
+        "phase": "guard",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 60
+      },
+      {
+        "phase": "work",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 935
+      },
+      {
+        "phase": "receipt",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 254
+      },
+      {
+        "phase": "close",
+        "observed_points": "3",
+        "estimated_events": "8",
+        "max_observed_ms": 0
+      },
+      {
+        "phase": "r2_read",
+        "observed_points": "7",
+        "estimated_events": "21",
+        "max_observed_ms": 89
+      },
+      {
+        "phase": "registration",
+        "observed_points": "2",
+        "estimated_events": "4",
+        "max_observed_ms": 663
+      },
+      {
+        "phase": "rate_limit",
+        "observed_points": "2",
+        "estimated_events": "6",
+        "max_observed_ms": 82
+      },
+      {
+        "phase": "retirement",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 301
+      },
+      {
+        "phase": "database_status",
+        "observed_points": "2",
+        "estimated_events": "4",
+        "max_observed_ms": 38
+      },
+      {
+        "phase": "checkpoint",
+        "observed_points": "1",
+        "estimated_events": "1",
+        "max_observed_ms": 931
+      },
+      {
+        "phase": "read_guard_close",
+        "observed_points": "2",
+        "estimated_events": "4",
+        "max_observed_ms": 0
+      },
+      {
+        "phase": "read_guard",
+        "observed_points": "1",
+        "estimated_events": "3",
+        "max_observed_ms": 66
+      },
+      {
+        "phase": "initial_authorization",
+        "observed_points": "3",
+        "estimated_events": "10",
+        "max_observed_ms": 313
+      }
+    ],
+    "limitations": [
+      "Sampled aggregate window, not a trace of the failed client request.",
+      "Missing observations do not prove absence or zero latency."
+    ]
+  },
+  "hostedRequestTelemetry": {
+    "at": "2026-10-29T13:28:06.970Z",
+    "window": {
+      "from": "2026-10-29T13:26:35Z",
+      "toExclusive": "2026-10-29T13:27:35Z"
+    },
+    "data": [
+      {
+        "status": 200,
+        "observed_points": "3",
+        "estimated_events": "3",
+        "max_observed_ms": 4095
+      }
+    ],
+    "limitations": [
+      "Sampled aggregate window, not a trace of the failed client request.",
+      "Missing observations do not prove absence or zero latency."
+    ]
+  }
+}

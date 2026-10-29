@@ -1,0 +1,144 @@
+{
+  "classification": "Production diagnostic rollout not accepted; operator-directed rollback verified",
+  "candidateRuntime": "c2f8bf5781b4dc38c4ebc01923eafc83a8485d0b",
+  "candidateVersion": "ed3f2b7e-0155-4632-b0c2-41352ff1ebbe",
+  "restoredRuntime": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "restoredVersion": "f613874a-e0ca-456b-824b-16daa7a9f4ce",
+  "operationId": "886e632a-0e34-4aa9-a6e3-d72155584202",
+  "finding": "Pinned release probe referenced a deleted synthetic account. Read-only reconciliation found zero matching users and sessions. Original login response was not retained and remains unknown; it was never replayed.",
+  "operatorRecovery": {
+    "decision": "Reject candidate acceptance and restore compatible baseline under same deployment operation.",
+    "baselineVerification": "A distinct baseline-only durable journey used the separately created and verified fixture; all normal journey and asset checks passed.",
+    "localRecoverySetupFailure": "First baseline verification stopped before any journey because the private journey directory was missing. Directory was created and same rollback reconciled with deployment writes prohibited."
+  },
+  "recoveryOutcomes": [
+    {
+      "at": "2026-10-29T13:13:15.520Z",
+      "outcome": "verification-unavailable"
+    },
+    {
+      "at": "2026-10-29T13:13:45.415Z",
+      "outcome": "rolled-back"
+    }
+  ],
+  "journeys": [
+    {
+      "at": "2026-10-29T13:10:39.080Z",
+      "operationId": "886e632a-0e34-4aa9-a6e3-d72155584202",
+      "planHash": "17fba49321226619706124982e69e719c60470b64fab5ad5ea0b39468204fe92",
+      "version": "ed3f2b7e-0155-4632-b0c2-41352ff1ebbe",
+      "attemptId": "38a17ba1-1c67-41a1-964d-c1994112c3ad",
+      "kind": "journey",
+      "detail": {
+        "at": "2026-10-29T13:10:37.527Z",
+        "status": "unknown",
+        "checks": [
+          {
+            "name": "protected_readiness",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "anonymous_session",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "monitor_freshness",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "legacy_anonymous_session",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "unresolved": "login"
+      }
+    },
+    {
+      "at": "2026-10-29T13:13:43.090Z",
+      "operationId": "886e632a-0e34-4aa9-a6e3-d72155584202",
+      "planHash": "17fba49321226619706124982e69e719c60470b64fab5ad5ea0b39468204fe92",
+      "version": "f613874a-e0ca-456b-824b-16daa7a9f4ce",
+      "attemptId": "9c874a22-f203-4e2f-898f-e1c5b37d7c6e",
+      "kind": "journey",
+      "detail": {
+        "at": "2026-10-29T13:13:37.851Z",
+        "status": "healthy",
+        "checks": [
+          {
+            "name": "protected_readiness",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "anonymous_session",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "monitor_freshness",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "legacy_anonymous_session",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "login",
+            "ok": true
+          },
+          {
+            "name": "authorized_profile",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "authorized_feed",
+            "ok": true,
+            "status": 200
+          },
+          {
+            "name": "revocation",
+            "ok": true,
+            "status": 401
+          },
+          {
+            "name": "logout",
+            "ok": true,
+            "status": 200
+          }
+        ],
+        "logoutReconciled": false,
+        "authenticatedAt": "2026-10-29T13:13:38.508Z",
+        "authenticatedChecksReused": false
+      }
+    }
+  ],
+  "cleanup": {
+    "at": "2026-10-29T13:14:17.841Z",
+    "remainingFixtureRows": 0,
+    "existingSessionAfterRollback": true,
+    "logout200": true,
+    "revocation401": true,
+    "providerMatchesCanonical": true
+  },
+  "sampledCandidateContinuity": {
+    "samples": 7,
+    "failedSamples": 0,
+    "from": "2026-10-29T13:10:29.311Z",
+    "through": "2026-10-29T13:10:42.454Z"
+  },
+  "leaseReleased": true,
+  "limitations": [
+    "Production candidate rollout failed its acceptance gate; diagnostics are not currently deployed to production.",
+    "Seven healthy samples cover activation up to verifier interruption, not rollback continuity or unsampled availability.",
+    "External monitor remained healthy at checked snapshots; this is not a monthly SLO proof.",
+    "Rollback was operator-directed after verification unavailable, not automatic response to application failure.",
+    "Preflight did not validate pinned probe account existence; this must be fixed before another rollout."
+  ]
+}

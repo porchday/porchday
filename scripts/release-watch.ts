@@ -1,3 +1,4 @@
+import {createContinuityGate} from './release-continuity-gate.ts';
 import {constants,openSync,closeSync,fsyncSync,fstatSync,readFileSync,writeFileSync,linkSync,unlinkSync,realpathSync,lstatSync,mkdirSync,readdirSync,existsSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
 import {join,isAbsolute} from 'node:path';
@@ -37,7 +38,10 @@ export type WatchObservation={status:'completed'|'cancelled'|'waiting'}|{status:
 /** Age raises attention only. No process-death inference, lease acquisition, cleanup or remote recovery. */
 async function inspectState(input:ReleaseWatch,now:Date):Promise<WatchObservation>{
  const w=structuredClone(input);validate(w);const state=journal(w),hash=deploymentPlanHash(w.plan);
- if(await FileDeploymentLease.completed(w.root,w.plan,{read:async()=>state,write:async()=>{throw Error('RELEASE_WATCH_READ_ONLY');}}))return{status:'completed'};
+ if(await FileDeploymentLease.completed(w.root,w.plan,{read:async()=>state,write:async()=>{throw Error('RELEASE_WATCH_READ_ONLY');}})){
+  if(createContinuityGate(w.proofDirectory,w.plan).failed())return{status:'attention',event:queueReleaseAlert(w.proofDirectory,w.plan,'command-failed',now)};
+  return{status:'completed'};
+ }
  const cancelled=join(w.root,'deployment-recovery-cancelled-'+w.plan.operationId);
  if(existsSync(cancelled)){
   directory(cancelled);const owner=read(join(cancelled,'owner.json'));

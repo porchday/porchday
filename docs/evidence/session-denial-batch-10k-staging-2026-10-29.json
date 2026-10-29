@@ -1,0 +1,119 @@
+{
+  "classification": "failed staging capacity acceptance; safely reconciled",
+  "runtimeCommit": "d741df6bcb3a9d68ac777597fedc668472f3d0d3",
+  "toolingCommit": "5f3f6d76e1a1fcc75a78f42d1f9af122c8d410f9",
+  "stagingVersion": "34d719bd-fd0a-4ef3-a997-652c04728fc0",
+  "writerEnabled": true,
+  "cleanupEnabled": true,
+  "requiredPushCI": {
+    "runtimeVerify": 40852179117,
+    "runtimeSecrets": 40852179035,
+    "toolingVerify": 40852181996,
+    "toolingSecrets": 40852182036
+  },
+  "uploadOperation": "4b4f5201-28b5-494b-a9fd-a83d0ce38fcd",
+  "activationOperation": "82efc495-7820-4401-86ab-692fb50f3802",
+  "scheduledProgressBeforeLoad": {
+    "healthySamples": 2,
+    "elapsedSeconds": 12.468
+  },
+  "failureSample": {
+    "at": "2026-10-29T09:59:05.015Z",
+    "observation": {
+      "v": 1,
+      "at": "2026-10-29T09:59:02.417Z",
+      "environment": "staging",
+      "healthy": false,
+      "checks": [
+        {
+          "name": "anonymous_session",
+          "status": 200,
+          "ok": true,
+          "durationMs": 351
+        },
+        {
+          "name": "authorized_feed",
+          "status": 200,
+          "ok": true,
+          "durationMs": 408
+        },
+        {
+          "name": "authorized_profile",
+          "status": 200,
+          "ok": true,
+          "durationMs": 293
+        },
+        {
+          "name": "login",
+          "status": 200,
+          "ok": true,
+          "durationMs": 601
+        },
+        {
+          "name": "logout",
+          "status": 200,
+          "ok": true,
+          "durationMs": 668
+        },
+        {
+          "name": "monitor_freshness",
+          "status": 200,
+          "ok": true,
+          "durationMs": 315
+        },
+        {
+          "name": "protected_readiness",
+          "status": 503,
+          "ok": false,
+          "durationMs": 350
+        },
+        {
+          "name": "revocation",
+          "status": 401,
+          "ok": true,
+          "durationMs": 204
+        }
+      ],
+      "durationMs": 1883,
+      "scope": "login_authorized_reads_logout_and_readiness"
+    },
+    "health": {
+      "at": "2026-10-29T09:59:04.619Z",
+      "status": 503,
+      "issues": [
+        "session_denial_pass_stale"
+      ],
+      "normalCleanupAge": 11,
+      "denialCleanup": {
+        "page_age_seconds": 1,
+        "pass_age_seconds": 315,
+        "last_pass_duration_seconds": 1,
+        "last_pass_seen": 3,
+        "current_pass_seen": 8100,
+        "invalid_records": 0
+      }
+    },
+    "fixtureSessions": 10000
+  },
+  "cleanup": {
+    "at": "2026-10-29T09:59:06.050Z",
+    "remainingRows": 0
+  },
+  "reconciliation": {
+    "at": "2026-10-29T10:00:11.701Z",
+    "failureCode": "CAPACITY_JOURNEY_OR_HEALTH_FAILED",
+    "fixtureRows": 0,
+    "scheduledHealthRecovered": true,
+    "healthyRecoveryProbes": 3,
+    "providerUnchanged": true,
+    "productionMutations": 0,
+    "leaseReleased": true
+  },
+  "limitations": [
+    "Batching has not demonstrated 10,000-session capacity.",
+    "Post-cleanup passes do not prove success with the original fixture intact.",
+    "No production writer enablement or production mutations.",
+    "Phase timings are needed before attributing the bottleneck to SQL, R2 or queue overhead.",
+    "This does not establish monthly 99.99% availability."
+  ]
+}

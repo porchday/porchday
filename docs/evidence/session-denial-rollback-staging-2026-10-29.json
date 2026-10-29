@@ -1,0 +1,82 @@
+{
+  "at": "2026-10-29T07:25:06.088Z",
+  "passed": true,
+  "environment": "staging",
+  "version": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+  "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "checks": [
+    "denied_cookie_and_retained_sql_row_with_writer_cleanup_disabled",
+    "denied_cookie_and_retained_sql_row_after_automatic_rollback",
+    "unrelated_member_usable_in_both_versions",
+    "restored_scheduled_cleanup_removed_retained_row"
+  ],
+  "candidate": "ca9a4b50-b2cc-4248-8de5-a6166ac73066",
+  "rollback": "57a5c9f2-7d32-447c-bad8-2fc6130163c1",
+  "remainingFixtureRows": 0,
+  "stagingWriterEnabled": true,
+  "stagingCleanupEnabled": true,
+  "productionWriterEnabled": false,
+  "productionCleanupEnabled": false,
+  "providerRestoredAndCleanupInventoryUnchanged": true,
+  "operationId": "560a096b-861c-426d-b8b0-d5ebd01e6ee3",
+  "toolingSource": "51912b6090ab263d24deac31dd4ed55746e22b2f",
+  "publication": {
+    "at": "2026-10-29T07:23:45.674Z",
+    "status": 503,
+    "durationMs": 5994
+  },
+  "candidateCheck": {
+    "at": "2026-10-29T07:23:54.620Z",
+    "planHash": "9bcc596f8fed222f4921aa0029182afc90208ce64675c51a3be97180c6a58718",
+    "operationId": "560a096b-861c-426d-b8b0-d5ebd01e6ee3",
+    "phase": "candidate-observed",
+    "deniedStatus": 401,
+    "otherStatus": 200,
+    "otherOwnerMatched": true,
+    "retainedRows": 1,
+    "passed": true
+  },
+  "rollbackCheck": {
+    "at": "2026-10-29T07:24:10.572Z",
+    "planHash": "9bcc596f8fed222f4921aa0029182afc90208ce64675c51a3be97180c6a58718",
+    "operationId": "560a096b-861c-426d-b8b0-d5ebd01e6ee3",
+    "phase": "rollback-intent",
+    "deniedStatus": 401,
+    "otherStatus": 200,
+    "otherOwnerMatched": true,
+    "retainedRows": 1,
+    "passed": true
+  },
+  "scheduledCleanup": {
+    "at": "2026-10-29T07:24:59.769Z",
+    "observedWithinMs": 40326,
+    "manualSessionDeletion": false
+  },
+  "fault": {
+    "at": "2026-10-29T07:23:54.621Z",
+    "planHash": "9bcc596f8fed222f4921aa0029182afc90208ce64675c51a3be97180c6a58718",
+    "operationId": "560a096b-861c-426d-b8b0-d5ebd01e6ee3",
+    "kind": "local-readiness-observation",
+    "injectedStatus": 503,
+    "remoteRequestSent": false
+  },
+  "finalReadiness": {
+    "at": "2026-10-29T07:25:48.798Z",
+    "status": 200,
+    "healthy": true,
+    "issues": []
+  },
+  "leaseReleased": true,
+  "automaticRollbackFinalized": true,
+  "productionMonitor": {
+    "incident": false,
+    "lastAt": "2026-10-29T07:25:31.476Z"
+  },
+  "limitations": [
+    "Injected failure was a local readiness observation; no hosted fault was introduced.",
+    "Candidate and baseline used byte-identical deployed runtime; only writer and cleanup flags differed.",
+    "This verifies retained-row denial enforcement across these compatible versions, not every future release or incompatible reader rollback.",
+    "Hosted interruption, additional concurrency orderings, physical devices and larger-history bounds remain open.",
+    "Does not establish monthly availability."
+  ]
+}

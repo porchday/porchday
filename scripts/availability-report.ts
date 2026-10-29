@@ -27,6 +27,7 @@ export function monthWindow(month:string):{start:number;end:number}{
 export class AvailabilityWindow{
  private buckets=new Map<number,boolean>();private sampleCount=0;private failedSamples=0;private first:number|null=null;private last:number|null=null;
  private failedChecks=new Map<string,number>();private outsideAsOf=0;
+ private applicationBuckets=new Map<number,boolean>();private monitorBuckets=new Map<number,boolean>();
  readonly start:number;readonly end:number;readonly asOf:number;readonly environment:'staging'|'production';
  constructor(start:number,end:number,asOf:number,environment:'staging'|'production'){
   this.start=start;this.end=end;this.asOf=asOf;this.environment=environment;
@@ -43,21 +44,34 @@ export class AvailabilityWindow{
   // Credit only completed UTC buckets. Multiple samples never multiply time; any failure wins.
   if(bucket+cadence>stop)return;
   this.buckets.set(bucket,(this.buckets.get(bucket)??true)&&value.healthy);
+  // Independent attribution uses the same validated observations and coverage.
+  // Keep the combined result conservative; monitor failures still alert.
+  const applicationHealthy=value.checks.filter(c=>c.name!=='monitor_freshness').every(c=>c.ok),monitorHealthy=value.checks.find(c=>c.name==='monitor_freshness')!.ok;
+  this.applicationBuckets.set(bucket,(this.applicationBuckets.get(bucket)??true)&&applicationHealthy);
+  this.monitorBuckets.set(bucket,(this.monitorBuckets.get(bucket)??true)&&monitorHealthy);
+ }
+ private summarize(buckets:Map<number,boolean>){
+  const stop=Math.min(this.asOf,this.end),elapsedMs=stop-this.start;let healthyMs=0,failedMs=0;
+  for(const [at,healthy] of buckets){const width=Math.max(0,Math.min(at+cadence,stop)-Math.max(at,this.start));if(healthy)healthyMs+=width;else failedMs+=width;}
+  const knownMs=healthyMs+failedMs,unknownMs=elapsedMs-knownMs,windowMs=this.end-this.start;
+  return{elapsedSeconds:elapsedMs/1000,estimatedHealthySeconds:healthyMs/1000,estimatedFailedSeconds:failedMs/1000,unknownSeconds:unknownMs/1000,
+   coveragePercent:elapsedMs?knownMs/elapsedMs*100:0,sampledSuccessRatePercent:knownMs?healthyMs/knownMs*100:null,
+   fullWindowErrorBudgetSeconds:windowMs*0.0001/1000,sampledFailureBudgetRatio:failedMs/(windowMs*0.0001),
+   budgetAssessment:failedMs>windowMs*0.0001?'sampled-failures-exceed-budget':'not-established',sloStatus:'not-established'};
  }
  report(){
-  const stop=Math.min(this.asOf,this.end),elapsedMs=stop-this.start;let healthyMs=0,failedMs=0;
-  for(const [at,healthy] of this.buckets){const width=Math.max(0,Math.min(at+cadence,stop)-Math.max(at,this.start));if(healthy)healthyMs+=width;else failedMs+=width;}
-  const knownMs=healthyMs+failedMs,unknownMs=elapsedMs-knownMs,windowMs=this.end-this.start;
+  const stop=Math.min(this.asOf,this.end);
   return{start:new Date(this.start).toISOString(),end:new Date(this.end).toISOString(),asOf:new Date(stop).toISOString(),completeWindow:this.asOf>=this.end,
    scope,environment:this.environment,method:'completed-20-second-UTC-buckets; any failure wins; no gap filling',
    collectionFirstObservation:this.first===null?null:new Date(this.first).toISOString(),collectionLastObservation:this.last===null?null:new Date(this.last).toISOString(),
    samples:this.sampleCount,failedSamples:this.failedSamples,ignoredFutureOrUnfinishedSamples:this.outsideAsOf,
    failedChecks:Object.fromEntries([...this.failedChecks].sort(([a],[b])=>a.localeCompare(b))),
-   elapsedSeconds:elapsedMs/1000,estimatedHealthySeconds:healthyMs/1000,estimatedFailedSeconds:failedMs/1000,unknownSeconds:unknownMs/1000,
-   coveragePercent:elapsedMs?knownMs/elapsedMs*100:0,sampledSuccessRatePercent:knownMs?healthyMs/knownMs*100:null,
-   fullWindowErrorBudgetSeconds:windowMs*0.0001/1000,sampledFailureBudgetRatio:failedMs/(windowMs*0.0001),
-   budgetAssessment:failedMs>windowMs*0.0001?'sampled-failures-exceed-budget':'not-established',sloStatus:'not-established',
-   limitations:['Sampled buckets estimate this probe only; they do not measure continuous uptime.','Unobserved time and incidents before collection are not healthy observations.','Encrypted writes, mail delivery, regional coverage and responder acknowledgment are not established by this report.']};
+   ...this.summarize(this.buckets),
+   evidenceGroups:{
+    applicationJourney:{checks:[...checks.filter(c=>c!=='monitor_freshness'),...(this.environment==='production'?['legacy_anonymous_session']:[])],...this.summarize(this.applicationBuckets)},
+    monitorFreshness:{checks:['monitor_freshness'],...this.summarize(this.monitorBuckets)},
+   },
+   limitations:['Sampled buckets estimate this probe only; they do not measure continuous uptime.','Unobserved time and incidents before collection are not healthy observations.','Evidence groups attribute this probe only; a monitor failure does not by itself prove an application outage. Combined failures and alerts remain unchanged.','Encrypted writes, mail delivery, regional coverage and responder acknowledgment are not established by this report.']};
  }
 }
 export async function availabilityReport(directory:string,asOf:string,month=asOf.slice(0,7),environment:'staging'|'production'='production'){
