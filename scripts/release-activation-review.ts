@@ -11,7 +11,7 @@ import {assertReleaseSchema,type ReleaseSchemaFingerprint} from './release-schem
 import {publicAssetManifestHash,type PublicAssetManifest} from './release-assets-verify.ts';
 export const compatibilityChecks=['schemaRollback','denialReaders','webClientOverlap','nativeClientOverlap','retainedAssets','stagingAcceptance'] as const;
 type EvidenceFile={path:string;sha256:string};
-export type CompatibilityReview={version:1;worker:string;candidate:{version:string;source:string};baseline:{version:string;source:string};schema:ReleaseSchemaFingerprint;publicAssets:{candidate:string;baseline:string};checks:Record<typeof compatibilityChecks[number],{status:'passed'|'scheduled';basis:string;evidence:EvidenceFile[]}>};
+export type CompatibilityReview={readerFloorPromotion?:DeploymentPlan['readerFloorPromotion'];version:1;worker:string;candidate:{version:string;source:string};baseline:{version:string;source:string};schema:ReleaseSchemaFingerprint;publicAssets:{candidate:string;baseline:string};checks:Record<typeof compatibilityChecks[number],{status:'passed'|'scheduled';basis:string;evidence:EvidenceFile[]}>};
 export type ActivationExecution={root:string;workspace:string;uploadManifest:EvidenceFile;proofPath:string;probe:EvidenceFile;journalDirectory:string;proofDirectory:string;journeyDirectory:string};
 export type ActivationReviewEvidence={monitor?:{baseline:EvidenceFile;storageCompatibility:EvidenceFile;incidentRecovery?:EvidenceFile};execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
@@ -47,7 +47,17 @@ export function verifyActivationReview(plan:DeploymentPlan,manifest:UploadManife
  const publicAssets={candidate:publicAssetManifestHash(evidence.assets.candidate),baseline:publicAssetManifestHash(evidence.assets.baseline)};
  if(plan.assetManifests&&!isDeepStrictEqual(plan.assetManifests,publicAssets))throw Error('ACTIVATION_REVIEW_ASSETS_CHANGED');
  const review=JSON.parse(readEvidence(evidence.compatibility).toString()) as CompatibilityReview;
- keys(review,['version','worker','candidate','baseline','schema','publicAssets','checks']);
+ keys(review,['version','worker','candidate','baseline','schema','publicAssets','checks',...(review.readerFloorPromotion===undefined?[]:['readerFloorPromotion'])]);
+ if(!isDeepStrictEqual(review.readerFloorPromotion,plan.readerFloorPromotion))throw Error('ACTIVATION_READER_FLOOR_REVIEW_CHANGED');
+ if(plan.readerFloorPromotion){
+  if(!manifest.evidence.schema.migrations.includes('057_privacy_transaction_commits.sql'))throw Error('ACTIVATION_READER_FLOOR_SCHEMA_REQUIRED');
+  for(const resources of [upload.baselineResources,upload.candidateResources]){
+   const bindings=resources.bindings as Array<{name:string;type:string;text?:string}>;
+   if(!Array.isArray(bindings)||bindings.some(b=>b.name==='PRIVACY_COMMIT_WRITER_V1'))throw Error('ACTIVATION_READER_FLOOR_WRITER_FORBIDDEN');
+  }
+  const bindings=upload.candidateResources.bindings as Array<{name:string;type:string;text?:string}>;
+  if(!isDeepStrictEqual(bindings.filter(b=>b.name==='PRIVACY_COMMIT_RECOVERY_V1'),[{type:'plain_text',name:'PRIVACY_COMMIT_RECOVERY_V1',text:'true'}]))throw Error('ACTIVATION_READER_FLOOR_READER_REQUIRED');
+ }
  if(review.version!==1||review.worker!==plan.worker||!isDeepStrictEqual(review.candidate,{version:plan.candidateVersion,source:plan.candidateSource})||!isDeepStrictEqual(review.baseline,{version:plan.baselineVersion,source:evidence.state.baseline.source})||!isDeepStrictEqual(review.publicAssets,publicAssets))throw Error('ACTIVATION_COMPATIBILITY_SCOPE_CHANGED');
  assertReleaseSchema(review.schema,manifest.evidence.schema);keys(review.checks,[...compatibilityChecks]);
  let total=0;const verified=new Map<string,string>(),pendingChecks:string[]=[];

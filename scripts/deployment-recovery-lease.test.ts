@@ -303,3 +303,28 @@ describe('observed canonical finalization',()=>{
   }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
  });
 });
+
+
+describe('reviewed reader floor promotion',()=>{
+ it.each(['complete','rolled-back'] as const)('promotes only on complete and preserves the old floor on %s',async phase=>{
+  const f=fixture(),promote:DeploymentPlan={...plan,readerFloorPromotion:{protocol:'privacy-commit-v1',previousVersion:plan.baselineVersion}};let lease:FileDeploymentLease|undefined;
+  const state:RecoveryState={v:1,revision:5,planHash:deploymentPlanHash(promote),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})};const log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('unused');}};
+  try{
+   const before=JSON.stringify({...JSON.parse(f.canonical),compatibleRollbackVersions:{staging:plan.baselineVersion,production:uuid(80)}});writeFileSync(join(f.root,'latest-verified-deployment.json'),before);
+   lease=FileDeploymentLease.acquire(f.root,promote);await expect(lease.finalize(log)).rejects.toThrow('READER_FLOOR_PROOF_REQUIRED');
+   const snapshot=join(f.root,'snapshot.json'),schema=join(f.root,'schema.json'),version=phase==='complete'?plan.candidateVersion:plan.baselineVersion;
+   writeFileSync(snapshot,JSON.stringify({workers:{staging:{active:version,resources:{bindings:[{name:'PRIVACY_COMMIT_RECOVERY_V1',type:'plain_text',text:'true'}]}}}}),{mode:0o600});
+   writeFileSync(schema,JSON.stringify({kind:'schema-proof',operationId:plan.operationId,planHash:deploymentPlanHash(promote),worker:plan.worker,version,branchId:'synthetic',schema:{version:1,migrations:['057_privacy_transaction_commits.sql'],functionsSha256:'a'.repeat(64),columnsSha256:'b'.repeat(64)}}),{mode:0o600});
+   const snapshotBytes=readFileSync(snapshot);writeFileSync(snapshot,JSON.stringify({workers:{staging:{active:version,resources:{bindings:[{name:'PRIVACY_COMMIT_WRITER_V1',type:'plain_text',text:'true'}]}}}}));
+   await expect(lease.finalize(log,snapshot,undefined,schema)).rejects.toThrow('READER_FLOOR_PROOF_REQUIRED');writeFileSync(snapshot,snapshotBytes);
+   await lease.finalize(log,snapshot,undefined,schema);FileDeploymentLease.assertObservedCanonical(f.root,promote,before);lease.close();
+   lease=FileDeploymentLease.acquire(f.root,promote);expect(await lease.resumeFinalization(log)).toBe(true);
+   const record=await FileDeploymentLease.completed(f.root,promote,log);expect(record?.compatibleRollbackVersions).toEqual({staging:version,production:uuid(80)});
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('rejects a stale floor even when the plan acknowledges both versions',()=>{const f=fixture();try{
+  const changed={...plan,compatibleRollbackVersions:[plan.baselineVersion,uuid(8)],readerFloorPromotion:{protocol:'privacy-commit-v1' as const,previousVersion:uuid(8)}};
+  expect(()=>FileDeploymentLease.preflight(f.root,changed)).toThrow('READER_FLOOR_CHANGED');
+  expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+ }finally{rmSync(f.root,{recursive:true,force:true});}});
+});

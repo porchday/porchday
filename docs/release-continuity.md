@@ -481,3 +481,33 @@ passed, including two starts after command termination. The exact baseline was
 restored, owned fixtures were removed and independent GitHub notification delivery
 was verified. This remains separate from scheduled feature-release acceptance and
 signed-in/installed/native client validation.
+
+
+## Advancing the privacy commit reader floor
+
+Before enabling privacy commit writers, deploy and verify a recovery-capable
+reader with `PRIVACY_COMMIT_RECOVERY_V1=true` and no writer binding. A reviewed
+application deployment may include `readerFloorPromotion` with
+`protocol: "privacy-commit-v1"` and `previousVersion` equal to the currently
+recorded floor. The compatibility review must explicitly contain the identical
+promotion. Its evidence must cover the actual protocol, retained rollback and
+restore behavior; flag presence alone does not establish semantic compatibility.
+The existing compatibility checks and candidate acceptance remain required.
+
+The plan hash binds this promotion. Admission rejects frontend/monitor targets,
+stale or unacknowledged floors, missing migration 057, a missing candidate reader,
+or any writer binding on the baseline or candidate. Terminal finalization also
+requires provider and schema proofs. Only successful completion advances the
+canonical floor to the candidate version, under the shared lease and in the same
+durable receipt as the deployment. A rollback preserves the original floor.
+Interrupted finalization resumes that exact receipt; it never replays a release.
+Other environments' floors are preserved. Existing plans and receipts that omit
+the promotion retain their previous hashes and behavior.
+
+Use tooling that understands this plan field throughout the controller and
+reconciliation path. Do not retrofit it onto an executed plan, edit canonical
+state by hand, or enable writers in the floor-promotion deployment. A subsequent
+writer rollout must name a recovery-capable baseline and acknowledge the newly
+recorded floor. Retain the recovery reader and additive schema when disabling
+writer behavior during rollback. Hosted rollback/fault acceptance remains a
+separate required proof; this metadata mechanism does not establish it.

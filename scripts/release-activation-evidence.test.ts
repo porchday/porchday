@@ -21,12 +21,13 @@ import type {UploadManifest} from './release-upload-cli.ts';
 import {recoverDeployment,deploymentPlanHash,rollbackOperationId,type DeploymentPlan,type RecoveryState,type DeploymentPorts} from './deployment-recovery.ts';
 const id=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const hash=(s:string|Buffer)=>createHash('sha256').update(s).digest('hex');
-async function fixture(options:{monitor?:boolean;complete?:boolean;frontend?:boolean;production?:boolean;mutate?:(proof:any)=>void}={}){
+async function fixture(options:{readerFloorCase?:'reader'|'missing-reader'|'writer'|'missing-schema';monitor?:boolean;complete?:boolean;frontend?:boolean;production?:boolean;mutate?:(proof:any)=>void}={}){
  const root=realpathSync(mkdtempSync(join(tmpdir(),'porchday-activation-evidence-'))),source='a'.repeat(40),environment=options.production?'production':'staging',worker='porchday-'+(options.monitor?'monitor-':'')+environment+(options.frontend?'-edge':''),key=(options.monitor?'monitor-':'')+environment+(options.frontend?'-edge':''),entry=options.frontend?'edge.js':'index.js';
  const canonical=JSON.stringify({stagingVersion:id(1),stagingRuntimeSource:'b'.repeat(40),compatibleRollbackVersions:{staging:id(1),'monitor-staging':id(1)},...(options.monitor?{monitorVersions:{staging:id(1)},monitorSources:{staging:'b'.repeat(40)}}:{}),edgeRouting:{stagingEnabled:!!options.frontend,stagingFrontendVersion:id(1),stagingFrontendSource:'b'.repeat(40)}});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});
- const settings=releaseSettings({bindings:[]}),resources={script:{etag:'baseline',handlers:['fetch']},script_runtime:{compatibility_date:'2026-10-24'},bindings:[]};
+ const bindings=options.readerFloorCase&&options.readerFloorCase!=='missing-reader'?[{type:'plain_text',name:'PRIVACY_COMMIT_RECOVERY_V1',text:'true'},...(options.readerFloorCase==='writer'?[{type:'plain_text',name:'PRIVACY_COMMIT_WRITER_V1',text:'true'}]:[])]:[];
+ const settings=releaseSettings({bindings}),resources={script:{etag:'baseline',handlers:['fetch']},script_runtime:{compatibility_date:'2026-10-24'},bindings};
  const before={workers:Object.fromEntries(['staging','staging-edge','production','production-edge','monitor-staging','monitor-production'].map(k=>[k,{active:id(1),latest:id(1),settings,resources}])),domains:[],queues:{},schedules:{}};
- const schema={version:1 as const,migrations:['000_initial.sql'],functionsSha256:'b'.repeat(64),columnsSha256:'c'.repeat(64)},ci={verify:{runId:1,attempt:1,workflowSha256:'d'.repeat(64)},history:{runId:2,attempt:1,workflowSha256:'e'.repeat(64)}};
+ const schema={version:1 as const,migrations:['000_initial.sql',...(options.readerFloorCase&&options.readerFloorCase!=='missing-schema'?['057_privacy_transaction_commits.sql']:[])],functionsSha256:'b'.repeat(64),columnsSha256:'c'.repeat(64)},ci={verify:{runId:1,attempt:1,workflowSha256:'d'.repeat(64)},history:{runId:2,attempt:1,workflowSha256:'e'.repeat(64)}};
  const files={[entry]:'f'.repeat(64),[entry+'.map']:'0'.repeat(64)},artifacts={directory:root,entry,hashes:files,sourcePaths:['apps/api/src/index.ts']} as UploadManifest['evidence']['artifacts'];
  const evidence:UploadManifest['evidence']={version:1,worker,source,before,settings,resources,databaseBranchId:'synthetic',schema,ci,artifacts,preparation:{configPath:join(root,'config.json'),configSha256:'1'.repeat(64),wrangler:{} as any,inputs:{bundle:{directory:root,entry,files},assets:null},toolingSource:'2'.repeat(40),toolingCi:ci,assetSources:[]}};
  const plan={operationId:id(3),worker,source,canonicalSha256:hash(canonical),evidenceDigest:uploadReconciliationEvidenceHash(evidence)};
@@ -135,8 +136,8 @@ describe('prepared activation controller composition',()=>{
  });
 });
 
-async function reviewFixture(production=false,monitor=false,historyMinutes=10){
- const f=await fixture({production,monitor}),upload=readCompletedUpload(f.manifest,f.proofPath),path=join(f.root,'compatibility.json'),testPath=join(f.root,'test-result.json');
+async function reviewFixture(production=false,monitor=false,historyMinutes=10,readerFloorCase?:NonNullable<Parameters<typeof fixture>[0]>['readerFloorCase']){
+ const f=await fixture({production,monitor,readerFloorCase}),upload=readCompletedUpload(f.manifest,f.proofPath),path=join(f.root,'compatibility.json'),testPath=join(f.root,'test-result.json');
  const result=JSON.stringify({synthetic:true,passed:true});writeFileSync(testPath,result,{mode:0o600});
  const assets={candidate:{source:'a'.repeat(40),files:{'app.js':'1'.repeat(64)}},baseline:{source:'b'.repeat(40),files:{'app.js':'2'.repeat(64)}}};
  const review:CompatibilityReview={version:1,worker:f.deployment.worker,candidate:{source:'a'.repeat(40),version:id(2)},baseline:{source:'b'.repeat(40),version:id(1)},schema:f.manifest.evidence.schema,publicAssets:{candidate:publicAssetManifestHash(assets.candidate),baseline:publicAssetManifestHash(assets.baseline)},checks:Object.fromEntries(compatibilityChecks.map(name=>[name,{status:'passed',basis:'Synthetic fixture for '+name,evidence:[{path:testPath,sha256:hash(result)}]}])) as CompatibilityReview['checks']};
@@ -149,6 +150,13 @@ async function reviewFixture(production=false,monitor=false,historyMinutes=10){
  save();return{...f,review,evidence,plan,save,testPath,monitorBody,verify:()=>verifyActivationReview(plan,f.manifest,f.proofPath,evidence)};
 }
 describe('reviewed compatibility evidence binding',()=>{
+ it.each(['reader','missing-reader','writer','missing-schema'] as const)('requires a reader-only candidate and marker schema for floor promotion: %s',async kind=>{const f=await reviewFixture(false,false,10,kind);try{
+  f.plan.readerFloorPromotion={protocol:'privacy-commit-v1',previousVersion:id(1)};f.review.readerFloorPromotion={...f.plan.readerFloorPromotion};f.save();
+  if(kind==='reader'){
+   expect(f.verify).not.toThrow();delete f.review.readerFloorPromotion;f.save();expect(f.verify).toThrow('READER_FLOOR_REVIEW_CHANGED');
+  }else expect(f.verify).toThrow(kind==='writer'?'READER_FLOOR_WRITER_FORBIDDEN':kind==='missing-schema'?'READER_FLOOR_SCHEMA_REQUIRED':'READER_FLOOR_READER_REQUIRED');
+ }finally{f.close();}});
+
  it('binds scope, all required checks, retained files and asset manifests without provider access',async()=>{const f=await reviewFixture();try{expect(f.verify()).toEqual({evidenceDigest:f.plan.evidenceDigest,reviewSha256:f.evidence.compatibility.sha256,files:1,checks:[...compatibilityChecks],pendingChecks:[]});const reordered={...f.evidence,assets:{baseline:f.evidence.assets.baseline,candidate:f.evidence.assets.candidate}};expect(activationReviewHash(reordered)).toBe(f.plan.evidenceDigest);}finally{f.close();}});
  it.each(['pending','missing','empty','no-files','source','version','schema','assets','upload','tooling'])('rejects %s review drift or missing evidence',async kind=>{const f=await reviewFixture();try{
   if(kind==='pending')(f.review.checks.schemaRollback as any).status='pending';
@@ -196,8 +204,9 @@ describe('staging acceptance ordering',()=>{
  }finally{f.close();}});
 });
 
-async function finalizationFixture(rollback=false){
- const f=await reviewFixture();f.evidence.assets.candidate.files['app.js']=hash('candidate');f.evidence.assets.baseline.files['app.js']=hash('baseline');
+async function finalizationFixture(rollback=false,promoteFloor=false){
+ const f=await reviewFixture(false,false,10,promoteFloor?'reader':undefined);
+ if(promoteFloor){f.plan.readerFloorPromotion={protocol:'privacy-commit-v1',previousVersion:id(1)};f.review.readerFloorPromotion={...f.plan.readerFloorPromotion};f.save();}f.evidence.assets.candidate.files['app.js']=hash('candidate');f.evidence.assets.baseline.files['app.js']=hash('baseline');
  f.review.publicAssets={candidate:publicAssetManifestHash(f.evidence.assets.candidate),baseline:publicAssetManifestHash(f.evidence.assets.baseline)};f.save();f.plan.assetManifests={...f.review.publicAssets};
  const canonicalPath=join(f.root,'latest-verified-deployment.json');writeFileSync(canonicalPath,JSON.stringify({...JSON.parse(readFileSync(canonicalPath,'utf8')),schemaMigrationsByEnvironment:{staging:0,production:56},schemaEvidenceByEnvironment:{production:{retained:true}}}));
  const lease=FileDeploymentLease.acquire(f.root,f.plan),version=rollback?id(1):id(2),deploymentId=rollback?id(8):id(7),operationId=rollback?rollbackOperationId(f.plan.operationId):f.plan.operationId;
@@ -211,6 +220,13 @@ async function finalizationFixture(rollback=false){
  return{...f,lease,state,journal,reader,client,request,checks,options,close:()=>{lease.close();f.close();}};
 }
 describe('read-only terminal finalization orchestration',()=>{
+ it.each([false,true])('records the reviewed floor only on successful finalization (rollback=%s)',async rollback=>{const f=await finalizationFixture(rollback,true);try{
+  await finalizePreparedActivation(f.options,AbortSignal.timeout(5000));
+  const record=await FileDeploymentLease.completed(f.root,f.plan,f.journal);
+  expect((record?.compatibleRollbackVersions as Record<string,string>).staging).toBe(rollback?id(1):id(2));
+  expect(record?.schemaMigrationsByEnvironment).toEqual({staging:2,production:56});
+ }finally{f.close();}});
+
  it.each([false,true])('retains fresh provider/assets proofs and finalizes the terminal outcome (rollback=%s)',async rollback=>{const f=await finalizationFixture(rollback);try{
   const result=await finalizePreparedActivation(f.options,AbortSignal.timeout(5000));expect(result.status).toBe('finalized');
   const canonical=await FileDeploymentLease.completed(f.root,f.plan,f.journal);expect(canonical?.stagingVersion).toBe(rollback?id(1):id(2));expect(canonical?.stagingAssetsSource).toBe(rollback?'b'.repeat(40):'a'.repeat(40));
