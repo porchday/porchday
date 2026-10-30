@@ -90,8 +90,7 @@ function primaryJpeg(bytes: Uint8Array, stripMetadata: boolean) {
         components = bytes[offset + 7];
       if (components < 1 || components > 4 || length !== 8 + components * 3)
         throw invalid();
-      if (!width || !height || width * height > 40_000_000)
-        throw new Error("This photo exceeds the 40-megapixel safety limit.");
+      if (!width || !height) throw invalid();
       frame = { width, height };
     }
     // MPF offsets describe auxiliary images removed below. Do not expose a
