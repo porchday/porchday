@@ -141,6 +141,22 @@ try {
           const emoji = await prepareCustomEmoji(new File([sourceBytes(fixture)], "emoji.jfif"), "jpeg_fixture");
           require(emoji, `${name}: shared emoji JPEG importer failed`);
         }
+        // Exercise a real full-resolution camera-sized image through native decoding.
+        const fullResolution = document.createElement("canvas");
+        fullResolution.width = 8064;
+        fullResolution.height = 6048;
+        const fullContext = fullResolution.getContext("2d");
+        require(fullContext, "Full-resolution fixture canvas unavailable");
+        fullContext.fillStyle = "#cc3322";
+        fullContext.fillRect(0, 0, 8064, 6048);
+        const fullBlob = await new Promise(resolve => fullResolution.toBlob(resolve, "image/jpeg", .85));
+        require(fullBlob, "Full-resolution fixture encoding failed");
+        fullResolution.width = fullResolution.height = 1;
+        const fullPrepared = await preparePhoto(new File([fullBlob], "full-resolution.jpg"));
+        require(same(jpegDimensions(new Uint8Array(await fullPrepared.blob.arrayBuffer())),
+          { width: 2400, height: 1800 }), "Full-resolution photo was not normalized");
+        require(metadataMarkers(new Uint8Array(await fullPrepared.blob.arrayBuffer())).length === 0,
+          "Full-resolution output retained metadata");
         // Oversize rejection must happen before native decoding allocates pixels.
         const originalDecoder = globalThis.createImageBitmap;
         let decoderCalls = 0;
@@ -157,7 +173,6 @@ try {
           }
           // Mutate only dimensions of a real JPEG to exercise predecode guards.
           for (const [size, upload, expected] of [
-            [7000, file => preparePhoto(file), /40.megapixel/],
             [5000, file => prepareCustomEmoji(file, "oversized"), /16 megapixels/],
           ]) {
             const bytes = baseline.slice();
@@ -172,7 +187,7 @@ try {
           }
           require(decoderCalls === 0, "Oversized input reached native decoder");
         } finally { globalThis.createImageBitmap = originalDecoder; }
-        return { rows, aliasChecks: 5, downscaleChecks: 1, inclusive50MiBChecks: 1, emojiChecks: 3, predecodeLimitChecks: 4 };
+        return { rows, aliasChecks: 5, downscaleChecks: 1, inclusive50MiBChecks: 1, emojiChecks: 3, predecodeLimitChecks: 3, fullResolutionChecks: 1 };
       }, fixtures);
       for (const row of result.rows) {
         if (row.outputBase64 && outputDirectory) {

@@ -179,12 +179,8 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
   let canvas: HTMLCanvasElement;
   try {
     canvas = document.createElement("canvas");
-    if (
-      bitmap.width * bitmap.height > 40_000_000 ||
-      !bitmap.width ||
-      !bitmap.height
-    )
-      throw new Error("This photo exceeds the 40-megapixel safety limit.");
+    if (!bitmap.width || !bitmap.height)
+      throw new Error("This photo has invalid dimensions.");
     // Native decoding applies EXIF rotation; portrait/landscape may swap axes.
     if (
       source &&
