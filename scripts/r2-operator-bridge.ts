@@ -1,4 +1,5 @@
 import {readFile} from 'node:fs/promises';
+import {URL} from 'node:url';
 import {randomBytes,randomUUID} from 'node:crypto';
 import {resolve4,resolve6,resolveCname,Resolver} from 'node:dns/promises';
 import {request as httpsRequest} from 'node:https';
@@ -7,7 +8,7 @@ import type {JournalStore} from '../apps/api/src/privacy-journal.js';
 type Bridge = {journal:JournalStore;deleteMediaObject(key:string):Promise<void>;verifyConditionalWrites():Promise<void>;verifyMediaObject(value:{key:string;sha256:string;byteSize:number}):Promise<void>;restoreMediaObject(value:{snapshotId:string;key:string;sha256:string;byteSize:number}):Promise<void>;probeRequest?:(path:string,body?:unknown,method?:'POST'|'PUT')=>Promise<Response>};
 const pause=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
 /** A temporary private capability, never written to stdout, disk or command arguments. */
-export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucket?:string;backupBucket?:string;journalAccess?:'read-only'|'read-write';hostname?:string;onProgress?:(phase:string)=>void;probeModule?:{source:string;largeRequestTimeoutMs?:number}},work:(bridge:Bridge)=>Promise<T>):Promise<T> {
+export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucket?:string;backupBucket?:string;journalAccess?:'read-only'|'read-write';requireCommitScopes?:boolean;hostname?:string;onProgress?:(phase:string)=>void;probeModule?:{source:string;largeRequestTimeoutMs?:number}},work:(bridge:Bridge)=>Promise<T>):Promise<T> {
   const account=process.env.CLOUDFLARE_ACCOUNT_ID,token=process.env.CLOUDFLARE_API_TOKEN??process.env.CF_API_TOKEN;
   if(!account||!token)throw Error('CLOUDFLARE_OPERATOR_CREDENTIALS_REQUIRED');
   const hostname=options.hostname??'ops.porchday.com';
@@ -99,6 +100,9 @@ export async function withOperatorR2<T>(options:{journalBucket:string;mediaBucke
     const unauthenticated=await requestBridge('/journal/put',{},false);
     if(unauthenticated.status!==401)throw Error('OPERATOR_AUTH_PROBE_FAILED');
     await bridge.verifyConditionalWrites();
+    // Admission must reject an older operator namespace before a drill can
+    // register an intent. A random absent scope is a read-only routing probe.
+    if(options.requireCommitScopes){const response=await call('/journal/get',{key:'commit-scopes/v1/'+randomUUID()+'.json'});if(response.status!==404)throw Error('OPERATOR_COMMIT_SCOPE_UNSUPPORTED');}
     if(options.probeModule)probeDeadline=Date.now()+180000;
     return await work(bridge);
   }finally{

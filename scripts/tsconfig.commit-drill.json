@@ -15,6 +15,7 @@
     "commit-drill-child.ts",
     "commit-drill-observe.ts",
     "commit-drill-runner.ts",
-    "commit-drill-recovered.ts"
+    "commit-drill-recovered.ts",
+    "r2-operator-bridge.ts"
   ]
 }

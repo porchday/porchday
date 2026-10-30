@@ -2,6 +2,7 @@ import {beforeAll,afterAll,describe,it,expect,vi} from 'vitest';
 import {readdir,readFile} from 'node:fs/promises';
 import postgres,{type Sql} from 'postgres';
 import {randomUUID} from 'node:crypto';
+import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {fork} from 'node:child_process';
 import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
@@ -170,8 +171,15 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
    expect(await owner`select 1 from app.privacy_operation_commits where operation_id=${operationId}`).toHaveLength(1);
   }finally{server.close();if(!exited){child.kill('SIGKILL');await exit;}await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
  });
- it('uses the complete parent runner to verify and kill the committed child without publishing its receipt',async()=>{
-  const directory=await mkdtemp(join(tmpdir(),'porchday-parent-runner-')),store=new ProcessJournalStore(directory);
+ it.each(['filesystem','native-r2'])('uses the complete parent runner with %s to verify and kill the committed child without publishing its receipt',async transport=>{
+  const directory=await mkdtemp(join(tmpdir(),'porchday-parent-runner-')),evidenceStore=new ProcessJournalStore(directory);
+  let native:Miniflare|undefined;
+  if(transport==='native-r2')native=new Miniflare(convertV4MiniflareOptions({name:'operator',modules:true,scriptPath:new URL('../../../scripts/r2-operator-worker.mjs',import.meta.url).pathname,compatibilityDate:'2026-10-01',bindings:{OPERATOR_BEARER:'synthetic-operator-test',OPERATOR_EXPIRES_AT:String(Date.now()+600000)},r2Buckets:['JOURNAL']}));
+  const request=async(path:string,body:unknown)=>native!.dispatchFetch('https://ops.porchday.test'+path,{method:'POST',headers:{Authorization:'Bearer synthetic-operator-test','Content-Type':'application/json'},body:JSON.stringify(body)});
+  const store:import('../src/privacy-journal').JournalStore=native?{
+   async get(key){const response=await request('/journal/get',{key});if(response.status===404)return null;expect(response.status).toBe(200);const body=await response.json() as {etag:string;value:string};return{etag:body.etag,text:async()=>body.value};},
+   async put(key,value,condition){const response=await request('/journal/put',{key,value,ifMatch:condition?.onlyIf?.etagMatches,ifNoneMatch:condition?.onlyIf?.etagDoesNotMatch});if(response.status===412)return null;expect(response.status).toBe(200);return await response.json() as {etag:string};},
+  }:evidenceStore;
   const fixture={runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()},identity=commitDrillIdentity(fixture);
   await owner`insert into public.auth_user(id,name,email) values(${fixture.memberId},${identity.name},${identity.email})`;
   await owner`insert into public.auth_session(id,"userId",token,"expiresAt") values(${fixture.sessionId},${fixture.memberId},${randomUUID()},now()+interval '1 hour')`;
@@ -185,7 +193,7 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
    await expect(auth`select app.safety_status()`).rejects.toMatchObject({code:'42501'});
    const jobs=postgres(jobsUrl.href,{max:1,prepare:false,onnotice:()=>{}});
    try{await expect(jobs`select app.complete_privacy_transaction(${randomUUID()}::uuid,${'a'.repeat(64)},${generation}::uuid)`).rejects.toMatchObject({code:'42501'});}finally{await jobs.end();}
-   const result=await runCommitDrillChild({target:'local-test',connection:authUrl.href,journalConnection:jobsUrl.href,fixture,generation,store,sql:owner,assertScope:()=>{},retain:async record=>{await store.put(`parent-evidence/${records.length}.json`,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:'*'}});records.push(record);}},AbortSignal.timeout(15000));
+   const result=await runCommitDrillChild({target:'local-test',connection:authUrl.href,journalConnection:jobsUrl.href,fixture,generation,store,sql:owner,assertScope:()=>{},retain:async record=>{await evidenceStore.put(`parent-evidence/${records.length}.json`,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:'*'}});records.push(record);}},AbortSignal.timeout(15000));
    expect(result.signal).toBe('SIGKILL');expect(result.recoveryVerified).toBe(false);
    expect(records.filter(r=>r.kind==='child-phase').map(r=>r.phase)).toEqual(['registered','scoped','committed']);
    expect(records.filter(r=>r.kind==='supervisor').map(r=>r.phase)).toEqual(['commit-verified','kill-intent','killed']);
@@ -214,7 +222,7 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
     await expect(observeRecoveredDrill({...recoveryOptions,pendingAtKill:[...pending,{id:randomUUID(),started_at:pending[0].started_at}]},new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
    }finally{clock.mockRestore();}
    expect((await readJournalControl(store)).value.pending).toEqual([]);expect(await store.get(`receipts/${result.operationId}.json`)).not.toBeNull();
-  }finally{await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
+  }finally{await native?.dispose();await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
  });
  it.each(['registered','before-commit','after-commit','after-checkpoint','after-receipt','after-retirement'])('retains authoritative evidence after SIGKILL at %s',async phase=>{
   const directory=await mkdtemp(join(tmpdir(),'porchday-commit-process-')),store=new ProcessJournalStore(directory),id=await fixture();

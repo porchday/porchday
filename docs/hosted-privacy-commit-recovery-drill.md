@@ -137,7 +137,7 @@ labels that exit recovery success. Missing evidence or a failed evidence sink
 prevents signaling. The verifier callback and durable sink must be supplied by
 the reviewed hosted runner; a child report alone is insufficient.
 
-Local validation passes 78 tests, including real PostgreSQL 17, the real IPC child,
+Local validation passes 84 focused tests, including real PostgreSQL 17, the real IPC child,
 parent-authorized SIGKILL and recovery through the ordinary recovery function.
 The integration test advances its local clock beyond the stale threshold; hosted
 execution must wait the unchanged real threshold. Wrong ownership, generation
@@ -189,6 +189,19 @@ restricted auth/jobs logins, explicitly verifies those permission boundaries, an
 passes through COMMIT, parent proof, SIGKILL and ordinary local recovery. No grants
 or deployed database permissions were broadened. Hosted invocation must supply the
 existing auth and jobs credentials and normalize only verified connection options.
+
+The third hosted invocation reached registration but failed scope publication
+because the temporary operator Worker omitted the commit-scope key namespace.
+The original intent was preserved and staging entered quarantine. Guarded
+original-primary recovery restored staging without changing SQL or capabilities;
+all four queues resumed and exact fixture cleanup passed. This remains failed
+automatic-recovery acceptance. See the [transport incident evidence](evidence/privacy-commit-drill-transport-staging-2026-10-30.md).
+
+The bridge now supports immutable v1 scope keys. Set `requireCommitScopes: true`
+on a hosted drill's `withOperatorR2` invocation so its read-only namespace probe
+runs before the callback can register an intent. The full local parent test now
+also uses the actual operator Worker with native R2 bindings and restricted SQL
+roles; this covers the transport omission that the filesystem-only test missed.
 
 The full parent runner passes the local integration test with the actual IPC
 child and ordinary recovery function. Hosted deployment/source admission,
