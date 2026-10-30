@@ -15,6 +15,7 @@ import {serveCommitDrillJournal} from '../../../scripts/commit-drill-ipc';
 import {killCommittedDrillChild} from '../../../scripts/commit-drill-supervisor';
 import {runCommitDrillChild} from '../../../scripts/commit-drill-runner';
 import {observeCommittedDrill} from '../../../scripts/commit-drill-observe';
+import {observeRecoveredDrill} from '../../../scripts/commit-drill-recovered';
 
 const url=process.env.PRIVACY_COMMIT_TEST_DATABASE_URL;
 const suite=url?describe:describe.skip;
@@ -190,7 +191,21 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
    expect((await observeCommittedDrill({...observation,reportedSequence:'999999'},new AbortController().signal)).childReportedCommit).toBe(false);
    const altered={get:async(key:string)=>{const value=await store.get(key);return key.startsWith('commit-scopes/')&&value?{etag:value.etag,text:async()=>JSON.stringify({...JSON.parse(await value.text()),intent_sha256:'0'.repeat(64)})}:value;},put:async()=>{throw Error('unexpected write');}};
    await expect(observeCommittedDrill({...observation,store:altered},new AbortController().signal)).rejects.toThrow('INDEPENDENT_PROOF_INVALID');
-   const clock=vi.spyOn(Date,'now').mockReturnValue(Date.parse(pending[0].started_at)+120001);try{await assertJournalReadable(store,db,undefined,true);}finally{clock.mockRestore();}
+   const recoveryOptions={...observation,pendingAtKill:pending};
+   await expect(observeRecoveredDrill(recoveryOptions,new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+   const clock=vi.spyOn(Date,'now').mockReturnValue(Date.parse(pending[0].started_at)+120001);
+   try{
+    await expect(observeRecoveredDrill(recoveryOptions,new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+    await assertJournalReadable(store,db,undefined,true);
+    const readOnly={get:store.get.bind(store),put:async()=>{throw Error('observer wrote journal');}};
+    const recovered=await observeRecoveredDrill({...recoveryOptions,store:readOnly},new AbortController().signal);
+    expect(recovered).toMatchObject({sequence:result.sequence,recoveryStateVerified:true,hostedRecoveryPathVerified:false});
+    const missingReceipt={...readOnly,get:async(key:string)=>key.startsWith('receipts/')?null:readOnly.get(key)};
+    await expect(observeRecoveredDrill({...recoveryOptions,store:missingReceipt},new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+    const oldReceipt={...readOnly,get:async(key:string)=>key.startsWith('receipts/')?{etag:'test',text:async()=>JSON.stringify({v:1,id:result.operationId,generation,sequence:'0',head:null})}:readOnly.get(key)};
+    await expect(observeRecoveredDrill({...recoveryOptions,store:oldReceipt},new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+    await expect(observeRecoveredDrill({...recoveryOptions,pendingAtKill:[...pending,{id:randomUUID(),started_at:pending[0].started_at}]},new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+   }finally{clock.mockRestore();}
    expect((await readJournalControl(store)).value.pending).toEqual([]);expect(await store.get(`receipts/${result.operationId}.json`)).not.toBeNull();
   }finally{await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
  });

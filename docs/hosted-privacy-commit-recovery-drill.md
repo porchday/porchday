@@ -137,7 +137,7 @@ labels that exit recovery success. Missing evidence or a failed evidence sink
 prevents signaling. The verifier callback and durable sink must be supplied by
 the reviewed hosted runner; a child report alone is insufficient.
 
-Local validation passes 76 tests, including real PostgreSQL 17, the real IPC child,
+Local validation passes 78 tests, including real PostgreSQL 17, the real IPC child,
 parent-authorized SIGKILL and recovery through the ordinary recovery function.
 The integration test advances its local clock beyond the stale threshold; hosted
 execution must wait the unchanged real threshold. Wrong ownership, generation
@@ -154,6 +154,20 @@ retention is deadline-bound, including a bounded reconciliation attempt after
 failure. On uncertain outcomes, it seals journal access and disconnects rather
 than killing a potentially uncommitted transaction or replaying it. A child that
 never received initialization may be terminated safely.
+
+The read-only post-recovery observer now verifies the exact marker against the
+canonical ancestry, a receipt checkpoint at or after that marker, the unique SQL
+fence, owned session absence and pending retirement. It uses the retained original
+intent in an in-memory proof view; it never writes that view to journal control.
+It checks generation and quarantine before and after SQL inspection, refuses
+unexplained removal of unrelated pending entries, and rechecks canonical ancestry
+after concurrent checkpoint advancement. A ten-second overall deadline bounds
+stalled reads. It requires the original intent to be at least 120 seconds old and
+never advances the clock or invokes recovery itself. Real PostgreSQL integration
+covers successful observation after ordinary recovery, refusal before recovery,
+missing/too-old receipts and missing unrelated pending entries. Unit tests cover
+stalled reads and cancellation. The result explicitly leaves hosted recovery-path
+verification false: the hosted invocation must independently establish that path.
 
 The full parent runner passes the local integration test with the actual IPC
 child and ordinary recovery function. Hosted deployment/source admission,
