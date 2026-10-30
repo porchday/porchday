@@ -38,6 +38,16 @@ describe('frontend deployment target',()=>{
  });
 });
 describe('deployment lease coordination',()=>{
+ it.each(['staging','production'])('rejects %s application asset promotion behind an active edge before creating a lease marker',environment=>{
+  const f=fixture(),app={...plan,worker:'porchday-'+environment,assetManifests:{candidate:'a'.repeat(64),baseline:'b'.repeat(64)}};let lease:FileDeploymentLease|undefined;
+  const canonical={ [environment+'Version']:plan.baselineVersion,[environment+'RuntimeSource']:'c'.repeat(40),compatibleRollbackVersions:{[environment]:plan.baselineVersion},edgeRouting:{[environment+'Enabled']:true}};
+  try{
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(canonical));
+   expect(()=>FileDeploymentLease.acquire(f.root,app)).toThrow('ASSETS_NOT_PUBLIC_TARGET');expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+   canonical.edgeRouting[environment+'Enabled']=false;writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(canonical));
+   lease=FileDeploymentLease.acquire(f.root,app);expect(lease.assert(app)[environment+'Version']).toBe(plan.baselineVersion);
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
  it('excludes a second controller and resumes the same unresolved operation after close',()=>{
   const f=fixture();let a:FileDeploymentLease|undefined,b:FileDeploymentLease|undefined;
   try{a=FileDeploymentLease.acquire(f.root,plan);expect(()=>FileDeploymentLease.acquire(f.root,plan)).toThrow('LEASE_BUSY');a.close();expect(existsSync(join(f.root,'deployment-lock/owner.json'))).toBe(true);expect(()=>FileDeploymentLease.acquire(f.root,{...plan,operationId:uuid(9)})).toThrow('LEASE_HELD');b=FileDeploymentLease.acquire(f.root,plan);expect(b.assert(plan).stagingVersion).toBe(plan.baselineVersion);}
@@ -240,4 +250,81 @@ describe('failed monitor rollback disposition',()=>{
   const f=fixture(),app=FileDeploymentLease.acquire(f.root,plan);try{await expect(app.resolveFailedMonitorRollback(journal('prepared'),async()=>{throw Error('must not run');},AbortSignal.timeout(5000))).rejects.toThrow('UNSAFE');}finally{app.close();rmSync(f.root,{recursive:true,force:true});}
   const m=setup(),lease=FileDeploymentLease.acquire(m.root,m.monitor);try{m.setState({v:1,revision:3,planHash:deploymentPlanHash(m.monitor),phase:'candidate-observed',candidateDeploymentId:uuid(5)});await expect(lease.resolveFailedMonitorRollback(m.log,async()=>m.result,AbortSignal.timeout(5000))).rejects.toThrow('UNSAFE');}finally{lease.close();rmSync(m.root,{recursive:true,force:true});}
  });
+});
+
+
+describe('schema finalization receipt integrity',()=>{
+ it.each(['scope','fingerprint','tamper'])('rejects %s without accepting changed evidence',async kind=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  try{
+   const path=join(f.root,'schema.json'),proof={kind:'schema-proof',operationId:plan.operationId,planHash:deploymentPlanHash(plan),worker:plan.worker,version:plan.candidateVersion,branchId:'synthetic',schema:{version:1,migrations:['000_initial.sql'],functionsSha256:'a'.repeat(64),columnsSha256:'b'.repeat(64)}};
+   if(kind==='scope')proof.version=uuid(99);
+   if(kind==='fingerprint')proof.schema.functionsSha256='invalid';
+   writeFileSync(path,JSON.stringify(proof),{mode:0o600});lease=FileDeploymentLease.acquire(f.root,plan);
+   if(kind==='tamper'){
+    await lease.finalize(journal('complete'),undefined,undefined,path);
+    const canonical=readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8');
+    writeFileSync(path,JSON.stringify({...proof,branchId:'changed'}));
+    await expect(lease.resumeFinalization(journal('complete'))).rejects.toThrow();
+    expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(canonical);
+   }else{
+    await expect(lease.finalize(journal('complete'),undefined,undefined,path)).rejects.toThrow('SCHEMA_PROOF_INVALID');
+    expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
+   }
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+});
+
+
+describe('observed canonical finalization',()=>{
+ it.each(['complete','rolled-back'] as const)('accepts only original bytes or the exact %s receipt before and after archival',async phase=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  const state:RecoveryState={v:1,revision:5,planHash:deploymentPlanHash(plan),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})};
+  const log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('unused');}};
+  try{
+   const canonicalPath=join(f.root,'latest-verified-deployment.json'),schemaPath=join(f.root,'schema.json');
+   const proof={kind:'schema-proof',operationId:plan.operationId,planHash:deploymentPlanHash(plan),worker:plan.worker,version:phase==='complete'?plan.candidateVersion:plan.baselineVersion,branchId:'synthetic',schema:{version:1,migrations:['000_initial.sql'],functionsSha256:'a'.repeat(64),columnsSha256:'b'.repeat(64)}};
+   writeFileSync(schemaPath,JSON.stringify(proof),{mode:0o600});
+   FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical);lease=FileDeploymentLease.acquire(f.root,plan);
+   writeFileSync(canonicalPath,JSON.stringify({...JSON.parse(f.canonical),schemaMigrationsByEnvironment:{staging:1}}));
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical)).toThrow();writeFileSync(canonicalPath,f.canonical);
+   await lease.finalize(log,undefined,undefined,schemaPath);
+   FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical);await lease.release(log);
+   FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical);
+   const finalized=readFileSync(canonicalPath,'utf8');
+   for(const changed of [{...JSON.parse(finalized),productionVersion:uuid(99)},{...JSON.parse(finalized),schemaMigrationsByEnvironment:{staging:99}}]){
+    writeFileSync(canonicalPath,JSON.stringify(changed));expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical)).toThrow();
+   }
+   writeFileSync(canonicalPath,finalized);
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,{...plan,operationId:uuid(99)},f.canonical)).toThrow();
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical+' ')).toThrow();
+   writeFileSync(schemaPath,JSON.stringify({...proof,branchId:'changed'}));
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical)).toThrow('SCHEMA_PROOF_CHANGED');
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+});
+
+
+describe('reviewed reader floor promotion',()=>{
+ it.each(['complete','rolled-back'] as const)('promotes only on complete and preserves the old floor on %s',async phase=>{
+  const f=fixture(),promote:DeploymentPlan={...plan,readerFloorPromotion:{protocol:'privacy-commit-v1',previousVersion:plan.baselineVersion}};let lease:FileDeploymentLease|undefined;
+  const state:RecoveryState={v:1,revision:5,planHash:deploymentPlanHash(promote),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})};const log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('unused');}};
+  try{
+   const before=JSON.stringify({...JSON.parse(f.canonical),compatibleRollbackVersions:{staging:plan.baselineVersion,production:uuid(80)}});writeFileSync(join(f.root,'latest-verified-deployment.json'),before);
+   lease=FileDeploymentLease.acquire(f.root,promote);await expect(lease.finalize(log)).rejects.toThrow('READER_FLOOR_PROOF_REQUIRED');
+   const snapshot=join(f.root,'snapshot.json'),schema=join(f.root,'schema.json'),version=phase==='complete'?plan.candidateVersion:plan.baselineVersion;
+   writeFileSync(snapshot,JSON.stringify({workers:{staging:{active:version,resources:{bindings:[{name:'PRIVACY_COMMIT_RECOVERY_V1',type:'plain_text',text:'true'}]}}}}),{mode:0o600});
+   writeFileSync(schema,JSON.stringify({kind:'schema-proof',operationId:plan.operationId,planHash:deploymentPlanHash(promote),worker:plan.worker,version,branchId:'synthetic',schema:{version:1,migrations:['057_privacy_transaction_commits.sql'],functionsSha256:'a'.repeat(64),columnsSha256:'b'.repeat(64)}}),{mode:0o600});
+   const snapshotBytes=readFileSync(snapshot);writeFileSync(snapshot,JSON.stringify({workers:{staging:{active:version,resources:{bindings:[{name:'PRIVACY_COMMIT_WRITER_V1',type:'plain_text',text:'true'}]}}}}));
+   await expect(lease.finalize(log,snapshot,undefined,schema)).rejects.toThrow('READER_FLOOR_PROOF_REQUIRED');writeFileSync(snapshot,snapshotBytes);
+   await lease.finalize(log,snapshot,undefined,schema);FileDeploymentLease.assertObservedCanonical(f.root,promote,before);lease.close();
+   lease=FileDeploymentLease.acquire(f.root,promote);expect(await lease.resumeFinalization(log)).toBe(true);
+   const record=await FileDeploymentLease.completed(f.root,promote,log);expect(record?.compatibleRollbackVersions).toEqual({staging:version,production:uuid(80)});
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('rejects a stale floor even when the plan acknowledges both versions',()=>{const f=fixture();try{
+  const changed={...plan,compatibleRollbackVersions:[plan.baselineVersion,uuid(8)],readerFloorPromotion:{protocol:'privacy-commit-v1' as const,previousVersion:uuid(8)}};
+  expect(()=>FileDeploymentLease.preflight(f.root,changed)).toThrow('READER_FLOOR_CHANGED');
+  expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+ }finally{rmSync(f.root,{recursive:true,force:true});}});
 });

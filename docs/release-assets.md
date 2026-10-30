@@ -99,10 +99,21 @@ to the target package. The same page imports those cold modules without reload.
 A separate browser context renders the target login page with no old cache.
 The negative control must fail the old lazy import while both documents remain
 rendered; the retained package must load it with exact old entrypoint bytes and
-no old-page errors. Run the same sequence in reverse with the rollback package.
+no old-page errors. Both fresh contexts must also have zero JavaScript page errors
+and zero module-MIME errors. A visible login form alone cannot establish that
+the new client initialized successfully. Run the same sequence in reverse with the rollback package.
 The result labels this byte coverage explicitly; it is not a full module-graph
 hash check. This remains a local unauthenticated asset test, not proof of signed-in
 feature behavior, encryption or native-client compatibility.
+
+The October 29 regression check reproduced a false pass when the new client
+rendered its form and then threw, or caught a failed dynamic import served as
+HTML. The CLI now reports the fresh context's error counts and rejects both
+cases. Three real-Chromium tests cover those failures and the healthy transition;
+the browser CI job runs them explicitly with `RELEASE_ASSET_BROWSER_TESTS=1`.
+They use synthetic public builds and a loopback server, with no hosted requests
+or member accounts. This hardens the local checker; historical private hosted
+helpers and earlier release receipts are not retroactively changed or accepted.
 
 Verify deployed assets read-only against the saved package receipt:
 
@@ -132,3 +143,190 @@ during and after activation. Then verify the same controlled production rollout
 with continuous authenticated journeys. API/schema compatibility, native clients,
 feature flags, configuration and capacity remain separate release gates. Static
 packaging tests do not establish zero downtime or the monthly availability SLO.
+
+## Maintained hosted observer
+
+`beginHostedAssetTransition` in `scripts/release-assets-hosted.ts` replaces the
+one-off open-tab observation logic for future rehearsals. It accepts the canonical
+staging or production origin and reviewed baseline/candidate public manifests.
+It clones and hashes those manifests, verifies baseline HTML/entry bytes and
+requires every discovered cold lazy entrypoint to be retained with its old hash.
+Only an optional single previously observed Cloudflare analytics element at the
+closing body boundary can be removed for HTML comparison. Other changes fail.
+
+Prepare the observer before the maintained activation command, then persist its
+`baselineReceipt` before dispatch. Run the existing durable command exactly once.
+Only after that command reconciles the expected candidate should the caller run
+`finish()`, persist the complete returned report, and require `passed === true`.
+A failed/rolled-back/unknown command is not permission to claim the candidate
+transition or replay deployment. Keep its original journal and reconciliation
+path. A rollback observation needs manifests matching that actual transition.
+Always call `close()` in `finally`, including if receipt persistence fails.
+
+The observer opens fresh ephemeral Chromium contexts, blocks service workers,
+and permits only same-origin GET browser requests. It never logs in or submits
+the typed synthetic form value. The entry fetch rejects redirects and streams
+at most 25 MiB; browser response buffers are checked after receipt. Error messages
+are not copied into reports, only error counts. `finish()` can start once, closes
+the browser afterward, and checks both old and fresh contexts. Cancellation and
+a five-minute default lifetime also close it; the configurable lifetime cannot
+exceed ten minutes. Timing out never produces a passing report.
+
+Twelve tests include real Chromium with synthetic response bytes, negative
+controls for fresh exceptions/MIME errors, changed old bytes, stale candidate
+HTML, missing retention, cancellation, lifetime expiry, manifest mutation, and
+blocked off-origin GET/same-origin POST requests. The browser CI job runs these
+alongside the local transition tests. A first test invocation exposed test-runner
+rewriting of a browser dynamic import; the import now executes as an encoded
+browser expression, and the positive and negative controls pass.
+
+A read-only smoke on staging at **23:08:41 UTC October 29** passed with the same
+manifest as baseline and candidate: one cold lazy entrypoint loaded, old form
+state remained, fresh HTML matched, both contexts had zero page/MIME errors,
+and all 33 public HTTP asset checks passed. Canonical state was unchanged and
+there were no provider writes. The same-version smoke establishes hosted
+observer operation, not a new deployment transition. Existing-session API
+continuity, signed-in UI, installed service workers, native clients and scheduled
+release adoption remain separate acceptance requirements under #3.
+
+## Frontend activation with browser evidence
+
+`executeFrontendActivationWithClients` in
+`scripts/release-frontend-observation.ts` wraps the maintained
+`executeActivationWithContinuity` controller. Call it with the immutable activation
+manifest path, release environment, authenticated continuity observation and abort
+signal. It accepts only a frontend target in the matching observation environment.
+The proof directory must already be canonical, private and owned by the operator.
+
+For a combined application worker that serves the public website, use
+`executeApplicationActivationWithClients` from the same module. It also accepts
+edge workers, requires baseline and candidate `index.html` entries plus pinned
+asset-manifest hashes, and uses the same durable browser gate before completion.
+Choose the public asset owner from the verified topology and current provider
+domain ownership. The deployment lease rejects an application asset promotion
+behind an enabled edge before acquiring the operation marker. API-only backend
+changes behind an edge continue to use `executeActivationWithContinuity`.
+Production currently serves assets from its application worker; staging serves
+them from its edge worker. Do not change routing merely to use this entry point.
+
+The wrapper rejects completed or non-prepared operations, checks the permanent
+continuity gate, and writes an exclusive, fsynced intent. It prepares the hosted
+browser and durably records its baseline before recording command intent and
+dispatching the maintained controller exactly once. Controller observations also
+check that the browser remains connected until candidate browser verification
+begins. Complete command and browser results are retained
+separately; failures retain a fixed, redacted attention disposition and queue the
+existing release alert locally. Delivery still requires the existing alert relay.
+
+An existing intent always requires reconciliation, including when preparation
+failed before dispatch. Never delete receipts to retry a started or uncertain
+operation. Preserve the original journal and reconcile its outcome read-only.
+Cancellation and browser closure are mandatory; a failed close is also attention.
+
+Browser acceptance now occurs **inside candidate verification, before completion
+and finalization**. A required, operation-and-plan-bound browser gate is written
+before dispatch. The existing API/asset verifier must first return healthy; browser
+evidence can only downgrade that result. A confirmed browser failure returns
+unhealthy and enters the existing compatible rollback path, including fresh
+provider observation, authorization and restored-baseline verification. The failed
+candidate observer does not gate baseline verification. Inconclusive browser
+results, cancellation or exceptions remain unknown and require reconciliation.
+
+Required, claimed and result receipts are private, exclusive and fsynced. Resume
+reads the same receipts even through the ordinary activation entry point. A lost
+browser, interrupted claim or missing result cannot be silently accepted or
+re-executed. An absent browser requirement preserves compatibility for earlier
+operations; eligible new frontend releases must use this wrapper to enroll.
+Browser work observes the controller's existing verification deadline. Browser
+closure after its check is expected and does not cancel rollback or the remaining
+authenticated continuity samples.
+
+The earlier wrapper commit collected browser acceptance after finalization; this
+revision moves it before the recovery decision. The
+[hosted retained-build round trip](evidence/frontend-browser-roundtrip-staging-2026-10-29.md)
+passed with eleven and twelve continuity samples, no observed failures, clean
+old/new browser checks and exact fixture cleanup. Scheduled releases have not yet
+adopted this entry point. Local recovery tests with
+real Chromium and synthetic transport demonstrate both successful completion and
+rollback on a fresh-client exception for both edge and combined application
+workers; combined-worker hosted acceptance remains unverified. These tests do not
+mutate a provider or establish
+hosted rollback timing. The 45-second candidate-verification limit is unchanged.
+
+## Staging browser recovery drill
+
+`executeStagingBrowserRecoveryDrill` uses the same reviewed activation manifest,
+browser gate, authenticated continuity and recovery controller. It rejects a
+production target before creating an intent or launching a browser. Prepare a new
+staging operation with compatible baseline/candidate asset manifests and review it
+as a real provider activation: the drill does activate the candidate and must
+restore the baseline through the normal authorized rollback path.
+
+The injected exception is confined to the observer's fresh Chromium context at
+document load. It changes no served files, shared browser profile, member session
+or server response. Baseline observation and unrelated clients remain unaffected.
+Receipts explicitly identify the staging drill and whether the injected exception
+was observed. An absent exception, inconsistent passing report or missing browser
+error is unknown evidence, never permission to complete the candidate.
+
+A successful return requires the actual failed browser report and a `rolled-back`
+terminal result from the maintained controller. It writes a separate drill result
+and queues a notification drill through the existing alert relay. Other outcomes
+retain attention evidence and require reconciliation of the original operation.
+Never reuse a drill manifest or clear its browser receipts to retry. Verify final
+provider identity, baseline assets, post-command continuity and exact synthetic
+fixture cleanup before reporting hosted acceptance.
+
+Real Chromium with synthetic transport exercises this injection through actual
+recovery decisions for edge and combined workers. [Hosted staging-edge execution](evidence/browser-fault-recovery-staging-2026-10-30.md)
+passed with 18 healthy continuity samples, exact baseline restoration, zero
+remaining fixture rows and verified notification delivery. Combined-worker hosted
+recovery remains unverified. This drill tests browser-triggered recovery, not a provider outage or
+an actual defect served to members; physical and signed-in clients remain separate
+requirements. Ordinary release automation must continue using the normal client
+entry point, never the drill entry point.
+
+Nine wrapper tests cover receipt ordering, one-time dispatch, historical-state
+rejection, failed baseline persistence, rollback/unknown/error outcomes, browser
+acceptance failure, observer liveness and failed closure. Durable-gate tests cover
+missing/claimed evidence, cancellation, record integrity, failed API verification,
+resume without replay and all three recovery outcomes. Wrapper tests use mocked
+controller/browser boundaries and real private filesystem receipts; they
+do not establish hosted deployment or signed-in client continuity.
+
+The final combined run passed all **94 tests across eight suites**, including the
+two Chromium-to-recovery cases. Asset and deployment-recovery TypeScript checks,
+module imports, formatting, secret scanning and diff checks passed. No hosted
+deployment was made for this change.
+
+### A fixture action on the active staging candidate
+
+`executeStagingApiRecoveryDrill` accepts an optional `StagingCandidateAction`
+callback for an explicitly authorized synthetic operation. This entry point
+requires staging, an API worker and identical public assets. Normal releases and
+frontend drills do not expose this callback. The maintained controller first
+verifies the candidate's ordinary journeys; the callback then runs before the
+deliberate browser exception. It receives the candidate verification abort signal
+and shares that existing deadline. It does not receive a new recovery budget.
+
+Before calling it, the wrapper persists an exclusive `candidate-action-intent`
+receipt with retries disabled. A successful callback returns exactly `verified`;
+the wrapper rechecks the signal, observer scope and browser liveness before
+retaining that result and proceeding with the browser fault. A lost reply,
+exception, unexpected result, cancellation or scope change retains `unknown`.
+Unknown evidence does not trigger the expected fault or establish drill success;
+the controller retains its unresolved operation for reconciliation. In particular,
+an unknown action may leave the candidate active. Inspect the action's evidence,
+current provider state and controller journal before deciding recovery. Never
+rerun the callback to learn whether its first invocation committed.
+
+The caller must authorize and constrain its exact owned fixtures, persist
+action-specific request intent and results, honor cancellation, and avoid mutation
+retries. Generic receipts contain no returned payload or exception text. A
+`verified` callback result proves only the caller's pre-rollback check; it does
+not prove post-rollback data durability. Independently verify that state after
+rollback, then remove the exact synthetic fixtures and validate final inventory.
+Local tests cover callback ordering, exclusive claims, duplicate invocation,
+lost replies, cancellation, browser/scope drift, private error suppression and
+rejected target/history states. Hosted write-during-rollback acceptance remains
+required; these tests alone do not establish it.

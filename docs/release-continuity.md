@@ -2,6 +2,34 @@
 
 ## Command lifecycle coordination
 
+Before seeding owned fixtures, call `prepareActivationFixtures(manifest, prepare)`
+from `scripts/release-activation-cli.ts`. It validates the new activation plan
+against the canonical baseline and reader floor using local reads before invoking
+`prepare`. A rejection must leave fixture creation uncalled. This is an early
+check, not deployment authorization: acquisition and dispatch repeat the same
+canonical checks under the lease. Keep rejected and historical operations intact;
+reconcile them explicitly rather than replaying fixture or deployment commands.
+
+Terminal finalization retains the verified SQL fingerprint in a private, hashed,
+operation-scoped schema proof. Under the deployment lease it updates only the
+target environment's migration count and schema evidence, including on rollback:
+rolling back a Worker does not undo additive database migrations. Other
+environments' schema metadata stays unchanged. Legacy finalization receipts
+remain resumable without recollecting evidence.
+
+New continuity harnesses should retain the original canonical file bytes and call
+`FileDeploymentLease.assertObservedCanonical(root, plan, beforeText)` in their
+synchronous scope check. It accepts only those exact original bytes or the exact
+terminal canonical bytes reconstructed from this operation's durable receipt,
+including its hashed schema proof. It verifies the receipt in either the active
+lease or the completed archive, so finalization and archival do not create a
+false continuity failure. Unrelated metadata changes, another operation's receipt,
+a changed starting snapshot and altered proof bytes remain rejected. This check
+performs only local reads and does not authorize a deployment or establish current
+provider health. Keep the fixture, deadline, journal and foreign-owner checks.
+Preserve previously executed harnesses and their evidence unchanged.
+
+
 `scripts/release-continuity-command.ts` exports `runCommandWithContinuity` for
 new release harnesses. It accepts the same probe target/scope checks, a durable
 append-only `retain(event)` sink and a `runCommand(signal)` callback invoking the
@@ -334,11 +362,13 @@ Synthetic sessions were revoked, all fixture rows were removed, and the lease
 was released. This is successful stop-drill acceptance, not successful release
 continuity acceptance and not proof of hosted rollback.
 
-The pinned release-watch bundle at `75f57c1` is installed on the Mac mini. A
+The pinned release-watch bundle at `75f57c1` was installed for this drill. A
 separate notification-only drill verified that a late failure after a terminal
 local journal still produces an exact GitHub Actions bot comment on issue #3.
 No provider writes were part of that notification drill. Owner inbox receipt
-remains an outstanding check.
+remains an outstanding check. The later
+[update to `7d7ee36`](evidence/frontend-browser-roundtrip-staging-2026-10-29.md)
+also preserves explicit failure alerts after completion, rollback or cancellation.
 
 
 ## Hosted candidate-failure rollback drill — October 29, 17:06 UTC
@@ -443,3 +473,65 @@ retirement 850 ms. Nested R2 write time totals 1,653 ms; it overlaps those
 phases and must not be added to them. The sample cannot be attributed to an
 individual synthetic account. More production evidence is needed to explain
 the slow tail.
+
+The [October 30 UTC staging browser recovery drill](evidence/browser-fault-recovery-staging-2026-10-30.md)
+activated a retained frontend and used an exception confined to the observer fresh
+context to trigger compatible rollback. All 18 authenticated continuity samples
+passed, including two starts after command termination. The exact baseline was
+restored, owned fixtures were removed and independent GitHub notification delivery
+was verified. This remains separate from scheduled feature-release acceptance and
+signed-in/installed/native client validation.
+
+
+## Advancing the privacy commit reader floor
+
+Before enabling privacy commit writers, deploy and verify a recovery-capable
+reader with `PRIVACY_COMMIT_RECOVERY_V1=true` and no writer binding. A reviewed
+application deployment may include `readerFloorPromotion` with
+`protocol: "privacy-commit-v1"` and `previousVersion` equal to the currently
+recorded floor. The compatibility review must explicitly contain the identical
+promotion. Its evidence must cover the actual protocol, retained rollback and
+restore behavior; flag presence alone does not establish semantic compatibility.
+The existing compatibility checks and candidate acceptance remain required.
+
+The plan hash binds this promotion. Admission rejects frontend/monitor targets,
+stale or unacknowledged floors, missing migration 057, a missing candidate reader,
+or any writer binding on the baseline or candidate. Terminal finalization also
+requires provider and schema proofs. Only successful completion advances the
+canonical floor to the candidate version, under the shared lease and in the same
+durable receipt as the deployment. A rollback preserves the original floor.
+Interrupted finalization resumes that exact receipt; it never replays a release.
+Other environments' floors are preserved. Existing plans and receipts that omit
+the promotion retain their previous hashes and behavior.
+
+Use tooling that understands this plan field throughout the controller and
+reconciliation path. Do not retrofit it onto an executed plan, edit canonical
+state by hand, or enable writers in the floor-promotion deployment. A subsequent
+writer rollout must name a recovery-capable baseline and acknowledge the newly
+recorded floor. Retain the recovery reader and additive schema when disabling
+writer behavior during rollback. Hosted rollback/fault acceptance remains a
+separate required proof; this metadata mechanism does not establish it.
+
+
+## Staging API rollback rehearsal
+
+`executeStagingApiRecoveryDrill` in `scripts/release-frontend-observation.ts`
+uses the existing browser fault rehearsal for an API-only staging deployment.
+It rejects production, frontend workers, public-asset promotion plans and any
+change between the baseline and candidate public manifests before browser work
+or deployment intent. The frontend is retained unchanged.
+
+Normal candidate API journeys and assets must verify before the browser gate
+runs. The fault is an exception injected only into the isolated observer's fresh
+browser context. It does not modify served code or cause user requests to fail.
+The durable browser result downgrades candidate acceptance and the existing
+controller reauthorizes, activates and verifies the compatible baseline. Success
+requires observed injection, a failed browser result and a confirmed `rolled-back`
+outcome. Missing/unknown evidence never counts as a successful drill. Existing
+session continuity, owned-fixture cleanup and provider reconciliation remain
+required in the calling harness. The wrapper retains an explicitly labeled
+notification drill; no production or scheduled-release path invokes it.
+
+This demonstrates the rollback control path for a real API deployment when run
+hosted. It does not simulate an application crash or prove marker-only recovery.
+Hosted acceptance must distinguish those remaining tests.

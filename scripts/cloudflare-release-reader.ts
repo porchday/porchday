@@ -2,10 +2,31 @@ import {constants,closeSync,fsyncSync,lstatSync,openSync,readFileSync,writeFileS
 import {dirname,isAbsolute,resolve} from 'node:path';
 import {pathToFileURL} from 'node:url';
 import {setTimeout as sleep} from 'node:timers/promises';
+import {registeredQueueInventory,type QueueProducerRegistration} from './release-queue-producers.ts';
 
 const workers=['staging','staging-edge','monitor-staging','production','monitor-production','production-edge'] as const;
 type Worker=typeof workers[number];
 type ObjectValue=Record<string,unknown>;
+type QueueEnvironment='staging'|'production';
+type ExtraQueueKey=`${QueueEnvironment}-denial-${0|1|2}`|`${QueueEnvironment}-dead-letter`;
+export type ReleaseQueues=Record<QueueEnvironment,{id:string;name:string}>&Partial<Record<ExtraQueueKey,{id:string;name:string}>>;
+/** Explicit identities only. Partial registration permits guarded resource
+ * creation one queue at a time; it is not permission to enable the topology. */
+export function validateReleaseQueues(value:ReleaseQueues){
+ if(!value||typeof value!=='object'||Array.isArray(value))throw Error('RELEASE_QUEUE_CONFIGURATION_INVALID');
+ const names:Record<string,string>={};
+ for(const environment of ['staging','production']){
+  names[environment]=`porchday-${environment}-jobs`;
+  names[`${environment}-dead-letter`]=`porchday-${environment}-jobs-dead-letter`;
+  for(const partition of [0,1,2])names[`${environment}-denial-${partition}`]=`porchday-${environment}-denial-${partition}`;
+ }
+ if(!value.staging||!value.production)throw Error('RELEASE_QUEUE_CONFIGURATION_INVALID');
+ const ids=new Set<string>();
+ for(const [key,entry] of Object.entries(value)){
+  if(!Object.hasOwn(names,key)||!entry||Object.keys(entry).sort().join(',')!=='id,name'||!/^[a-f0-9]{32}$/.test(entry.id)||entry.name!==names[key]||ids.has(entry.id))throw Error('RELEASE_QUEUE_CONFIGURATION_INVALID');
+  ids.add(entry.id);
+ }
+}
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const policyKeys=['placement','compatibility_date','compatibility_flags','usage_model','tail_consumers','streaming_tail_consumers','logpush','limits','observability','cache_options','tags'];
 function object(value:unknown):ObjectValue{if(!value||typeof value!=='object'||Array.isArray(value))throw Error('RELEASE_PROVIDER_SHAPE_INVALID');return value as ObjectValue;}
@@ -29,14 +50,15 @@ function canonical(value:unknown):string{
  throw Error('RELEASE_INVENTORY_INVALID');
 }
 /** Resource isolation check, not executable or asset verification. */
-export function assertInactiveUploadSnapshot(before:unknown,after:unknown,worker:Worker,version:string,expectedSettings:unknown):void{
+export function assertInactiveUploadSnapshot(before:unknown,after:unknown,worker:Worker,version:string,expectedSettings:unknown,registration?:QueueProducerRegistration):void{
  if(!workers.includes(worker)||!uuid.test(version))throw Error('RELEASE_UPLOAD_TARGET_INVALID');
  const prior=object(before),observed=object(after),priorWorkers=object(prior.workers),observedWorkers=object(observed.workers);
  for(const snapshot of [prior,observed])if(Object.keys(snapshot).sort().join(',')!=='domains,queues,schedules,workers'||!Array.isArray(snapshot.domains))throw Error('RELEASE_INVENTORY_INVALID');
  for(const inventory of [priorWorkers,observedWorkers])if(Object.keys(inventory).sort().join(',')!==[...workers].sort().join(','))throw Error('RELEASE_INVENTORY_INVALID');
  const target=object(priorWorkers[worker]);
  if(typeof target.active!=='string'||!uuid.test(target.active)||typeof target.latest!=='string'||!uuid.test(target.latest)||version===target.active||version===target.latest)throw Error('RELEASE_UPLOAD_NOT_NEW_INACTIVE_VERSION');
- const expected={...prior,workers:{...priorWorkers,[worker]:{...target,latest:version,settings:releaseSettings(expectedSettings)}}};
+ const settings=releaseSettings(expectedSettings),queues=registration?registeredQueueInventory({before:prior.queues,observed:observed.queues,worker,beforeBindings:object(target.settings).bindings,afterBindings:settings.bindings,registration,phase:'upload'}):prior.queues;
+ const expected={...prior,queues,workers:{...priorWorkers,[worker]:{...target,latest:version,settings}}};
  if(canonical(observed)!==canonical(expected))throw Error('RELEASE_UPLOAD_INVENTORY_CHANGED');
 }
 class RetryableRead extends Error{}
@@ -44,11 +66,11 @@ class RetryableRead extends Error{}
 /** Read-only provider inventory. No API for mutations; credentials never enter errors or snapshots. */
 export class CloudflareReleaseReader{
  private endpoint:string;private token:string;private transport:typeof fetch;
- private queues:Record<'staging'|'production',{id:string;name:string}>;
+ private queues:ReleaseQueues;
  private active=0;private waiting:(()=>void)[]=[];
- constructor(options:{accountId:string;apiToken:string;queues:Record<'staging'|'production',{id:string;name:string}>;fetch?:typeof fetch}){
+ constructor(options:{accountId:string;apiToken:string;queues:ReleaseQueues;fetch?:typeof fetch}){
   if(!/^[a-f0-9]{32}$/.test(options.accountId)||typeof options.apiToken!=='string'||options.apiToken.length<20)throw Error('RELEASE_READER_CONFIGURATION_INVALID');
-  for(const environment of ['staging','production'] as const)if(!/^[a-f0-9]{32}$/.test(options.queues?.[environment]?.id)||options.queues[environment].name!==`porchday-${environment}-jobs`)throw Error('RELEASE_QUEUE_CONFIGURATION_INVALID');
+  validateReleaseQueues(options.queues);
   this.endpoint='https://api.cloudflare.com/client/v4/accounts/'+options.accountId;this.token=options.apiToken;this.transport=options.fetch??fetch;this.queues=structuredClone(options.queues);
  }
  private async slot(signal:AbortSignal){
@@ -82,10 +104,31 @@ export class CloudflareReleaseReader{
   }
   throw Error('RELEASE_PROVIDER_READ_UNAVAILABLE');
  }
- private async get(path:string,signal:AbortSignal):Promise<unknown>{
+ private async envelope(path:string,signal:AbortSignal):Promise<ObjectValue>{
   const {body}=await this.raw(path,signal,2*1024*1024);let value:ObjectValue;
   try{value=object(JSON.parse(body.toString('utf8')));}catch{throw Error('RELEASE_PROVIDER_RESPONSE_INVALID');}
-  if(value.success!==true||!Object.hasOwn(value,'result'))throw Error('RELEASE_PROVIDER_READ_REJECTED');return value.result;
+  if(value.success!==true||!Object.hasOwn(value,'result'))throw Error('RELEASE_PROVIDER_READ_REJECTED');return value;
+ }
+ private async get(path:string,signal:AbortSignal):Promise<unknown>{return (await this.envelope(path,signal)).result;}
+ /** Bounded account catalogue for admission and unknown-create reconciliation.
+  * Never infer absence from a partial page. Callers compare before/after reads
+  * around their scoped inventory; pagination is not an atomic provider snapshot. */
+ async queueCatalogue(signal:AbortSignal){
+  const result:ObjectValue[]=[],ids=new Set<string>(),names=new Set<string>();let total:number|undefined,pages:number|undefined,pageSize:number|undefined;
+  for(let page=1;page<=100;page++){
+   const envelope=await this.envelope('/queues?page='+page,signal),info=object(envelope.result_info),rows=envelope.result;
+   if(!Array.isArray(rows)||!Number.isSafeInteger(info.total_count)||Number(info.total_count)<0||Number(info.total_count)>10000||!Number.isSafeInteger(info.total_pages)||Number(info.total_pages)<1||Number(info.total_pages)>100||!Number.isSafeInteger(info.per_page)||Number(info.per_page)<1||Number(info.per_page)>1000||info.page!==page||info.count!==rows.length||rows.length>Number(info.per_page))throw Error('RELEASE_QUEUE_CATALOGUE_INCOMPLETE');
+   if(total!==undefined&&(info.total_count!==total||info.total_pages!==pages||info.per_page!==pageSize))throw Error('RELEASE_QUEUE_CATALOGUE_CHANGED');
+   total=Number(info.total_count);pages=Number(info.total_pages);pageSize=Number(info.per_page);
+   for(const row of rows){const value=object(row),id=value.queue_id,name=value.queue_name;
+    if(typeof id!=='string'||!/^[a-f0-9]{32}$/.test(id)||typeof name!=='string'||!name||name.length>256||ids.has(id)||names.has(name))throw Error('RELEASE_QUEUE_CATALOGUE_INVALID');
+    for(const kind of ['consumers','producers'])if(!Array.isArray(value[kind])||value[kind+'_total_count']!==value[kind].length)throw Error('RELEASE_QUEUE_INVENTORY_INCOMPLETE');
+    ids.add(id);names.add(name);result.push(Object.fromEntries(['queue_id','queue_name','settings','consumers','consumers_total_count','producers','producers_total_count'].map(key=>[key,value[key]??null])));
+   }
+   if(page===pages){if(result.length!==total)throw Error('RELEASE_QUEUE_CATALOGUE_INCOMPLETE');return result.sort((a,b)=>String(a.queue_name).localeCompare(String(b.queue_name)));}
+   if(rows.length!==pageSize)throw Error('RELEASE_QUEUE_CATALOGUE_INCOMPLETE');
+  }
+  throw Error('RELEASE_QUEUE_CATALOGUE_INCOMPLETE');
  }
  /** The script endpoint is not version-addressed. Surround this read with identity/inventory checks. */
  async script(worker:Worker,signal:AbortSignal):Promise<Record<string,Uint8Array>>{
@@ -135,13 +178,18 @@ export class CloudflareReleaseReader{
   }));
   const [rawDomains,queues,schedules]=await Promise.all([
    this.get('/workers/domains',signal),
-   Promise.all((['staging','production'] as const).map(async environment=>{
-    const expected=this.queues[environment],value=object(await this.get('/queues/'+expected.id,signal));if(value.queue_id!==expected.id||value.queue_name!==expected.name)throw Error('RELEASE_QUEUE_MISMATCH');
-    return[environment,Object.fromEntries(['queue_id','queue_name','settings','consumers','consumers_total_count','producers','producers_total_count'].map(key=>[key,value[key]??null]))];
+   Promise.all(Object.entries(this.queues).sort(([a],[b])=>a.localeCompare(b)).map(async ([key,expected])=>{
+    const value=object(await this.get('/queues/'+expected.id,signal));if(value.queue_id!==expected.id||value.queue_name!==expected.name)throw Error('RELEASE_QUEUE_MISMATCH');
+    for(const kind of ['consumers','producers'])if(!Array.isArray(value[kind])||value[kind+'_total_count']!==value[kind].length)throw Error('RELEASE_QUEUE_INVENTORY_INCOMPLETE');
+    return[key,Object.fromEntries(['queue_id','queue_name','settings','consumers','consumers_total_count','producers','producers_total_count'].map(key=>[key,value[key]??null]))];
    })),
    Promise.all((['staging','production','monitor-staging','monitor-production'] as const).map(async worker=>[worker,await this.get(this.base(worker)+'/schedules',signal)])),
   ]);
   if(!Array.isArray(rawDomains)||rawDomains.some(value=>typeof object(value).hostname!=='string'))throw Error('RELEASE_DOMAINS_INVALID');
+  const registered=new Set(Object.values(this.queues).map(queue=>queue.name));
+  for(const [,worker] of entries)for(const state of [worker.settings,worker.resources])for(const binding of bindings(state.bindings)){
+   if(binding.type==='queue'&&(typeof binding.queue_name!=='string'||!registered.has(binding.queue_name)))throw Error('RELEASE_QUEUE_BINDING_UNREGISTERED');
+  }
   return{workers:Object.fromEntries(entries),domains:rawDomains.sort((a,b)=>a.hostname<b.hostname?-1:a.hostname>b.hostname?1:0),queues:Object.fromEntries(queues),schedules:Object.fromEntries(schedules)};
   }finally{scope.abort();}
  }
@@ -149,10 +197,12 @@ export class CloudflareReleaseReader{
 
 if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).href){
  try{
-  const [output,...extra]=process.argv.slice(2);if(!output||!isAbsolute(output)||extra.length)throw Error('RELEASE_READER_ARGUMENTS');
+  const [output,registry,...extra]=process.argv.slice(2);if(!output||!isAbsolute(output)||extra.length)throw Error('RELEASE_READER_ARGUMENTS');
   const parent=dirname(output),stat=lstatSync(parent);if(!stat.isDirectory()||stat.isSymbolicLink()||(stat.mode&0o077)!==0||stat.uid!==process.getuid?.())throw Error('RELEASE_READER_OUTPUT_INVALID');
   const resources=JSON.parse(readFileSync('infra/resources.json','utf8'));
-  const reader=new CloudflareReleaseReader({accountId:process.env.CLOUDFLARE_ACCOUNT_ID??'',apiToken:process.env.CLOUDFLARE_API_TOKEN??'',queues:Object.fromEntries(['staging','production'].map(environment=>[environment,{id:resources.environments[environment].queue_id,name:resources.environments[environment].queue}])) as Record<'staging'|'production',{id:string;name:string}>});
+  let queues=Object.fromEntries(['staging','production'].map(environment=>[environment,{id:resources.environments[environment].queue_id,name:resources.environments[environment].queue}])) as ReleaseQueues;
+  if(registry){const stat=lstatSync(registry);if(!isAbsolute(registry)||!stat.isFile()||stat.isSymbolicLink()||(stat.mode&0o077)!==0||stat.uid!==process.getuid?.()||stat.size>16384)throw Error('RELEASE_QUEUE_REGISTRY_INVALID');queues=JSON.parse(readFileSync(registry,'utf8'));}
+  const reader=new CloudflareReleaseReader({accountId:process.env.CLOUDFLARE_ACCOUNT_ID??'',apiToken:process.env.CLOUDFLARE_API_TOKEN??'',queues});
   const value=await reader.snapshot(AbortSignal.timeout(120000)),fd=openSync(output,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
   try{writeFileSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}
   const directory=openSync(parent,constants.O_RDONLY);try{fsyncSync(directory);}finally{closeSync(directory);}

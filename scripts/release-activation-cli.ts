@@ -1,3 +1,5 @@
+import {withStagingInflightProbe,assertStagingInflightProbeComplete,type StagingInflightProbe} from './release-inflight-probe.ts';
+import {withBrowserAcceptance,type BrowserAcceptance} from './release-browser-gate.ts';
 import {createContinuityGate} from './release-continuity-gate.ts';
 import {waitForMonitorRecovery} from './release-monitor-recovery-wait.ts';
 import {verifyMonitorRead} from './release-monitor-verification.ts';
@@ -45,6 +47,18 @@ export function readMonitorActivationManifest(path:string):ActivationManifest{co
 export function readActivationManifest(path:string):ActivationManifest{const manifest=JSON.parse(privateBytes(path).toString()) as ActivationManifest;validate(manifest);return manifest;}
 function readPinned(file:{path:string;sha256:string}){const bytes=privateBytes(file.path);if(hash(bytes)!==file.sha256)throw Error('ACTIVATION_MANIFEST_FILE_CHANGED');return bytes;}
 
+/** Reject incompatible canonical plans before a caller creates private fixtures.
+ * This performs local reads only and grants no deployment authorization.
+ * Historical operations must use the explicit reconciliation entry point.
+ */
+export async function prepareActivationFixtures<T>(input:ActivationManifest,prepare:()=>Promise<T>):Promise<T>{
+ const manifest=structuredClone(input);validate(manifest,recoveryTarget(manifest.plan.worker).monitor);
+ const state=await new FileRecoveryJournal(manifest.review.execution.journalDirectory).read();
+ if(state&&(state.phase!=='prepared'||state.planHash!==deploymentPlanHash(manifest.plan)))throw Error('ACTIVATION_CONTINUITY_REQUIRES_RECONCILIATION');
+ FileDeploymentLease.preflight(manifest.review.execution.root,manifest.plan);
+ return await prepare();
+}
+
 /** New observed activation using the real durable command, not an arbitrary
  * mutation callback. The harness owns pinned fixtures, durable sample retention
  * and scope checks spanning lease handoff/finalization. Resuming a historical
@@ -52,15 +66,17 @@ function readPinned(file:{path:string;sha256:string}){const bytes=privateBytes(f
 async function executeScopedActivationWithContinuity(
  monitor:boolean,input:ActivationManifest,env:NodeJS.ProcessEnv,
  observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,
- signal:AbortSignal,
+ signal:AbortSignal,browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe,
 ){
  signal.throwIfAborted();const manifest=structuredClone(input);validate(manifest,monitor);
+ if(inflightProbe&&(monitor||manifest.plan.worker!=='porchday-staging'||manifest.plan.assetManifests||!browserAcceptance||!isDeepStrictEqual(manifest.review.assets.baseline,manifest.review.assets.candidate)||typeof inflightProbe.start!=='function'||typeof inflightProbe.finish!=='function'))throw Error('STAGING_INFLIGHT_SCOPE_INVALID');
  if(observation.target.environment!==recoveryTarget(manifest.plan.worker).environment)throw Error('ACTIVATION_CONTINUITY_SCOPE_CHANGED');
  const e=manifest.review.execution;
  // Reject history before network reads; use the existing explicit reconciliation
  // entry point for interrupted operations and preserve their original evidence.
  const state=await new FileRecoveryJournal(e.journalDirectory).read();
  if(state&&(state.phase!=='prepared'||state.planHash!==deploymentPlanHash(manifest.plan))||await FileDeploymentLease.completed(e.root,manifest.plan,{read:async()=>state,write:async()=>{throw Error('ACTIVATION_CONTINUITY_READ_ONLY');}}))throw Error('ACTIVATION_CONTINUITY_REQUIRES_RECONCILIATION');
+ FileDeploymentLease.preflight(e.root,manifest.plan);
  registerReleaseWatch({plan:manifest.plan,root:e.root,journalDirectory:e.journalDirectory,proofDirectory:e.proofDirectory});
  const gate=createContinuityGate(e.proofDirectory,manifest.plan);gate.assertPromotion();
  return await runCommandWithContinuity({...observation,retain:async event=>{
@@ -69,23 +85,25 @@ async function executeScopedActivationWithContinuity(
   if(event.kind==='sample'&&!event.sample.healthy)queueReleaseAlert(e.proofDirectory,manifest.plan,'command-failed');
   await observation.retain(event);
  },runCommand:async commandSignal=>{
-  const result=await executeScopedActivationManifest(manifest,env,commandSignal,monitor);
+  const result=await executeScopedActivationManifest(manifest,env,commandSignal,monitor,'activate',browserAcceptance,inflightProbe);
   if(result.status==='finalized'&&(result.outcome==='complete'||result.outcome==='rolled-back'))return result.outcome;
   return 'attention-required';
  }},signal);
 }
 
-export async function executeActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal){
- return executeScopedActivationWithContinuity(false,input,env,observation,signal);
+export async function executeActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal,browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe){
+ return executeScopedActivationWithContinuity(false,input,env,observation,signal,browserAcceptance,inflightProbe);
 }
 export async function executeMonitorActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal){
  return executeScopedActivationWithContinuity(true,input,env,observation,signal);
 }
 
 /** Explicit activate/resume. Archived completion and durable finalization resume need no credentials. */
-async function executeScopedActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,monitor:boolean,action:'activate'|'cancel'='activate'){
+async function executeScopedActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,monitor:boolean,action:'activate'|'cancel'='activate',browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe){
  const manifest=structuredClone(input);validate(manifest,monitor);signal.throwIfAborted();if(!['activate','cancel'].includes(action))throw Error('ACTIVATION_ARGUMENTS');
  const {plan,review}=manifest,e=review.execution,journal=new FileRecoveryJournal(e.journalDirectory),gate=createContinuityGate(e.proofDirectory,plan);
+ if(inflightProbe&&(monitor||plan.worker!=='porchday-staging'||plan.assetManifests||!browserAcceptance||!isDeepStrictEqual(review.assets.baseline,review.assets.candidate)||typeof inflightProbe.start!=='function'||typeof inflightProbe.finish!=='function'))throw Error('STAGING_INFLIGHT_SCOPE_INVALID');
+ assertStagingInflightProbeComplete(plan,e.proofDirectory);
  if(await FileDeploymentLease.completed(e.root,plan,journal)){if(action==='cancel')throw Error('DEPLOYMENT_ALREADY_FINALIZED');if((await journal.read())?.phase==='complete')gate.assertPromotion();return{status:'already-finalized' as const,historical:true,operationId:plan.operationId};}
  if(action==='cancel'){const lease=FileDeploymentLease.acquire(e.root,plan);try{await lease.cancelBeforeIntent(journal);return{status:'cancelled-before-intent' as const,operationId:plan.operationId};}finally{lease.close();}}
  // This is only a hint. Acquisition and receipt verification establish ownership.
@@ -107,14 +125,15 @@ async function executeScopedActivationManifest(input:ActivationManifest,env:Node
  try{
   if(await lease.resumeFinalization(journal)){if((await journal.read())?.phase==='complete')gate.assertPromotion();return{status:'resumed-historical-finalization' as const,historical:true,operationId:plan.operationId};}
   const common={workspace:e.workspace,plan,manifest:upload,proofPath:e.proofPath,review,lease,journal,reader,database};
-  const final=()=>finalizePreparedActivation({...common,client,directory:e.proofDirectory},signal);
+  const final=async()=>{const probeDeployment=assertStagingInflightProbeComplete(plan,e.proofDirectory,!!inflightProbe);if(probeDeployment&&(await journal.read())?.rollbackDeploymentId!==probeDeployment)throw Error('STAGING_INFLIGHT_DEPLOYMENT_CHANGED');return finalizePreparedActivation({...common,client,directory:e.proofDirectory},signal);};
   const state=await journal.read();if(state&&['complete','rolled-back'].includes(state.phase))return await final();
   const verify=createReleaseVerifier({plan,config,assets:review.assets,directory:e.proofDirectory,journey:{directory:e.journeyDirectory,assertLease:s=>{lease.assert(plan,s);}}});
   const incidentRecovery=monitor&&review.monitor?.incidentRecovery!==undefined;
   const monitoredVerify:DeploymentPorts['verify']=async(v,s)=>{if(incidentRecovery&&v===plan.candidateVersion&&!await waitForMonitorRecovery({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s))return 'unhealthy';const result=await verify(v,s);if(result==='healthy'&&monitor)await verifyMonitorRead({plan,review,version:v,directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);return result;};
-  const reviewed=createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>{if(v===plan.candidateVersion)gate.assertPromotion();return client.deploy(v,id,s);},verify:monitoredVerify}});
+  const reviewed=createReviewedActivationPorts({...common,ports:{observe:s=>client.observe(s),deploy:(v,id,s)=>{if(v===plan.candidateVersion)gate.assertPromotion();return client.deploy(v,id,s);},verify:withBrowserAcceptance(plan,e.proofDirectory,monitoredVerify,browserAcceptance)}});
   const authorized:DeploymentPorts={...reviewed,authorize:async(p,d,s)=>{await reviewed.authorize(p,d,s);if(monitor&&d==='activate')await verifyMonitorRead({plan,review,version:plan.baselineVersion,phase:'before-activation',directory:e.proofDirectory,assertScope:()=>{lease.assert(plan,s);}},s);}};
-  const ports=withReleaseProbePreflight(authorized,s=>verifyReleaseProbeFixture({...database,config,signal:s}));
+  const checked=withReleaseProbePreflight(authorized,s=>verifyReleaseProbeFixture({...database,config,signal:s}));
+  const ports=inflightProbe?withStagingInflightProbe({...inflightProbe,plan,ports:checked,proofDirectory:e.proofDirectory,assertScope:()=>{lease.assert(plan,signal);}},signal):checked;
   const combine=(s:AbortSignal)=>AbortSignal.any([signal,s]);
   const bounded:DeploymentPorts={authorize:(p,d,s)=>ports.authorize(p,d,combine(s)),observe:s=>ports.observe(combine(s)),deploy:(v,id,s)=>ports.deploy(v,id,combine(s)),verify:(v,s)=>ports.verify(v,combine(s))};
   const outcome=await recoverDeployment(plan,journal,bounded,{...(incidentRecovery?{monitorRecoveryObservation:true}:{}),promotionAllowed:()=>!gate.failed()});

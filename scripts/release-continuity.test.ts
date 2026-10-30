@@ -104,3 +104,38 @@ test('body deadline retains received status without accepting the response',asyn
  const sample=await probeReleaseContinuity({target,fetch:fetch as typeof globalThis.fetch,assertScope:()=>{},timeoutMs:100},new AbortController().signal);
  expect(sample.healthy).toBe(false);expect(sample.checks.find(c=>c.name==='denied_profile')).toMatchObject({ok:false,status:401,failureStage:'deadline'});expect(fetch).toHaveBeenCalledTimes(4);
 });
+
+test.each([
+ ['UND_ERR_SOCKET','socket_closed'],['ECONNRESET','connection_reset'],
+ ['ECONNREFUSED','connection_refused'],['ENOTFOUND','dns_lookup'],
+ ['EAI_AGAIN','dns_lookup'],['ETIMEDOUT','connection_timeout'],
+ ['UND_ERR_CONNECT_TIMEOUT','connection_timeout'],['CERT_HAS_EXPIRED','tls_certificate'],
+ ['ERR_TLS_CERT_ALTNAME_INVALID','tls_certificate'],['private arbitrary code','unknown'],
+])('retains only a fixed network category for %s without retries',async(code,category)=>{
+ const normal=transport(),fetch=vi.fn(async(input:any,init:any)=>{
+  if(String(input).endsWith('/health'))throw Object.assign(Error('private URL and token'),{cause:{code,socket:{remoteAddress:'private address'}}});
+  return normal(input,init);
+ });
+ const sample=await run(fetch as typeof globalThis.fetch);
+ expect(sample.healthy).toBe(false);expect(sample.checks.filter(c=>!c.ok)).toHaveLength(1);
+ expect(sample.checks.find(c=>c.name==='protected_readiness')).toMatchObject({failureStage:'transport',networkFailure:category,ok:false});
+ expect(fetch).toHaveBeenCalledTimes(4);expect(JSON.stringify(sample)).not.toMatch(/private|cause|remoteAddress|UND_ERR|ECONN|CERT_|TLS_/);
+});
+
+test('network classification does not invoke error getters or traverse arbitrary cause chains',async()=>{
+ const getter=vi.fn(()=>{throw Error('private getter');});
+ const errors=[Object.defineProperty({},'code',{get:getter}),Object.defineProperty({},'cause',{get:getter}),{cause:{cause:{code:'ECONNRESET'}}},null];
+ const fetch=vi.fn(async()=>{throw errors.shift();});
+ const sample=await run(fetch as typeof globalThis.fetch);
+ expect(sample.checks.every(c=>!c.ok&&c.networkFailure==='unknown')).toBe(true);expect(getter).not.toHaveBeenCalled();
+ expect(fetch).toHaveBeenCalledTimes(4);
+});
+
+test('body socket failure retains response status and deadline remains a separate classification',async()=>{
+ const normal=transport(),fetch=vi.fn(async(input:any,init:any)=>String(input).endsWith('/health')?
+  new Response(new ReadableStream({start(controller){controller.error({code:'ECONNRESET',message:'private'});}}),{status:200}):normal(input,init));
+ const sample=await run(fetch as typeof globalThis.fetch);
+ expect(sample.checks.find(c=>c.name==='protected_readiness')).toMatchObject({ok:false,status:200,failureStage:'body_read',networkFailure:'connection_reset'});
+ const stalled=await probeReleaseContinuity({target,fetch:vi.fn(async()=>new Promise<Response>(()=>{})),assertScope:()=>{},timeoutMs:100},new AbortController().signal);
+ expect(stalled.checks.every(c=>c.failureStage==='deadline'&&c.networkFailure===undefined)).toBe(true);
+});

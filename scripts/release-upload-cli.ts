@@ -4,11 +4,11 @@ import {fileURLToPath,pathToFileURL} from 'node:url';
 import {FileUploadLease,uploadPlanHash,type UploadPlan} from './release-upload-lease.ts';
 import {runPreparedUpload,type PreparedUploadEvidence} from './release-upload.ts';
 import {uploadReconciliationEvidenceHash} from './release-upload-reconcile.ts';
-import {CloudflareReleaseReader} from './cloudflare-release-reader.ts';
+import {CloudflareReleaseReader,type ReleaseQueues,validateReleaseQueues} from './cloudflare-release-reader.ts';
 import {uploadTarget} from './release-upload-target.ts';
 import {validateReleaseDatabaseTarget} from './release-schema.ts';
 
-export type UploadManifest={version:1;root:string;workspace:string;proofDirectory:string;privateLogDirectory:string;plan:UploadPlan;evidence:PreparedUploadEvidence;queues:Record<'staging'|'production',{id:string;name:string}>};
+export type UploadManifest={version:1;root:string;workspace:string;proofDirectory:string;privateLogDirectory:string;plan:UploadPlan;evidence:PreparedUploadEvidence;queues:ReleaseQueues};
 export function readUploadManifest(path:string):UploadManifest{
  const s=lstatSync(path);
  if(!isAbsolute(path)||realpathSync(path)!==path||!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0||s.size>16*1024*1024)throw Error('UPLOAD_MANIFEST_INVALID');
@@ -16,6 +16,7 @@ export function readUploadManifest(path:string):UploadManifest{
  if(!value||value.version!==1||Object.keys(value).sort().join(',')!=='evidence,plan,privateLogDirectory,proofDirectory,queues,root,version,workspace')throw Error('UPLOAD_MANIFEST_INVALID');
  for(const directory of [value.root,value.workspace,value.proofDirectory,value.privateLogDirectory])if(typeof directory!=='string'||!isAbsolute(directory)||realpathSync(directory)!==directory||!lstatSync(directory).isDirectory())throw Error('UPLOAD_MANIFEST_PATH_INVALID');
  uploadPlanHash(value.plan);
+ validateReleaseQueues(value.queues);
  if(!value.evidence?.preparation||value.plan.worker!==value.evidence.worker||value.plan.source!==value.evidence.source||value.plan.evidenceDigest!==uploadReconciliationEvidenceHash(value.evidence))throw Error('UPLOAD_MANIFEST_EVIDENCE_CHANGED');
  return value;
 }

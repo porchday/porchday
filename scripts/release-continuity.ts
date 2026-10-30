@@ -1,8 +1,26 @@
 import {setTimeout as sleep} from 'node:timers/promises';
 export type ContinuityFailureStage='transport'|'body_read'|'missing_body'|'body_limit'|'json_parse'|'deadline';
-export type ContinuityCheck={name:'authorized_profile'|'authorized_feed'|'denied_profile'|'protected_readiness';ok:boolean;status?:number;failure?:'transport_or_response';failureStage?:ContinuityFailureStage;durationMs:number};
+export type ContinuityNetworkFailure='socket_closed'|'connection_reset'|'connection_refused'|'dns_lookup'|'connection_timeout'|'tls_certificate'|'unknown';
+export type ContinuityCheck={name:'authorized_profile'|'authorized_feed'|'denied_profile'|'protected_readiness';ok:boolean;status?:number;failure?:'transport_or_response';failureStage?:ContinuityFailureStage;networkFailure?:ContinuityNetworkFailure;durationMs:number};
 export type ContinuitySample={at:string;completedAt:string;healthy:boolean;checks:ContinuityCheck[];scope:'existing_session_reads_denial_and_readiness'};
 type Target={environment:'staging'|'production';memberId:string;cookie:string;deniedCookie:string;healthToken:string};
+/** Fixed local categories only. Never retain error messages, URLs, socket details
+ * or arbitrary codes. Inspect at most one cause, without invoking getters. */
+function networkFailure(error:unknown):ContinuityNetworkFailure{
+ const own=(value:unknown,key:string):unknown=>{try{return value&&typeof value==='object'?Object.getOwnPropertyDescriptor(value,key)?.value:undefined;}catch{return undefined;}};
+ const classify=(code:unknown):ContinuityNetworkFailure|undefined=>{
+  switch(code){
+   case 'UND_ERR_SOCKET':return 'socket_closed';
+   case 'ECONNRESET':return 'connection_reset';
+   case 'ECONNREFUSED':return 'connection_refused';
+   case 'ENOTFOUND':case 'EAI_AGAIN':return 'dns_lookup';
+   case 'ETIMEDOUT':case 'UND_ERR_CONNECT_TIMEOUT':return 'connection_timeout';
+   case 'CERT_HAS_EXPIRED':case 'DEPTH_ZERO_SELF_SIGNED_CERT':case 'UNABLE_TO_VERIFY_LEAF_SIGNATURE':case 'ERR_TLS_CERT_ALTNAME_INVALID':return 'tls_certificate';
+   default:return undefined;
+  }
+ };
+ return classify(own(error,'code'))??classify(own(own(error,'cause'),'code'))??'unknown';
+}
 function validate(target:Target){
  if(!target||!['staging','production'].includes(target.environment)||!/^[a-f0-9-]{36}$/i.test(target.memberId))throw Error('CONTINUITY_SCOPE_INVALID');
  for(const value of [target.cookie,target.deniedCookie,target.healthToken])if(typeof value!=='string'||!value||value.length>8192||/[\r\n]/.test(value))throw Error('CONTINUITY_CREDENTIAL_INVALID');
@@ -34,7 +52,7 @@ export async function probeReleaseContinuity(options:{target:Target;assertScope:
  const origin=target.environment==='staging'?'https://staging.porchday.com':'https://porchday.org';
  const read=async(name:ContinuityCheck['name'],path:string,headers:Record<string,string>,test:(response:Response,body:any)=>boolean):Promise<ContinuityCheck>=>{
   assert();const started=Date.now();let check:ContinuityCheck,status:number|undefined;
-  // Classify our own execution stage, never error text/name/cause from a provider.
+  // Preserve our own stage and only an allowlisted network category.
   const diagnostic:{stage:ContinuityFailureStage}={stage:'transport'};
   try{
    const response=await withinSignal(bounded,async()=>{
@@ -46,8 +64,9 @@ export async function probeReleaseContinuity(options:{target:Target;assertScope:
    assert();diagnostic.stage='body_read';
    const body=await boundedJson(response,bounded,assert,value=>{diagnostic.stage=value;});assert();
    check={name,status:response.status,ok:test(response,body),durationMs:Date.now()-started};
-  }catch{
-   assert();check={name,...(status===undefined?{}:{status}),ok:false,failure:'transport_or_response',failureStage:bounded.aborted?'deadline':diagnostic.stage,durationMs:Date.now()-started};
+  }catch(error){
+   assert();check={name,...(status===undefined?{}:{status}),ok:false,failure:'transport_or_response',failureStage:bounded.aborted?'deadline':diagnostic.stage,
+    ...(!bounded.aborted&&['transport','body_read'].includes(diagnostic.stage)?{networkFailure:networkFailure(error)}:{}),durationMs:Date.now()-started};
   }
   return check;
  };

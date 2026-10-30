@@ -37,7 +37,16 @@ function journal(w:ReleaseWatch):RecoveryState|null{
 export type WatchObservation={status:'completed'|'cancelled'|'waiting'}|{status:'attention';event:ReleaseAlert};
 /** Age raises attention only. No process-death inference, lease acquisition, cleanup or remote recovery. */
 async function inspectState(input:ReleaseWatch,now:Date):Promise<WatchObservation>{
- const w=structuredClone(input);validate(w);const state=journal(w),hash=deploymentPlanHash(w.plan);
+ const w=structuredClone(input);validate(w);const hash=deploymentPlanHash(w.plan);
+ // Explicit command failure survives recovery or cancellation. An automatic
+ // overdue warning can still become stale after successful finalization.
+ const outbox=join(w.proofDirectory,'attention-'+w.plan.operationId+'.json');
+ let queued:ReleaseAlert|undefined;
+ if(existsSync(outbox)){const event=read(outbox);validateReleaseAlert(event);if(event.operationId!==w.plan.operationId||event.planHash!==hash||event.worker!==w.plan.worker)throw Error('RELEASE_WATCH_ALERT_CHANGED');queued=event;}
+ const failure=join(w.proofDirectory,'command-failure-'+w.plan.operationId+'.json');
+ if(existsSync(failure)){const event=read(failure);validateReleaseAlert(event);if(event.reason!=='command-failed'||event.operationId!==w.plan.operationId||event.planHash!==hash||event.worker!==w.plan.worker)throw Error('RELEASE_WATCH_FAILURE_CHANGED');return{status:'attention',event:queued??event};}
+ if(queued&&['command-failed','notification-drill'].includes(queued.reason))return{status:'attention',event:queued};
+ const state=journal(w);
  if(await FileDeploymentLease.completed(w.root,w.plan,{read:async()=>state,write:async()=>{throw Error('RELEASE_WATCH_READ_ONLY');}})){
   if(createContinuityGate(w.proofDirectory,w.plan).failed())return{status:'attention',event:queueReleaseAlert(w.proofDirectory,w.plan,'command-failed',now)};
   return{status:'completed'};
@@ -48,8 +57,7 @@ async function inspectState(input:ReleaseWatch,now:Date):Promise<WatchObservatio
   if(owner.protocol!=='porchday-deployment-recovery-sqlite-v1'||owner.operationId!==w.plan.operationId||owner.planHash!==hash||owner.source!==w.plan.candidateSource||state&&state.phase!=='prepared')throw Error('RELEASE_WATCH_CANCELLATION_INVALID');
   return{status:'cancelled'};
  }
- const outbox=join(w.proofDirectory,'attention-'+w.plan.operationId+'.json');
- if(existsSync(outbox)){const event=read(outbox);validateReleaseAlert(event);if(event.operationId!==w.plan.operationId||event.planHash!==hash||event.worker!==w.plan.worker)throw Error('RELEASE_WATCH_ALERT_CHANGED');return{status:'attention',event};}
+ if(queued)return{status:'attention',event:queued};
  const elapsed=now.getTime()-Date.parse(w.registeredAt);if(!Number.isFinite(elapsed)||elapsed<0)throw Error('RELEASE_WATCH_CLOCK_INVALID');
  if(elapsed<120000)return{status:'waiting'};
  return{status:'attention',event:queueReleaseAlert(w.proofDirectory,w.plan,'release-overdue',now)};

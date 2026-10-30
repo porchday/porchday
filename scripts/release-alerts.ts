@@ -15,11 +15,16 @@ export function releaseAlertBody(event:ReleaseAlert){
  validateReleaseAlert(event);
  return `<!-- porchday-release-attention:${event.operationId}:${event.planHash} -->\n@andyk @bobbyhwilder\n\n${event.reason==='notification-drill'?'Notification drill: no deployment failure is being reported.':'A release needs operator attention.'}\nWorker: ${event.worker}\nObserved at: ${event.at}\nReason: ${event.reason}\nOperation: ${event.operationId}\nPlan: ${event.planHash}\n\nInspect the retained private manifest, journal and current provider state. Resume only the same operation after reconciliation. Do not replay an uncertain write, replace its operation ID, or remove its deployment lock. This alert does not by itself establish a site outage. See docs/release-upload.md.\n`;
 }
-/** Immutable outbox: one sanitized notification per operation; later outcomes stay in private journals. */
+/** Immutable outbox: one sanitized notification per operation. A separate failure
+ * marker prevents an earlier overdue event from hiding a later command failure. */
 export function queueReleaseAlert(directory:string,plan:DeploymentPlan,reason:ReleaseAlert['reason'],now=new Date()):ReleaseAlert{
- const event:ReleaseAlert={v:1,operationId:plan.operationId,planHash:deploymentPlanHash(plan),worker:plan.worker,reason,at:now.toISOString()};validateReleaseAlert(event);
+ let event:ReleaseAlert={v:1,operationId:plan.operationId,planHash:deploymentPlanHash(plan),worker:plan.worker,reason,at:now.toISOString()};validateReleaseAlert(event);
  const s=lstatSync(directory);if(!isAbsolute(directory)||realpathSync(directory)!==directory||!s.isDirectory()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('RELEASE_ALERT_DIRECTORY_INVALID');
- const path=join(directory,'attention-'+plan.operationId+'.json'),temporary=join(directory,'attention-tmp-'+randomUUID());
+ if(reason==='command-failed'){event=retainAlert(directory,'command-failure-'+plan.operationId+'.json',event);if(event.reason!=='command-failed')throw Error('RELEASE_ALERT_FAILURE_MARKER_CHANGED');}
+ return retainAlert(directory,'attention-'+plan.operationId+'.json',event);
+}
+function retainAlert(directory:string,name:string,event:ReleaseAlert):ReleaseAlert{
+ const path=join(directory,name),temporary=join(directory,'attention-tmp-'+randomUUID());
  const fd=openSync(temporary,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
  try{writeFileSync(fd,JSON.stringify(event)+'\n');fsyncSync(fd);}finally{closeSync(fd);}
  try{linkSync(temporary,path);}catch(error){if((error as NodeJS.ErrnoException).code!=='EEXIST')throw error;

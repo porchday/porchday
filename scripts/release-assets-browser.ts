@@ -52,7 +52,7 @@ export async function verifyAssetTransition(baselineDirectory:string,targetDirec
   page.on('console',message=>{if(message.type()==='error'&&/MIME type|module script/i.test(message.text()))moduleMimeErrors++;});
   await page.goto(origin+'/login',{waitUntil:'load',timeout:15000});
   let rendered=false;try{await page.locator('input[type="password"]').waitFor({state:'visible',timeout:5000});rendered=await page.locator('input[type="email"]').isVisible();}catch{/* Retain the negative control. */}
-  let openTab:undefined|{initialRendered:boolean;lazyModules:string[];loadedModules:number;oldDocumentRetained:boolean;newTabRendered:boolean};
+  let openTab:undefined|{initialRendered:boolean;lazyModules:string[];loadedModules:number;oldDocumentRetained:boolean;newTabRendered:boolean;newPageErrors:number;newModuleMimeErrors:number};
   if(mode==='open-tab'){
    if(!rendered)throw Error('BROWSER_BASELINE_NOT_RENDERED');
    // Discover actual lazy imports from the old entry, not retained historical chunks.
@@ -72,11 +72,15 @@ export async function verifyAssetTransition(baselineDirectory:string,targetDirec
    // A separate context has no old modules or HTTP cache to mask the new entry.
    const fresh=await browser.newContext({serviceWorkers:'block'});
    await fresh.route('**/*',route=>new URL(route.request().url()).origin===origin?route.continue():route.abort());
-   const newPage=await fresh.newPage();let newTabRendered=false;
+   const newPage=await fresh.newPage();let newTabRendered=false,newPageErrors=0,newModuleMimeErrors=0;
+   // A rendered form does not prove that the fresh client initialized safely.
+   // Observe it independently: old-tab listeners cannot see new-context errors.
+   newPage.on('pageerror',()=>{newPageErrors++;});
+   newPage.on('console',message=>{if(message.type()==='error'&&/MIME type|module script/i.test(message.text()))newModuleMimeErrors++;});
    await newPage.goto(origin+'/login',{waitUntil:'load',timeout:15000});
    try{await newPage.locator('input[type="password"]').waitFor({state:'visible',timeout:5000});newTabRendered=await newPage.locator('input[type="email"]').isVisible();}catch{/* Retain failed acceptance. */}
    await fresh.close();
-   openTab={initialRendered:rendered,lazyModules,loadedModules,oldDocumentRetained,newTabRendered};
+   openTab={initialRendered:rendered,lazyModules,loadedModules,oldDocumentRetained,newTabRendered,newPageErrors,newModuleMimeErrors};
   }
   const assets=requests.filter(request=>request.matchesBaseline!==null&&(mode==='delayed-assets'||request.afterSwitch&&openTab!.lazyModules.includes(request.path)));
 
@@ -94,7 +98,7 @@ if(process.argv[1]&&import.meta.url===pathToFileURL(resolve(process.argv[1])).hr
   const [baseline,candidate,retained,flag,...extra]=process.argv.slice(2);if(!baseline||!candidate||!retained||extra.length||flag!==undefined&&flag!=='--open-tab')throw Error('BROWSER_ARGUMENTS');
   const mode=flag==='--open-tab'?'open-tab':'delayed-assets';
   const withoutRetention=await verifyAssetTransition(baseline,candidate,mode),withRetention=await verifyAssetTransition(baseline,retained,mode);
-  const openHealthy=(r:typeof withRetention)=>!!r.openTab&&r.openTab.initialRendered&&r.openTab.oldDocumentRetained&&r.openTab.newTabRendered;
+  const openHealthy=(r:typeof withRetention)=>!!r.openTab&&r.openTab.initialRendered&&r.openTab.oldDocumentRetained&&r.openTab.newTabRendered&&r.openTab.newPageErrors===0&&r.openTab.newModuleMimeErrors===0;
   const passed=(mode==='open-tab'?openHealthy(withoutRetention)&&withoutRetention.openTab!.loadedModules===0&&!withoutRetention.allRequestedBaselineAssetsMatch&&withoutRetention.moduleMimeErrors>0&&openHealthy(withRetention)&&withRetention.openTab!.loadedModules===withRetention.openTab!.lazyModules.length:!withoutRetention.rendered&&withoutRetention.moduleMimeErrors>0&&!withoutRetention.allRequestedBaselineAssetsMatch)
    &&withRetention.rendered&&withRetention.moduleMimeErrors===0&&withRetention.pageErrors===0&&withRetention.allRequestedBaselineAssetsMatch;
   console.log(JSON.stringify({passed,withoutRetention,withRetention}));if(!passed)process.exitCode=1;

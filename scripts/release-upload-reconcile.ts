@@ -9,8 +9,10 @@ import {CloudflareReleaseReader,assertInactiveUploadSnapshot} from './cloudflare
 import {assertReleaseSchema,captureReleaseSchema,type ReleaseSchemaFingerprint} from './release-schema.ts';
 import {verifyReleaseCi,type ReleaseCiPin} from './release-ci.ts';
 import {verifyWorkerArtifacts,verifyWorkerSourceProvenance} from './release-worker-artifacts.ts';
+import {registeredQueueInventory,type QueueProducerRegistration} from './release-queue-producers.ts';
 
 export type UploadReconciliationEvidence={
+ queueProducerRegistration?:QueueProducerRegistration;
  preparation?:UploadPreparation;
  version:1;worker:string;source:string;before:unknown;settings:unknown;
  resources:{script:Record<string,unknown>;script_runtime:Record<string,unknown>;bindings:unknown[]};
@@ -25,6 +27,14 @@ function canonical(value:unknown):string{
 }
 const hash=(value:string|Buffer)=>createHash('sha256').update(value).digest('hex');
 export function uploadReconciliationEvidenceHash(value:UploadReconciliationEvidence):string{return hash(canonical(value));}
+/** Validate optional registration before dispatch as well as on recovery. */
+export function validateUploadQueueRegistration(evidence:UploadReconciliationEvidence){
+ if(!evidence.queueProducerRegistration)return;
+ const key=uploadTarget(evidence.worker).key,before=evidence.before as {queues:unknown;workers:Record<string,{settings:{bindings:unknown};resources:{bindings:unknown}}>},settings=evidence.settings as {bindings:unknown};
+ const sorted=(value:unknown)=>{if(!Array.isArray(value))throw Error('QUEUE_PRODUCER_REGISTRATION_INVALID');return [...value].sort((a,b)=>canonical(a).localeCompare(canonical(b)));};
+ if(!isDeepStrictEqual(sorted(before.workers[key].settings.bindings),sorted(before.workers[key].resources.bindings))||!isDeepStrictEqual(sorted(settings.bindings),sorted(evidence.resources.bindings)))throw Error('QUEUE_PRODUCER_REGISTRATION_INVALID');
+ registeredQueueInventory({before:before.queues,observed:before.queues,worker:key,beforeBindings:before.workers[key].resources.bindings,afterBindings:evidence.resources.bindings,registration:evidence.queueProducerRegistration,phase:'upload'});
+}
 function privateDirectory(path:string){const s=lstatSync(path);if(!isAbsolute(path)||!s.isDirectory()||s.isSymbolicLink()||realpathSync(path)!==path||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('UPLOAD_EVIDENCE_PERMISSIONS');}
 function privateBytes(path:string):Buffer{const s=lstatSync(path);if(!s.isFile()||s.isSymbolicLink()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0||s.size>16*1024*1024)throw Error('UPLOAD_EVIDENCE_PERMISSIONS');const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{return readFileSync(fd);}finally{closeSync(fd);}}
 export function comparableReleaseResources(value:unknown){
@@ -44,6 +54,7 @@ function persist(directory:string,name:string,body:string){
 /** Concrete read-only reconciliation; call through lease.reconcile to record its durable result. */
 export function createUploadReconciler(options:{workspace:string;proofDirectory:string;evidence:UploadReconciliationEvidence;lease:FileUploadLease;reader:Pick<CloudflareReleaseReader,'snapshot'|'uploadedVersion'|'script'>;database:{connection:string;branchId:string};checks?:{ci:typeof verifyReleaseCi;schema:typeof captureReleaseSchema}}){
  const evidence=structuredClone(options.evidence),digest=uploadReconciliationEvidenceHash(evidence),checks=options.checks??{ci:verifyReleaseCi,schema:captureReleaseSchema},database={...options.database};
+ validateUploadQueueRegistration(evidence);
  const {workspace,proofDirectory,lease,reader}=options,target=uploadTarget(evidence.worker),key=target.key;
  if(evidence.version!==1||!isAbsolute(workspace)||!isAbsolute(proofDirectory)||!/^[a-z0-9]+$/.test(evidence.databaseBranchId)||database.branchId!==evidence.databaseBranchId||evidence.artifacts.entry!==(target.frontend?'edge.js':'index.js'))throw Error('UPLOAD_EVIDENCE_INVALID');
  return async(plan:Readonly<UploadPlan>,signal:AbortSignal)=>{
@@ -55,10 +66,10 @@ export function createUploadReconciler(options:{workspace:string;proofDirectory:
   const schema=async()=>{const observed=await checks.schema({...database,expectedMigrations:evidence.schema.migrations,signal});assertReleaseSchema(observed,evidence.schema);assert();return observed;};
   await schema();const candidate=await reader.uploadedVersion(key,plan.operationId,signal);assert();
   if(!isDeepStrictEqual(comparableReleaseResources(candidate.resources),comparableReleaseResources(evidence.resources)))throw Error('UPLOAD_CANDIDATE_RESOURCES_CHANGED');
-  const before=await reader.snapshot(signal);assert();assertInactiveUploadSnapshot(evidence.before,before,key,candidate.version,evidence.settings);
+  const before=await reader.snapshot(signal);assert();assertInactiveUploadSnapshot(evidence.before,before,key,candidate.version,evidence.settings,evidence.queueProducerRegistration);
   const actual=await reader.script(key,signal);assert();
   const identity=await reader.uploadedVersion(key,plan.operationId,signal);assert();
-  const after=await reader.snapshot(signal);assert();assertInactiveUploadSnapshot(evidence.before,after,key,candidate.version,evidence.settings);
+  const after=await reader.snapshot(signal);assert();assertInactiveUploadSnapshot(evidence.before,after,key,candidate.version,evidence.settings,evidence.queueProducerRegistration);
   if(!isDeepStrictEqual(candidate,identity)||!isDeepStrictEqual(before,after))throw Error('UPLOAD_CHANGED_DURING_ARTIFACT_READ');
   privateDirectory(evidence.artifacts.directory);
   const expected=Object.fromEntries([evidence.artifacts.entry,evidence.artifacts.entry+'.map'].map(name=>[name,privateBytes(join(evidence.artifacts.directory,name))]));

@@ -1,0 +1,115 @@
+{
+  "at": "2026-10-29T23:37:39.923910+00:00",
+  "toolingSource": "7d7ee36ddefe36a9b83a4d6c86994b61b04c77e4",
+  "environment": "staging",
+  "phases": [
+    {
+      "phase": "rollback-ready",
+      "completedAt": "2026-10-29T23:34:09.682Z",
+      "uploadOperation": "7d6f9068-822a-430b-a0d1-1ec8de3a635b",
+      "activationOperation": "812f9cab-db19-4ec2-82f4-cd24d6c79fc1",
+      "baseline": "aeffcd40-8e36-4510-a687-a9a8a67580c2",
+      "candidate": "b697d58b-2483-4373-9dbc-ae3baae4c5e5",
+      "assetSource": "b2b3a069a44e8b9d41feb266671863c23bafa310",
+      "continuity": {
+        "status": "complete",
+        "samples": 11,
+        "failedSamples": 0,
+        "postCommandSamples": 2,
+        "maxStartGapMs": 2002.2518750000017
+      },
+      "window": {
+        "firstSample": "2026-10-29T23:33:43.576Z",
+        "lastSampleCompleted": "2026-10-29T23:34:03.931Z",
+        "candidatePhaseSamples": 4
+      },
+      "browser": {
+        "passed": true,
+        "loadedModules": 1,
+        "oldDocumentRetained": true,
+        "newDocumentMatches": true,
+        "newTabRendered": true,
+        "oldErrors": {
+          "pageErrors": 0,
+          "moduleMimeErrors": 0
+        },
+        "newErrors": {
+          "pageErrors": 0,
+          "moduleMimeErrors": 0
+        }
+      },
+      "durableBrowserGate": "healthy",
+      "remainingFixtureRows": 0,
+      "inventoryVerifiedAfterCleanup": true
+    },
+    {
+      "phase": "candidate",
+      "completedAt": "2026-10-29T23:36:43.369Z",
+      "uploadOperation": "79c1b0cd-6b58-4ef2-9a3e-10f3ea269e29",
+      "activationOperation": "60742208-0433-42a1-a315-dd5e722cd189",
+      "baseline": "b697d58b-2483-4373-9dbc-ae3baae4c5e5",
+      "candidate": "89eec37f-e097-4e65-9b71-42ad08d854de",
+      "assetSource": "d6fd3faca61d2d5c350d62f4e8ad5bcd50cc8f32",
+      "continuity": {
+        "status": "complete",
+        "samples": 12,
+        "failedSamples": 0,
+        "postCommandSamples": 2,
+        "maxStartGapMs": 2002.612666000001
+      },
+      "window": {
+        "firstSample": "2026-10-29T23:36:14.830Z",
+        "lastSampleCompleted": "2026-10-29T23:36:37.193Z",
+        "candidatePhaseSamples": 3
+      },
+      "browser": {
+        "passed": true,
+        "loadedModules": 1,
+        "oldDocumentRetained": true,
+        "newDocumentMatches": true,
+        "newTabRendered": true,
+        "oldErrors": {
+          "pageErrors": 0,
+          "moduleMimeErrors": 0
+        },
+        "newErrors": {
+          "pageErrors": 0,
+          "moduleMimeErrors": 0
+        }
+      },
+      "durableBrowserGate": "healthy",
+      "remainingFixtureRows": 0,
+      "inventoryVerifiedAfterCleanup": true
+    }
+  ],
+  "finalFrontend": "89eec37f-e097-4e65-9b71-42ad08d854de",
+  "finalAssets": "d6fd3faca61d2d5c350d62f4e8ad5bcd50cc8f32",
+  "stagingBackend": "91a0bea2-1327-4806-9c46-dddc1e8133d4",
+  "stagingRuntimeSource": "4ef4237771cdc9ab8194a220fdb649edc3cdf38e",
+  "productionVersion": "048cd033-4855-4100-9fc2-d1d179fe398b",
+  "productionRuntimeSource": "a4d5a0f353e3703cf6b95a6dcafc0f2df9bd9340",
+  "productionChanged": false,
+  "deploymentLeasePresent": false,
+  "watcher": {
+    "source": "7d7ee36ddefe36a9b83a4d6c86994b61b04c77e4",
+    "deliveryVerifiedAt": "2026-10-29T23:31:36.413Z",
+    "exactBotComment": "https://github.com/porchday/porchday/issues/3#issuecomment-6510983717",
+    "matchingBotComments": 1,
+    "localReceiptPersisted": true,
+    "pending": 0,
+    "errors": 0
+  },
+  "latestProductionProbe": {
+    "at": "2026-10-29T23:37:17.226Z",
+    "healthy": true,
+    "durationMs": 4565,
+    "pendingNotifications": 0
+  },
+  "limits": [
+    "Bounded sampling, not an absolute zero-downtime guarantee or monthly SLO proof.",
+    "Controlled retained-build return and restoration; not a hosted automatic failure-injection drill.",
+    "Browser checks cover unauthenticated existing-tab cold entrypoints and fresh login rendering; authenticated continuity is separate API sampling.",
+    "Signed-in UI, installed service workers, physical/native clients and scheduled daily-release adoption remain separate gates.",
+    "Mac power/network loss and owner inbox receipt remain unverified."
+  ]
+}

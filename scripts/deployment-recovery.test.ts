@@ -126,3 +126,11 @@ it('snapshots the recovery budget option before asynchronous authorization',asyn
  f.ports.verify=vi.fn((_version,signal)=>new Promise(resolve=>{const timer=setTimeout(()=>resolve('healthy'),60000);signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});}));
  const pending=recoverDeployment(plan,f.journal,f.ports,options);await vi.advanceTimersByTimeAsync(60001);expect(await pending).toBe('verification-unavailable');expect(f.ports.deploy).toHaveBeenCalledTimes(1);
 });
+
+
+it('binds an explicit reader floor promotion to the plan and rejects unrelated targets or malformed floors',()=>{
+ const promotion={protocol:'privacy-commit-v1' as const,previousVersion:plan.baselineVersion};
+ expect(deploymentPlanHash({...plan,readerFloorPromotion:promotion})).not.toBe(deploymentPlanHash(plan));
+ for(const readerFloorPromotion of [{...promotion,previousVersion:plan.candidateVersion},{...promotion,previousVersion:uuid(99)},{...promotion,protocol:'unknown'},{...promotion,extra:true}])expect(()=>deploymentPlanHash({...plan,readerFloorPromotion} as DeploymentPlan)).toThrow('READER_FLOOR_PROMOTION_INVALID');
+ for(const worker of ['porchday-staging-edge','porchday-monitor-staging'])expect(()=>deploymentPlanHash({...plan,worker,readerFloorPromotion:promotion})).toThrow('READER_FLOOR_PROMOTION_INVALID');
+});

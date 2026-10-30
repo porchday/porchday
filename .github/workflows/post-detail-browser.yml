@@ -15,6 +15,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
+      - run: RELEASE_ASSET_BROWSER_TESTS=1 npx vitest run scripts/release-assets-browser.test.ts scripts/release-assets-hosted.test.ts
       - run: node scripts/check-post-detail-loads.mjs
       - run: TEST_BROWSER=webkit node scripts/check-post-detail-loads.mjs
       - run: node scripts/check-feed-saves.mjs
