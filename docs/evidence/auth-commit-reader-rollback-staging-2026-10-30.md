@@ -68,6 +68,15 @@ GitHub delivery, not owner inbox receipt.
 
 ## Remaining acceptance
 
+The follow-up continuity probe records a fixed network category for recognized
+socket, reset, refusal, DNS, connection-timeout and certificate errors. Unknown
+errors stay unknown. It reads only own data properties and one cause level, never
+messages, URLs, addresses or arbitrary error codes. Deadline and body-validation
+failures remain distinct, failed observations remain failures, and no retries or
+deadline increases were added. Sixty-two continuity/observer tests passed,
+including privacy, getter, nested-cause, body-socket and deadline cases. This
+diagnostic improvement cannot retrospectively identify the original failure.
+
 Investigate the isolated transport failure with bounded, non-sensitive diagnostics
 before claiming reliable release continuity. A future rehearsal needs a fresh
 operation, reviewed current-state pins, unchanged deadlines, all failed samples
