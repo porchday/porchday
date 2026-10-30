@@ -11,6 +11,7 @@ import {
   type EncryptedEnvelope,
 } from "@porchday/crypto";
 import {
+  ApiError,
   get,
   post,
   patch,
@@ -1067,19 +1068,30 @@ export function Reactions({
 }) {
   const vault = useVault(),
     owner = vault.member.id + ":" + vault.device.id;
-  const identity = owner + ":" + target.id;
+  const identity = owner + ":" + target.id + ":" + target.envelope.ciphertext;
   const current = useRef(identity);
   current.current = identity;
   const mounted = useRef(true),
     changing = useRef(false);
   const addButton = useRef<HTMLButtonElement>(null);
+  const pendingStatus = useRef<HTMLSpanElement>(null);
   const [picker, setPicker] = useState(false),
     [suggested, setSuggested] = useState<CustomEmoji | null>(null);
   const [opened, setOpened] = useState<{
     identity: string;
     entries: DecodedReaction[];
   }>({ identity, entries: [] });
-  const decoded = opened.identity === identity ? opened.entries : [];
+  const confirmed = opened.identity === identity ? opened.entries : [];
+  type PendingReaction = { identity: string; value: ReactionPayload; removing: boolean; tag: string;
+    send?: () => Promise<unknown>; uncertain: boolean };
+  const [pending, setPending] = useState<PendingReaction | null>(null);
+  const pendingRef = useRef<PendingReaction | null>(null);
+  const decodeGeneration = useRef(0);
+  const activePending = pending?.identity === identity ? pending : null;
+  const decoded = typeof payload?.reactionSecret !== "string" ? [] : activePending
+    ? [...confirmed.filter(entry => !(entry.memberId === vault.member.id && entry.payload.emoji === activePending.value.emoji)),
+       ...(activePending.removing ? [] : [{memberId: vault.member.id, tag: activePending.tag, payload: activePending.value}])]
+    : confirmed;
   const action = useAction();
   useEffect(() => {
     mounted.current = true;
@@ -1090,14 +1102,16 @@ export function Reactions({
   useEffect(() => {
     let alive = true;
     const secret = payload?.reactionSecret;
-    setOpened({ identity, entries: [] });
+    if (pendingRef.current?.identity !== identity) { pendingRef.current = null; setPending(null); }
+    const generation = ++decodeGeneration.current;
+    if (typeof secret !== "string") { setOpened({identity, entries: []}); pendingRef.current = null; setPending(null); }
     if (typeof secret === "string")
       void decodeReactions(reactions, target.id, secret, {
         open: (row) => vault.open(row),
         image: validateCustomEmojiPixels,
         current: () => alive && mounted.current && current.current === identity,
       }).then((entries) => {
-        if (alive && current.current === identity)
+        if (alive && current.current === identity && generation === decodeGeneration.current && !pendingRef.current)
           setOpened({ identity, entries });
       });
     return () => {
@@ -1108,56 +1122,81 @@ export function Reactions({
   const base = isComment
     ? `/comments/${target.id}/reactions`
     : `/posts/${target.id}/reactions`;
+  function updatePending(value: PendingReaction | null) {
+    pendingRef.current = value; setPending(value);
+  }
+  const valid = (operation: PendingReaction) => mounted.current && current.current === operation.identity;
+  async function readConfirmed(operation: PendingReaction) {
+    const detail = await get(`/posts/${isComment ? target.post_id : target.id}`);
+    const rows = isComment ? (detail.comment_reactions || []).filter((row: Json) => row.comment_id === target.id) : detail.reactions || [];
+    return decodeReactions(rows, target.id, payload!.reactionSecret as string, {
+      open: row => vault.open(row), image: validateCustomEmojiPixels, current: () => valid(operation),
+    });
+  }
+  async function settle(operation: PendingReaction, retry = false) {
+    try {
+      let entries = await readConfirmed(operation);
+      if (!valid(operation)) return;
+      const matches = (rows: DecodedReaction[]) => rows.some(entry => entry.memberId === vault.member.id && entry.tag === operation.tag) !== operation.removing;
+      if (!matches(entries) && retry && operation.send) {
+        // Replay the same PUT/DELETE intent, never toggle from an uncertain UI.
+        await operation.send(); entries = await readConfirmed(operation);
+      }
+      if (!valid(operation)) return;
+      if (!matches(entries)) throw new Error("The reaction is not confirmed yet. Check and retry to safely finish saving it.");
+      ++decodeGeneration.current;
+      setOpened({ identity, entries }); updatePending(null);
+      // Refresh the parent's other data without hiding this confirmed result.
+      void reload().catch(() => {});
+    } catch (error) {
+      if (!valid(operation)) return;
+      if (accessLost(error)) { setOpened({identity, entries: []}); updatePending(null); }
+      else updatePending({...operation, uncertain: true});
+      throw error;
+    }
+  }
   async function toggle(value: ReactionPayload) {
-    if (
-      !payload ||
-      typeof payload.reactionSecret !== "string" ||
-      changing.current ||
-      vault.member.status === "restricted"
-    )
-      return;
+    if (!payload || typeof payload.reactionSecret !== "string" || changing.current || activePending || vault.member.status === "restricted") return;
     changing.current = true;
     await action.runSave(async () => {
-      const chosen = await validateReactionPayload(value);
-      if (!mounted.current || current.current !== identity) return;
-      const mine = decoded.find(
-        (entry) =>
-          entry.payload.emoji === chosen.emoji &&
-          entry.memberId === vault.member.id,
-      );
-      if (mine) await del(`${base}/${encodeURIComponent(mine.tag)}`);
-      else {
+      let operation: PendingReaction | null = null;
+      let dispatched = false;
+      try {
+        const chosen = await validateReactionPayload(value);
         if ("custom" in chosen) await validateCustomEmojiPixels(chosen);
-        const tag = await reactionTag({
-          secret: payload.reactionSecret as string,
-          targetId: target.id,
-          memberId: vault.member.id,
-          emoji: chosen.emoji,
-        });
         if (!mounted.current || current.current !== identity) return;
-        const envelope = await vault.seal(
-          chosen,
-          {
-            id: tag,
-            kind: "reaction",
-            audience: target.envelope.context.audience,
-            parentId: target.id,
-            groupId: target.group_id || target.envelope.context.groupId,
+        const mine = confirmed.find(entry => entry.payload.emoji === chosen.emoji && entry.memberId === vault.member.id);
+        operation = {identity, value: chosen, removing: !!mine, tag: mine?.tag || "", uncertain: false};
+        ++decodeGeneration.current;
+        updatePending(operation); setPicker(false); setSuggested(null);
+        if (picker) requestAnimationFrame(() => pendingStatus.current?.focus());
+        if (mine) operation.send = () => del(`${base}/${encodeURIComponent(mine.tag)}`);
+        else {
+          const tag = await reactionTag({secret: payload.reactionSecret as string, targetId: target.id, memberId: vault.member.id, emoji: chosen.emoji});
+          operation.tag = tag;
+          const envelope = await vault.seal(chosen, {
+            id: tag, kind: "reaction", audience: target.envelope.context.audience,
+            parentId: target.id, groupId: target.group_id || target.envelope.context.groupId,
             expiresAt: target.effective_expires_at || target.expires_at,
-          },
-          isComment ? target.post_id : target.id,
-        );
-        if (!mounted.current || current.current !== identity) return;
-        await request(`${base}/${tag}`, {
-          method: "PUT",
-          body: JSON.stringify({ envelope }),
-        });
-      }
-      if (!mounted.current || current.current !== identity) return;
-      await reload();
-      if (current.current === identity) {
-        setPicker(false);
-        setSuggested(null);
+          }, isComment ? target.post_id : target.id);
+          operation.send = () => request(`${base}/${tag}`, {method: "PUT", body: JSON.stringify({envelope})});
+        }
+        if (!valid(operation)) return;
+        dispatched = true;
+        await operation.send();
+        await settle(operation);
+      } catch (error) {
+        if (!operation || !valid(operation)) { if (!operation) throw error; return; }
+        const rejected = error instanceof ApiError && error.status >= 400 && error.status < 500 && error.status !== 408;
+        if (!dispatched || rejected) {
+          updatePending(null);
+          if (accessLost(error)) setOpened({identity, entries: []});
+        } else {
+          updatePending({...operation, uncertain: true});
+          // A lost response may follow a committed write. Read before offering any retry.
+          try { await settle(operation); if (!pendingRef.current) return; } catch { /* Retain uncertain intent. */ }
+        }
+        throw error;
       }
     });
     changing.current = false;
@@ -1186,7 +1225,7 @@ export function Reactions({
                 className={`reaction-chip ${selected ? "selected" : ""}`}
                 aria-label={`${label}, ${count} ${count === 1 ? "person" : "people"}`}
                 aria-pressed={selected}
-                disabled={action.busy || vault.member.status === "restricted"}
+                disabled={action.busy || !!activePending || vault.member.status === "restricted"}
                 onClick={() => toggle(value)}
               >
                 <EmojiGlyph value={value} />
@@ -1196,7 +1235,7 @@ export function Reactions({
                 <button
                   type="button"
                   className="reaction-save-image"
-                  disabled={action.busy || vault.member.status === "restricted"}
+                  disabled={action.busy || !!activePending || vault.member.status === "restricted"}
                   aria-label={`Save ${value.custom.name} to my images`}
                   title="Save to my images"
                   onClick={() => {
@@ -1218,7 +1257,7 @@ export function Reactions({
             setSuggested(null);
             setPicker(true);
           }}
-          disabled={action.busy || !payload || vault.member.status === "restricted"}
+          disabled={action.busy || !!activePending || !payload || vault.member.status === "restricted"}
           aria-label="Add a reaction"
           aria-expanded={picker}
         >
@@ -1240,6 +1279,8 @@ export function Reactions({
           returnFocusRef={addButton}
         />
       )}
+      {activePending && <span ref={pendingStatus} tabIndex={-1} role="status">{activePending.uncertain ? "Reaction not yet confirmed." : "Saving reaction…"}</span>}
+      {activePending?.uncertain && <button disabled={action.busy} onClick={() => void action.runSave(() => settle(activePending, true))}>Check and retry reaction</button>}
       {!picker && action.error && <Alert>{action.error}</Alert>}
     </div>
   );
