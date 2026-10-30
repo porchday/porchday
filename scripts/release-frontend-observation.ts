@@ -30,17 +30,22 @@ export async function executeStagingBrowserRecoveryDrill(path:string,env:NodeJS.
  observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
  return executeObservedActivation(path,env,observation,signal,false,true);
 }
+/** The caller owns fixture authorization and durable action-specific evidence.
+ * A verified result permits the deliberate browser fault; it is not proof of
+ * data durability after rollback. Unknown outcomes require reconciliation. */
+export type StagingCandidateAction=(signal:AbortSignal)=>Promise<'verified'>;
 /** Staging API-only rollback rehearsal. The public frontend must be unchanged;
  * the injected exception exists only in the isolated observer's fresh context.
  * Real candidate and rollback journeys still run through the normal controller.
  */
 export async function executeStagingApiRecoveryDrill(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
- return executeObservedActivation(path,env,observation,signal,false,true,true);
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,candidateAction?:StagingCandidateAction){
+ return executeObservedActivation(path,env,observation,signal,false,true,true,candidateAction);
 }
 async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false,apiOnly=false){
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false,apiOnly=false,candidateAction?:StagingCandidateAction){
  signal.throwIfAborted();const manifest=readActivationManifest(path),target=deploymentTarget(manifest.plan.worker),{plan,review}=manifest,e=review.execution;
+ if(candidateAction!==undefined&&(!drill||!apiOnly||target.environment!=='staging'||typeof candidateAction!=='function'))throw Error('CANDIDATE_ACTION_SCOPE_INVALID');
  if(drill&&target.environment!=='staging')throw Error('BROWSER_RECOVERY_DRILL_STAGING_REQUIRED');
  if(apiOnly&&(target.frontend||plan.assetManifests!==undefined||publicAssetManifestHash(review.assets.baseline)!==publicAssetManifestHash(review.assets.candidate)))throw Error('API_RECOVERY_DRILL_SCOPE_INVALID');
  if(frontendOnly&&!target.frontend)throw Error('FRONTEND_OBSERVATION_TARGET_REQUIRED');
@@ -58,7 +63,7 @@ async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
   const parent=openSync(e.proofDirectory,constants.O_RDONLY);try{fsyncSync(parent);}finally{closeSync(parent);}
  };
  // Existing intent is never overwritten, including after a pre-dispatch failure.
- retain('intent',{candidateVersion:plan.candidateVersion,baselineVersion:plan.baselineVersion,...(drill?{drill:'staging-fresh-client-exception'}:{})});
+ retain('intent',{candidateVersion:plan.candidateVersion,baselineVersion:plan.baselineVersion,...(drill?{drill:'staging-fresh-client-exception'}:{}),...(candidateAction?{candidateAction:true}:{})});
  createBrowserGate(e.proofDirectory,plan).require();
  let browser:Awaited<ReturnType<typeof beginHostedAssetTransition>>|undefined;
  let browserStarted=false,report:Awaited<ReturnType<Awaited<ReturnType<typeof beginHostedAssetTransition>>['finish']>>|undefined;
@@ -69,7 +74,18 @@ async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
   retain('command-intent',{automaticRetry:false});phase='command-started';
   const command=await executeActivationWithContinuity(manifest,env,{...observation,assertScope:()=>{if(!browserStarted)browser!.assertOpen();observation.assertScope();}},signal,async candidateSignal=>{
    browserStarted=true;const cancel=()=>{void browser!.close().catch(()=>{});};candidateSignal.addEventListener('abort',cancel,{once:true});
-   try{candidateSignal.throwIfAborted();report=await browser!.finish();candidateSignal.throwIfAborted();retain('browser-result',report);
+   try{candidateSignal.throwIfAborted();
+    if(candidateAction){
+     observation.assertScope();browser!.assertOpen();
+     // Exclusive durable claim precedes the action. Neither this wrapper nor
+     // a resumed controller may repeat it after a lost reply or failed write.
+     retain('candidate-action-intent',{automaticRetry:false});
+     let status:'verified'|'unknown'='unknown';
+     try{const result=await candidateAction(candidateSignal);candidateSignal.throwIfAborted();observation.assertScope();browser!.assertOpen();if(result==='verified')status='verified';}catch{/* Do not retain action errors or returned payloads. */}
+     retain('candidate-action-result',{status});
+     if(status!=='verified')return 'unknown';
+    }
+    report=await browser!.finish();candidateSignal.throwIfAborted();retain('browser-result',report);
     if(drill&&(report.drill!=='staging-fresh-client-exception'||report.drillExceptionObserved!==true||report.newErrors.pageErrors<1||report.passed!==false))return 'unknown';
     return report.passed?'healthy':'unhealthy';}
    finally{candidateSignal.removeEventListener('abort',cancel);}

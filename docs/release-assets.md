@@ -298,3 +298,35 @@ The final combined run passed all **94 tests across eight suites**, including th
 two Chromium-to-recovery cases. Asset and deployment-recovery TypeScript checks,
 module imports, formatting, secret scanning and diff checks passed. No hosted
 deployment was made for this change.
+
+### A fixture action on the active staging candidate
+
+`executeStagingApiRecoveryDrill` accepts an optional `StagingCandidateAction`
+callback for an explicitly authorized synthetic operation. This entry point
+requires staging, an API worker and identical public assets. Normal releases and
+frontend drills do not expose this callback. The maintained controller first
+verifies the candidate's ordinary journeys; the callback then runs before the
+deliberate browser exception. It receives the candidate verification abort signal
+and shares that existing deadline. It does not receive a new recovery budget.
+
+Before calling it, the wrapper persists an exclusive `candidate-action-intent`
+receipt with retries disabled. A successful callback returns exactly `verified`;
+the wrapper rechecks the signal, observer scope and browser liveness before
+retaining that result and proceeding with the browser fault. A lost reply,
+exception, unexpected result, cancellation or scope change retains `unknown`.
+Unknown evidence does not trigger the expected fault or establish drill success;
+the controller retains its unresolved operation for reconciliation. In particular,
+an unknown action may leave the candidate active. Inspect the action's evidence,
+current provider state and controller journal before deciding recovery. Never
+rerun the callback to learn whether its first invocation committed.
+
+The caller must authorize and constrain its exact owned fixtures, persist
+action-specific request intent and results, honor cancellation, and avoid mutation
+retries. Generic receipts contain no returned payload or exception text. A
+`verified` callback result proves only the caller's pre-rollback check; it does
+not prove post-rollback data durability. Independently verify that state after
+rollback, then remove the exact synthetic fixtures and validate final inventory.
+Local tests cover callback ordering, exclusive claims, duplicate invocation,
+lost replies, cancellation, browser/scope drift, private error suppression and
+rejected target/history states. Hosted write-during-rollback acceptance remains
+required; these tests alone do not establish it.

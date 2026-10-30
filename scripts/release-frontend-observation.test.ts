@@ -99,3 +99,57 @@ it.each(['production','frontend','asset-promotion','changed-public-assets','hist
  await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal)).rejects.toThrow();
  expect(ports.begin).not.toHaveBeenCalled();expect(ports.execute).not.toHaveBeenCalled();expect(readdirSync(root)).toEqual(['journal']);
 });
+
+function apiActionDrill(){
+ manifest.plan.worker='porchday-staging';delete manifest.plan.backendVersion;delete manifest.plan.backendReaderFloor;
+ manifest.review.assets.baseline.files['index.html']='a'.repeat(64);manifest.review.assets.candidate=structuredClone(manifest.review.assets.baseline);
+ browser.finish.mockResolvedValue({passed:false,drill:'staging-fresh-client-exception',drillExceptionObserved:true,newErrors:{pageErrors:1}});
+}
+it('claims a candidate action durably after candidate verification and before the browser fault',async()=>{
+ apiActionDrill();const action=vi.fn(async(signal:AbortSignal)=>{
+  expect(signal.aborted).toBe(false);expect(browser.finish).not.toHaveBeenCalled();
+  expect(JSON.parse(readFileSync(file('candidate-action-intent'),'utf8')).value.automaticRetry).toBe(false);
+  return 'verified' as const;
+ });
+ browser.finish.mockImplementation(async()=>{
+  expect(JSON.parse(readFileSync(file('candidate-action-result'),'utf8')).value.status).toBe('verified');
+  return{passed:false,drill:'staging-fresh-client-exception',drillExceptionObserved:true,newErrors:{pageErrors:1}};
+ });
+ const result=await executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal,action);
+ expect(result.command.status).toBe('rolled-back');expect(action).toHaveBeenCalledOnce();expect(browser.finish).toHaveBeenCalledOnce();
+ await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal,action)).rejects.toThrow();
+ expect(action).toHaveBeenCalledOnce();expect(ports.execute).toHaveBeenCalledOnce();
+});
+it.each(['lost-reply','invalid-result','abort-after-action','scope-drift','browser-closed'])('retains unknown candidate action %s without injecting the expected fault or retrying',async kind=>{
+ apiActionDrill();const controller=new AbortController();
+ const action=vi.fn(async()=>{
+  if(kind==='lost-reply')throw Error('private action credentials');
+  if(kind==='abort-after-action')controller.abort();
+  if(kind==='scope-drift')observation.assertScope.mockImplementation(()=>{throw Error('private drift');});
+  if(kind==='browser-closed')browser.assertOpen.mockImplementation(()=>{throw Error('private browser');});
+  return kind==='invalid-result'?{private:'action payload'}:'verified';
+ });
+ ports.execute.mockImplementation(async(_m,_e,_o,s,accept)=>{expect(await accept(s)).toBe('unknown');return{status:'attention-required'};});
+ await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,controller.signal,action as any)).rejects.toThrow('UNVERIFIED');
+ expect(action).toHaveBeenCalledOnce();expect(browser.finish).not.toHaveBeenCalled();
+ expect(JSON.parse(readFileSync(file('candidate-action-result'),'utf8')).value.status).toBe('unknown');
+ expect(readdirSync(root)).not.toContain(`frontend-${id}-drill-result.json`);
+ expect(readdirSync(root).filter(x=>x.endsWith('.json')).map(x=>readFileSync(join(root,x),'utf8')).join('')).not.toContain('private');
+ await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal,action as any)).rejects.toThrow();expect(action).toHaveBeenCalledOnce();
+});
+it('refuses an existing action claim and duplicate acceptance calls before a second side effect',async()=>{
+ apiActionDrill();const action=vi.fn(async()=>'verified' as const);
+ ports.execute.mockImplementation(async(_m,_e,_o,s,accept)=>{expect(await accept(s)).toBe('unhealthy');await accept(s);return{status:'rolled-back'};});
+ await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal,action)).rejects.toThrow('UNVERIFIED');
+ expect(action).toHaveBeenCalledOnce();expect(browser.finish).toHaveBeenCalledOnce();
+});
+it.each(['production','frontend','assets','history','aborted','invalid-hook'])('does not run a candidate action for rejected %s scope',async kind=>{
+ apiActionDrill();const controller=new AbortController(),action=vi.fn(async()=>'verified' as const);
+ if(kind==='production'){manifest.plan.worker='porchday-production';observation.target.environment='production';}
+ if(kind==='frontend')manifest.plan.worker='porchday-staging-edge';
+ if(kind==='assets')manifest.review.assets.candidate.files['index.html']='b'.repeat(64);
+ if(kind==='history')ports.state.mockResolvedValue({phase:'rolled-back'});
+ if(kind==='aborted')controller.abort();
+ await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,controller.signal,kind==='invalid-hook'?'invalid' as any:action)).rejects.toThrow();
+ expect(action).not.toHaveBeenCalled();expect(ports.execute).not.toHaveBeenCalled();expect(ports.begin).not.toHaveBeenCalled();expect(readdirSync(root)).toEqual(['journal']);
+});
