@@ -58,7 +58,7 @@ describe("source JPEG preflight", () => {
     const primary = jpeg(),
       extraFrame = Uint8Array.from([...primary.slice(0, -2), ...jpeg().slice(2)]);
     for (const input of [
-      jpeg(0, 100), jpeg(10000, 10000), jpeg(32, 24, 0xc0, 12),
+      jpeg(0, 100), jpeg(32, 24, 0xc0, 12),
       jpeg(32, 24, 0xc5), jpeg(32, 24, 0xc3, 17), badLength,
       primary.slice(0, -1), extraFrame,
       withSegments(primary, segment(0xdc, "deferred")),
@@ -110,6 +110,24 @@ function browser(width = 320, height = 240) {
 }
 
 describe("photo upload normalization", () => {
+  it("normalizes full-resolution sources and rotated photos above 40 MP", async () => {
+    const input = jpeg(8064, 6048);
+    expect(jpegSource(input)).toMatchObject({ width: 8064, height: 6048 });
+    // The source allowance never broadens received/archive validation.
+    expect(() => jpegDimensions(input)).toThrow(/safe dimensions/);
+    for (const [width, height, expectedWidth, expectedHeight] of [
+      [8064, 6048, 2400, 1800], [6048, 8064, 1800, 2400],
+      [10000, 10000, 2400, 2400],
+    ]) {
+      const handle = browser(width, height);
+      const bytes = width === 10000 ? jpeg(width, height) : input;
+      const prepared = await preparePhoto(new File([bytes], "full-resolution.jpg"));
+      expect(prepared).toMatchObject({ width: expectedWidth, height: expectedHeight });
+      expect(jpegDimensions(new Uint8Array(await prepared.blob.arrayBuffer())))
+        .toEqual({ width: expectedWidth, height: expectedHeight });
+      expect(handle.close).toHaveBeenCalledOnce();
+    }
+  });
   it("accepts a 50 MiB source inclusively and rejects one extra byte before reading or decoding", async () => {
     const primary = jpeg(), input = new Uint8Array(50 * 1024 * 1024);
     input.set(primary);
