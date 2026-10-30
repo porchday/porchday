@@ -14,6 +14,8 @@ import {
   initializePrivacyJournal,
   readJournalControl,
   detectStalePrivacyIntents,
+  provePrivacyReceipts,
+  privacyIntentSchema,
   type JournalDatabase,
   type JournalStore,
 } from "../src/privacy-journal";
@@ -662,6 +664,39 @@ suite("Authenticated account privacy journal boundary", () => {
       expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
     }finally{env.PRIVACY_COMMIT_WRITER_V1=previous;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;store.failPrefix='';}
   });
+  it.each([2,4])('preserves %i concurrent auth commits after overlapping intent publication',async count=>writer(async()=>{
+    const people=[];for(let i=0;i<count;i++)people.push(await person());
+    const other=await person(),store=await journal();
+    const previousWriter=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';
+    const baseline=(await owner.query('SELECT coalesce(max(sequence),0)::text AS n FROM app.privacy_operation_commits')).rows[0].n;
+    let release!:()=>void;const barrier=new Promise<void>(resolve=>{release=resolve;});
+    const arrived=new Set<string>();
+    store.beforeWrite=async key=>{if(key.startsWith('intents/')){arrived.add(key);await barrier;}};
+    const requests=people.map(p=>call('revoke-sessions',{},p.cookie));
+    try{
+      // All independent requests reach immutable intent publication before any
+      // can register its intent or acquire the SQL mutation lock.
+      await vi.waitFor(()=>expect(arrived.size).toBe(count),{timeout:3000});release();
+      const results=await Promise.all(requests);expect(results.map(r=>r.response.status)).toEqual(Array(count).fill(200));
+      const control=(await readJournalControl(store)).value;expect(control.mode).toBe('active');expect(control.pending).toHaveLength(0);
+      const fences=(await owner.query('SELECT operation_id,sequence::text,scope_sha256 FROM app.privacy_operation_commits WHERE sequence>$1::bigint ORDER BY sequence',[baseline])).rows;
+      expect(fences).toHaveLength(count);expect(new Set(fences.map(f=>f.operation_id)).size).toBe(count);
+      const intents=fences.map(f=>privacyIntentSchema.parse(JSON.parse(store.rows.get(`intents/${f.operation_id}.json`)!.value)));
+      expect(new Set(intents.map(i=>`intents/${i.id}.json`))).toEqual(arrived);
+      const proofControl={...control,pending:intents.map(({id,started_at})=>({id,started_at}))};
+      const proofs=await provePrivacyCommits(store,proofControl),receipts=await provePrivacyReceipts(store,proofControl);
+      for(const fence of fences){expect(proofs.get(fence.operation_id)).toEqual({sequence:fence.sequence,scopeSha256:fence.scope_sha256});expect(receipts.has(fence.operation_id)).toBe(true);}
+      for(const p of people){
+        expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+        expect((await(await call('get-session',undefined,p.cookie)).response.json())).toBeNull();
+        expect((await owner.query('SELECT 1 FROM public.auth_user WHERE id=$1',[p.id])).rowCount).toBe(1);
+      }
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      const sql=(await owner.query('SELECT app.safety_status() AS status')).rows[0].status;
+      expect(sql.quarantined).toBe(false);expect(sql.generation).toBe(control.generation);
+    }finally{release();await Promise.allSettled(requests);store.beforeWrite=undefined;env.PRIVACY_COMMIT_WRITER_V1=previousWriter;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;}
+  }),15000);
   it("leaves an ambiguous post-commit R2 failure unresolved and fails closed", async () => {
     const p = await person(),
       store = await journal(p.id);
