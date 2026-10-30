@@ -1,3 +1,4 @@
+import {event} from './telemetry';
 import {runtimeSessionDenied} from './session-denial';
 import {Hono, type Context} from 'hono';
 import {z} from 'zod';
@@ -94,7 +95,7 @@ export function webPushRequest(subscription: PushSubscription, env: PushEnv) {
 }
 
 /** At-least-once delivery; fixed topic collapses crash-retried generic previews. */
-export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'|'ENVIRONMENT'|'RECOVERY_JOURNAL'> & PushEnv, send: typeof fetch = fetch): Promise<{sent: number; retried: number; skipped: number}> {
+export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'|'ENVIRONMENT'|'RECOVERY_JOURNAL'|'METRICS'> & PushEnv, send: typeof fetch = fetch): Promise<{sent: number; retried: number; skipped: number}> {
   const counts = {sent: 0, retried: 0, skipped: 0};
   if (!configured(env)) return counts;
   const sql = trackPostgres(env, 'jobs', postgres(env.HYPERDRIVE_JOBS.connectionString, {max: 1, prepare: true, fetch_types: false, connect_timeout: 10}));
@@ -104,10 +105,10 @@ export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'|'ENVIRONME
       await Promise.all(jobs.slice(offset, offset + 4).map(async job => {
         const [row] = await sql`select app.prepare_push_delivery(${job.id},${job.lease}) as delivery`;
         if (!row?.delivery) {counts.skipped++; return;}
-        let outcome = 'retry';
+        let outcome = 'retry',denialConfirmed=false;
         let delay = Math.min(3600, 15 * 2 ** Math.min(Number(job.attempts), 8));
         try {
-          if(await runtimeSessionDenied(env,row.delivery.sessionId)){outcome='failed';}
+          if(await runtimeSessionDenied(env,row.delivery.sessionId)){outcome='failed';denialConfirmed=true;}
           else {
             const request = webPushRequest(row.delivery.subscription, env);
             const response = await send(request.url, request.init);
@@ -124,6 +125,7 @@ export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'|'ENVIRONME
           }
         } catch { /* Network/configuration failures retry with bounded backoff. */ }
         await sql`select app.finish_push(${job.id},${job.lease},${outcome},${delay})`;
+        if(denialConfirmed)event('job',{code:'web_push_denied',count:1},env);
         if (outcome === 'sent') counts.sent++;
         else if (outcome === 'retry') counts.retried++;
         else counts.skipped++;

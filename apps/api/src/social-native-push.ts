@@ -1,3 +1,4 @@
+import {event} from './telemetry';
 import {runtimeSessionDenied} from './session-denial';
 import { Hono, type Context } from "hono";
 import { z } from "zod";
@@ -253,7 +254,7 @@ async function providerToken(sql: postgres.Sql, env: NativePushEnv) {
 
 /** Jobs role only. Every attempt repeats notification, recipient, session and content-access checks. */
 export async function processNativePush(
-  env: Pick<Env, "HYPERDRIVE_JOBS"|"ENVIRONMENT"|"RECOVERY_JOURNAL"> & NativePushEnv,
+  env: Pick<Env, "HYPERDRIVE_JOBS"|"ENVIRONMENT"|"RECOVERY_JOURNAL"|"METRICS"> & NativePushEnv,
   send: typeof fetch = fetch,
 ) {
   const counts = { sent: 0, retried: 0, skipped: 0 };
@@ -277,12 +278,13 @@ export async function processNativePush(
             counts.skipped++;
             return;
           }
+          let denialConfirmed=false;
           let result: Awaited<ReturnType<typeof nativePushOutcome>> = {
             outcome: "retry",
             delay: Math.min(3600, 15 * 2 ** Math.min(Number(job.attempts), 8)),
           };
           try {
-            if(await runtimeSessionDenied(env,row.delivery.sessionId)){result.outcome="failed";}
+            if(await runtimeSessionDenied(env,row.delivery.sessionId)){result.outcome="failed";denialConfirmed=true;}
             else {
               const request = nativePushRequest(row.delivery.subscription, env, token);
               result = await nativePushOutcome(
@@ -294,6 +296,7 @@ export async function processNativePush(
             /* Network failures retry under a lease, with no token-bearing errors logged. */
           }
           await sql`select app.finish_native_push(${job.id},${job.lease},${result.outcome},${result.delay})`;
+          if(denialConfirmed)event('job',{code:'native_push_denied',count:1},env);
           if (result.outcome === "sent") counts.sent++;
           else if (result.outcome === "retry") counts.retried++;
           else counts.skipped++;

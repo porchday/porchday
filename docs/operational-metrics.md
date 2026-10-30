@@ -366,3 +366,34 @@ row; R2/database columns overlap them. An empty view means no observed summary
 points, not healthy logout. Use external journey evidence to confirm outcomes.
 
 The [October 29 production transaction diagnostic rollout](evidence/logout-work-timing-production-2026-10-29.md) verified all six successful transaction subphases and retained the existing correlated-summary schema. This is deployed observability evidence, not a latency correction.
+
+## Confirmed push denial observations
+
+The fixed job codes `web_push_denied` and `native_push_denied` each carry
+`count: 1` in the existing version 1 schema. The worker emits one only after the
+independent session authority confirms a denial, provider send is skipped, and
+the existing SQL finish call returns. A generic `failed` outbox outcome alone is
+ambiguous: provider rejection also uses that outcome. Unknown, malformed or
+unavailable authority is not a confirmed denial and emits neither counter.
+Provider failures and successful sends also emit neither counter.
+
+These observations contain no job, member, session or device identifiers, hashes,
+endpoint URLs, payloads or errors. Hosted console logging remains disabled. The
+existing exporter is best effort and never awaited: missing or failing metrics
+cannot permit a send, block cleanup, or establish an operation outcome. A point
+is not a durable outbox receipt, a unique-job count or proof about a particular
+device; sampling, retries and missing ingestion prevent those interpretations.
+
+Read the aggregate codes with the existing bounded read-only view:
+
+```sh
+python3 scripts/with-secrets.py npx tsx scripts/query-metrics.ts staging counters
+```
+
+For a hosted suppression rehearsal, combine positive observed counters with the
+exact owned outbox state, retained SQL session, canonical immutable denial,
+bounded observation window, unrelated-session control and fixture cleanup. Do
+not infer suppression from absent notifications, an empty metrics result or SQL
+cleanup of the session. Distinguish aggregate evidence from per-device delivery.
+This source addition has local SQL-backed and telemetry tests; it is not deployed
+or hosted acceptance merely because those tests pass.

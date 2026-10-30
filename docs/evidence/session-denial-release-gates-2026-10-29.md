@@ -46,3 +46,17 @@ appropriate unchanged runner for the missing gate.
 
 The initial audit ran no tests. The linked follow-up records the later hosted
 test; neither changed deployment or provider settings.
+
+## Push attribution follow-up
+
+The deployed outbox's `failed` outcome conflates a confirmed independent denial
+with some provider rejections. That outcome alone cannot prove the authority
+check prevented sending while SQL still retained the session. The source now
+emits finite, identifier-free `web_push_denied` / `native_push_denied` aggregate
+observations only after a confirmed denial skips the provider and the existing
+finish call returns; see [metric semantics](../operational-metrics.md#confirmed-push-denial-observations).
+Local SQL-backed tests distinguish denied sessions, unrelated successful sends,
+unknown authority and provider rejection, and retain suppression when metrics
+fail. This adds an observation needed by the future hosted rehearsal, not new
+hosted acceptance. No new schema, provider binding, console logging or production
+writer enablement is part of this change.
