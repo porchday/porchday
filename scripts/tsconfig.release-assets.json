@@ -9,5 +9,5 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "files": ["release-assets.ts", "release-assets-browser.ts", "release-assets-hosted.ts", "release-frontend-observation.ts", "release-assets-verify.ts"]
+  "files": ["release-assets.ts", "release-assets-browser.ts", "release-assets-hosted.ts", "release-frontend-observation.ts", "release-assets-verify.ts", "release-inflight-probe.ts"]
 }
