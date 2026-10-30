@@ -1,0 +1,61 @@
+{
+  "at": "2026-10-30T00:03:25.776Z",
+  "passed": true,
+  "operationId": "2783bddd-04c4-4442-ab33-dd2f3200bba8",
+  "tooling": "c1801769f1a2240cf2de233c204a11cfcafb43e4",
+  "baseline": "89eec37f-e097-4e65-9b71-42ad08d854de",
+  "candidate": "f964f1f2-6c55-4c38-b2f9-e05688d23f2e",
+  "outcome": "rolled-back",
+  "samples": 18,
+  "failedSamples": 0,
+  "postTerminalStarts": 2,
+  "maxStartGapMs": 2002.5486249999958,
+  "browserExceptionCount": 1,
+  "retainedLazyModules": 1,
+  "browserReportToCommandTerminalMs": 18540,
+  "commandIntentToTerminalMs": 30527,
+  "remainingFixtureRows": 0,
+  "leaseFree": true,
+  "alertComment": "https://github.com/porchday/porchday/issues/3#issuecomment-6511459296",
+  "alertLocalReceiptVerified": true,
+  "cleanWatchPolls": [
+    {
+      "at": "2026-10-30T00:02:46.921Z",
+      "waiting": 0,
+      "completed": 51,
+      "cancelled": 0,
+      "pending": 0,
+      "delivered": 6,
+      "errors": 0
+    },
+    {
+      "at": "2026-10-30T00:03:07.096Z",
+      "waiting": 0,
+      "completed": 51,
+      "cancelled": 0,
+      "pending": 0,
+      "delivered": 6,
+      "errors": 0
+    }
+  ],
+  "productionUnchanged": true,
+  "environment": "staging",
+  "scope": "Actual hosted edge activation and compatible rollback triggered by a fault confined to the observer fresh Chromium context",
+  "sharedServedFilesFaultInjected": false,
+  "ciRuns": [
+    40976157929,
+    40976163051,
+    40976158261,
+    40976163099,
+    40976158043,
+    40976163075
+  ],
+  "localTests": 97,
+  "matchingBotComments": 1,
+  "limits": [
+    "No production mutation or provider outage injection",
+    "Unauthenticated browser assets; authenticated continuity checked separately via API",
+    "No signed-in UI, installed service worker or physical native-client acceptance",
+    "Not an eligible scheduled feature release or monthly SLO proof"
+  ]
+}

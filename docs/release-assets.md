@@ -278,8 +278,10 @@ provider identity, baseline assets, post-command continuity and exact synthetic
 fixture cleanup before reporting hosted acceptance.
 
 Real Chromium with synthetic transport exercises this injection through actual
-recovery decisions for edge and combined workers. Hosted execution is still
-unverified. This drill tests browser-triggered recovery, not a provider outage or
+recovery decisions for edge and combined workers. [Hosted staging-edge execution](evidence/browser-fault-recovery-staging-2026-10-30.md)
+passed with 18 healthy continuity samples, exact baseline restoration, zero
+remaining fixture rows and verified notification delivery. Combined-worker hosted
+recovery remains unverified. This drill tests browser-triggered recovery, not a provider outage or
 an actual defect served to members; physical and signed-in clients remain separate
 requirements. Ordinary release automation must continue using the normal client
 entry point, never the drill entry point.

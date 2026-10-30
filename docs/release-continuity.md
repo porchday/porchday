@@ -445,3 +445,11 @@ retirement 850 ms. Nested R2 write time totals 1,653 ms; it overlaps those
 phases and must not be added to them. The sample cannot be attributed to an
 individual synthetic account. More production evidence is needed to explain
 the slow tail.
+
+The [October 30 UTC staging browser recovery drill](evidence/browser-fault-recovery-staging-2026-10-30.md)
+activated a retained frontend and used an exception confined to the observer fresh
+context to trigger compatible rollback. All 18 authenticated continuity samples
+passed, including two starts after command termination. The exact baseline was
+restored, owned fixtures were removed and independent GitHub notification delivery
+was verified. This remains separate from scheduled feature-release acceptance and
+signed-in/installed/native client validation.
