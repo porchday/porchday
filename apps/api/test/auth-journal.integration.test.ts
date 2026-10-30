@@ -1,4 +1,5 @@
 import {persistSessionDenial} from '../src/session-denial';
+import {provePrivacyCommits} from '../src/privacy-commit-proof';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions} from '../src/session-denial-candidates';
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
@@ -645,6 +646,21 @@ suite("Authenticated account privacy journal boundary", () => {
       expect(row.value).not.toContain(p.password);
       expect(row.value).not.toContain(p.email);
     }
+  });
+  it('independently proves the atomic auth commit after receipt publication fails',async()=>{
+    const p=await person(),store=await journal(p.id),previous=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';store.failPrefix='receipts/';
+    try{
+      const result=await call('change-password',{currentPassword:p.password,newPassword:'synthetic-atomic-commit-password'},p.cookie);
+      expect(result.response.status).toBe(503);
+      const control=(await readJournalControl(store)).value;expect(control.pending).toHaveLength(1);
+      const operation=control.pending[0].id,proof=await provePrivacyCommits(store,control);
+      expect(proof.has(operation)).toBe(true);expect(store.rows.has(`receipts/${operation}.json`)).toBe(false);
+      const fence=(await owner.query('SELECT sequence::text,scope_sha256 FROM app.privacy_operation_commits WHERE operation_id=$1',[operation])).rows[0];
+      expect(fence).toEqual({sequence:proof.get(operation)!.sequence,scope_sha256:proof.get(operation)!.scopeSha256});
+      expect((await owner.query('SELECT credentials_changed_at IS NOT NULL AS changed FROM public.auth_user WHERE id=$1',[p.id])).rows[0].changed).toBe(true);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+    }finally{env.PRIVACY_COMMIT_WRITER_V1=previous;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;store.failPrefix='';}
   });
   it("leaves an ambiguous post-commit R2 failure unresolved and fails closed", async () => {
     const p = await person(),

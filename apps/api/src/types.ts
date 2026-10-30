@@ -16,6 +16,10 @@ export interface Env {
   MEDIA_BACKUP?: R2Bucket;
   MEDIA_BACKUP_ENABLED?: string;
   RECOVERY_JOURNAL?: R2Bucket;
+  /** Enable only after migration 057, recovery/restore and rollback acceptance. */
+  PRIVACY_COMMIT_WRITER_V1?: string;
+  /** Reader/reconciliation rollout must precede enabling the commit writer. */
+  PRIVACY_COMMIT_RECOVERY_V1?: string;
   /** Enable bounded denial cleanup only after the reader rollout. Never disables readers. */
   SESSION_DENIAL_CLEANUP_V1?: string;
   /** Opt in only with verified queue admission and independent range progress. */

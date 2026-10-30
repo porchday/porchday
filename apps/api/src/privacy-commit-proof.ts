@@ -19,8 +19,8 @@ const samePointer=(a:JournalControl['head'],b:JournalControl['head'])=>a===null?
 /** Read-only proof, not permission to retire an intent or release quarantine.
  * Only a marker in the supplied canonical R2 ancestry after its exact opt-in
  * baseline counts. SQL rows, orphan batches and elapsed time are not evidence.
- * No production caller uses this protocol until its atomic SQL writer and
- * restore handling, crash tests and guarded rollout are implemented.
+ * The opt-in recovery caller separately validates live SQL/control state and
+ * publishes receipts. Production rollout remains gated on hosted verification.
  */
 export async function provePrivacyCommits(
  store:Pick<JournalStore,'get'>,input:JournalControl,
