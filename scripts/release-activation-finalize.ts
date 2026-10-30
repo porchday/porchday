@@ -43,7 +43,8 @@ export async function finalizePreparedActivation(options:Options,signal:AbortSig
  const final=await gate.verifyState(version,signal);await identity();
  const current=await journal.read();if(JSON.stringify(current)!==JSON.stringify(state))throw Error('ACTIVATION_FINAL_JOURNAL_CHANGED');check();
  const snapshot=persist(directory,final.inventory),assetProof=persist(directory,{at:new Date().toISOString(),operationId:plan.operationId,planHash:hash,version,kind:'asset-proof',detail:{manifest:assets,report}});
- check();await lease.finalize(journal,snapshot,plan.assetManifests?assetProof:undefined);
+ const schemaProof=persist(directory,{kind:'schema-proof',operationId:plan.operationId,planHash:hash,worker:plan.worker,version,branchId:manifest.evidence.databaseBranchId,schema:final.schema});
+ check();await lease.finalize(journal,snapshot,plan.assetManifests?assetProof:undefined,schemaProof);
  await lease.release(journal);
- return{status:'finalized' as const,outcome:state.phase,version,snapshot,assetProof};
+ return{status:'finalized' as const,outcome:state.phase,version,snapshot,assetProof,schemaProof};
 }

@@ -4,6 +4,7 @@ import {constants,openSync,closeSync,fsyncSync,lstatSync,mkdirSync,readFileSync,
 import {isAbsolute,join} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {deploymentPlanHash,recoveryTarget,rollbackOperationId,RecoveryError,validateRecoveryState,type DeploymentObservation,type DeploymentPlan,type RecoveryJournal,type DeploymentPorts,type RecoveryState} from './deployment-recovery.ts';
+import {validateSchemaFingerprint,type ReleaseSchemaFingerprint} from './release-schema.ts';
 import {publicAssetManifestHash,validatePublicAssetReport,type PublicAssetManifest} from './release-assets-verify.ts';
 const protocol='porchday-deployment-recovery-sqlite-v1';
 const assetProofLimit=32*1024*1024;
@@ -24,11 +25,11 @@ function checkCanonical(plan:DeploymentPlan,text:string):Record<string,unknown>{
   return canonical;
 }
 type SnapshotReceipt={path:string;sha256:string};
-type Finalization={v:1;planHash:string;terminal:RecoveryState;before:string;after:string;snapshot?:SnapshotReceipt;assets?:SnapshotReceipt};
+type Finalization={v:1;planHash:string;terminal:RecoveryState;before:string;after:string;snapshot?:SnapshotReceipt;assets?:SnapshotReceipt;schema?:SnapshotReceipt};
 function terminalState(state:unknown,hash:string):asserts state is RecoveryState{
  validateRecoveryState(state);if(state.planHash!==hash||!['complete','rolled-back'].includes(state.phase))throw new RecoveryError('DEPLOYMENT_LEASE_OUTCOME_UNRESOLVED');
 }
-function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,snapshot?:SnapshotReceipt,assets?:SnapshotReceipt):string{
+function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,snapshot?:SnapshotReceipt,assets?:SnapshotReceipt,schema?:SnapshotReceipt):string{
  const record=checkCanonical(plan,before),{environment,frontend,monitor,key}=recoveryTarget(plan.worker),success=state.phase==='complete',edge=record.edgeRouting as Record<string,unknown>|undefined;
  const version=success?plan.candidateVersion:plan.baselineVersion,source=success?plan.candidateSource:monitor?(record.monitorSources as Record<string,unknown>)[environment]:frontend?edge?.[environment+'FrontendSource']:record[environment+'RuntimeSource'];
  if(monitor&&!snapshot)throw new RecoveryError('DEPLOYMENT_MONITOR_SNAPSHOT_REQUIRED');
@@ -51,7 +52,17 @@ function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,s
    validatePublicAssetReport(environment==='production'?'https://porchday.org':'https://staging.porchday.com',manifest!,proof.detail.report);
   }catch{throw new RecoveryError('DEPLOYMENT_ASSET_PROOF_INVALID');}
  }else if(assets)throw new RecoveryError('DEPLOYMENT_UNPLANNED_ASSET_PROOF');
- return JSON.stringify({...record,...(snapshot?{latestProviderSnapshot:snapshot.path}:{}),...(monitor?{monitorVersions:{...(record.monitorVersions as Record<string,unknown>),[environment]:version},monitorSources:{...(record.monitorSources as Record<string,unknown>),[environment]:source}}:frontend?{edgeRouting:{...edge,[environment+'FrontendVersion']:version,[environment+'FrontendSource']:source,...(manifest?{[environment+'FrontendAssetsSource']:manifest.source}:{})}}:{[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source}),
+ let verifiedSchema:{branchId:string;schema:ReleaseSchemaFingerprint}|undefined;
+ if(schema){
+  if(!isAbsolute(schema.path)||!/^[a-f0-9]{64}$/.test(schema.sha256))throw new RecoveryError('DEPLOYMENT_SCHEMA_PROOF_INVALID');
+  const bytes=privateText(schema.path);if(digest(bytes)!==schema.sha256)throw new RecoveryError('DEPLOYMENT_SCHEMA_PROOF_CHANGED');
+  try{
+   const proof=JSON.parse(bytes);
+   if(Object.keys(proof).sort().join(',')!=='branchId,kind,operationId,planHash,schema,version,worker'||proof.kind!=='schema-proof'||proof.operationId!==plan.operationId||proof.planHash!==deploymentPlanHash(plan)||proof.worker!==plan.worker||proof.version!==version||typeof proof.branchId!=='string'||!/^[a-z0-9]+$/.test(proof.branchId))throw Error('scope');
+   validateSchemaFingerprint(proof.schema);verifiedSchema={branchId:proof.branchId,schema:proof.schema};
+  }catch{throw new RecoveryError('DEPLOYMENT_SCHEMA_PROOF_INVALID');}
+ }
+ return JSON.stringify({...record,...(verifiedSchema?{schemaMigrationsByEnvironment:{...(record.schemaMigrationsByEnvironment as Record<string,unknown>|undefined),[environment]:verifiedSchema.schema.migrations.length},schemaEvidenceByEnvironment:{...(record.schemaEvidenceByEnvironment as Record<string,unknown>|undefined),[environment]:{branchId:verifiedSchema.branchId,fingerprint:verifiedSchema.schema,proof:schema}}}:{}),...(snapshot?{latestProviderSnapshot:snapshot.path}:{}),...(monitor?{monitorVersions:{...(record.monitorVersions as Record<string,unknown>),[environment]:version},monitorSources:{...(record.monitorSources as Record<string,unknown>),[environment]:source}}:frontend?{edgeRouting:{...edge,[environment+'FrontendVersion']:version,[environment+'FrontendSource']:source,...(manifest?{[environment+'FrontendAssetsSource']:manifest.source}:{})}}:{[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source}),
  ...(manifest?{[environment+'AssetsSource']:manifest.source,releaseAssets:{...(record.releaseAssets as Record<string,unknown>|undefined),[key]:{version,source:manifest.source,retainedSources:manifest.retainedSources??[],manifestSha256:manifestHash,proof:assets}}}:{}),
  deploymentRecovery:{...(record.deploymentRecovery as Record<string,unknown>|undefined),[key]:{operationId:plan.operationId,planHash:deploymentPlanHash(plan),outcome:state.phase,version,source,deploymentId:success?state.candidateDeploymentId:state.rollbackDeploymentId,evidenceDigest:plan.evidenceDigest,...(snapshot?{providerSnapshotSha256:snapshot.sha256}:{})}}})+'\n';
 }
@@ -60,7 +71,7 @@ function readFinalization(directory:string,plan:DeploymentPlan,owner:Owner):Fina
  let value:Finalization;try{value=JSON.parse(privateText(path,6*1024*1024));}catch{throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');}
  if(!value||value.v!==1||value.planHash!==owner.planHash||typeof value.before!=='string'||typeof value.after!=='string'||digest(value.before)!==owner.baselineSha256)throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');
  terminalState(value.terminal,owner.planHash);
- if(value.after!==finalizedRecord(plan,value.terminal,value.before,value.snapshot,value.assets))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');
+ if(value.after!==finalizedRecord(plan,value.terminal,value.before,value.snapshot,value.assets,value.schema))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');
  return value;
 }
 /** Local replacement only: complete bytes and directory entries are durable before returning. */
@@ -79,6 +90,16 @@ export class FileDeploymentLease{
  private held=true;
  private resolvingFailure=false;
  private constructor(root:string,db:DatabaseSync,owner:Owner,plan:DeploymentPlan){this.root=root;this.db=db;this.owner=owner;this.plan=Object.freeze({...plan,...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});}
+ /** Read-only early rejection for new operations, before fixture preparation.
+  * Not authorization: acquisition and dispatch repeat the canonical checks.
+  */
+ static preflight(root:string,plan:DeploymentPlan):void{
+  if(!isAbsolute(root))throw new RecoveryError('DEPLOYMENT_LEASE_PATH_INVALID');privateDirectory(root);deploymentPlanHash(plan);
+  if(existsSync(archivePath(root,plan)))throw new RecoveryError('DEPLOYMENT_ALREADY_FINALIZED');
+  if(existsSync(join(root,'deployment-recovery-cancelled-'+plan.operationId)))throw new RecoveryError('DEPLOYMENT_ALREADY_CANCELLED');
+  if(existsSync(join(root,'deployment-recovery-failed-'+plan.operationId)))throw new RecoveryError('DEPLOYMENT_ALREADY_RESOLVED_FAILED');
+  checkCanonical(plan,privateText(join(root,'latest-verified-deployment.json')));
+ }
  /** No time-based stealing. Resume only the same plan while holding the kernel lock. */
  static acquire(root:string,plan:DeploymentPlan):FileDeploymentLease{
   if(!isAbsolute(root))throw new RecoveryError('DEPLOYMENT_LEASE_PATH_INVALID');privateDirectory(root);
@@ -146,14 +167,14 @@ export class FileDeploymentLease{
   }finally{this.resolvingFailure=false;if(!existsSync(directory))this.close();}
  }
  /** Persist terminal evidence before replacing canonical bytes. Safe to resume, without provider writes. */
- async finalize(journal:RecoveryJournal,providerSnapshotPath?:string,assetEvidencePath?:string):Promise<void>{
+ async finalize(journal:RecoveryJournal,providerSnapshotPath?:string,assetEvidencePath?:string,schemaEvidencePath?:string):Promise<void>{
   this.assertOwner();const state=await journal.read();terminalState(state,this.owner.planHash);this.assertOwner();
   const directory=join(this.root,'deployment-lock'),path=join(this.root,'latest-verified-deployment.json');
   let receipt=readFinalization(directory,this.plan,this.owner);const current=privateText(path);
-  if(receipt){if(providerSnapshotPath!==undefined&&providerSnapshotPath!==receipt.snapshot?.path)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_CHANGED');if(assetEvidencePath!==undefined&&assetEvidencePath!==receipt.assets?.path)throw new RecoveryError('DEPLOYMENT_ASSET_PROOF_CHANGED');if(JSON.stringify(state)!==JSON.stringify(receipt.terminal))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');}
+  if(receipt){if(providerSnapshotPath!==undefined&&providerSnapshotPath!==receipt.snapshot?.path)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_CHANGED');if(assetEvidencePath!==undefined&&assetEvidencePath!==receipt.assets?.path)throw new RecoveryError('DEPLOYMENT_ASSET_PROOF_CHANGED');if(schemaEvidencePath!==undefined&&schemaEvidencePath!==receipt.schema?.path)throw new RecoveryError('DEPLOYMENT_SCHEMA_PROOF_CHANGED');if(JSON.stringify(state)!==JSON.stringify(receipt.terminal))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');}
   else{
-   this.assert(this.plan);const snapshot=providerSnapshotPath===undefined?undefined:{path:providerSnapshotPath,sha256:digest(privateText(providerSnapshotPath))},assets=assetEvidencePath===undefined?undefined:{path:assetEvidencePath,sha256:digest(privateText(assetEvidencePath,assetProofLimit))};
-   receipt={v:1,planHash:this.owner.planHash,terminal:state,before:current,after:finalizedRecord(this.plan,state,current,snapshot,assets),...(snapshot?{snapshot}:{}),...(assets?{assets}:{})};
+   this.assert(this.plan);const snapshot=providerSnapshotPath===undefined?undefined:{path:providerSnapshotPath,sha256:digest(privateText(providerSnapshotPath))},assets=assetEvidencePath===undefined?undefined:{path:assetEvidencePath,sha256:digest(privateText(assetEvidencePath,assetProofLimit))},schema=schemaEvidencePath===undefined?undefined:{path:schemaEvidencePath,sha256:digest(privateText(schemaEvidencePath))};
+   receipt={v:1,planHash:this.owner.planHash,terminal:state,before:current,after:finalizedRecord(this.plan,state,current,snapshot,assets,schema),...(snapshot?{snapshot}:{}),...(assets?{assets}:{}),...(schema?{schema}:{})};
    atomicText(join(directory,'finalization.json'),JSON.stringify(receipt)+'\n',this.root);syncDirectory(directory);
   }
   if(current!==receipt.before&&current!==receipt.after)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');

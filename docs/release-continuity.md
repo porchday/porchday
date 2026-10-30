@@ -2,6 +2,28 @@
 
 ## Command lifecycle coordination
 
+Before seeding owned fixtures, call `prepareActivationFixtures(manifest, prepare)`
+from `scripts/release-activation-cli.ts`. It validates the new activation plan
+against the canonical baseline and reader floor using local reads before invoking
+`prepare`. A rejection must leave fixture creation uncalled. This is an early
+check, not deployment authorization: acquisition and dispatch repeat the same
+canonical checks under the lease. Keep rejected and historical operations intact;
+reconcile them explicitly rather than replaying fixture or deployment commands.
+
+Terminal finalization retains the verified SQL fingerprint in a private, hashed,
+operation-scoped schema proof. Under the deployment lease it updates only the
+target environment's migration count and schema evidence, including on rollback:
+rolling back a Worker does not undo additive database migrations. Other
+environments' schema metadata stays unchanged. Legacy finalization receipts
+remain resumable without recollecting evidence.
+
+New continuity harnesses must allow these exact, proof-backed schema metadata
+updates for their target environment at terminal finalization, while preserving
+other environments. Do not treat the entire migration-count map as immutable,
+and do not weaken the scope checks to allow arbitrary canonical changes. Preserve
+previously executed harnesses and their evidence unchanged.
+
+
 `scripts/release-continuity-command.ts` exports `runCommandWithContinuity` for
 new release harnesses. It accepts the same probe target/scope checks, a durable
 append-only `retain(event)` sink and a `runCommand(signal)` callback invoking the

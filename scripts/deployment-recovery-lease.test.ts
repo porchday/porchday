@@ -251,3 +251,26 @@ describe('failed monitor rollback disposition',()=>{
   const m=setup(),lease=FileDeploymentLease.acquire(m.root,m.monitor);try{m.setState({v:1,revision:3,planHash:deploymentPlanHash(m.monitor),phase:'candidate-observed',candidateDeploymentId:uuid(5)});await expect(lease.resolveFailedMonitorRollback(m.log,async()=>m.result,AbortSignal.timeout(5000))).rejects.toThrow('UNSAFE');}finally{lease.close();rmSync(m.root,{recursive:true,force:true});}
  });
 });
+
+
+describe('schema finalization receipt integrity',()=>{
+ it.each(['scope','fingerprint','tamper'])('rejects %s without accepting changed evidence',async kind=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  try{
+   const path=join(f.root,'schema.json'),proof={kind:'schema-proof',operationId:plan.operationId,planHash:deploymentPlanHash(plan),worker:plan.worker,version:plan.candidateVersion,branchId:'synthetic',schema:{version:1,migrations:['000_initial.sql'],functionsSha256:'a'.repeat(64),columnsSha256:'b'.repeat(64)}};
+   if(kind==='scope')proof.version=uuid(99);
+   if(kind==='fingerprint')proof.schema.functionsSha256='invalid';
+   writeFileSync(path,JSON.stringify(proof),{mode:0o600});lease=FileDeploymentLease.acquire(f.root,plan);
+   if(kind==='tamper'){
+    await lease.finalize(journal('complete'),undefined,undefined,path);
+    const canonical=readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8');
+    writeFileSync(path,JSON.stringify({...proof,branchId:'changed'}));
+    await expect(lease.resumeFinalization(journal('complete'))).rejects.toThrow();
+    expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(canonical);
+   }else{
+    await expect(lease.finalize(journal('complete'),undefined,undefined,path)).rejects.toThrow('SCHEMA_PROOF_INVALID');
+    expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
+   }
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+});

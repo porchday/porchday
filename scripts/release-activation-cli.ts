@@ -46,6 +46,18 @@ export function readMonitorActivationManifest(path:string):ActivationManifest{co
 export function readActivationManifest(path:string):ActivationManifest{const manifest=JSON.parse(privateBytes(path).toString()) as ActivationManifest;validate(manifest);return manifest;}
 function readPinned(file:{path:string;sha256:string}){const bytes=privateBytes(file.path);if(hash(bytes)!==file.sha256)throw Error('ACTIVATION_MANIFEST_FILE_CHANGED');return bytes;}
 
+/** Reject incompatible canonical plans before a caller creates private fixtures.
+ * This performs local reads only and grants no deployment authorization.
+ * Historical operations must use the explicit reconciliation entry point.
+ */
+export async function prepareActivationFixtures<T>(input:ActivationManifest,prepare:()=>Promise<T>):Promise<T>{
+ const manifest=structuredClone(input);validate(manifest,recoveryTarget(manifest.plan.worker).monitor);
+ const state=await new FileRecoveryJournal(manifest.review.execution.journalDirectory).read();
+ if(state&&(state.phase!=='prepared'||state.planHash!==deploymentPlanHash(manifest.plan)))throw Error('ACTIVATION_CONTINUITY_REQUIRES_RECONCILIATION');
+ FileDeploymentLease.preflight(manifest.review.execution.root,manifest.plan);
+ return await prepare();
+}
+
 /** New observed activation using the real durable command, not an arbitrary
  * mutation callback. The harness owns pinned fixtures, durable sample retention
  * and scope checks spanning lease handoff/finalization. Resuming a historical
@@ -62,6 +74,7 @@ async function executeScopedActivationWithContinuity(
  // entry point for interrupted operations and preserve their original evidence.
  const state=await new FileRecoveryJournal(e.journalDirectory).read();
  if(state&&(state.phase!=='prepared'||state.planHash!==deploymentPlanHash(manifest.plan))||await FileDeploymentLease.completed(e.root,manifest.plan,{read:async()=>state,write:async()=>{throw Error('ACTIVATION_CONTINUITY_READ_ONLY');}}))throw Error('ACTIVATION_CONTINUITY_REQUIRES_RECONCILIATION');
+ FileDeploymentLease.preflight(e.root,manifest.plan);
  registerReleaseWatch({plan:manifest.plan,root:e.root,journalDirectory:e.journalDirectory,proofDirectory:e.proofDirectory});
  const gate=createContinuityGate(e.proofDirectory,manifest.plan);gate.assertPromotion();
  return await runCommandWithContinuity({...observation,retain:async event=>{

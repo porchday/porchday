@@ -1,6 +1,6 @@
 import {createContinuityGate} from './release-continuity-gate.ts';
 import type {ContinuityCommandEvent} from './release-continuity-command.ts';
-import {readActivationManifest,executeActivationManifest,executeActivationWithContinuity,executeMonitorActivationManifest,executeMonitorActivationWithContinuity,type ActivationManifest} from './release-activation-cli.ts';
+import {prepareActivationFixtures,readActivationManifest,executeActivationManifest,executeActivationWithContinuity,executeMonitorActivationManifest,executeMonitorActivationWithContinuity,type ActivationManifest} from './release-activation-cli.ts';
 import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
 import {spawnSync} from 'node:child_process';
 import {finalizePreparedActivation} from './release-activation-finalize.ts';
@@ -199,6 +199,7 @@ describe('staging acceptance ordering',()=>{
 async function finalizationFixture(rollback=false){
  const f=await reviewFixture();f.evidence.assets.candidate.files['app.js']=hash('candidate');f.evidence.assets.baseline.files['app.js']=hash('baseline');
  f.review.publicAssets={candidate:publicAssetManifestHash(f.evidence.assets.candidate),baseline:publicAssetManifestHash(f.evidence.assets.baseline)};f.save();f.plan.assetManifests={...f.review.publicAssets};
+ const canonicalPath=join(f.root,'latest-verified-deployment.json');writeFileSync(canonicalPath,JSON.stringify({...JSON.parse(readFileSync(canonicalPath,'utf8')),schemaMigrationsByEnvironment:{staging:0,production:56},schemaEvidenceByEnvironment:{production:{retained:true}}}));
  const lease=FileDeploymentLease.acquire(f.root,f.plan),version=rollback?id(1):id(2),deploymentId=rollback?id(8):id(7),operationId=rollback?rollbackOperationId(f.plan.operationId):f.plan.operationId;
  const inventory=structuredClone(f.proof.inventory);inventory.workers[f.key].active=version;inventory.workers[f.key].resources=rollback?f.manifest.evidence.resources:f.proof.candidate.resources;
  const state:RecoveryState={v:1,revision:rollback?5:4,planHash:deploymentPlanHash(f.plan),phase:rollback?'rolled-back':'complete',candidateDeploymentId:id(7),...(rollback?{rollbackDeploymentId:id(8)}:{})};
@@ -213,9 +214,12 @@ describe('read-only terminal finalization orchestration',()=>{
  it.each([false,true])('retains fresh provider/assets proofs and finalizes the terminal outcome (rollback=%s)',async rollback=>{const f=await finalizationFixture(rollback);try{
   const result=await finalizePreparedActivation(f.options,AbortSignal.timeout(5000));expect(result.status).toBe('finalized');
   const canonical=await FileDeploymentLease.completed(f.root,f.plan,f.journal);expect(canonical?.stagingVersion).toBe(rollback?id(1):id(2));expect(canonical?.stagingAssetsSource).toBe(rollback?'b'.repeat(40):'a'.repeat(40));
+  expect(canonical?.schemaMigrationsByEnvironment).toEqual({staging:1,production:56});
+  expect(canonical?.schemaEvidenceByEnvironment).toMatchObject({production:{retained:true},staging:{branchId:'synthetic',fingerprint:f.manifest.evidence.schema}});
   expect(f.request).toHaveBeenCalledTimes(1);expect(f.reader.snapshot).toHaveBeenCalledTimes(2);expect(f.client.observe).toHaveBeenCalledTimes(2);
  }finally{f.close();}});
- it.each(['unresolved','assets','identity','inventory','journal','review','continuity'])('retains the lease and canonical baseline on %s failure',async kind=>{const f=await finalizationFixture();try{
+ it.each(['unresolved','assets','identity','inventory','journal','review','continuity','schema'])('retains the lease and canonical baseline on %s failure',async kind=>{const f=await finalizationFixture();try{
+  if(kind==='schema')f.checks.schema.mockResolvedValue({...f.manifest.evidence.schema,functionsSha256:'9'.repeat(64)});
   if(kind==='unresolved')f.journal.read.mockResolvedValue({...f.state,phase:'candidate-observed'});
   if(kind==='assets')f.request.mockResolvedValue(new Response('wrong',{headers:{'content-type':'text/javascript'}}));
   if(kind==='identity')f.client.observe.mockResolvedValue({version:id(2),deploymentId:id(9),operationId:f.plan.operationId});
@@ -253,6 +257,27 @@ async function cliFixture(monitor=false,longHistory=false){
  return{...f,path,cli:manifest,journal,advance};
 }
 describe('activation operator command',()=>{
+ it('rejects historical intent before preparing fixtures',async()=>{const f=await cliFixture();try{
+  await f.advance('prepared');await f.advance('activation-intent');const prepare=vi.fn(async()=>{});
+  await expect(prepareActivationFixtures(f.cli,prepare)).rejects.toThrow('REQUIRES_RECONCILIATION');expect(prepare).not.toHaveBeenCalled();
+ }finally{f.close();}});
+
+ it.each(['floor','baseline','valid'])('preflights %s before fixture writes and rechecks at acquisition',async kind=>{const f=await cliFixture();try{
+  const path=join(f.root,'latest-verified-deployment.json'),before=JSON.parse(readFileSync(path,'utf8'));
+  if(kind==='floor')before.compatibleRollbackVersions.staging=id(99);
+  if(kind==='baseline')before.stagingVersion=id(99);
+  writeFileSync(path,JSON.stringify(before));const prepare=vi.fn(async()=> 'prepared'),files=readdirSync(f.root).sort();
+  if(kind==='valid'){
+   expect(await prepareActivationFixtures(f.cli,prepare)).toBe('prepared');expect(prepare).toHaveBeenCalledTimes(1);
+   before.compatibleRollbackVersions.staging=id(99);writeFileSync(path,JSON.stringify(before));
+   expect(()=>FileDeploymentLease.acquire(f.root,f.plan)).toThrow('READER_FLOOR_NOT_ACKNOWLEDGED');
+  }else{
+   await expect(prepareActivationFixtures(f.cli,prepare)).rejects.toThrow();expect(prepare).not.toHaveBeenCalled();
+   expect(readdirSync(f.root).sort()).toEqual(files);
+  }
+  expect(existsSync(join(f.root,'deployment-lock'))).toBe(false);
+ }finally{f.close();}});
+
  it('failed observed baseline leaves the activation journal and shared lease untouched',async()=>{const f=await cliFixture();try{
   const canonical=readFileSync(join(f.root,'latest-verified-deployment.json'));
   const request=vi.fn(async()=>Response.json({}, {status:503})),events:any[]=[];
