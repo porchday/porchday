@@ -1,9 +1,10 @@
 # Hosted privacy commit recovery drill
 
-Planned acceptance for #1 and #42. This document does not authorize clearing a
+Acceptance method for #1 and #42. This document does not authorize clearing a
 pending operation or enabling the public privacy commit writer. The compatible
-staging reader floor and actual API rollback are verified; hosted marker-only
-recovery remains outstanding.
+staging reader floor, actual API rollback and fourth hosted marker-only rehearsal
+are verified. See the [hosted recovery evidence](evidence/privacy-commit-hosted-recovery-staging-2026-10-30.md)
+for the exact scope, preserved failures and remaining rollout gates.
 
 On October 30, the first temporary-object conditional-write probe failed with
 `R2_OPERATOR_REQUEST_FAILED`. No journal-control or member-data key was allowed
@@ -204,11 +205,14 @@ also uses the actual operator Worker with native R2 bindings and restricted SQL
 roles; this covers the transport omission that the filesystem-only test missed.
 
 The full parent runner passes the local integration test with the actual IPC
-child and ordinary recovery function. Hosted deployment/source admission,
+child and ordinary recovery function. The fourth reviewed hosted invocation assembled deployment/source admission,
 fixture lifecycle, native bridge setup/teardown, real-time continuity and
-deployed-reader recovery observations still need to be assembled into the
-reviewed one-shot hosted invocation. Passing the parent test does not establish
-hosted recovery, successful hosted cleanup or production acceptance.
+deployed-reader recovery. It passed with 56 healthy samples and verified cleanup
+at 02:58:39 UTC. The ordinary receipt and retirement were first observed 126.363
+seconds after intent registration, using the unchanged real 120-second threshold.
+The independent verifier confirmed canonical marker/receipt sequence 30,710,
+unchanged generation and no quarantine. This hosted acceptance remains distinct
+from production acceptance and the public HTTP auth-writer rollout.
 
 ## What this can establish
 
