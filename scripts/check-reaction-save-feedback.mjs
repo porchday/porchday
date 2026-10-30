@@ -173,7 +173,7 @@ try {
  await page.locator('.emoji-grid button').first().press('Enter');
  await page.waitForFunction(()=>window.fixture.seals===1);
  assert.equal(await page.getByRole('dialog').count(),0);
- assert.equal(await page.getByText('Saving reaction…',{exact:true}).evaluate(e=>e===document.activeElement),true);
+ await page.waitForFunction(()=>document.activeElement?.textContent==='Saving reaction…');
  // A late completion from a previous target cannot publish into a different post.
  await page.evaluate(()=>window.fixture.changeTarget('second-post'));
  await page.waitForFunction(()=>!document.querySelector('.reaction-chip'));
