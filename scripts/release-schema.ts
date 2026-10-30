@@ -1,4 +1,3 @@
-import postgres from 'postgres';
 import {createHash} from 'node:crypto';
 
 export type ReleaseSchemaFingerprint={version:1;migrations:string[];functionsSha256:string;columnsSha256:string};
@@ -26,6 +25,8 @@ export function validateReleaseDatabaseTarget(connection:string,branchId:string)
 export async function captureReleaseSchema(options:{connection:string;branchId:string;expectedMigrations:string[];signal:AbortSignal}):Promise<ReleaseSchemaFingerprint>{
  validateReleaseDatabaseTarget(options.connection,options.branchId);
  const expected=migrations(options.expectedMigrations);options.signal.throwIfAborted();
+ const {default:postgres}=await import('postgres');
+ options.signal.throwIfAborted();
  const db=postgres(options.connection,{max:1,prepare:false,fetch_types:false,ssl:'verify-full',connect_timeout:5,onnotice:()=>{}});
  const cancel=()=>{void db.end({timeout:0}).catch(()=>{});};options.signal.addEventListener('abort',cancel,{once:true});
  try{

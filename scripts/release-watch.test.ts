@@ -1,7 +1,7 @@
 import {createContinuityGate} from './release-continuity-gate.ts';
 import type {ContinuityCommandEvent} from './release-continuity-command.ts';
 import {describe,it,expect} from 'vitest';
-import {mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,realpathSync,existsSync} from 'node:fs';import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import {spawnSync} from 'node:child_process';
+import {cpSync,mkdtempSync,mkdirSync,writeFileSync,readFileSync,rmSync,realpathSync,existsSync} from 'node:fs';import {tmpdir} from 'node:os';import {join,resolve} from 'node:path';import {spawnSync} from 'node:child_process';
 import {registerReleaseWatch,inspectReleaseWatch,listReleaseWatches} from './release-watch.ts';
 import {pollReleaseWatches,type WatchDeliveryState} from './release-watch-delivery.ts';
 import {releaseAlertBody,queueReleaseAlert} from './release-alerts.ts';
@@ -71,3 +71,16 @@ it('native polling command queues overdue attention and preserves it when GitHub
  const child=spawnSync(process.execPath,['scripts/release-watch-cli.ts',f.w.root,'--once'],{encoding:'utf8',env:{...process.env,PORCHDAY_MONITOR_GH_PATH:'/nonexistent/porchday-test-gh'},timeout:10000});
  expect(child.status).toBe(2);expect(JSON.parse(child.stdout)).toMatchObject({errors:1});expect(existsSync(join(f.w.proofDirectory,'attention-'+id(1)+'.json'))).toBe(true);expect(existsSync(join(f.w.root,'deployment-lock'))).toBe(false);
  }finally{f.close();}});
+
+
+it('starts the standalone watcher without database or workspace dependencies',()=>{
+ const root=realpathSync(mkdtempSync(join(tmpdir(),'release-watch-standalone-'))),bundle=join(root,'bundle'),state=join(root,'state');
+ try{
+  mkdirSync(bundle,{mode:0o700});mkdirSync(state,{mode:0o700});
+  cpSync(resolve('scripts'),join(bundle,'scripts'),{recursive:true});writeFileSync(join(bundle,'package.json'),JSON.stringify({type:'module'}),{mode:0o600});
+  expect(existsSync(join(bundle,'node_modules'))).toBe(false);
+  const child=spawnSync(process.execPath,[join(bundle,'scripts/release-watch-cli.ts'),state,'--once'],{cwd:bundle,encoding:'utf8',env:{PATH:process.env.PATH,PORCHDAY_MONITOR_GH_PATH:'/nonexistent/porchday-test-gh'},timeout:10000});
+  expect(child.status,child.stderr).toBe(0);expect(JSON.parse(child.stdout)).toMatchObject({waiting:0,completed:0,pending:0,errors:0});
+  expect(existsSync(join(state,'deployment-lock'))).toBe(false);
+ }finally{rmSync(root,{recursive:true,force:true});}
+});
