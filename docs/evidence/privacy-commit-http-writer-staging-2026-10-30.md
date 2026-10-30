@@ -118,3 +118,8 @@ focused tests pass, including capped retries, no retry after authorization
 rejection, durable-evidence failure and canonical-proof validation. This change
 does not retry HTTP mutations or change deployed request budgets. A clean
 hosted HTTP test using the updated reader is still required.
+
+A later [fresh native-bridge session-revocation test](privacy-commit-http-native-staging-2026-10-30.md)
+passed. It is separate evidence and does not change this run's failed acceptance
+or establish REST transport reliability. Broader auth paths and writer-enabled
+rollback are still outstanding.

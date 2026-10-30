@@ -10,8 +10,10 @@ The staging public auth writer was subsequently enabled with the same executable
 and retained reader floor. Activation continuity passed, and a separate read-only
 audit verified a normal HTTP session-revocation marker and receipt after the
 original evidence check failed. See the [HTTP writer evidence](evidence/privacy-commit-http-writer-staging-2026-10-30.md).
-Clean writer acceptance and writer-enabled rollback remain required; production
-is unchanged.
+A subsequent [fresh native-bridge HTTP test](evidence/privacy-commit-http-native-staging-2026-10-30.md)
+passed normal session revocation with canonical proof, six healthy continuity
+samples and exact cleanup. Broader auth-path acceptance and writer-enabled
+rollback remain required; production is unchanged.
 
 On October 30, the first temporary-object conditional-write probe failed with
 `R2_OPERATOR_REQUEST_FAILED`. No journal-control or member-data key was allowed
