@@ -41,6 +41,7 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
   await owner`create table public.commit_fixture(id uuid primary key,value integer not null)`;
   await owner`grant select,update on public.commit_fixture to porchday_auth`;
   generation=(await owner`select generation from app.safety_journal_state where id`)[0].generation;
+  await owner.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_commit_jobs_test') THEN CREATE ROLE porchday_commit_jobs_test LOGIN PASSWORD 'local-commit-proof-only' IN ROLE porchday_jobs; END IF; END $$");
   const connection=new URL(url);connection.username='porchday_commit_auth_test';connection.password='local-commit-proof-only';auth=postgres(connection.href,{max:2,prepare:false,onnotice:()=>{}});
  },30000);
  afterAll(async()=>{await auth?.end();await owner?.end();});
@@ -178,7 +179,13 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
   await initializePrivacyJournal(store,db);const initial=await readJournalControl(store);await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
   const records:Record<string,unknown>[]=[];
   try{
-   const result=await runCommitDrillChild({target:'local-test',connection:url!,fixture,generation,store,sql:owner,assertScope:()=>{},retain:async record=>{await store.put(`parent-evidence/${records.length}.json`,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:'*'}});records.push(record);}},AbortSignal.timeout(15000));
+   const authUrl=new URL(url!),jobsUrl=new URL(url!);authUrl.username='porchday_commit_auth_test';authUrl.password='local-commit-proof-only';jobsUrl.username='porchday_commit_jobs_test';jobsUrl.password='local-commit-proof-only';
+   // Actual restricted login roles catch hosted permission mismatches that the
+   // database owner can mask. Auth cannot read the journal; jobs cannot commit.
+   await expect(auth`select app.safety_status()`).rejects.toMatchObject({code:'42501'});
+   const jobs=postgres(jobsUrl.href,{max:1,prepare:false,onnotice:()=>{}});
+   try{await expect(jobs`select app.complete_privacy_transaction(${randomUUID()}::uuid,${'a'.repeat(64)},${generation}::uuid)`).rejects.toMatchObject({code:'42501'});}finally{await jobs.end();}
+   const result=await runCommitDrillChild({target:'local-test',connection:authUrl.href,journalConnection:jobsUrl.href,fixture,generation,store,sql:owner,assertScope:()=>{},retain:async record=>{await store.put(`parent-evidence/${records.length}.json`,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:'*'}});records.push(record);}},AbortSignal.timeout(15000));
    expect(result.signal).toBe('SIGKILL');expect(result.recoveryVerified).toBe(false);
    expect(records.filter(r=>r.kind==='child-phase').map(r=>r.phase)).toEqual(['registered','scoped','committed']);
    expect(records.filter(r=>r.kind==='supervisor').map(r=>r.phase)).toEqual(['commit-verified','kill-intent','killed']);

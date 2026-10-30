@@ -28,7 +28,7 @@ export function validateCommitDrillPhase(input:unknown,expected:{stage:number;op
  * assertScope. This only establishes a committed, receipt-less process loss.
  * Caller must observe normal hosted recovery and perform exact fixture cleanup. */
 export async function runCommitDrillChild(options:{
- target:'staging'|'local-test';connection:string;fixture:CommitDrillFixture;generation:string;
+ target:'staging'|'local-test';connection:string;journalConnection?:string;fixture:CommitDrillFixture;generation:string;
  store:JournalStore;sql:Sql;assertScope:()=>void;retain:(record:Record<string,unknown>)=>void|Promise<void>;
 },signal:AbortSignal){
  const fixture=commitDrillFixtureSchema.parse(structuredClone(options.fixture)),generation=z.uuid().parse(options.generation);
@@ -71,7 +71,7 @@ export async function runCommitDrillChild(options:{
  const onExit=()=>{if(!settled)fail();};child.on('message',onMessage);child.once('exit',onExit);child.once('error',fail);deadline.addEventListener('abort',fail,{once:true});
  try{
   await retain({kind:'spawned',pid:child.pid});assert();initialized=true;
-  if(!child.send({type:'init',target:options.target,connection:options.connection,fixture}))throw Error('DRILL_INIT_UNCONFIRMED');
+  if(!child.send({type:'init',target:options.target,connection:options.connection,...(options.journalConnection?{journalConnection:options.journalConnection}:{}),fixture}))throw Error('DRILL_INIT_UNCONFIRMED');
   const reported=await committed;await chain;assert();if(!scope||!publicationSha256)throw Error('DRILL_SCOPE_UNCONFIRMED');
   const expected={...scope,memberId:fixture.memberId,sessionId:fixture.sessionId};
   return await killCommittedDrillChild({child,expected,sealJournal:()=>gate.close(),observe:proofSignal=>observeCommittedDrill({sql:options.sql,store:options.store,fixture,expected,publicationSha256:publicationSha256!,reportedSequence:reported.sequence},proofSignal),retain:event=>retain({kind:'supervisor',...event})},deadline);

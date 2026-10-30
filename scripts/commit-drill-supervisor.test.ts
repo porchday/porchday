@@ -45,7 +45,7 @@ test.each(['staging','local-test'])('real child refuses a non-staging connection
  const child=fork(new URL('./commit-drill-child.ts',import.meta.url),[],{execArgv:['--import','tsx'],env:{PATH:process.env.PATH},stdio:['ignore','ignore','ignore','ipc']});
  const messages:unknown[]=[];child.on('message',m=>messages.push(m));const exited=once(child,'exit');
  const connection=new URL('postgres://production.invalid:5432/porchday_commit_proof_test');connection.username='synthetic.private';connection.password='synthetic-test-only';
- child.send({type:'init',target,connection:connection.href,fixture:{runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()}});
+ child.send({type:'init',target,connection:connection.href,journalConnection:connection.href,fixture:{runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()}});
  try{const [code]=await exited;expect(code).toBe(1);expect(messages).toEqual([{type:'phase',phase:'failed',code:'DRILL_CHILD_RECONCILIATION_REQUIRED'}]);expect(JSON.stringify(messages)).not.toContain(connection.password);}
  finally{if(child.exitCode===null&&child.signalCode===null)child.kill('SIGKILL');}
 });

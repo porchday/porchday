@@ -169,6 +169,27 @@ missing/too-old receipts and missing unrelated pending entries. Unit tests cover
 stalled reads and cancellation. The result explicitly leaves hosted recovery-path
 verification false: the hosted invocation must independently establish that path.
 
+Two October 30 hosted invocation attempts stopped before any child journal request
+or intent registration. The first refused the configured connection's explicit
+`sslmode=verify-full` query option. The separately reviewed second invocation
+normalized only that verified option, retaining explicit full TLS verification,
+but failed its read-only auth-role assumption with SQLSTATE `42501`. Read-only
+reconciliation verified both original sessions remained and no pending drill
+intent existed. Each attempt's two continuity samples passed. Both attempts then
+logged out and removed exactly their two owned fixture accounts, verified removal
+of their temporary bridge Worker/domain, rechecked unchanged provider state and
+released the lease. Both remain failed acceptance; neither exercised recovery.
+
+Read-only permission inspection confirmed the deployed role split: auth can write
+the commit marker but cannot read journal status/pages; jobs can read the journal
+but cannot write a commit marker. The drill now requires separate auth and journal
+connections for staging, validates both against the staging branch, and carries
+both only over private IPC. The local full-parent integration now uses actual
+restricted auth/jobs logins, explicitly verifies those permission boundaries, and
+passes through COMMIT, parent proof, SIGKILL and ordinary local recovery. No grants
+or deployed database permissions were broadened. Hosted invocation must supply the
+existing auth and jobs credentials and normalize only verified connection options.
+
 The full parent runner passes the local integration test with the actual IPC
 child and ordinary recovery function. Hosted deployment/source admission,
 fixture lifecycle, native bridge setup/teardown, real-time continuity and
