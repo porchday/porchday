@@ -142,6 +142,7 @@ try {
  assert.match(await page.locator('.reaction-chip').getAttribute('aria-label'), /1 person$/);
  assert.equal(await page.evaluate(()=>window.fixture.seals),0);
  assert.deepEqual(await page.evaluate(()=>window.fixture.methods),['DELETE']);
+ await page.waitForFunction(()=>document.activeElement?.textContent==='Saving reaction…');
  await page.evaluate(()=>{
   window.fixture.write.resolve(Response.json({}));
   window.fixture.read.resolve(Response.json({reactions:[]}));

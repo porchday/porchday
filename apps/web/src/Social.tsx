@@ -1075,7 +1075,7 @@ export function Reactions({
     changing = useRef(false);
   const addButton = useRef<HTMLButtonElement>(null);
   const pendingStatus = useRef<HTMLSpanElement>(null);
-  const restorePickerFocus = useRef(false);
+  const restoreReactionFocus = useRef(false);
   const [picker, setPicker] = useState(false),
     [suggested, setSuggested] = useState<CustomEmoji | null>(null);
   const [opened, setOpened] = useState<{
@@ -1095,9 +1095,9 @@ export function Reactions({
     : confirmed;
   const action = useAction();
   useEffect(() => {
-    if (!restorePickerFocus.current) return;
+    if (!restoreReactionFocus.current) return;
     if (activePending) pendingStatus.current?.focus();
-    else if (!action.busy) { addButton.current?.focus(); restorePickerFocus.current = false; }
+    else if (!action.busy) { addButton.current?.focus(); restoreReactionFocus.current = false; }
   }, [activePending, action.busy]);
   useEffect(() => {
     mounted.current = true;
@@ -1175,7 +1175,7 @@ export function Reactions({
         operation = {identity, value: chosen, removing: !!mine, tag: mine?.tag || "", uncertain: false};
         ++decodeGeneration.current;
         updatePending(operation); setPicker(false); setSuggested(null);
-        if (picker) restorePickerFocus.current = true;
+        restoreReactionFocus.current = true;
         if (mine) operation.send = () => del(`${base}/${encodeURIComponent(mine.tag)}`);
         else {
           const tag = await reactionTag({secret: payload.reactionSecret as string, targetId: target.id, memberId: vault.member.id, emoji: chosen.emoji});
