@@ -17,6 +17,7 @@
     "commit-drill-runner.ts",
     "commit-drill-recovered.ts",
     "r2-operator-bridge.ts",
-    "r2-journal-audit-store.ts"
+    "r2-journal-audit-store.ts",
+    "auth-commit-cohort-proof.ts"
   ]
 }

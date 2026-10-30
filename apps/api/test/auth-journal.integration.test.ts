@@ -1,5 +1,6 @@
 import {persistSessionDenial} from '../src/session-denial';
 import {provePrivacyCommits} from '../src/privacy-commit-proof';
+import {proveAuthCommitCohort} from '../../../scripts/auth-commit-cohort-proof';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions} from '../src/session-denial-candidates';
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
@@ -670,10 +671,12 @@ suite("Authenticated account privacy journal boundary", () => {
     const previousWriter=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
     env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';
     const baseline=(await owner.query('SELECT coalesce(max(sequence),0)::text AS n FROM app.privacy_operation_commits')).rows[0].n;
+    const generation=(await readJournalControl(store)).value.generation;
+    const sessions=await Promise.all(people.map(async p=>(await owner.query('SELECT id FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0].id as string));
     let release!:()=>void;const barrier=new Promise<void>(resolve=>{release=resolve;});
     const arrived=new Set<string>();
     store.beforeWrite=async key=>{if(key.startsWith('intents/')){arrived.add(key);await barrier;}};
-    const requests=people.map(p=>call('revoke-sessions',{},p.cookie));
+    const requests=people.map(async p=>{const startedAt=Date.now(),result=await call('revoke-sessions',{},p.cookie);return{...result,startedAt,endedAt:Date.now()};});
     try{
       // All independent requests reach immutable intent publication before any
       // can register its intent or acquire the SQL mutation lock.
@@ -690,11 +693,14 @@ suite("Authenticated account privacy journal boundary", () => {
       for(const p of people){
         expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
         expect((await(await call('get-session',undefined,p.cookie)).response.json())).toBeNull();
+        expect((await call('list-sessions',undefined,p.cookie)).response.status).toBe(401);
         expect((await owner.query('SELECT 1 FROM public.auth_user WHERE id=$1',[p.id])).rowCount).toBe(1);
       }
       expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
       const sql=(await owner.query('SELECT app.safety_status() AS status')).rows[0].status;
       expect(sql.quarantined).toBe(false);expect(sql.generation).toBe(control.generation);
+      const cohort=await proveAuthCommitCohort({db:owner,store,baselineSequence:baseline,generation,assertScope:()=>{},requests:results.map((r,i)=>({memberId:people[i].id,sessionId:sessions[i],startedAt:r.startedAt,endedAt:r.endedAt,status:200,deniedStatus:401}))},AbortSignal.timeout(10000));
+      expect(cohort).toMatchObject({passed:true,count,canonicalMarkersAndReceipts:true,perRequestIdentityProved:false});
     }finally{release();await Promise.allSettled(requests);store.beforeWrite=undefined;env.PRIVACY_COMMIT_WRITER_V1=previousWriter;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;}
   }),15000);
   it("leaves an ambiguous post-commit R2 failure unresolved and fails closed", async () => {
