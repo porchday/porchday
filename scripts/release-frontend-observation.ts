@@ -1,3 +1,4 @@
+import {publicAssetManifestHash} from './release-assets-verify.ts';
 import {createBrowserGate} from './release-browser-gate.ts';
 import {constants,openSync,closeSync,fsyncSync,writeFileSync,lstatSync,realpathSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
@@ -29,13 +30,22 @@ export async function executeStagingBrowserRecoveryDrill(path:string,env:NodeJS.
  observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
  return executeObservedActivation(path,env,observation,signal,false,true);
 }
+/** Staging API-only rollback rehearsal. The public frontend must be unchanged;
+ * the injected exception exists only in the isolated observer's fresh context.
+ * Real candidate and rollback journeys still run through the normal controller.
+ */
+export async function executeStagingApiRecoveryDrill(path:string,env:NodeJS.ProcessEnv,
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
+ return executeObservedActivation(path,env,observation,signal,false,true,true);
+}
 async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false){
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false,apiOnly=false){
  signal.throwIfAborted();const manifest=readActivationManifest(path),target=deploymentTarget(manifest.plan.worker),{plan,review}=manifest,e=review.execution;
  if(drill&&target.environment!=='staging')throw Error('BROWSER_RECOVERY_DRILL_STAGING_REQUIRED');
+ if(apiOnly&&(target.frontend||plan.assetManifests!==undefined||publicAssetManifestHash(review.assets.baseline)!==publicAssetManifestHash(review.assets.candidate)))throw Error('API_RECOVERY_DRILL_SCOPE_INVALID');
  if(frontendOnly&&!target.frontend)throw Error('FRONTEND_OBSERVATION_TARGET_REQUIRED');
  if(!frontendOnly&&(!review.assets.baseline.files['index.html']||!review.assets.candidate.files['index.html']))throw Error('APPLICATION_OBSERVATION_ASSETS_REQUIRED');
- if(!frontendOnly&&!plan.assetManifests)throw Error('APPLICATION_OBSERVATION_ASSET_PINS_REQUIRED');
+ if(!frontendOnly&&!apiOnly&&!plan.assetManifests)throw Error('APPLICATION_OBSERVATION_ASSET_PINS_REQUIRED');
  if(observation.target.environment!==target.environment)throw Error('FRONTEND_OBSERVATION_SCOPE_CHANGED');
  const planHash=deploymentPlanHash(plan),journal=new FileRecoveryJournal(e.journalDirectory),state=await journal.read();
  if(state&&(state.phase!=='prepared'||state.planHash!==planHash)||await FileDeploymentLease.completed(e.root,plan,{read:async()=>state,write:async()=>{throw Error('FRONTEND_OBSERVATION_READ_ONLY');}}))throw Error('FRONTEND_OBSERVATION_REQUIRES_RECONCILIATION');

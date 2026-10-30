@@ -511,3 +511,27 @@ writer rollout must name a recovery-capable baseline and acknowledge the newly
 recorded floor. Retain the recovery reader and additive schema when disabling
 writer behavior during rollback. Hosted rollback/fault acceptance remains a
 separate required proof; this metadata mechanism does not establish it.
+
+
+## Staging API rollback rehearsal
+
+`executeStagingApiRecoveryDrill` in `scripts/release-frontend-observation.ts`
+uses the existing browser fault rehearsal for an API-only staging deployment.
+It rejects production, frontend workers, public-asset promotion plans and any
+change between the baseline and candidate public manifests before browser work
+or deployment intent. The frontend is retained unchanged.
+
+Normal candidate API journeys and assets must verify before the browser gate
+runs. The fault is an exception injected only into the isolated observer's fresh
+browser context. It does not modify served code or cause user requests to fail.
+The durable browser result downgrades candidate acceptance and the existing
+controller reauthorizes, activates and verifies the compatible baseline. Success
+requires observed injection, a failed browser result and a confirmed `rolled-back`
+outcome. Missing/unknown evidence never counts as a successful drill. Existing
+session continuity, owned-fixture cleanup and provider reconciliation remain
+required in the calling harness. The wrapper retains an explicitly labeled
+notification drill; no production or scheduled-release path invokes it.
+
+This demonstrates the rollback control path for a real API deployment when run
+hosted. It does not simulate an application crash or prove marker-only recovery.
+Hosted acceptance must distinguish those remaining tests.

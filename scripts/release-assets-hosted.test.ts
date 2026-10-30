@@ -55,6 +55,23 @@ describe('hosted release evidence boundaries',()=>{
  });
 });
 describe.skipIf(process.env.RELEASE_ASSET_BROWSER_TESTS!=='1')('hosted observer with real Chromium and synthetic transport',()=>{
+ it('rolls an API candidate back after an isolated observer fault while public assets stay identical',async()=>{
+  const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
+  const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
+  const root=realpathSync(mkdtempSync(join(tmpdir(),'api-browser-recovery-'))),f=fixture();
+  const observer=await beginHostedAssetTransition({origin,...f,candidate:f.baseline,stagingFreshClientException:true});
+  let state:RecoveryState|null=null,current:DeploymentObservation={version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null};const deployed:string[]=[],verified:string[]=[];
+  try{
+   createBrowserGate(root,plan).require();
+   const result=await recoverDeployment(plan,{read:async()=>state,write:async(_old,next)=>{state=next;}},{authorize:async()=>{},observe:async()=>({...current}),deploy:async(version,operationId)=>{deployed.push(version);current={version,operationId,deploymentId:uuid(version===plan.candidateVersion?5:6)};},verify:withBrowserAcceptance(plan,root,async version=>{verified.push(version);return 'healthy';},async()=>{
+    expect(state?.phase).toBe('candidate-observed');const report=await observer.finish();
+    expect(report.drillExceptionObserved).toBe(true);expect(report.newErrors.pageErrors).toBeGreaterThan(0);expect(report.oldErrors.pageErrors).toBe(0);expect(report.oldDocumentRetained).toBe(true);expect(report.newDocumentMatches).toBe(true);expect(report.newTabRendered).toBe(true);expect(report.passed).toBe(false);
+    return 'unhealthy';
+   })},{sleep:async()=>{}});
+   expect(result).toBe('rolled-back');expect(deployed).toEqual([plan.candidateVersion,plan.baselineVersion]);expect(verified).toEqual([plan.candidateVersion,plan.baselineVersion]);
+  }finally{await observer.close();rmSync(root,{recursive:true,force:true});}
+ });
+
  for(const worker of ['porchday-staging-edge','porchday-staging'] as const)for(const fault of ['none','exception','observer-drill'] as const)it(`uses real browser ${fault} evidence for ${worker} before completion`,async()=>{
   const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
   const plan:DeploymentPlan={operationId:uuid(1),worker,candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64),...(worker.endsWith('-edge')?{backendVersion:uuid(7),backendReaderFloor:uuid(7)}:{})};
