@@ -1,5 +1,10 @@
 # Setup spending and recurring resources
 
+The [October 29 cleanup usage review](evidence/denial-cost-review-2026-10-29.md)
+adds measured R2/queue operation scenarios for the isolated cleanup design.
+It makes no new spending commitment and does not resolve the invoice or broader
+pilot cost gaps below.
+
 Authorized ceiling: $1,000 total setup spending, including previous setup activity. This is not a monthly authorization or a spending target.
 
 | Resource | State | Cost evidence / next verification |

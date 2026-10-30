@@ -35,6 +35,7 @@
     "release-alert-retry.ts",
     "release-watch.ts",
     "release-watch-delivery.ts",
-    "release-watch-cli.ts"
+    "release-watch-cli.ts",
+    "queue-admission-lease.ts"
   ]
 }

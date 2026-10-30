@@ -1,16 +1,16 @@
 import {describe,it,expect} from 'vitest';
-import {CloudflareReleaseReader,releaseSettings,assertInactiveUploadSnapshot} from './cloudflare-release-reader.ts';
+import {CloudflareReleaseReader,releaseSettings,assertInactiveUploadSnapshot,validateReleaseQueues,type ReleaseQueues} from './cloudflare-release-reader.ts';
 const active='11111111-0000-4000-8000-000000000000',latest='22222222-0000-4000-8000-000000000000';
 const token='synthetic-only-provider-test-token',queues={staging:{id:'b'.repeat(32),name:'porchday-staging-jobs'},production:{id:'c'.repeat(32),name:'porchday-production-jobs'}};
 const options={accountId:'a'.repeat(32),apiToken:token,queues};
 const reply=(result:unknown)=>Response.json({success:true,result});
-function fixture(){
+function fixture(registered:ReleaseQueues=queues){
  const calls:{url:string;init:RequestInit|undefined}[]=[];let inFlight=0,maximum=0;
  const transport:typeof fetch=async(input,init)=>{
   calls.push({url:String(input),init});inFlight++;maximum=Math.max(maximum,inFlight);await new Promise(done=>setTimeout(done,1));inFlight--;
   const path=new URL(String(input)).pathname;
   if(path.endsWith('/domains'))return reply([{hostname:'z.example',service:'porchday-production'},{hostname:'a.example',service:'porchday-staging-edge'}]);
-  if(path.includes('/queues/')){const queue=Object.values(queues).find(value=>path.endsWith(value.id))!;return reply({queue_id:queue.id,queue_name:queue.name,settings:{},consumers:[],consumers_total_count:0,producers:[],producers_total_count:0});}
+  if(path.includes('/queues/')){const queue=Object.values(registered).find(value=>path.endsWith(value.id))!;return reply({queue_id:queue.id,queue_name:queue.name,settings:{},consumers:[],consumers_total_count:0,producers:[],producers_total_count:0});}
   if(path.endsWith('/deployments'))return reply({deployments:[{versions:[{version_id:active,percentage:100}]}]});
   if(path.endsWith('/versions'))return reply({items:[{id:latest},{id:active}]});
   if(path.endsWith('/settings'))return reply({placement:{mode:'off'},bindings:[{name:'APP_URL',type:'plain_text',text:'https://inactive.invalid'}]});
@@ -21,6 +21,56 @@ function fixture(){
  return{transport,calls,maximum:()=>maximum};
 }
 describe('read-only release provider inventory',()=>{
+ it('reads every catalogue page and preserves consumer evidence for unregistered queues',async()=>{
+  const calls:string[]=[],values=Object.values(queues).map(q=>({queue_id:q.id,queue_name:q.name,consumers:[],consumers_total_count:0,producers:[],producers_total_count:0}));
+  const reader=new CloudflareReleaseReader({...options,fetch:async(input,init)=>{expect(init?.method).toBe('GET');calls.push(String(input));const page=Number(new URL(String(input)).searchParams.get('page'));return Response.json({success:true,result:[values[page-1]],result_info:{page,per_page:1,count:1,total_count:2,total_pages:2}});}});
+  const result=await reader.queueCatalogue(AbortSignal.timeout(5000));expect(result).toHaveLength(2);expect(calls.map(url=>new URL(url).search)).toEqual(['?page=1','?page=2']);expect(result[0].queue_name).toBe('porchday-production-jobs');
+ });
+ it.each(['missing metadata','truncated','duplicate','changed total','too many pages','hidden consumer'])('rejects %s rather than claiming queue absence',async kind=>{
+  let calls=0;const reader=new CloudflareReleaseReader({...options,fetch:async()=>{
+   const page=++calls,q=page===1||kind==='duplicate'?queues.staging:queues.production,row={queue_id:q.id,queue_name:q.name,consumers:[],consumers_total_count:kind==='hidden consumer'?1:0,producers:[],producers_total_count:0};
+   return Response.json({success:true,result:kind==='truncated'?[]:[row],result_info:kind==='missing metadata'?undefined:{page,per_page:1,count:kind==='truncated'?0:1,total_count:kind==='changed total'&&page===2?3:2,total_pages:kind==='too many pages'?101:2}});
+  }});
+  await expect(reader.queueCatalogue(AbortSignal.timeout(5000))).rejects.toThrow(/QUEUE_CATALOGUE|QUEUE_INVENTORY|PROVIDER_SHAPE/);expect(calls).toBeLessThanOrEqual(2);
+ });
+ it('observes each explicitly registered range and dead-letter queue without writes',async()=>{
+  const registry:ReleaseQueues={...queues,'staging-denial-0':{id:'d'.repeat(32),name:'porchday-staging-denial-0'},'staging-denial-1':{id:'e'.repeat(32),name:'porchday-staging-denial-1'},'staging-denial-2':{id:'f'.repeat(32),name:'porchday-staging-denial-2'},'staging-dead-letter':{id:'1'.repeat(32),name:'porchday-staging-jobs-dead-letter'}};
+  const f=fixture(registry),snapshot=await new CloudflareReleaseReader({...options,queues:registry,fetch:f.transport}).snapshot(AbortSignal.timeout(5000));
+  expect(Object.keys(snapshot.queues).sort()).toEqual(Object.keys(registry).sort());expect(f.calls.every(call=>call.init?.method==='GET')).toBe(true);
+  for(const queue of Object.values(registry))expect(f.calls.filter(call=>call.url.endsWith('/queues/'+queue.id))).toHaveLength(1);
+  const candidate='44444444-0000-4000-8000-000000000000',after=structuredClone(snapshot);after.workers.staging.latest=candidate;
+  assertInactiveUploadSnapshot(snapshot,after,'staging',candidate,after.workers.staging.settings);
+  after.queues['staging-denial-1'].consumers_total_count=1;
+  expect(()=>assertInactiveUploadSnapshot(snapshot,after,'staging',candidate,after.workers.staging.settings)).toThrow('INVENTORY_CHANGED');
+ });
+ it('rejects arbitrary registry keys, wrong names, duplicate IDs and unexpected fields',()=>{
+  for(const registry of [
+   {...queues,other:{id:'d'.repeat(32),name:'arbitrary'}},
+   {...queues,'staging-denial-0':{id:'d'.repeat(32),name:'porchday-production-denial-0'}},
+   {...queues,'staging-denial-0':{id:queues.staging.id,name:'porchday-staging-denial-0'}},
+   {...queues,'staging-denial-0':{id:'d'.repeat(32),name:'porchday-staging-denial-0',extra:true}},
+   {staging:queues.staging},
+  ])expect(()=>validateReleaseQueues(registry as ReleaseQueues)).toThrow('QUEUE_CONFIGURATION_INVALID');
+ });
+ it.each(['settings','active'])('rejects an unregistered queue binding in %s inventory',async location=>{
+  const f=fixture(),transport:typeof fetch=async(input,init)=>{
+   const response=await f.transport(input,init),body=await response.json() as {result:Record<string,unknown>};
+   if(String(input).includes('scripts/porchday-staging/')&&String(input).endsWith(location==='settings'?'/settings':'/versions/'+active)){
+    const target=location==='settings'?body.result:body.result.resources as Record<string,unknown>;
+    target.bindings=[{name:'DENIAL_RANGE_0',type:'queue',queue_name:'porchday-staging-denial-0'}];
+   }
+   return reply(body.result);
+  };
+  await expect(new CloudflareReleaseReader({...options,fetch:transport}).snapshot(AbortSignal.timeout(5000))).rejects.toThrow('QUEUE_BINDING_UNREGISTERED');
+ });
+ it.each(['consumers','producers'])('rejects truncated %s evidence',async kind=>{
+  const f=fixture(),transport:typeof fetch=async(input,init)=>{
+   const response=await f.transport(input,init),body=await response.json() as {result:Record<string,unknown>};
+   if(String(input).includes('/queues/'))body.result[kind+'_total_count']=1;
+   return reply(body.result);
+  };
+  await expect(new CloudflareReleaseReader({...options,fetch:transport}).snapshot(AbortSignal.timeout(5000))).rejects.toThrow('QUEUE_INVENTORY_INCOMPLETE');
+ });
  it('downloads bounded multipart modules using GET without treating a script as version-addressed',async()=>{
   const data=new FormData();data.append('index.js','executable');data.append('map',new Blob(['map']),'index.js.map');
   const reader=new CloudflareReleaseReader({...options,fetch:async(input,init)=>{expect(String(input)).toMatch(/scripts\/porchday-staging$/);expect(init?.method).toBe('GET');return new Response(data);}});

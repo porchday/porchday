@@ -1,0 +1,76 @@
+{
+  "at": "2026-10-29T20:10:16.969Z",
+  "source": "15af2c28e7983d3d10d1bff976bc45dc4de9a859",
+  "stagingVersion": "211e3158-08a5-4a5b-add3-8cf410d0054e",
+  "productionChanged": false,
+  "rollout": {
+    "samples": 11,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "fixtureRows": 0
+  },
+  "backlog": {
+    "members": 100,
+    "denied": 400,
+    "live": 100,
+    "drainMs": 242671,
+    "samples": 13,
+    "failedJourneys": 0,
+    "liveSessionsRetained": true,
+    "remainingFixtureRows": 0,
+    "providerUnchanged": true,
+    "leaseReleased": true
+  },
+  "limitations": [
+    "100-member workload is not pilot-capacity evidence",
+    "No production denial writer or cleanup enablement",
+    "No claim of 99.99% monthly availability",
+    "Earlier operator fixture preparation failed on weak ETag; all four immutable writes reconciled exactly, no SQL seed, failure preserved"
+  ],
+  "comparison": {
+    "at": "2026-10-29T20:10:16.998Z",
+    "baseline": {
+      "source": "3c0c7e2fedee59d2b4e7ffa5663e5308b518b2fc",
+      "members": 100,
+      "denied": 400,
+      "live": 100,
+      "drainMs": 283034,
+      "journeys": 15,
+      "failedJourneys": 0,
+      "maxJourneyMs": 5857,
+      "allLiveRetained": true,
+      "maxSampledPageAgeSeconds": 144,
+      "maxSampledPassAgeSeconds": 264,
+      "firstObservedDeletionAfterSeedMs": 63156,
+      "seedAfterPreviousPassMs": 2343,
+      "firstObservedCheckpointAdvanceAfterSeedMs": 163067,
+      "fullPassCompletionIntervalMs": 279079,
+      "finalPassSeen": 223,
+      "remainingFixtureRows": 0
+    },
+    "candidate": {
+      "source": "15af2c28e7983d3d10d1bff976bc45dc4de9a859",
+      "members": 100,
+      "denied": 400,
+      "live": 100,
+      "drainMs": 242671,
+      "journeys": 13,
+      "failedJourneys": 0,
+      "maxJourneyMs": 3453,
+      "allLiveRetained": true,
+      "maxSampledPageAgeSeconds": 64,
+      "maxSampledPassAgeSeconds": 225,
+      "firstObservedDeletionAfterSeedMs": 84500,
+      "seedAfterPreviousPassMs": 1990,
+      "firstObservedCheckpointAdvanceAfterSeedMs": 84500,
+      "fullPassCompletionIntervalMs": 238389,
+      "finalPassSeen": 103,
+      "remainingFixtureRows": 0
+    },
+    "limitations": [
+      "Same workload shape, separate trials with random synthetic IDs and changing provider/queue timing.",
+      "20-second observation interval limits precision of first deletion/checkpoint and drain times.",
+      "This does not establish pilot capacity or a causal percentage speedup."
+    ]
+  }
+}

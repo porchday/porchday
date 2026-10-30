@@ -1,3 +1,4 @@
+import {deleteDeniedSessionBatch,type DenialBatchResult} from './session-denial-batch';
 import {CandidateTimings} from './session-denial-timing';
 import type {Pool} from 'pg';
 import type {JournalStore} from './privacy-journal';
@@ -71,7 +72,7 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
   const config={text,values,query_timeout:6000};return client.query(config);
  };
  try{
-  await query('BEGIN READ ONLY');await query("SET LOCAL statement_timeout='5s'");
+  await query("BEGIN READ ONLY; SET LOCAL statement_timeout='5s'");
   const result=await query(after===null?'SELECT id FROM public.auth_session ORDER BY id LIMIT $1':
    'SELECT id FROM public.auth_session WHERE id>$2 ORDER BY id LIMIT $1',[candidatePageSize+1,...(after===null?[]:[after])]);
   await query('COMMIT');
@@ -85,8 +86,9 @@ export async function listSessionCandidates(pool:Pool,after:string|null):Promise
  * Stop starting work after 20s; an in-flight bounded SQL operation can finish
  * later. Failed/unknown SQL leaves progress unchanged and is safely repeated.
  */
+export type CandidateBatchCleanup=(ids:readonly string[],deadline:number)=>Promise<DenialBatchResult>;
 export interface CandidateSweepResult{seen:number;deleted:number;invalid:number;advanced:boolean;continuation?:string}
-export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,workDeadline?:number,timing=new CandidateTimings()):Promise<CandidateSweepResult>{
+export async function sweepSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,workDeadline?:number,timing=new CandidateTimings(),batchCleanup?:CandidateBatchCleanup):Promise<CandidateSweepResult>{
  const startedAt=Date.now(),deadline=workDeadline??startedAt+20000;
  if(!Number.isSafeInteger(deadline)||deadline<=startedAt||deadline>startedAt+20000)throw new DenialCleanupError();
  if(expectedProgressEtag!==undefined&&(typeof expectedProgressEtag!=='string'||!expectedProgressEtag||expectedProgressEtag.length>256))throw new DenialCleanupError();
@@ -106,6 +108,24 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
   // Only reads run concurrently. Late reads cannot dispatch a SQL deletion.
   const batch=page.ids.slice(offset,offset+authorityGroupSize);
   const authority=await readAuthorityGroup(store,batch,deadline,timing);
+  if(batchCleanup&&authority.length&&Date.now()<deadline){
+   const denied=batch.slice(0,authority.length).filter((_,i)=>authority[i]===true);
+   // All authority reads have settled before SQL. A failed or unknown batch
+   // throws before publishing any page progress, even after partial commits.
+   const cleanupResult=denied.length?await timing.run('sql_delete',()=>batchCleanup(denied,deadline)):{completed:0,deleted:new Set<string>()};
+   if(!Number.isInteger(cleanupResult.completed)||cleanupResult.completed<0||cleanupResult.completed>denied.length||!(cleanupResult.deleted instanceof Set)||[...cleanupResult.deleted].some(id=>!denied.slice(0,cleanupResult.completed).includes(id)))throw new DenialCleanupError();
+   const completedDenials=new Set(denied.slice(0,cleanupResult.completed));
+   let prefix=0;
+   for(;prefix<authority.length;prefix++){
+    if(authority[prefix]===true&&!completedDenials.has(batch[prefix]))break;
+    if(authority[prefix]==='invalid')result.invalid++;
+    if(cleanupResult.deleted.has(batch[prefix]))result.deleted++;
+    result.seen++;
+   }
+   if(prefix<batch.length||Date.now()>=deadline)stopped=true;
+   if(stopped)break;
+   continue;
+  }
   for(let i=0;i<authority.length;i++){
    if(Date.now()>=deadline){stopped=true;break;}
    if(authority[i]==='invalid')result.invalid++;
@@ -135,11 +155,11 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
  * At most five pages share one 20-second work-start budget and pool. Every page
  * commits its own CAS checkpoint before another page begins. Stop on a lost CAS,
  * stale token or full-pass completion; never start another pass in this batch. */
-export async function drainSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,timing=new CandidateTimings()):Promise<CandidateSweepResult>{
+export async function drainSessionCandidates(store:JournalStore,list:(after:string|null)=>Promise<SessionCandidatePage>,cleanup:(id:string)=>Promise<boolean>,expectedProgressEtag?:string,timing=new CandidateTimings(),batchCleanup?:CandidateBatchCleanup):Promise<CandidateSweepResult>{
  const deadline=Date.now()+20000,result:CandidateSweepResult={seen:0,deleted:0,invalid:0,advanced:false};
  let token=expectedProgressEtag;
  for(let page=0;page<5&&Date.now()<deadline;page++){
-  const current=await sweepSessionCandidates(store,list,cleanup,token,deadline,timing);
+  const current=await sweepSessionCandidates(store,list,cleanup,token,deadline,timing,batchCleanup);
   result.seen+=current.seen;result.deleted+=current.deleted;result.invalid+=current.invalid;result.advanced ||= current.advanced;
   delete result.continuation;
   if(!current.continuation)return result;
@@ -154,7 +174,7 @@ export async function cleanupDeniedSessionCandidates(env:Env,expectedProgressEta
  const timing=new CandidateTimings();
  try{return await timing.run('total',async()=>{
   const pool=authPool(env);
-  try{return await drainSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id),expectedProgressEtag,timing);}
+  try{return await drainSessionCandidates(env.RECOVERY_JOURNAL as JournalStore,after=>listSessionCandidates(pool,after),id=>deleteDeniedSession(pool,id),expectedProgressEtag,timing,(ids,deadline)=>deleteDeniedSessionBatch(pool,ids,deadline));}
   finally{await timing.run('pool_close',()=>pool.end());}
  });}finally{timing.flush(env);}
 }

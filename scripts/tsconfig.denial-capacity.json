@@ -1,0 +1,4 @@
+{
+  "extends": "../apps/api/tsconfig.json",
+  "include": ["denial-capacity-observation.ts"]
+}

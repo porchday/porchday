@@ -1,0 +1,54 @@
+{
+  "at": "2026-10-29T20:30:11.592Z",
+  "source": "3977665547d4e7e52fd14c068a966f9299a2c882",
+  "stagingVersion": "3bec9135-d0e7-4677-a84e-f92f3cdf8d07",
+  "productionChanged": false,
+  "passed": false,
+  "failure": "BACKLOG_JOURNEY_OR_HEALTH_FAILED",
+  "rollout": {
+    "samples": 12,
+    "failedSamples": 0,
+    "postCommandSamples": 2
+  },
+  "workload": {
+    "members": 10000,
+    "live": 10000,
+    "denied": 400,
+    "distinctDeniedMembers": 400
+  },
+  "observations": {
+    "samples": 14,
+    "failedJourneys": 1,
+    "maxJourneyMs": 2299,
+    "liveSessionsRetained": true,
+    "remainingDeniedLastSample": 152,
+    "observedDrainMs": null,
+    "maxPageAgeSeconds": 53,
+    "maxPassAgeSeconds": 313,
+    "observedFullPassIntervalsMs": [],
+    "healthIssues": [
+      "session_denial_pass_stale"
+    ]
+  },
+  "recovery": {
+    "samples": 6,
+    "remainingFixtureRows": 0,
+    "journalPublishedThroughCleanup": true,
+    "providerUnchanged": true,
+    "leaseReleased": true
+  },
+  "limitations": [
+    "Session cleanup capacity workload, not 10,000 simultaneous application users.",
+    "Random session order and provider/queue timing; not a controlled speedup benchmark.",
+    "20-second observations can miss intermediate full passes.",
+    "Production writer and cleanup remain disabled.",
+    "Does not establish 99.99% monthly availability."
+  ],
+  "authorityOccupancy": {
+    "observedPoints": 18,
+    "availableSlotMs": 970948,
+    "occupiedSlotMs": 833858,
+    "ratio": 0.8588080927093933,
+    "scope": "Paired sampled successful read groups; not service time or predicted speedup."
+  }
+}
