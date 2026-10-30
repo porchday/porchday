@@ -56,4 +56,17 @@ jobs:
       - run: node scripts/prepare-test-databases.ts
       - run: npm test
       - run: npm run build
+      - name: Verify pre-migration backup and journal compatibility
+        run: |
+          git fetch --no-tags --depth=1 origin 3810d1d6383415eb2559c54829b68dee6113618c
+          drill_container="porchday-commit-restore-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
+          trap 'docker rm -f "$drill_container" >/dev/null' EXIT
+          docker run -d --name "$drill_container" --label porchday.commit-restore-drill=true -e POSTGRES_PASSWORD=porchday-local-restore-only -p 127.0.0.1::5432 postgres:17 >/dev/null
+          for attempt in $(seq 1 30); do
+            if docker exec "$drill_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec "$drill_container" pg_isready -U postgres
+          drill_port=$(docker port "$drill_container" 5432/tcp | cut -d: -f2)
+          LOCAL_DRILL_CONTAINER="$drill_container" LOCAL_DRILL_ADMIN_URL="postgres://postgres:porchday-local-restore-only@127.0.0.1:$drill_port/postgres" npx tsx scripts/drill-restore-local.ts --run --commit-protocol
       - run: python3 scripts/check-secrets.py

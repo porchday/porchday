@@ -106,7 +106,8 @@ quarantine checks, and validated restore of a missing marker/fence. The existing
 restore action dispatch is retained byte for byte. The full local replay/release
 path also processes the marker after restoring older fixture rows and deleting
 the SQL fence; credential holds remain, restored sessions/reset tokens are
-removed, and the fence is rebuilt. This is not yet a real backup-file restore.
+removed, and the fence is rebuilt. A separate real pre-057 dump/restore drill now verifies the full local path;
+see [the evidence](evidence/auth-commit-backup-restore-local-2026-10-30.md).
 A committed password change whose receipt
 write fails produces an independently provable marker; R2 writes occur outside
 the identity lock.
@@ -143,8 +144,9 @@ reconciliation tests remain in place.
    can read completed receipts, but cannot recover a marker-only interruption.
    Do not drop the marker table or restore function when rolling back a Worker.
 
-Still required: old/new executable compatibility, the full backup/restore path,
-hosted staging recovery and rollback, bounded request latency/cost under load,
+The old journal component and pre-057 local backup compatibility are verified
+in the linked drill. Still required: full old/new Worker compatibility, hosted
+staging recovery and rollback, bounded request latency/cost under load,
 and a reviewed production rollout. No production availability claim follows
 from local tests. The shared control object's contention and truly unknown
 multi-transaction operations remain separate reliability work.
