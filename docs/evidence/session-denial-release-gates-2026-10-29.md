@@ -65,3 +65,10 @@ The subsequent [staging diagnostic rollout](push-denial-metrics-staging-2026-10-
 passed 12 continuity samples with zero failures and verified exact fixture
 cleanup. The diagnostic source is now deployed in staging; actual hosted push
 suppression and device acceptance remain open.
+
+The later [hosted web push rehearsal](web-push-denial-staging-2026-10-30.md)
+verified a real browser delivery control and combined evidence of suppression
+while the denied SQL session remained present. Normal cleanup, exact teardown,
+journal recovery and unchanged provider state passed. This advances the web
+push gate; native-device behavior, hosted password ordering and storage/process
+interruption remain open. Aggregate counters remain distinct from per-job receipts.

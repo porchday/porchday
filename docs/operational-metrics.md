@@ -395,5 +395,7 @@ exact owned outbox state, retained SQL session, canonical immutable denial,
 bounded observation window, unrelated-session control and fixture cleanup. Do
 not infer suppression from absent notifications, an empty metrics result or SQL
 cleanup of the session. Distinguish aggregate evidence from per-device delivery.
-This source addition has local SQL-backed and telemetry tests; it is not deployed
-or hosted acceptance merely because those tests pass.
+The [staging rollout](evidence/push-denial-metrics-staging-2026-10-30.md) and
+[hosted web push rehearsal](evidence/web-push-denial-staging-2026-10-30.md)
+record deployment and combined hosted evidence. Local SQL-backed tests alone do
+not establish those results, and the rehearsal does not verify native devices.
