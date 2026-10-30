@@ -1,9 +1,28 @@
 import {describe,it,expect,vi} from 'vitest';
-import {R2JournalAuditStore} from './r2-journal-audit-store.js';
+import {R2JournalAuditStore,type AuditReadAttempt} from './r2-journal-audit-store.js';
 import {readJournalControl,provePrivacyReceipts,sha256} from '../apps/api/src/privacy-journal.js';
 import {provePrivacyCommits} from '../apps/api/src/privacy-commit-proof.js';
 const make=(request:typeof fetch,signal=new AbortController().signal)=>new R2JournalAuditStore({accountId:'a'.repeat(32),apiToken:'synthetic-test-token',bucket:'synthetic-journal',signal,fetch:request});
 describe('content-only R2 journal audit reader',()=>{
+ it('retries only bounded transient GET failures and records every attempt',async()=>{
+  const events:AuditReadAttempt[]=[];let calls=0;
+  const store=new R2JournalAuditStore({accountId:'a'.repeat(32),apiToken:'synthetic-test-token',bucket:'synthetic-journal',signal:new AbortController().signal,onReadAttempt:e=>events.push(e),fetch:async(_url,init)=>{
+   expect(init?.method).toBe('GET');calls++;if(calls===1)throw Error('private network details');return calls===2?new Response(null,{status:503}):new Response('{}');
+  }});
+  expect(await (await store.get('control.json'))?.text()).toBe('{}');expect(calls).toBe(3);
+  expect(events.map(e=>[e.attempt,e.outcome,e.retry,e.stage,e.status])).toEqual([[1,'failed',true,'transport',undefined],[2,'failed',true,'headers',503],[3,'success',false,undefined,undefined]]);
+  expect(JSON.stringify(events)).not.toContain('private');
+ });
+ it('stops at three failed GETs and does not retry authorization rejection',async()=>{
+  for(const [status,count]of [[503,3],[403,1]]){
+   const request=vi.fn<typeof fetch>(async()=>new Response(null,{status}));await expect(make(request).get('control.json')).rejects.toThrow('R2_AUDIT_READ_FAILED');expect(request).toHaveBeenCalledTimes(count);
+  }
+ });
+ it('stops before retry if durable attempt retention fails',async()=>{
+  const request=vi.fn<typeof fetch>(async()=>new Response(null,{status:503}));
+  const store=new R2JournalAuditStore({accountId:'a'.repeat(32),apiToken:'synthetic-test-token',bucket:'synthetic-journal',signal:new AbortController().signal,fetch:request,onReadAttempt:()=>{throw Error('private file details');}});
+  await expect(store.get('control.json')).rejects.toThrow(/^R2_AUDIT_EVIDENCE_FAILED$/);expect(request).toHaveBeenCalledTimes(1);
+ });
  it.each([undefined,'W/"weak"','"provider-tag"'])('reads proof bytes without trusting REST tag %s',async etag=>{
   const request=vi.fn<typeof fetch>(async(input,init)=>{
    expect(String(input)).toContain('/objects/commit-scopes%2Fv1%2Fexample.json');

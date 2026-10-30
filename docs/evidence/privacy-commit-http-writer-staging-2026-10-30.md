@@ -99,3 +99,22 @@ Tests exercise canonical marker/receipt proofs through responses without ETags,
 altered batch rejection, cancellation and invalid responses. This reader is
 operator tooling, not a change to deployed runtime or journal recovery policy.
 Its clean hosted acceptance remains a separate gate.
+
+The first fresh standalone HTTP attempt stopped at this reader's admission
+check with `JOURNAL_STORE_READ_FAILED`, before creating any fixture or sending
+an auth mutation. Its lease was reconciled and released. A separate live
+read-only check had verified the existing operation with ten GETs in 3,065 ms;
+another instrumented check after a provider snapshot also passed. These reads
+do not establish the intermittent failure's root cause, and the failed attempt
+remains failed.
+
+The reader now permits at most three attempts for transient GET transport/body
+failures and selected retryable HTTP statuses, with 250/500 ms backoff. Each
+attempt keeps its 10-second deadline inside the caller's overall deadline.
+Malformed content, oversized responses, authorization failures, cancellation
+and every write remain refusals. A sanitized attempt callback records failures
+and retries; inability to retain that evidence stops the read. Fifty-four
+focused tests pass, including capped retries, no retry after authorization
+rejection, durable-evidence failure and canonical-proof validation. This change
+does not retry HTTP mutations or change deployed request budgets. A clean
+hosted HTTP test using the updated reader is still required.
