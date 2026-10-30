@@ -72,3 +72,11 @@ while the denied SQL session remained present. Normal cleanup, exact teardown,
 journal recovery and unchanged provider state passed. This advances the web
 push gate; native-device behavior, hosted password ordering and storage/process
 interruption remain open. Aggregate counters remain distinct from per-job receipts.
+
+The [hosted password race](password-denial-race-staging-2026-10-30.md) then
+verified denial-first reauthorization: an already-started password change was
+observed waiting on the fixture identity lock, logout published denial, and
+after unlock the change returned 401 with credentials unchanged. Logout and
+fresh login with the original credential succeeded; exact cleanup and recovery
+passed. The opposite hosted ordering and process/storage interruption remain
+unverified. The earlier inconclusive operation is retained in that record.
