@@ -23,6 +23,14 @@ journal compare-and-swap writes. The existing `withOperatorR2` bridge uses nativ
 R2 bindings and must independently pass its live conditional-write gate before
 the recovery drill can proceed.
 
+The native bridge gate subsequently passed at 02:03:39 UTC on October 30. It
+verified conditional creation, matching-ETag replacement, stale-ETag refusal,
+final object contents and probe deletion; an unauthenticated write was rejected.
+The bridge's normal teardown verified removal of its exact temporary Worker and
+domain. Canonical deployment state was unchanged and the release lease was
+released. No journal control or member-data mutation occurred. This establishes
+the transport prerequisite only; hosted marker-only recovery is still untested.
+
 ## Method
 
 Use the existing temporary native-R2 operator bridge and a supervised local child
@@ -34,6 +42,10 @@ Persist the temporary bridge script identity before upload and verify removal of
 its exact script and domain during teardown. Its secret capability must remain
 in memory and out of logs and command arguments. The REST read adapter is not a
 substitute for native conditional-write verification.
+Keep the bridge capability in the parent process. A bounded IPC journal adapter
+can let the child call the actual journal functions while the parent retains
+operation-scoped request records and enforces the permitted keys. It must not
+print or serialize the capability into a fixture file.
 
 The parent holds the release lease and persists a one-shot execution record. It
 verifies current provider state, reader floor, schema 057, runtime source, journal
