@@ -103,6 +103,27 @@ ownership checks, timeout behavior and failure reconciliation before hosted
 execution. The hosted plan must pin the reviewed scripts and source. No existing
 writer draft or stale deployment manifest may be reused.
 
+## Implemented bridge components
+
+`scripts/commit-drill-store.ts` restricts the parent's native journal capability
+to one newly created intent, an exact conditional append of that intent to the
+observed pending list, and its digest-bound immutable scope. It preserves other
+pending entries and refuses receipt/batch writes, retirement, generation changes,
+quarantine changes and adoption of an existing intent. Each request is recorded
+before I/O; only hashes, keys and fixed outcomes belong in the private evidence
+sink. It permits one in-flight call, at most 32 requests, 64 KiB documents and a
+60-second preparation lifetime. Each call has a maximum five-second deadline.
+An uncertain result seals the capability; the supervisor must reconcile it.
+
+`scripts/commit-drill-ipc.ts` carries bounded, strictly validated messages with
+monotonic request IDs. The parent retains its R2 capability; the child gets only
+journal results. Invalid messages, lost replies and deadlines close the channel
+without retry. Tests exercise real serialized MessagePort transport as well as
+the actual intent/scope functions through the store gate. These components do
+not yet implement the SQL child, process phase supervision, SIGKILL trigger,
+hosted recovery observations or cleanup. They must not be used as evidence that
+the hosted drill has run.
+
 ## What this can establish
 
 This method exercises process loss with real hosted SQL/R2 state and recovery by

@@ -50,6 +50,7 @@ jobs:
       - run: npx tsc -p scripts/tsconfig.availability-report.json
       - run: npx tsc -p scripts/tsconfig.release-assets.json
       - run: npx tsc -p scripts/tsconfig.denial-capacity.json
+      - run: npx tsc -p scripts/tsconfig.commit-drill.json
       - run: node --input-type=module -e "await import('./scripts/release-assets.ts'); await import('./scripts/release-assets-verify.ts'); await import('./scripts/release-assets-browser.ts')"
       - run: node --input-type=module -e "await import('./scripts/availability-report.ts')"
       - run: node --input-type=module -e "await import('./scripts/external-monitor-backup.ts'); await import('./scripts/external-monitor-relay.ts'); await import('./scripts/external-monitor-delivery.ts')"
