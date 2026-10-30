@@ -111,3 +111,10 @@ ordinary signed-out restore; account holds and transport failures remain visible
 This reduces network dependencies but does not establish physical launch latency.
 Simulator tests and a California iPhone trial with saved credentials and keys are
 still required before claiming the cold/warm p99 launch targets.
+# Request timing in Instruments
+
+Record the native app with Instruments' signpost/Points of Interest instrument and filter subsystem `com.porchday.app`, category `Performance`, interval `HTTP request`. Each request has a unique interval ID, a fixed operation label, numeric HTTP status (0 when no HTTP response was received), and a completion flag. Failed and cancelled requests end their intervals too; retain these observations when reporting failures rather than filtering to successful requests.
+
+The interval starts immediately before URLSession and ends after response validation and session-cookie persistence. `completed=true` means this byte request returned successfully, not that JSON parsing, decryption, rendering, or a saved-write readback succeeded. A logout request does not demonstrate old-session rejection. These intervals do not measure first readable post or first visible decoded photo; those acceptance measurements still require separate client journey instrumentation and physical-device trials.
+
+Only fixed operation labels and numeric/boolean outcomes enter these signposts. URLs, member/post/media IDs, query strings, credentials, bodies, and error descriptions are never emitted. There is no telemetry upload. Record device, network, region, build, measurement window, sample count, and failed/cancelled observations alongside any timing export.

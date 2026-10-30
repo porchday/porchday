@@ -23,8 +23,13 @@ actor API {
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         if body != nil { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         if !cookies.isEmpty { req.setValue(cookies.map { "\($0.key)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie") }
+        let interval = NativePerformance.begin(.classify(path: path, method: method))
+        var status = 0
+        var completed = false
+        defer { NativePerformance.end(interval, status: status, completed: completed) }
         let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else { throw PorchError.message("No server response. Try again when connected.") }
+        status = http.statusCode
         let headers = Dictionary(uniqueKeysWithValues: http.allHeaderFields.compactMap { key, value -> (String, String)? in guard let key = key as? String, let value = value as? String else { return nil }; return (key, value) })
         for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: url) {
             if cookie.expiresDate.map({ $0 <= Date() }) == true || cookie.value.isEmpty { cookies.removeValue(forKey: cookie.name) } else { cookies[cookie.name] = cookie.value }
@@ -35,6 +40,7 @@ actor API {
             let message = error["error"]["message"].string ?? error["message"].string ?? error["error"]["code"].string ?? "This action is unavailable. Please try again."
             throw PorchError.api(code:error["error"]["code"].string ?? error["code"].string ?? "REQUEST_FAILED",message:message.replacingOccurrences(of:"_",with:" "),details:error["error"]["details"])
         }
+        completed = true
         return data
     }
     func social(_ path: String, method: String = "GET", body: JSON? = nil) async throws -> JSON { try await request("/api/v1" + path, method: method, body: body) }
