@@ -209,6 +209,27 @@ export class FileDeploymentLease{
   const archive=archivePath(this.root,this.plan);if(existsSync(archive))throw new RecoveryError('DEPLOYMENT_ALREADY_FINALIZED');
   renameSync(directory,archive);syncDirectory(this.root);this.close();
  }
+ /** Read-only continuity scope check across canonical finalization and archival.
+  * Accept only the exact starting bytes or this plan's fully validated receipt.
+  * This is not deployment authorization or a provider-health assertion.
+  */
+ static assertObservedCanonical(root:string,plan:DeploymentPlan,before:string):void{
+  if(!isAbsolute(root))throw new RecoveryError('DEPLOYMENT_LEASE_PATH_INVALID');privateDirectory(root);
+  const hash=deploymentPlanHash(plan);checkCanonical(plan,before);
+  const current=privateText(join(root,'latest-verified-deployment.json'));if(current===before)return;
+  // A release can atomically rename its active directory to the archive between
+  // reads. Retry only that local ENOENT race; never bypass an invalid receipt.
+  for(let attempt=0;attempt<2;attempt++){
+   const archived=archivePath(root,plan),directory=existsSync(archived)?archived:join(root,'deployment-lock');
+   try{
+    privateDirectory(directory);const owner:Owner=JSON.parse(privateText(join(directory,'owner.json'),4096));
+    if(owner.protocol!==protocol||owner.operationId!==plan.operationId||owner.planHash!==hash||owner.source!==plan.candidateSource||owner.baselineSha256!==digest(before))throw new RecoveryError('DEPLOYMENT_FINALIZATION_INVALID');
+    const receipt=readFinalization(directory,plan,owner);
+    if(!receipt||receipt.before!==before||receipt.after!==current)throw new RecoveryError('DEPLOYMENT_CANONICAL_CHANGED');
+    return;
+   }catch(error){if(attempt===0&&(error as NodeJS.ErrnoException).code==='ENOENT')continue;throw error;}
+  }
+ }
  /** Historical completion receipt, not a claim about current provider health or a later deployment. */
  static async completed(root:string,plan:DeploymentPlan,journal:RecoveryJournal):Promise<Record<string,unknown>|null>{
   if(!isAbsolute(root))throw new RecoveryError('DEPLOYMENT_LEASE_PATH_INVALID');privateDirectory(root);const hash=deploymentPlanHash(plan),directory=archivePath(root,plan);

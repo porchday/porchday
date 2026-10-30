@@ -274,3 +274,32 @@ describe('schema finalization receipt integrity',()=>{
   }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
  });
 });
+
+
+describe('observed canonical finalization',()=>{
+ it.each(['complete','rolled-back'] as const)('accepts only original bytes or the exact %s receipt before and after archival',async phase=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  const state:RecoveryState={v:1,revision:5,planHash:deploymentPlanHash(plan),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})};
+  const log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('unused');}};
+  try{
+   const canonicalPath=join(f.root,'latest-verified-deployment.json'),schemaPath=join(f.root,'schema.json');
+   const proof={kind:'schema-proof',operationId:plan.operationId,planHash:deploymentPlanHash(plan),worker:plan.worker,version:phase==='complete'?plan.candidateVersion:plan.baselineVersion,branchId:'synthetic',schema:{version:1,migrations:['000_initial.sql'],functionsSha256:'a'.repeat(64),columnsSha256:'b'.repeat(64)}};
+   writeFileSync(schemaPath,JSON.stringify(proof),{mode:0o600});
+   FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical);lease=FileDeploymentLease.acquire(f.root,plan);
+   writeFileSync(canonicalPath,JSON.stringify({...JSON.parse(f.canonical),schemaMigrationsByEnvironment:{staging:1}}));
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical)).toThrow();writeFileSync(canonicalPath,f.canonical);
+   await lease.finalize(log,undefined,undefined,schemaPath);
+   FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical);await lease.release(log);
+   FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical);
+   const finalized=readFileSync(canonicalPath,'utf8');
+   for(const changed of [{...JSON.parse(finalized),productionVersion:uuid(99)},{...JSON.parse(finalized),schemaMigrationsByEnvironment:{staging:99}}]){
+    writeFileSync(canonicalPath,JSON.stringify(changed));expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical)).toThrow();
+   }
+   writeFileSync(canonicalPath,finalized);
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,{...plan,operationId:uuid(99)},f.canonical)).toThrow();
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical+' ')).toThrow();
+   writeFileSync(schemaPath,JSON.stringify({...proof,branchId:'changed'}));
+   expect(()=>FileDeploymentLease.assertObservedCanonical(f.root,plan,f.canonical)).toThrow('SCHEMA_PROOF_CHANGED');
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+});

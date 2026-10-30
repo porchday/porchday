@@ -17,11 +17,17 @@ rolling back a Worker does not undo additive database migrations. Other
 environments' schema metadata stays unchanged. Legacy finalization receipts
 remain resumable without recollecting evidence.
 
-New continuity harnesses must allow these exact, proof-backed schema metadata
-updates for their target environment at terminal finalization, while preserving
-other environments. Do not treat the entire migration-count map as immutable,
-and do not weaken the scope checks to allow arbitrary canonical changes. Preserve
-previously executed harnesses and their evidence unchanged.
+New continuity harnesses should retain the original canonical file bytes and call
+`FileDeploymentLease.assertObservedCanonical(root, plan, beforeText)` in their
+synchronous scope check. It accepts only those exact original bytes or the exact
+terminal canonical bytes reconstructed from this operation's durable receipt,
+including its hashed schema proof. It verifies the receipt in either the active
+lease or the completed archive, so finalization and archival do not create a
+false continuity failure. Unrelated metadata changes, another operation's receipt,
+a changed starting snapshot and altered proof bytes remain rejected. This check
+performs only local reads and does not authorize a deployment or establish current
+provider health. Keep the fixture, deadline, journal and foreign-owner checks.
+Preserve previously executed harnesses and their evidence unchanged.
 
 
 `scripts/release-continuity-command.ts` exports `runCommandWithContinuity` for
