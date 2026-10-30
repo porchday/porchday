@@ -60,3 +60,8 @@ unknown authority and provider rejection, and retain suppression when metrics
 fail. This adds an observation needed by the future hosted rehearsal, not new
 hosted acceptance. No new schema, provider binding, console logging or production
 writer enablement is part of this change.
+
+The subsequent [staging diagnostic rollout](push-denial-metrics-staging-2026-10-30.md)
+passed 12 continuity samples with zero failures and verified exact fixture
+cleanup. The diagnostic source is now deployed in staging; actual hosted push
+suppression and device acceptance remain open.
