@@ -27,6 +27,7 @@ export type JournalEvent = z.infer<typeof eventSchema>;
 const batchSchema = z.object({v: z.literal(1), generation: z.uuid(), from: sequence, to: sequence, previous: pointer.nullable(), events: z.array(eventSchema).min(1).max(500)}).strict();
 const receiptSchema=z.object({v:z.literal(1),id:z.uuid(),generation:z.uuid(),sequence,head:pointer.nullable()}).strict();
 const intentSchema=z.object({v:z.literal(1),id:z.uuid(),started_at:z.string().datetime()}).strict();
+export {pointer as journalPointerSchema,batchSchema as journalBatchSchema,intentSchema as privacyIntentSchema};
 export interface JournalDatabase {
   status(): Promise<{generation: string; sequence: string; quarantined: boolean}>;
   page(after: string): Promise<JournalEvent[]>;
