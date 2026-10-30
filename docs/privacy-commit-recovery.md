@@ -1,9 +1,10 @@
 # Independent proof of committed privacy transactions
 
-Work in progress for #1 and #42. The read-only verifier and model tests exist;
-there is no SQL writer, automatic reconciliation integration or deployment yet.
-The existing quarantine and receipt rules remain authoritative. This is not an
-operator command to clear a pending operation.
+Work in progress for #1 and #42. The atomic SQL writer, independent verifier
+and guarded active reconciliation are implemented and tested locally. Neither
+migration 057 nor the runtime flags have been deployed. Existing quarantine
+and receipt rules remain authoritative; this is not an operator command to
+clear a pending operation.
 
 ## Failure being addressed
 
@@ -14,7 +15,7 @@ existing recovery code cannot infer that the whole operation finished. A
 matching database cursor, elapsed time or a SQL completion row alone is
 insufficient evidence after a restore.
 
-The proposed protocol binds an independently registered single-transaction
+The protocol binds an independently registered single-transaction
 operation to a terminal marker committed atomically with its SQL work. Recovery
 requires that marker to reach the canonical independent journal chain. Missing
 markers stay unresolved; neither user actions nor SQL mutations are replayed.
@@ -71,31 +72,82 @@ verifier's own work; cancellation cannot interrupt an in-flight `JournalStore`
 read because that interface has no cancellation argument. Runtime I/O deadlines
 still need to be enforced by the caller/adapter.
 
-The model tests cover restart from persisted records without a receipt;
-registered-only, SQL-only and orphan-checkpoint states; legacy intents;
-mismatched scope/intent/generation; duplicate markers; baselines and broken
-ancestry; storage errors and work limits. They are not actual Worker termination,
-PostgreSQL transaction or hosted storage tests.
+## Writer and active recovery
 
-## Remaining implementation and acceptance
+Migration 057 adds an RLS-protected unique operation fence and grants only
+`porchday_auth` execution of `complete_privacy_transaction`. The function checks
+generation and quarantine, appends the terminal marker and inserts the fence
+inside the caller's transaction. A duplicate throws and rolls back the second
+attempt, including any work performed before its terminal call. The auth route
+calls it immediately before COMMIT on the same connection. Existing generic
+privacy middleware never opts into the single-transaction contract.
 
-- Add the backward-compatible migration, terminal event, transactional unique
-  fence, least-privilege function grants and validated restore handling.
-- Pass the registered proof scope only to the reviewed single auth transaction;
-  prove that multi-transaction/social routes cannot accidentally opt in.
-- Integrate recovery without changing the treatment of genuinely unknown
-  commits, generation mismatch, database rollback or existing quarantine.
-- Exercise real SQL rollback, duplicate attempts and concurrency, and terminate
-  a separate process before/after COMMIT, checkpoint publication, receipt write
-  and pending retirement. Keep durable evidence across the termination.
-- Test restore with missing/rolled-back commit rows and canonical markers,
-  wrong generations, conflicting CAS writes, lost storage replies, old/new
-  executables and lost recovery-process replies. Never infer success from
-  missing test observations.
-- Review operation/read costs, bounded admission and checkpoint contention;
-  this protocol alone does not remove the shared control object's bottleneck.
-- Run isolated hosted staging recovery, exact cleanup and compatible rollback
-  before a production proposal. Do not interrupt production to obtain proof.
+`PRIVACY_COMMIT_RECOVERY_V1=true` enables stale-intent recovery in the read guard
+and checkpoint path. After the existing 120-second stale threshold, it exports
+committed history, proves canonical markers, revalidates SQL and control, writes
+ordinary v1 receipts and retires proven entries through conditional updates.
+Unknown entries remain pending and lead to quarantine. It never replays work or
+releases existing quarantine. The receipt and marker proof share a 1,024-read
+budget; reconciliation makes at most eight attempts. Existing checkpoint and
+I/O bounds still apply. This is not a new guarantee of a total request deadline.
+
+`PRIVACY_COMMIT_WRITER_V1=true` opts eligible auth requests into scope and marker
+creation. Writer startup refuses before registering an intent or starting work
+unless recovery is also enabled. Both flags default off and neither is in a
+provider configuration. Rollback-only failures retain existing receipt handling;
+missing scope or missing marker does not become evidence of rollback.
+
+## Local verification
+
+Tests use a disposable PostgreSQL 17 database and the actual auth transaction,
+not just a mocked SQL cursor. They cover atomic commit/rollback, duplicate and
+concurrent attempts, least-privilege grants, malformed scopes, generation and
+quarantine checks, and validated restore of a missing marker/fence. The existing
+restore action dispatch is retained byte for byte. The full local replay/release
+path also processes the marker after restoring older fixture rows and deleting
+the SQL fence; credential holds remain, restored sessions/reset tokens are
+removed, and the fence is rebuilt. This is not yet a real backup-file restore.
+A committed password change whose receipt
+write fails produces an independently provable marker; R2 writes occur outside
+the identity lock.
+
+A separate child process is killed with SIGKILL after registration, before
+COMMIT, after COMMIT, after checkpoint publication, after receipt publication
+and after pending retirement. Evidence survives in PostgreSQL and a private,
+fsynced single-writer filesystem fixture. Committed cases recover through the
+actual active reconciliation path; registered/uncommitted cases quarantine.
+This does not emulate hosted R2 concurrency or actual Worker termination.
+
+Model tests cover canonical versus orphan history, immutable digest bindings,
+limits and malformed ancestry. Recovery fault tests cover mixed known/unknown
+operations, database changes during proof, concurrent registration/quarantine,
+repeated CAS conflicts and lost successful receipt replies. Existing receipt
+reconciliation tests remain in place.
+
+## Rollout and daily-release compatibility
+
+1. Apply additive migration 057 with writers disabled. It adds no required
+   columns to existing tables and preserves legacy restore actions. Verify the
+   old application against the expanded schema before enabling new behavior.
+2. Deploy the recovery-capable reader with only its recovery flag enabled. Test
+   restore from a pre-057 backup after applying 057, including real credential
+   holds, session invalidation and canonical marker replay. A SQL function unit
+   test alone does not prove the complete restore workflow.
+3. Establish a rollback version that understands this protocol. Enable the
+   writer only after isolated staging fault tests, exact fixture cleanup,
+   continuity checks and compatible rollback succeed. Daily feature releases
+   must retain this reader/restore floor and backward-compatible migrations.
+4. To roll back a feature, disable new marker creation first while retaining
+   the recovery reader and schema. Drain/reconcile eligible pending operations
+   before considering a version without this reader. Older v1 receipt readers
+   can read completed receipts, but cannot recover a marker-only interruption.
+   Do not drop the marker table or restore function when rolling back a Worker.
+
+Still required: old/new executable compatibility, the full backup/restore path,
+hosted staging recovery and rollback, bounded request latency/cost under load,
+and a reviewed production rollout. No production availability claim follows
+from local tests. The shared control object's contention and truly unknown
+multi-transaction operations remain separate reliability work.
 
 The separate session-denial path and its hosted checks remain valid. This work
 targets interrupted privacy transactions beyond that path; it does not replace

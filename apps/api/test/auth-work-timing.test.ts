@@ -10,7 +10,7 @@ vi.mock('../src/auth',()=>({
 }));
 // This suite isolates transaction timing. Real journal rollback/commit ambiguity
 // and revocation semantics remain covered by the PostgreSQL integration suite.
-vi.mock('../src/privacy-journal',()=>({JournalError:class extends Error{},withHttpPrivacyJournal:async(_c:unknown,work:()=>Promise<unknown>)=>work()}));
+vi.mock('../src/privacy-journal',()=>({JournalError:class extends Error{},withHttpAuthPrivacyJournal:async(_c:unknown,work:()=>Promise<unknown>)=>work()}));
 import {authRoutes} from '../src/auth-routes';
 beforeEach(()=>{f.clock=0;f.fail='';f.calls=[];f.authReads=0;f.release.mockReset();f.end.mockReset().mockResolvedValue(undefined);vi.spyOn(performance,'now').mockImplementation(()=>f.clock);});
 afterEach(()=>vi.restoreAllMocks());
