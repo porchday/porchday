@@ -19,17 +19,17 @@ const gate = () => { let resolve, reject; const promise = new Promise((a,b) => {
 const secret = createReactionSecret(), payload = location.search==='?custom' ? await customReaction('test_image', Uint8Array.from(${JSON.stringify([...tinyPng()])})) : {emoji:'like'};
 const tag = await reactionTag({secret,targetId:'post',memberId:'other',emoji:payload.emoji});
 const myTag = await reactionTag({secret,targetId:'post',memberId:'me',emoji:payload.emoji});
-const mine={member_id:'me',reaction_tag:myTag,envelope:{context:{id:myTag,authorId:'me',kind:'reaction',parentId:'post'}}};
+const mine={comment_id:'post',member_id:'me',reaction_tag:myTag,envelope:{context:{id:myTag,authorId:'me',kind:'reaction',parentId:'post'}}};
 const rows = [{member_id:'other',reaction_tag:tag,envelope:{context:{id:tag,authorId:'other',kind:'reaction',parentId:'post'}}}];
 if(location.search==='?mine') rows.push(mine);
 const state = window.fixture = { seal:gate(), write:gate(), read:gate(), reads:0, methods:[], reload:gate(), seals:0,writes:0,reloads:0,feedbackMs:null,started:0,status:()=>pendingSaves.getStatus() };
-state.confirm = () => state.read.resolve(Response.json({reactions:[...rows,mine]}));
+state.confirm = () => state.read.resolve(Response.json({reactions:[...rows,mine],comment_reactions:[mine]}));
 state.absent = () => state.read.resolve(Response.json({reactions:rows}));
 window.testVault = {member:{id:'me',status:'active'},device:{id:'device'},open:async()=>payload,
  seal:()=>{state.seals++;return state.seal.promise;}};
 window.fetch = async (url,options) => {
- if (String(url)==='/api/v1/posts/post') { state.reads++; return (await state.read.promise).clone(); }
- if (!String(url).startsWith('/api/v1/posts/post/reactions/') || !['PUT','DELETE'].includes(options.method)) throw new Error('Unexpected request');
+ if (String(url)==='/api/v1/posts/post' || String(url)==='/api/v1/posts/parent') { state.reads++; return (await state.read.promise).clone(); }
+ if (!['posts','comments'].some(kind=>String(url).startsWith('/api/v1/'+kind+'/post/reactions/')) || !['PUT','DELETE'].includes(options.method)) throw new Error('Unexpected request');
  state.writes++;state.methods.push(options.method);return (await state.write.promise).clone();
 };
 const observer = new MutationObserver(() => {
@@ -41,7 +41,7 @@ const observer = new MutationObserver(() => {
 });observer.observe(document.body,{subtree:true,childList:true});
 document.addEventListener('click',e=>{if(e.target.closest('.reaction-chip'))state.started=performance.now()},true);
 function App(){const [targetId,setTargetId]=React.useState('post');state.changeTarget=setTargetId;return <><PendingSaveStatus/><Reactions
- target={{id:targetId,envelope:{context:{kind:'post',audience:'only_me'}}}}
+ target={{id:targetId,post_id:'parent',envelope:{context:{kind:location.search==='?comment'?'comment':'post',audience:'only_me'}}}}
  payload={{reactionSecret:secret}} reactions={targetId==='post'?rows:[]} reload={()=>{state.reloads++;return state.reload.promise;}}/></>;}
 createRoot(document.getElementById('root')).render(<App/>);
 `;
@@ -50,7 +50,7 @@ const css = await readFile('apps/web/src/styles.css','utf8');
 const server = createServer((req,res)=>{
  if(req.url==='/fixture.js'){res.setHeader('Content-Type','text/javascript');res.end(bundle.outputFiles[0].text);}
  else if(req.url==='/style.css'){res.setHeader('Content-Type','text/css');res.end(css);}
- else if(req.url==='/' || req.url==='/?mine' || req.url==='/?custom'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><link rel="stylesheet" href="/style.css"><div id="root"></div><script type="module" src="/fixture.js"></script>');}
+ else if(req.url==='/' || req.url==='/?mine' || req.url==='/?custom' || req.url==='/?comment'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><link rel="stylesheet" href="/style.css"><div id="root"></div><script type="module" src="/fixture.js"></script>');}
  else {res.statusCode=404;res.end();}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
@@ -148,6 +148,16 @@ try {
  });
  await page.waitForFunction(()=>window.fixture.status()==='');
  assert.equal(await page.locator('.reaction-chip').count(),0);
+ // Comment reactions reconcile through their parent post's comment-reaction rows.
+ await page.goto(origin+'?comment');
+ await page.locator('.reaction-chip').waitFor();
+ await page.locator('.reaction-chip').click();
+ await page.waitForFunction(()=>window.fixture.seals===1);
+ await page.evaluate(()=>window.fixture.seal.resolve({synthetic:true}));
+ await page.waitForFunction(()=>window.fixture.writes===1);
+ await page.evaluate(()=>{window.fixture.write.resolve(Response.json({}));window.fixture.confirm();});
+ await page.waitForFunction(()=>window.fixture.status()==='');
+ assert.equal(await page.locator('.reaction-chip').getAttribute('aria-pressed'),'true');
  // Custom image reactions use the same pending state after PNG validation.
  await page.goto(origin+'?custom');
  await page.locator('.reaction-chip').waitFor();
