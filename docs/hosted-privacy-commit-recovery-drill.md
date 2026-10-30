@@ -15,13 +15,25 @@ persist the exact key and each request phase before I/O and retain bounded,
 non-sensitive transport diagnostics. Cleanup must have its own bounded deadline
 even if the verification deadline expires.
 
+The instrumented second probe returned HTTP 200 for both the initial conditional
+create and the attempted duplicate conditional create. Its gate rejected the REST
+adapter with `R2_CONDITIONAL_WRITES_UNSUPPORTED`. The exact probe object's DELETE
+returned 200 and the owned lease was released. This endpoint must not be used for
+journal compare-and-swap writes. The existing `withOperatorR2` bridge uses native
+R2 bindings and must independently pass its live conditional-write gate before
+the recovery drill can proceed.
+
 ## Method
 
-Use the existing R2 operator adapter and a supervised local child process against
-the existing staging database and journal. A new public fault endpoint or Worker
-is unnecessary. Before any journal write, verify conditional create, matching
+Use the existing temporary native-R2 operator bridge and a supervised local child
+process against the existing staging database and journal. No fault switch belongs
+in the public application. Before any journal write, verify conditional create, matching
 ETag replacement and stale ETag refusal on one random `probes/` object, then
 remove it. The transport must reject every other object key for that probe.
+Persist the temporary bridge script identity before upload and verify removal of
+its exact script and domain during teardown. Its secret capability must remain
+in memory and out of logs and command arguments. The REST read adapter is not a
+substitute for native conditional-write verification.
 
 The parent holds the release lease and persists a one-shot execution record. It
 verifies current provider state, reader floor, schema 057, runtime source, journal
