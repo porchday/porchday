@@ -6,6 +6,13 @@ staging reader floor, actual API rollback and fourth hosted marker-only rehearsa
 are verified. See the [hosted recovery evidence](evidence/privacy-commit-hosted-recovery-staging-2026-10-30.md)
 for the exact scope, preserved failures and remaining rollout gates.
 
+The staging public auth writer was subsequently enabled with the same executable
+and retained reader floor. Activation continuity passed, and a separate read-only
+audit verified a normal HTTP session-revocation marker and receipt after the
+original evidence check failed. See the [HTTP writer evidence](evidence/privacy-commit-http-writer-staging-2026-10-30.md).
+Clean writer acceptance and writer-enabled rollback remain required; production
+is unchanged.
+
 On October 30, the first temporary-object conditional-write probe failed with
 `R2_OPERATOR_REQUEST_FAILED`. No journal-control or member-data key was allowed
 by its transport. The owned deployment lease was reconciled without dispatching
