@@ -47,3 +47,28 @@ drift, cancellation and stalled body/database reads. The real auth-route tests
 exercise the same auditor against PostgreSQL with two and four overlapping
 requests and an unaffected account. Their R2 store is simulated. Hosted
 concurrency and native-provider behavior remain separate acceptance requirements.
+
+## One-shot staging request collection
+
+`dispatchAuthCommitCohort` in `scripts/auth-commit-cohort-dispatch.ts` collects
+the HTTP evidence for this auditor. Its caller must first admit the exact
+staging deployment and lease, create two to four authorized synthetic fixtures,
+and capture the SQL baseline and generation. It only targets
+`https://staging.porchday.com`; it does not create fixtures, activate deployments,
+read SQL, or declare canonical proof successful.
+
+Use a fresh private directory. Exclusive, fsynced batch and individual intent
+files must all exist before dispatch. Requests overlap without a retry path;
+each POST and subsequent denial GET has a ten-second observation deadline.
+All dispatched observations settle before the helper returns or rejects. A
+timeout or cancellation does not prove the remote mutation failed: preserve
+that directory and reconcile read-only. The exclusive batch intent prevents
+reusing the same directory even after a partial failure. Never create a new
+directory merely to repeat an uncertain operation.
+
+Evidence files exclude cookies, response bodies and provider errors. Individual
+results survive other requests failing. Success requires every POST to return
+200 within budget, every owned cookie to return 401, common overlap of the
+recorded client windows, and an unchanged caller scope. The returned windows
+still require independent canonical proof after rollback. Exact fixture cleanup
+and deployment reconciliation remain the caller's responsibility on every path.
