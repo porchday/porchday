@@ -13,6 +13,8 @@ import {commitDrillIdentity,commitDrillSession} from '../../../scripts/commit-dr
 import {createCommitDrillStore} from '../../../scripts/commit-drill-store';
 import {serveCommitDrillJournal} from '../../../scripts/commit-drill-ipc';
 import {killCommittedDrillChild} from '../../../scripts/commit-drill-supervisor';
+import {runCommitDrillChild} from '../../../scripts/commit-drill-runner';
+import {observeCommittedDrill} from '../../../scripts/commit-drill-observe';
 
 const url=process.env.PRIVACY_COMMIT_TEST_DATABASE_URL;
 const suite=url?describe:describe.skip;
@@ -165,6 +167,32 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
    expect((await readJournalControl(store)).value.pending).toEqual([]);expect(await store.get(`receipts/${operationId}.json`)).not.toBeNull();
    expect(await owner`select 1 from app.privacy_operation_commits where operation_id=${operationId}`).toHaveLength(1);
   }finally{server.close();if(!exited){child.kill('SIGKILL');await exit;}await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
+ });
+ it('uses the complete parent runner to verify and kill the committed child without publishing its receipt',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'porchday-parent-runner-')),store=new ProcessJournalStore(directory);
+  const fixture={runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()},identity=commitDrillIdentity(fixture);
+  await owner`insert into public.auth_user(id,name,email) values(${fixture.memberId},${identity.name},${identity.email})`;
+  await owner`insert into public.auth_session(id,"userId",token,"expiresAt") values(${fixture.sessionId},${fixture.memberId},${randomUUID()},now()+interval '1 hour')`;
+  const db:JournalDatabase={async status(){return(await owner`select app.safety_status() as value`)[0].value;},async page(after){return(await owner`select app.safety_page(${after}::bigint,200) as value`)[0].value;}};
+  await initializePrivacyJournal(store,db);const initial=await readJournalControl(store);await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
+  const records:Record<string,unknown>[]=[];
+  try{
+   const result=await runCommitDrillChild({target:'local-test',connection:url!,fixture,generation,store,sql:owner,assertScope:()=>{},retain:async record=>{await store.put(`parent-evidence/${records.length}.json`,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:'*'}});records.push(record);}},AbortSignal.timeout(15000));
+   expect(result.signal).toBe('SIGKILL');expect(result.recoveryVerified).toBe(false);
+   expect(records.filter(r=>r.kind==='child-phase').map(r=>r.phase)).toEqual(['registered','scoped','committed']);
+   expect(records.filter(r=>r.kind==='supervisor').map(r=>r.phase)).toEqual(['commit-verified','kill-intent','killed']);
+   expect(JSON.stringify(records)).not.toContain('postgres://');
+   expect(await store.get(`receipts/${result.operationId}.json`)).toBeNull();const pending=(await readJournalControl(store)).value.pending;expect(pending).toHaveLength(1);
+   const scoped=records.find(r=>r.kind==='child-phase'&&r.phase==='scoped')!;
+   const expected={operationId:result.operationId,scopeSha256:String(scoped.scopeSha256),generation,memberId:fixture.memberId,sessionId:fixture.sessionId};
+   const observation={sql:owner,store,fixture,expected,publicationSha256:expected.scopeSha256,reportedSequence:result.sequence};
+   await expect(observeCommittedDrill({...observation,publicationSha256:'0'.repeat(64)},new AbortController().signal)).rejects.toThrow('INDEPENDENT_PROOF_INVALID');
+   expect((await observeCommittedDrill({...observation,reportedSequence:'999999'},new AbortController().signal)).childReportedCommit).toBe(false);
+   const altered={get:async(key:string)=>{const value=await store.get(key);return key.startsWith('commit-scopes/')&&value?{etag:value.etag,text:async()=>JSON.stringify({...JSON.parse(await value.text()),intent_sha256:'0'.repeat(64)})}:value;},put:async()=>{throw Error('unexpected write');}};
+   await expect(observeCommittedDrill({...observation,store:altered},new AbortController().signal)).rejects.toThrow('INDEPENDENT_PROOF_INVALID');
+   const clock=vi.spyOn(Date,'now').mockReturnValue(Date.parse(pending[0].started_at)+120001);try{await assertJournalReadable(store,db,undefined,true);}finally{clock.mockRestore();}
+   expect((await readJournalControl(store)).value.pending).toEqual([]);expect(await store.get(`receipts/${result.operationId}.json`)).not.toBeNull();
+  }finally{await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
  });
  it.each(['registered','before-commit','after-commit','after-checkpoint','after-receipt','after-retirement'])('retains authoritative evidence after SIGKILL at %s',async phase=>{
   const directory=await mkdtemp(join(tmpdir(),'porchday-commit-process-')),store=new ProcessJournalStore(directory),id=await fixture();

@@ -137,14 +137,30 @@ labels that exit recovery success. Missing evidence or a failed evidence sink
 prevents signaling. The verifier callback and durable sink must be supplied by
 the reviewed hosted runner; a child report alone is insufficient.
 
-Local validation passes 68 tests, including real PostgreSQL 17, the real IPC child,
+Local validation passes 76 tests, including real PostgreSQL 17, the real IPC child,
 parent-authorized SIGKILL and recovery through the ordinary recovery function.
 The integration test advances its local clock beyond the stale threshold; hosted
 execution must wait the unchanged real threshold. Wrong ownership, generation
 mismatch and duplicate-marker attempts roll back session deletion and marker
-allocation together. This is local database/filesystem-journal acceptance. The
-hosted parent runner, normal hosted-reader observations and exact hosted cleanup
-remain to be implemented and executed.
+allocation together. This is local database/filesystem-journal acceptance.
+
+The parent runner now serializes and validates registered/scoped/committed phases,
+binds their operation identity to the gated store, and binds the scope digest to
+the parent's retained publication record. Its independent observer reads the
+original intent/scope, SQL marker/fence, exact synthetic ownership/session state,
+generation/cursor and pending/receipt state. Altered digests, malformed phases,
+reordering and mismatched sequence reports cannot authorize a kill. Evidence
+retention is deadline-bound, including a bounded reconciliation attempt after
+failure. On uncertain outcomes, it seals journal access and disconnects rather
+than killing a potentially uncommitted transaction or replaying it. A child that
+never received initialization may be terminated safely.
+
+The full parent runner passes the local integration test with the actual IPC
+child and ordinary recovery function. Hosted deployment/source admission,
+fixture lifecycle, native bridge setup/teardown, real-time continuity and
+deployed-reader recovery observations still need to be assembled into the
+reviewed one-shot hosted invocation. Passing the parent test does not establish
+hosted recovery, successful hosted cleanup or production acceptance.
 
 ## What this can establish
 
