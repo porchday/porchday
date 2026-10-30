@@ -1,10 +1,13 @@
 # Requests spanning a staging rollback
 
 `scripts/release-inflight-probe.ts` supplies a staging-only decorator for the
-reviewed deployment controller's ports. It is locally tested, but is not yet
-connected to the maintained activation entry point or verified against hosted
-requests. The existing candidate-action hook waits for completion before
-rollback and cannot establish this stronger overlap requirement.
+reviewed deployment controller's ports. The maintained
+`executeStagingApiRecoveryDrill` accepts it as the optional sixth argument
+(after an omitted candidate action). The activation entry point applies it
+inside the existing lease and reviewed provider ports, then requires its durable
+proof before finalization. It remains unverified against hosted requests. The
+existing candidate-action hook waits for completion before rollback and cannot
+establish this stronger overlap requirement.
 
 After the controller authorizes rollback and writes its durable rollback intent,
 the decorator exclusively persists a probe intent, then invokes `start` before
@@ -34,7 +37,11 @@ or another member's lock. Capture all outcomes without retrying a mutation.
 
 Lost deployment replies remain subject to the controller's read-only
 reconciliation. Existing probe intents prevent constructing another probe for
-that operation; unknown callback results cannot finalize rollback. Preserve
+that operation; unknown callback results cannot finalize rollback. Generic
+activation resumption also refuses incomplete probe evidence. Finalization
+requires the proof's restored deployment ID to match the terminal journal.
+Production, frontend/monitor targets, changed public assets and combining the
+candidate-action and in-flight hooks are rejected. Preserve
 the original evidence and reconcile separately rather than rerunning callbacks
 or changing operation IDs. The helper never authorizes versions, clears journal
 state, manufactures mutation proof, or dispatches outside the controller.

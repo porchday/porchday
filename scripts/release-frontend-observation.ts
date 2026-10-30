@@ -1,3 +1,4 @@
+import {assertStagingInflightProbeComplete,type StagingInflightProbe} from './release-inflight-probe.ts';
 import {publicAssetManifestHash} from './release-assets-verify.ts';
 import {createBrowserGate} from './release-browser-gate.ts';
 import {constants,openSync,closeSync,fsyncSync,writeFileSync,lstatSync,realpathSync} from 'node:fs';
@@ -39,12 +40,13 @@ export type StagingCandidateAction=(signal:AbortSignal)=>Promise<'verified'>;
  * Real candidate and rollback journeys still run through the normal controller.
  */
 export async function executeStagingApiRecoveryDrill(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,candidateAction?:StagingCandidateAction){
- return executeObservedActivation(path,env,observation,signal,false,true,true,candidateAction);
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,candidateAction?:StagingCandidateAction,inflightProbe?:StagingInflightProbe){
+ return executeObservedActivation(path,env,observation,signal,false,true,true,candidateAction,inflightProbe);
 }
 async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false,apiOnly=false,candidateAction?:StagingCandidateAction){
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false,apiOnly=false,candidateAction?:StagingCandidateAction,inflightProbe?:StagingInflightProbe){
  signal.throwIfAborted();const manifest=readActivationManifest(path),target=deploymentTarget(manifest.plan.worker),{plan,review}=manifest,e=review.execution;
+ if(inflightProbe!==undefined&&(!drill||!apiOnly||target.environment!=='staging'||candidateAction!==undefined||typeof inflightProbe.start!=='function'||typeof inflightProbe.finish!=='function'))throw Error('STAGING_INFLIGHT_SCOPE_INVALID');
  if(candidateAction!==undefined&&(!drill||!apiOnly||target.environment!=='staging'||typeof candidateAction!=='function'))throw Error('CANDIDATE_ACTION_SCOPE_INVALID');
  if(drill&&target.environment!=='staging')throw Error('BROWSER_RECOVERY_DRILL_STAGING_REQUIRED');
  if(apiOnly&&(target.frontend||plan.assetManifests!==undefined||publicAssetManifestHash(review.assets.baseline)!==publicAssetManifestHash(review.assets.candidate)))throw Error('API_RECOVERY_DRILL_SCOPE_INVALID');
@@ -63,7 +65,7 @@ async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
   const parent=openSync(e.proofDirectory,constants.O_RDONLY);try{fsyncSync(parent);}finally{closeSync(parent);}
  };
  // Existing intent is never overwritten, including after a pre-dispatch failure.
- retain('intent',{candidateVersion:plan.candidateVersion,baselineVersion:plan.baselineVersion,...(drill?{drill:'staging-fresh-client-exception'}:{}),...(candidateAction?{candidateAction:true}:{})});
+ retain('intent',{candidateVersion:plan.candidateVersion,baselineVersion:plan.baselineVersion,...(drill?{drill:'staging-fresh-client-exception'}:{}),...(candidateAction?{candidateAction:true}:{}),...(inflightProbe?{inflightProbe:true}:{})});
  createBrowserGate(e.proofDirectory,plan).require();
  let browser:Awaited<ReturnType<typeof beginHostedAssetTransition>>|undefined;
  let browserStarted=false,report:Awaited<ReturnType<Awaited<ReturnType<typeof beginHostedAssetTransition>>['finish']>>|undefined;
@@ -89,8 +91,9 @@ async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
     if(drill&&(report.drill!=='staging-fresh-client-exception'||report.drillExceptionObserved!==true||report.newErrors.pageErrors<1||report.passed!==false))return 'unknown';
     return report.passed?'healthy':'unhealthy';}
    finally{candidateSignal.removeEventListener('abort',cancel);}
-  });phase='command-returned';retain('command-result',command);
+  },inflightProbe);phase='command-returned';retain('command-result',command);
   if(drill){
+   if(inflightProbe)assertStagingInflightProbeComplete(plan,e.proofDirectory,true);
    if(command.status!=='rolled-back'||report?.passed!==false||report.drill!=='staging-fresh-client-exception'||report.drillExceptionObserved!==true||report.newErrors.pageErrors<1)throw Error('BROWSER_RECOVERY_DRILL_UNVERIFIED');
    retain('drill-result',{passed:true,outcome:'rolled-back',fault:'staging-fresh-client-exception'});queueReleaseAlert(e.proofDirectory,plan,'notification-drill');
    return{command,browser:report};

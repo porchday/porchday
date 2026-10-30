@@ -1,7 +1,7 @@
 import {it,expect,vi,afterEach} from 'vitest';
 import {mkdtempSync,rmSync,readFileSync,readdirSync,writeFileSync,realpathSync} from 'node:fs';
 import {tmpdir} from 'node:os';import {join} from 'node:path';
-import {withStagingInflightProbe} from './release-inflight-probe.ts';
+import {withStagingInflightProbe,assertStagingInflightProbeComplete} from './release-inflight-probe.ts';
 import {recoverDeployment,rollbackOperationId,validateRecoveryTransition,type DeploymentPlan,type DeploymentPorts,type DeploymentObservation,type RecoveryState} from './deployment-recovery.ts';
 const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000000';
 const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
@@ -70,4 +70,15 @@ it('does not arm when exclusive intent persistence fails',async()=>{
 it('does not retain callback errors or payloads',async()=>{
  const f=fixture();f.options.finish.mockRejectedValue(Error('private cookie and provider details'));
  expect(await f.run()).toBe('observation-unavailable');for(const name of readdirSync(f.proofDirectory))expect(readFileSync(join(f.proofDirectory,name),'utf8')).not.toContain('private cookie');
+});
+it('requires a complete operation-bound proof when requested',async()=>{
+ const f=fixture();expect(()=>assertStagingInflightProbeComplete(plan,f.proofDirectory)).not.toThrow();expect(()=>assertStagingInflightProbeComplete(plan,f.proofDirectory,true)).toThrow();
+ expect(await f.run()).toBe('rolled-back');expect(assertStagingInflightProbeComplete(plan,f.proofDirectory,true)).toBe(uuid(6));
+});
+it.each(['intent','armed','restored','result'])('rejects damaged %s evidence on generic resume',async kind=>{
+ const f=fixture();expect(await f.run()).toBe('rolled-back');const path=join(f.proofDirectory,`inflight-${plan.operationId}-${kind}.json`);const row=JSON.parse(readFileSync(path,'utf8'));row.planHash='f'.repeat(64);writeFileSync(path,JSON.stringify(row));
+ expect(()=>assertStagingInflightProbeComplete(plan,f.proofDirectory)).toThrow('STAGING_INFLIGHT_PROBE_UNVERIFIED');
+});
+it('rejects a partial probe instead of silently allowing generic finalization',async()=>{
+ const f=fixture();f.options.finish.mockRejectedValue(Error('unknown'));expect(await f.run()).toBe('observation-unavailable');expect(()=>assertStagingInflightProbeComplete(plan,f.proofDirectory)).toThrow('STAGING_INFLIGHT_PROBE_UNVERIFIED');
 });

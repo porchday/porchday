@@ -1,13 +1,14 @@
-import {constants,openSync,closeSync,writeFileSync,fsyncSync,lstatSync,realpathSync,existsSync} from 'node:fs';
+import {constants,openSync,closeSync,writeFileSync,fsyncSync,lstatSync,realpathSync,existsSync,readFileSync,fstatSync} from 'node:fs';
 import {isAbsolute,join} from 'node:path';
 import {deploymentPlanHash,rollbackOperationId,type DeploymentPlan,type DeploymentPorts,type DeploymentObservation} from './deployment-recovery.ts';
 
-type Options={plan:DeploymentPlan;ports:DeploymentPorts;proofDirectory:string;assertScope:()=>void;
+export type StagingInflightProbe={
  /** Start one owned request and independently confirm it is still executing.
   * Do not wait for its completion or return success for a dispatched request. */
  start:(signal:AbortSignal)=>Promise<'in-flight'>;
  /** Release any owned barrier and verify the original request, without replay. */
  finish:(signal:AbortSignal)=>Promise<'verified'>};
+type Options=StagingInflightProbe&{plan:DeploymentPlan;ports:DeploymentPorts;proofDirectory:string;assertScope:()=>void};
 const failure=()=>new Error('STAGING_INFLIGHT_PROBE_UNVERIFIED');
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 
@@ -68,4 +69,20 @@ export function withStagingInflightProbe(input:Options,caller:AbortSignal):Deplo
    return input.ports.verify(version,AbortSignal.any([signal,caller]));
   },
  };
+}
+
+/** Refuse generic resume/finalization of a started but unverified probe. */
+export function assertStagingInflightProbeComplete(plan:DeploymentPlan,directory:string,required=false){
+ const intent=join(directory,`inflight-${plan.operationId}-intent.json`);
+ if(!existsSync(intent)){if(required)throw failure();return;}
+ const planHash=deploymentPlanHash(plan);
+ if(plan.worker!=='porchday-staging'||plan.assetManifests)throw failure();
+ const read=(kind:string)=>{
+  const fd=openSync(join(directory,`inflight-${plan.operationId}-${kind}.json`),constants.O_RDONLY|constants.O_NOFOLLOW);
+  try{const stat=fstatSync(fd);if(!stat.isFile()||stat.uid!==process.getuid?.()||(stat.mode&0o077)!==0||stat.size>8192)throw failure();const row=JSON.parse(readFileSync(fd,'utf8'));if(row.v!==1||row.operationId!==plan.operationId||row.planHash!==planHash)throw failure();return row.value;}finally{closeSync(fd);}
+ };
+ try{const started=read('intent'),armed=read('armed'),restored=read('restored'),result=read('result');
+  if(!uuid.test(started.candidateDeploymentId)||started.automaticRetry!==false||armed.status!=='in-flight'||!uuid.test(restored.deploymentId)||result.status!=='verified'||result.deploymentId!==restored.deploymentId)throw failure();
+  return result.deploymentId as string;
+ }catch{throw failure();}
 }

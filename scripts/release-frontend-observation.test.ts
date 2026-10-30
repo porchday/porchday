@@ -10,6 +10,8 @@ vi.mock('./deployment-recovery-lease.ts',()=>({FileDeploymentLease:{completed:po
 vi.mock('./release-continuity-gate.ts',()=>({createContinuityGate:()=>({assertPromotion:ports.gate})}));
 vi.mock('./release-alerts.ts',()=>({queueReleaseAlert:ports.alert}));
 import {executeFrontendActivationWithClients,executeApplicationActivationWithClients,executeStagingBrowserRecoveryDrill,executeStagingApiRecoveryDrill} from './release-frontend-observation.ts';
+import {withStagingInflightProbe} from './release-inflight-probe.ts';
+import {recoverDeployment,validateRecoveryTransition,type RecoveryState,type DeploymentObservation,type DeploymentPorts} from './deployment-recovery.ts';
 let root:string,manifest:any,browser:any,observation:any;
 const id='11111111-1111-4111-8111-111111111111',baseline='22222222-2222-4222-8222-222222222222',candidate='33333333-3333-4333-8333-333333333333';
 const file=(kind:string)=>join(root,`frontend-${id}-${kind}.json`);
@@ -152,4 +154,38 @@ it.each(['production','frontend','assets','history','aborted','invalid-hook'])('
  if(kind==='aborted')controller.abort();
  await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,controller.signal,kind==='invalid-hook'?'invalid' as any:action)).rejects.toThrow();
  expect(action).not.toHaveBeenCalled();expect(ports.execute).not.toHaveBeenCalled();expect(ports.begin).not.toHaveBeenCalled();expect(readdirSync(root)).toEqual(['journal']);
+});
+
+it.each([true,false])('routes a staging in-flight probe through real controller transitions; finish=%s',async verified=>{
+ manifest.plan.worker='porchday-staging';delete manifest.plan.backendVersion;delete manifest.plan.backendReaderFloor;
+ manifest.review.assets.baseline.files['index.html']='a'.repeat(64);manifest.review.assets.candidate=structuredClone(manifest.review.assets.baseline);
+ browser.finish.mockResolvedValue({passed:false,drill:'staging-fresh-client-exception',drillExceptionObserved:true,newErrors:{pageErrors:1}});
+ let state:RecoveryState|null=null,current:DeploymentObservation={version:baseline,deploymentId:baseline,operationId:null},executing=false;
+ const probe={start:vi.fn(async()=>{expect(state?.phase).toBe('rollback-intent');executing=true;return 'in-flight' as const;}),finish:vi.fn(async()=>{expect(executing).toBe(true);expect(current.version).toBe(baseline);executing=false;if(!verified)throw Error('private probe failure');return 'verified' as const;})};
+ const deploy=vi.fn(async(version:string,operationId:string)=>{if(version===baseline)expect(executing).toBe(true);current={version,operationId,deploymentId:version};});
+ ports.execute.mockImplementation(async(m,_env,o,s,accept,received)=>{
+  expect(received).toBe(probe);
+  const base:DeploymentPorts={authorize:async()=>{},observe:async()=>({...current}),deploy,verify:async version=>version===candidate?await accept(s):'healthy'};
+  const wrapped=withStagingInflightProbe({...received,plan:m.plan,ports:base,proofDirectory:root,assertScope:o.assertScope},s);
+  const outcome=await recoverDeployment(m.plan,{read:async()=>state,write:async(previous,next)=>{validateRecoveryTransition(previous,next);state=next;}},wrapped,{sleep:async()=>{}});
+  return{status:outcome==='rolled-back'?'rolled-back':'attention-required'};
+ });
+ const run=executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal,undefined,probe);
+ if(verified)expect((await run).command.status).toBe('rolled-back');else await expect(run).rejects.toThrow('UNVERIFIED');
+ expect(probe.start).toHaveBeenCalledOnce();expect(probe.finish).toHaveBeenCalledOnce();expect(deploy).toHaveBeenCalledTimes(2);expect(browser.finish).toHaveBeenCalledOnce();
+ expect(readdirSync(root).includes(`frontend-${id}-drill-result.json`)).toBe(verified);
+});
+it('refuses a drill success without the required in-flight evidence',async()=>{
+ manifest.plan.worker='porchday-staging';delete manifest.plan.backendVersion;delete manifest.plan.backendReaderFloor;
+ manifest.review.assets.baseline.files['index.html']='a'.repeat(64);manifest.review.assets.candidate=structuredClone(manifest.review.assets.baseline);
+ browser.finish.mockResolvedValue({passed:false,drill:'staging-fresh-client-exception',drillExceptionObserved:true,newErrors:{pageErrors:1}});
+ const probe={start:vi.fn(),finish:vi.fn()};
+ await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal,undefined,probe)).rejects.toThrow('UNVERIFIED');
+ expect(readdirSync(root)).not.toContain(`frontend-${id}-drill-result.json`);
+});
+it.each(['production','mixed-hooks','invalid-hook'])('rejects unsafe in-flight request %s before browser work',async kind=>{
+ manifest.plan.worker=kind==='production'?'porchday-production':'porchday-staging';delete manifest.plan.backendVersion;delete manifest.plan.backendReaderFloor;
+ const probe={start:kind==='invalid-hook'?null:vi.fn(),finish:vi.fn()} as any;
+ await expect(executeStagingApiRecoveryDrill('/manifest',{},observation,new AbortController().signal,kind==='mixed-hooks'?vi.fn():undefined,probe)).rejects.toThrow('SCOPE_INVALID');
+ expect(ports.begin).not.toHaveBeenCalled();expect(ports.execute).not.toHaveBeenCalled();
 });
