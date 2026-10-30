@@ -119,10 +119,32 @@ An uncertain result seals the capability; the supervisor must reconcile it.
 monotonic request IDs. The parent retains its R2 capability; the child gets only
 journal results. Invalid messages, lost replies and deadlines close the channel
 without retry. Tests exercise real serialized MessagePort transport as well as
-the actual intent/scope functions through the store gate. These components do
-not yet implement the SQL child, process phase supervision, SIGKILL trigger,
-hosted recovery observations or cleanup. They must not be used as evidence that
-the hosted drill has run.
+the actual intent/scope functions through the store gate.
+
+The SQL child now checks a staging database target (or an explicitly disposable
+local test database) and an exact run-tagged synthetic account/session before
+registration. It deletes only that session under the auth role and identity lock,
+then writes the marker as the final SQL action in the same transaction. SQL uses
+five-second statement, one-second lock and fifteen-second transaction limits.
+After acknowledged COMMIT it closes its database connection, reports the phase
+and parks without any receipt/checkpoint call. Credentials arrive through private
+IPC, never command arguments; the R2 capability remains in the parent.
+
+The supervisor seals the child's journal access and requires independent marker,
+fence, generation, ownership, session-absence, exact pending and receipt-absence
+checks before persisting kill intent. It requires an actual SIGKILL exit and never
+labels that exit recovery success. Missing evidence or a failed evidence sink
+prevents signaling. The verifier callback and durable sink must be supplied by
+the reviewed hosted runner; a child report alone is insufficient.
+
+Local validation passes 68 tests, including real PostgreSQL 17, the real IPC child,
+parent-authorized SIGKILL and recovery through the ordinary recovery function.
+The integration test advances its local clock beyond the stale threshold; hosted
+execution must wait the unchanged real threshold. Wrong ownership, generation
+mismatch and duplicate-marker attempts roll back session deletion and marker
+allocation together. This is local database/filesystem-journal acceptance. The
+hosted parent runner, normal hosted-reader observations and exact hosted cleanup
+remain to be implemented and executed.
 
 ## What this can establish
 

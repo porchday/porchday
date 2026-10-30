@@ -2,5 +2,5 @@
   "extends": "../apps/api/tsconfig.json",
   "compilerOptions": {"target": "ES2023", "lib": ["ES2023"]},
   "include": [],
-  "files": ["commit-drill-store.ts", "commit-drill-ipc.ts"]
+  "files": ["commit-drill-store.ts", "commit-drill-ipc.ts", "commit-drill-transaction.ts", "commit-drill-supervisor.ts", "commit-drill-child.ts"]
 }

@@ -9,6 +9,10 @@ import {join} from 'node:path';
 import {ProcessJournalStore} from './fixtures/commit-process-store';
 import {initializePrivacyJournal,readJournalControl,checkpointJournal,assertJournalReadable,type JournalDatabase} from '../src/privacy-journal';
 import {provePrivacyCommits} from '../src/privacy-commit-proof';
+import {commitDrillIdentity,commitDrillSession} from '../../../scripts/commit-drill-transaction';
+import {createCommitDrillStore} from '../../../scripts/commit-drill-store';
+import {serveCommitDrillJournal} from '../../../scripts/commit-drill-ipc';
+import {killCommittedDrillChild} from '../../../scripts/commit-drill-supervisor';
 
 const url=process.env.PRIVACY_COMMIT_TEST_DATABASE_URL;
 const suite=url?describe:describe.skip;
@@ -112,6 +116,55 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
   const event={sequence:String(BigInt(await cursor())+1n),id:randomUUID(),occurred_at:new Date().toISOString(),decision:{action:'deadline',kind:'posts',id:randomUUID(),expires_at:new Date().toISOString()}};
   await expect(owner`select app.replay_safety_batch(${owner.json([event])})`).rejects.toThrow('RESTORE_QUARANTINE_REQUIRED');
   await owner.begin(async tx=>{await tx`update app.safety_journal_state set restore_quarantined=true where id`;expect((await tx`select app.replay_safety_batch(${tx.json([event])}) as count`)[0].count).toBe(1);await tx`delete from app.safety_journal where sequence=${event.sequence}`;await tx`update app.safety_journal_state set restore_quarantined=false where id`;});
+ });
+ it.each(['commit','wrong-owner','wrong-generation','duplicate-marker'])('scoped hosted-drill transaction handles %s atomically under auth role',async mode=>{
+  const fixture={runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()},identity=commitDrillIdentity(fixture),operationId=randomUUID();
+  await owner`insert into public.auth_user(id,name,email) values(${fixture.memberId},${identity.name},${identity.email})`;
+  await owner`insert into public.auth_session(id,"userId",token,"expiresAt") values(${fixture.sessionId},${fixture.memberId},${randomUUID()},now()+interval '1 hour')`;
+  const scope={operationId,scopeSha256:digest,generation};
+  if(mode==='duplicate-marker')await auth`select app.complete_privacy_transaction(${operationId}::uuid,${digest},${generation}::uuid)`;
+  const before=await cursor();
+  if(mode==='commit'){
+   const result=await commitDrillSession(auth,fixture,scope);
+   expect(await owner`select 1 from public.auth_session where id=${fixture.sessionId}`).toHaveLength(0);
+   const rows=await owner`select sequence::text,scope_sha256 from app.privacy_operation_commits where operation_id=${operationId}`;
+   expect(rows).toHaveLength(1);expect(rows[0]).toEqual({sequence:result.sequence,scope_sha256:digest});
+  }else{
+   await expect(commitDrillSession(auth,mode==='wrong-owner'?{...fixture,runId:randomUUID()}:fixture,mode==='wrong-generation'?{...scope,generation:randomUUID()}:scope)).rejects.toThrow();
+   expect(await owner`select 1 from public.auth_session where id=${fixture.sessionId}`).toHaveLength(1);expect(await cursor()).toBe(before);
+  }
+  await owner`delete from public.auth_user where id=${fixture.memberId}`;
+ });
+ it('runs the real IPC child, independently confirms its SQL commit, and recovers after SIGKILL',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'porchday-drill-child-')),store=new ProcessJournalStore(directory);
+  const fixture={runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()},identity=commitDrillIdentity(fixture);
+  await owner`insert into public.auth_user(id,name,email) values(${fixture.memberId},${identity.name},${identity.email})`;
+  await owner`insert into public.auth_session(id,"userId",token,"expiresAt") values(${fixture.sessionId},${fixture.memberId},${randomUUID()},now()+interval '1 hour')`;
+  const db:JournalDatabase={async status(){return(await owner`select app.safety_status() as value`)[0].value;},async page(after){return(await owner`select app.safety_page(${after}::bigint,200) as value`)[0].value;}};
+  await initializePrivacyJournal(store,db);const initial=await readJournalControl(store);await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
+  const gate=createCommitDrillStore({store,assertScope:()=>{},retain:async event=>{await store.put(`evidence/${event.request}-${event.phase}.json`,JSON.stringify(event),{onlyIf:{etagDoesNotMatch:'*'}});}});
+  const child=fork(new URL('../../../scripts/commit-drill-child.ts',import.meta.url),[],{execArgv:['--import','tsx'],env:{PATH:process.env.PATH},stdio:['ignore','ignore','ignore','ipc']});
+  let exited=false;const exit=new Promise<void>(resolve=>child.once('exit',()=>{exited=true;resolve();}));
+  const server=serveCommitDrillJournal({send:message=>{child.send(message as never);},subscribe:receive=>{const listener=(message:any)=>{if(message?.type==='journal')receive(message);};child.on('message',listener);return()=>{child.off('message',listener);};}},gate.store,()=>gate.close());
+  const phases:any[]=[];
+  try{
+   await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('DRILL_CHILD_TIMEOUT')),10000);const listener=(message:any)=>{if(message?.type!=='phase')return;phases.push(message);if(message.phase==='failed'||message.phase==='committed'){clearTimeout(timer);child.off('message',listener);message.phase==='committed'?resolve():reject(Error('DRILL_CHILD_FAILED'));}};child.on('message',listener);child.send({type:'init',target:'local-test',connection:url,fixture});});
+   expect(phases.map(p=>p.phase)).toEqual(['registered','scoped','committed']);const scope=phases[1],operationId=scope.operationId;
+   expect(operationId).toBe(gate.operationId());const records:any[]=[];
+   const expected={operationId,scopeSha256:scope.scopeSha256,generation:scope.generation,memberId:fixture.memberId,sessionId:fixture.sessionId};
+   await killCommittedDrillChild({child,expected,sealJournal:()=>gate.close(),retain:async e=>{records.push(e);},observe:async()=>{
+    const [fence]=await owner`select scope_sha256,generation,sequence::text from app.privacy_operation_commits where operation_id=${operationId}`;
+    const [event]=await owner`select sequence::text,decision from app.safety_journal where sequence=${fence.sequence}`;
+    const control=await readJournalControl(store),status=await db.status(),users=await owner`select id from public.auth_user where id=${fixture.memberId} and email=${identity.email} and name=${identity.name}`;
+    expect(event.decision).toEqual({kind:'privacy_operation_committed',operation_id:operationId,scope_sha256:scope.scopeSha256});
+    return{...expected,scopeSha256:fence.scope_sha256,generation:fence.generation,sequence:event.sequence,fenceSequence:fence.sequence,sessionAbsent:(await owner`select id from public.auth_session where id=${fixture.sessionId}`).length===0,ownedAccountVerified:users.length===1,pendingExact:control.value.pending.length===1&&control.value.pending[0].id===operationId,receiptAbsent:await store.get(`receipts/${operationId}.json`)===null,generationUnchanged:control.value.generation===status.generation,quarantined:status.quarantined||control.value.mode!=='active',childReportedCommit:phases[2].sequence===fence.sequence};
+   }},AbortSignal.timeout(10000));await exit;expect(records.map(r=>r.phase)).toEqual(['commit-verified','kill-intent','killed']);
+   expect(await store.get(`receipts/${operationId}.json`)).toBeNull();const pending=(await readJournalControl(store)).value.pending;
+   const clock=vi.spyOn(Date,'now').mockReturnValue(Date.parse(pending[0].started_at)+120001);
+   try{await assertJournalReadable(store,db,undefined,true);}finally{clock.mockRestore();}
+   expect((await readJournalControl(store)).value.pending).toEqual([]);expect(await store.get(`receipts/${operationId}.json`)).not.toBeNull();
+   expect(await owner`select 1 from app.privacy_operation_commits where operation_id=${operationId}`).toHaveLength(1);
+  }finally{server.close();if(!exited){child.kill('SIGKILL');await exit;}await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
  });
  it.each(['registered','before-commit','after-commit','after-checkpoint','after-receipt','after-retirement'])('retains authoritative evidence after SIGKILL at %s',async phase=>{
   const directory=await mkdtemp(join(tmpdir(),'porchday-commit-process-')),store=new ProcessJournalStore(directory),id=await fixture();
