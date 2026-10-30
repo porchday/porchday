@@ -6,13 +6,20 @@ then a provider GET returned HTTP 500 / code 10500. Repeating the activation was
 unnecessary. Read-only reconciliation confirmed the intended version and the
 user journeys passed.
 
-This controller is **not yet the live deployment entry point**. The Cloudflare
-transport, private filesystem journal and deployment lease are implemented and
-tested. A hosted staging drill verified automatic rollback with real artifact,
-schema and journey checks; finalization required an operator-assisted correction
-of inactive-version settings. Move those adapters into the reviewed normal release
-entry point and verify unattended finalization before unattended use. The drill
-does not establish automatic production recovery for every failure mode.
+The controller is integrated with the maintained [upload and activation
+procedure](release-upload.md). Hosted staging rehearsals have verified automatic
+rollback, canonical finalization, fixture cleanup and independent GitHub alert
+publication. The October 30 [overlapping revocation rehearsal](evidence/privacy-commit-cohort-rollback-staging-2026-10-30.md)
+verified two completed candidate writes through rollback using a pinned tooling
+checkout. These scoped passes do not establish unattended daily feature delivery,
+production writer admission or recovery from every failure mode.
+
+Use the reviewed operation's exact tooling and continuity harness. The earlier
+October 28 drill below required an operator-assisted inactive upload; that
+historical limitation remains part of its evidence and is not the outcome of
+the later maintained rehearsals. See [incident response](incident-response.md)
+for triage, same-operation reconciliation and a new reviewed return to an older
+compatible build after a terminal release.
 
 ## Inputs and safety boundaries
 
@@ -131,10 +138,11 @@ asset report can return `healthy`. The controller's overall deadline still appli
 Integration tests use the actual controller and durable journal to demonstrate
 that persistent HTTP-200 HTML for an expected module triggers one rollback and
 that the restored version is verified against its own manifest. These are local
-fixtures, not a hosted release of this new adapter. Provider/source/schema
-authorization, inactive uploads and a complete normal release command remain
-required. Asset finalization is implemented below, but its hosted integration
-has not yet been verified.
+fixtures; their results alone do not establish hosted behavior. The maintained
+command composes provider/source/schema authorization, inactive-upload evidence
+and canonical finalization. Its [hosted rollback evidence](release-upload.md#october-29-hosted-automatic-rollback-rehearsal)
+and subsequent rehearsals record the actual scope exercised. Required client
+coverage and scheduled release adoption remain separate acceptance gates.
 
 ## Durable operation and resumption
 
@@ -286,11 +294,13 @@ The existing GitHub bot relay delivered explicitly marked outage and recovery dr
 comments; both exact comments were read back. Human/device receipt remains a separate
 check. See [sanitized drill evidence](evidence/deployment-recovery-2026-10-28.json).
 
-Before enabling the normal deployment entry point:
+Remaining normal and scheduled deployment acceptance:
 
-- Move the actual artifact/schema/resource and journey adapters into reviewed
-  repository tooling, including safe handling of active versus latest-uploaded
-  configuration. Never let a later release inherit an inactive failed candidate.
+- Use the maintained artifact/schema/resource and journey adapters, including
+  their active-versus-latest-uploaded inventory checks. Never let a later release
+  inherit an inactive failed candidate. Their hosted integration is recorded in
+  the upload/activation evidence; adoption by every scheduled deployment writer
+  still needs verification.
 - Verify normal daily feature deployment continuity with authenticated traffic
   running before, during and after activation. A successful rollback drill does
   not prove that an ordinary feature rollout has no downtime.

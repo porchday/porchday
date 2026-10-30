@@ -2,6 +2,49 @@
 
 This runbook implements the selective service controls required by the design. It is an operator procedure, not proof of staffed incident response. Assign a primary operator, a backup with separately recoverable provider access, and a verified member communication channel before admitting real members. Record decisions and timestamps privately; never copy tokens, private keys, member content or recovery evidence into public issues or status updates.
 
+## First response and deployment recovery
+
+Check the external monitor's latest complete authenticated journey and its age,
+then protected readiness for every serving domain. A shallow `/health` 200 is
+insufficient: it stayed healthy during the October 29 privacy quarantine. Missing
+observations remain unknown. Preserve failed samples and timestamps; restoration
+does not reset the error budget. Use the independent GitHub owner alerts and
+[reliability response targets](reliability.md) to escalate unresolved impact.
+
+Before changing a deployment, identify the actual serving API/frontend, active
+version, latest uploaded version, canonical record and deployment lease. Active
+resources and latest-upload settings can legitimately differ. Capture fresh
+[read-only provider inventory](deployment-recovery.md#read-only-provider-inventory)
+and compare it with the canonical evidence. Do not copy secret values into an
+incident issue.
+
+For an unfinished controller operation, retain its original immutable manifest,
+journal, fixture evidence and lease. Reconcile and resume that same operation
+through its reviewed entry point. An uncertain activation, rollback or auth write
+may already have committed; never repeat it with a new operation ID or remove a
+lock because it looks old. A terminal operation cannot be reopened to roll back
+another release. To restore an earlier build after completion, prepare a new
+reviewed release against current state, using that build only if its schema,
+privacy/denial readers and retained client assets are still compatible.
+
+Use the [maintained upload and activation procedure](release-upload.md), the
+[recovery outcome rules](deployment-recovery.md#outcomes-and-operator-action),
+and the tested tooling commit named in the release evidence. Preparation must
+include exact-source CI, the shared lease, both versions' compatibility evidence,
+old/new-client checks and continuous authenticated observations. Run application
+activation through the reviewed continuity harness; a bare activation command
+or a direct `wrangler deploy`/`wrangler rollback` is not a substitute for that
+acceptance. The hosted harness may be in a separately pinned tooling checkout;
+verify its source rather than assuming the application checkout contains it.
+
+A deployment rollback does not repair a database, undo a migration or release
+privacy quarantine. For journal divergence or unresolved intents, follow
+[restore safety](restore-safety.md) and preserve the original evidence. Do not
+clear intents or synthesize receipts to make health checks pass. Recovery is
+verified only after the appropriate integrity checks, complete user journeys,
+provider reconciliation, canonical finalization and owned fixture cleanup pass.
+Keep the independent monitor and alert delivery running throughout.
+
 ## Pause only the affected operations
 
 Each environment has three independent controls. Set the corresponding **JSON boolean** in its object in `infra/resources.json`; the deployment renderer preserves it on subsequent deployments. Absent flags default to false. Strings such as `"false"` are rejected by the renderer.
@@ -22,17 +65,12 @@ Deployment procedure:
 
 1. Identify the incident, affected environment and exact currently deployed release. Work from that reviewed release; do not deploy unrelated unverified changes as an emergency control update.
 2. Set the needed booleans under `environments.production` (or `staging`) in `infra/resources.json`. Keep a restricted incident record of the previous values. If admission should be closed, ensure the generated configuration also has `SIGNUP_ENABLED=false`.
-3. Render and deploy the same source with the changed variables:
-
-   ```sh
-   python3 scripts/configure-worker.py production
-   python3 scripts/with-secrets.py npx wrangler deploy --config apps/api/wrangler.production.jsonc
-   ```
+3. Prepare a configuration-only release of the same verified source through the maintained upload/activation procedure above. Review the exact variable diff, preserve current bindings and topology, and pin the compatible rollback resources. Rendering configuration is preparation only; it does not authorize deployment. Verify the selective pause in staging, then activate through the reviewed continuity harness. Do not deploy unrelated changes or bypass the lease during an incident.
 
 4. Confirm the provider's active deployment/version and variables, then use a synthetic account to verify the intended503 responses and ordinary authorized reads. Verify anonymous access is still denied and deletion/report/recovery actions still work. Check both the primary origin and any other configured entry points.
 5. Requests already in flight or served by an old deployment can finish. Wait at least the two-minute application upload deadline after rollout, then recheck active versions, pending uploads, deletion backlog and cleanup heartbeat. A pause is not a transaction barrier or proof that a compromised writer has stopped.
 6. Keep cleanup, email retries and backups running when safe. Verify expiry reads still deny immediately. Use the separate status service and a previously verified alternate communication channel if the provider itself is unavailable.
-7. After the cause is corrected, verify staging and restore/integrity checks as relevant. Explicitly set the chosen booleans back to false, redeploy and verify a synthetic successful write. Record the end time, remaining impact and follow-up. Do not accidentally lift a pause through a rollback or a stale `infra/resources.json`.
+7. After the cause is corrected, verify staging and restore/integrity checks as relevant. Explicitly set the chosen booleans back to false through a new reviewed configuration release and verify a synthetic successful write. Record the end time, remaining impact and follow-up. Do not accidentally lift a pause through a rollback or a stale `infra/resources.json`.
 
 The API regression suite exercises every affected route through the actual application middleware and verifies that the mutation journal is not reached. Separate tests preserve safe action handlers and test renderer persistence. A live deployment/rollout exercise remains required before pilot admission. The generic health endpoint alone does not verify these controls; deliberately paused writes will also appear as503 outcomes in aggregate monitoring.
 
@@ -42,18 +80,18 @@ Builder chat lets allowlisted members message the Codex session that builds Porc
 
 | Control | How | Effect |
 | --- | --- | --- |
-| Pause | Set `builder_chat_paused` to `true` under the environment in `infra/resources.json`, then render and deploy as above. The setting defaults to `true`; only an explicit `false` opens builder chat. | Members see "Builder chat is paused" and cannot send. The bridge starts no new turn. A turn already running finishes, so the builder checkout is never left half edited. |
+| Pause | Set `builder_chat_paused` to `true` under the environment in `infra/resources.json`, then use the reviewed configuration release above. The setting defaults to `true`; only an explicit `false` opens builder chat. | Members see "Builder chat is paused" and cannot send. The bridge starts no new turn. A turn already running finishes, so the builder checkout is never left half edited. |
 | Stop the bridge now | On the Mac mini: `launchctl bootout gui/$(id -u)/com.porchday.builder-bridge` | No turn runs until the bridge is started again. Members see "Codex is offline". |
 | Remove a member | `node scripts/builder-chat-access.ts remove <handle>` with the environment's `DATABASE_MIGRATION_URL` | Access ends on the member's next request, and their queued message is cancelled. |
 | Revoke the bridge | `npx wrangler secret delete BUILDER_BRIDGE_TOKEN --config apps/api/wrangler.production.jsonc` through `with-secrets.py` | The bridge endpoints return 404 and the bridge cannot claim messages. |
 
 ### Rolling back a builder chat change
 
-Codex deploys every hour, so a bad change from builder chat is undone rather than reviewed in advance. Each builder chat commit ends with `Builder-Chat-Message: <message ID>`, and the staff view and bridge log list each message's commits.
+Each builder chat commit ends with `Builder-Chat-Message: <message ID>`, and the staff view and bridge log list each message's commits. Revert the source as well as recovering the serving version, so a later scheduled release cannot reintroduce the change. A schedule does not authorize bypassing release gates or the error-budget hold; unattended daily feature delivery remains a separate acceptance requirement.
 
-1. If the live site is broken, return the Worker to the previous version first. `npx wrangler deployments list --config apps/api/wrangler.production.jsonc` (through `with-secrets.py`) shows recent versions. Run `npx wrangler rollback <version ID> --config apps/api/wrangler.production.jsonc` to return to the last good one within seconds.
+1. If the live site is broken, use the deployment recovery procedure above. Resume an unfinished reviewed controller operation after reconciliation; for a completed release, prepare a new reviewed return to a compatible build. The immediately preceding version is not automatically safe: preserve current migrations, privacy/denial reader floors and assets used by open clients. Verify recovery with authenticated journeys and current provider state.
 2. Pause builder chat if the same request could be repeated.
-3. In a clean, up-to-date checkout, run `node scripts/builder-chat-rollback.ts <message ID> --dry-run` to list the commits, then run it without `--dry-run` to revert them newest first. Add `--commit <hash>` for a commit that lacks the trailer. Run the tests, then push, or pass `--push`. The next hourly deploy ships the revert, so the broken change doesn't come back after the Worker rollback.
+3. In a clean, up-to-date checkout, run `node scripts/builder-chat-rollback.ts <message ID> --dry-run` to list the commits, then run it without `--dry-run` to revert them newest first. Add `--commit <hash>` for a commit that lacks the trailer. Run the tests, then push, or pass `--push`. Ship the revert through the reviewed release procedure; verify its deployed source before considering the incident resolved.
 4. Or ask Codex in builder chat, or through the request file, to undo the change for that message ID. `AGENTS.md` tells Codex to use the same command.
 
 A Worker rollback doesn't undo a database migration. `AGENTS.md` therefore forbids dropping or renaming columns or tables in a builder chat turn, so the previous Worker version keeps working with the current schema.
