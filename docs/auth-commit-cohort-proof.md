@@ -48,6 +48,10 @@ exercise the same auditor against PostgreSQL with two and four overlapping
 requests and an unaffected account. Their R2 store is simulated. Hosted
 concurrency and native-provider behavior remain separate acceptance requirements.
 
+The subsequent [hosted two-request rollback rehearsal](evidence/privacy-commit-cohort-rollback-staging-2026-10-30.md)
+passed with native journal proof. It covers that controlled cohort and preserves
+the identity and SQL-simultaneity limitations above.
+
 ## One-shot staging request collection
 
 `dispatchAuthCommitCohort` in `scripts/auth-commit-cohort-dispatch.ts` collects
