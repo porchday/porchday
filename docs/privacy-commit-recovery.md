@@ -1,10 +1,12 @@
 # Independent proof of committed privacy transactions
 
 Work in progress for #1 and #42. The atomic SQL writer, independent verifier
-and guarded active reconciliation are implemented and tested locally. Neither
-migration 057 nor the runtime flags have been deployed. Existing quarantine
-and receipt rules remain authoritative; this is not an operator command to
-clear a pending operation.
+and guarded active reconciliation are implemented and tested locally. Migration
+057 and the recovery reader are now deployed in staging; marker writing remains
+disabled. Production is unchanged. See the
+[staging rollout evidence](evidence/auth-commit-reader-staging-2026-10-30.md).
+Existing quarantine and receipt rules remain authoritative; this is not an
+operator command to clear a pending operation.
 
 ## Failure being addressed
 
@@ -93,8 +95,8 @@ I/O bounds still apply. This is not a new guarantee of a total request deadline.
 
 `PRIVACY_COMMIT_WRITER_V1=true` opts eligible auth requests into scope and marker
 creation. Writer startup refuses before registering an intent or starting work
-unless recovery is also enabled. Both flags default off and neither is in a
-provider configuration. Rollback-only failures retain existing receipt handling;
+unless recovery is also enabled. Both flags default off. Staging explicitly enables the recovery reader;
+its writer flag and both production flags remain absent. Rollback-only failures retain existing receipt handling;
 missing scope or missing marker does not become evidence of rollback.
 
 ## Local verification
