@@ -91,3 +91,11 @@ Cloudflare isolate-loss recovery or resolve generic pre-SQL intent-publication
 failures. Scheduled feature releases, owner inbox/device checks, Mac power and
 network redundancy, and measured monthly availability remain outstanding.
 Keep #1 and #42 open with verification pending; 99.99% is not established.
+
+The follow-up `scripts/r2-journal-audit-store.ts` makes the content-only reader
+reusable for operator evidence. It rejects every write, never treats its local
+content hash as a provider ETag, and bounds GET duration and streamed body size.
+Tests exercise canonical marker/receipt proofs through responses without ETags,
+altered batch rejection, cancellation and invalid responses. This reader is
+operator tooling, not a change to deployed runtime or journal recovery policy.
+Its clean hosted acceptance remains a separate gate.

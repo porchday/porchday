@@ -16,6 +16,7 @@
     "commit-drill-observe.ts",
     "commit-drill-runner.ts",
     "commit-drill-recovered.ts",
-    "r2-operator-bridge.ts"
+    "r2-operator-bridge.ts",
+    "r2-journal-audit-store.ts"
   ]
 }
