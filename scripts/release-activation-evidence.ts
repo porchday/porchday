@@ -56,7 +56,7 @@ export type CompletedUpload=ReturnType<typeof readCompletedUpload>;
  * Latest-version settings remain pinned to the verified upload inventory, including on rollback.
  * This does not claim that an inactive candidate's settings became the restored runtime's settings.
  */
-export function assertActivationInventory(upload:CompletedUpload,plan:DeploymentPlan,version:string,observed:unknown){
+export function assertActivationInventory(upload:CompletedUpload,plan:DeploymentPlan,version:string,observed:unknown,routingCompleted?:number){
  const target=recoveryTarget(plan.worker);
  if(plan.worker!==upload.worker||plan.candidateSource!==upload.source||plan.candidateVersion!==upload.candidateVersion||plan.baselineVersion!==upload.baselineVersion
   ||![upload.candidateVersion,upload.baselineVersion].includes(version))throw Error('ACTIVATION_UPLOAD_PLAN_CHANGED');
@@ -65,5 +65,15 @@ export function assertActivationInventory(upload:CompletedUpload,plan:Deployment
  worker.active=version;worker.resources=structuredClone(version===upload.candidateVersion?upload.candidateResources:upload.baselineResources);
  if(upload.queueProducerRegistration)expected.queues=registeredQueueInventory({before:upload.queueProducerBaseline,observed:(observed as Inventory)?.queues,worker:target.key,beforeBindings:upload.baselineResources.bindings,afterBindings:upload.candidateResources.bindings,registration:upload.queueProducerRegistration,phase:version===upload.candidateVersion?'candidate':'baseline'});
  if(target.frontend&&expected.workers[target.environment]?.active!==plan.backendVersion)throw Error('ACTIVATION_BACKEND_CHANGED');
+ if(plan.routing){
+  if(!target.frontend&&expected.workers[target.environment+'-edge']?.active!==plan.routingFrontendVersion)throw Error('ACTIVATION_ROUTING_FRONTEND_CHANGED');
+  const count=routingCompleted??(version===plan.candidateVersion?plan.routing.moves.length:0);
+  if(!Number.isSafeInteger(count)||count<0||count>plan.routing.moves.length)throw Error('ACTIVATION_ROUTING_PROGRESS_INVALID');
+  for(const [index,move] of plan.routing.moves.entries()){
+   const rows=expected.domains.filter(d=>(d as Record<string,unknown>).hostname===move.before.hostname) as Record<string,unknown>[];
+   if(rows.length!==1||rows[0].service!==move.before.service||rows[0].environment!==move.before.environment||rows[0].zone_id!==move.before.zoneId||rows[0].enabled!==true||rows[0].previews_enabled!==false)throw Error('ACTIVATION_ROUTING_BASELINE_CHANGED');
+   if(index<count)rows[0].service=move.after.service;
+  }
+ }else if(routingCompleted!==undefined)throw Error('ACTIVATION_UNPLANNED_ROUTING');
  if(!isDeepStrictEqual(observed,expected))throw Error('ACTIVATION_INVENTORY_CHANGED');
 }

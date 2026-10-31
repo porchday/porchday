@@ -19,7 +19,8 @@ function checkCanonical(plan:DeploymentPlan,text:string):Record<string,unknown>{
   const {environment,frontend,monitor,key}=recoveryTarget(plan.worker),floor=(canonical.compatibleRollbackVersions as Record<string,unknown>|undefined)?.[monitor?key:environment],edge=canonical.edgeRouting as Record<string,unknown>|undefined;
   const version=monitor?(canonical.monitorVersions as Record<string,unknown>|undefined)?.[environment]:frontend?edge?.[environment+'FrontendVersion']:canonical[environment+'Version'],source=monitor?(canonical.monitorSources as Record<string,unknown>|undefined)?.[environment]:frontend?edge?.[environment+'FrontendSource']:canonical[environment+'RuntimeSource'];
   if(version!==plan.baselineVersion||typeof source!=='string'||! /^[a-f0-9]{40}$/.test(source))throw new RecoveryError('DEPLOYMENT_BASELINE_CHANGED');
-  if(frontend&&(edge?.[environment+'Enabled']!==true||canonical[environment+'Version']!==plan.backendVersion||typeof canonical[environment+'RuntimeSource']!=='string'||! /^[a-f0-9]{40}$/.test(canonical[environment+'RuntimeSource'] as string)))throw new RecoveryError('DEPLOYMENT_FRONTEND_BACKEND_CHANGED');
+  if(frontend&&(edge?.[environment+'Enabled']!==(plan.routing||plan.unroutedFrontend?false:true)||canonical[environment+'Version']!==plan.backendVersion||typeof canonical[environment+'RuntimeSource']!=='string'||! /^[a-f0-9]{40}$/.test(canonical[environment+'RuntimeSource'] as string)))throw new RecoveryError('DEPLOYMENT_FRONTEND_BACKEND_CHANGED');
+  if(plan.routing&&!frontend&&(edge?.[environment+'Enabled']!==false||edge?.[environment+'FrontendVersion']!==plan.routingFrontendVersion))throw new RecoveryError('DEPLOYMENT_ROUTING_FRONTEND_CHANGED');
   if(plan.assetManifests&&!frontend&&edge?.[environment+'Enabled']===true)throw new RecoveryError('DEPLOYMENT_ASSETS_NOT_PUBLIC_TARGET');
   if(plan.readerFloorPromotion&&plan.readerFloorPromotion.previousVersion!==floor)throw new RecoveryError('DEPLOYMENT_READER_FLOOR_CHANGED');
   if(typeof floor!=='string'||(frontend?plan.backendReaderFloor!==floor:!plan.compatibleRollbackVersions.includes(floor)))throw new RecoveryError('DEPLOYMENT_READER_FLOOR_NOT_ACKNOWLEDGED');
@@ -34,12 +35,22 @@ function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,s
  const record=checkCanonical(plan,before),{environment,frontend,monitor,key}=recoveryTarget(plan.worker),success=state.phase==='complete',edge=record.edgeRouting as Record<string,unknown>|undefined;
  const version=success?plan.candidateVersion:plan.baselineVersion,source=success?plan.candidateSource:monitor?(record.monitorSources as Record<string,unknown>)[environment]:frontend?edge?.[environment+'FrontendSource']:record[environment+'RuntimeSource'];
  if(monitor&&!snapshot)throw new RecoveryError('DEPLOYMENT_MONITOR_SNAPSHOT_REQUIRED');
- let observedBindings:unknown;
+ let observedBindings:unknown;let observedPlacement:unknown;
  if(snapshot){
   if(!isAbsolute(snapshot.path)||!/^[a-f0-9]{64}$/.test(snapshot.sha256))throw new RecoveryError('DEPLOYMENT_SNAPSHOT_INVALID');
   const bytes=privateText(snapshot.path);if(digest(bytes)!==snapshot.sha256)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_CHANGED');
-  const observed=JSON.parse(bytes);observedBindings=observed?.workers?.[key]?.resources?.bindings;if(observed?.workers?.[key]?.active!==version)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_VERSION_CHANGED');
+  const observed=JSON.parse(bytes);observedBindings=observed?.workers?.[key]?.resources?.bindings;observedPlacement=observed?.workers?.[key]?.resources?.script?.placement??{mode:'off'};if(observed?.workers?.[key]?.active!==version)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_VERSION_CHANGED');
   if(frontend&&observed?.workers?.[environment]?.active!==plan.backendVersion)throw new RecoveryError('DEPLOYMENT_SNAPSHOT_BACKEND_CHANGED');
+ }
+ if(plan.routing){
+  if(!snapshot)throw new RecoveryError('DEPLOYMENT_ROUTING_SNAPSHOT_REQUIRED');
+  const observed=JSON.parse(privateText(snapshot.path));
+  if(!Array.isArray(observed.domains))throw new RecoveryError('DEPLOYMENT_ROUTING_PROOF_INVALID');
+  if(!frontend&&observed?.workers?.[environment+'-edge']?.active!==plan.routingFrontendVersion)throw new RecoveryError('DEPLOYMENT_ROUTING_FRONTEND_CHANGED');
+  for(const move of plan.routing.moves){
+   const target=success?move.after:move.before,rows=observed.domains.filter((d:Record<string,unknown>)=>d.hostname===target.hostname);
+   if(rows.length!==1||rows[0].service!==target.service||rows[0].zone_id!==target.zoneId||rows[0].environment!==target.environment||rows[0].enabled!==true||rows[0].previews_enabled!==false)throw new RecoveryError('DEPLOYMENT_ROUTING_PROOF_INVALID');
+  }
  }
  let manifest:PublicAssetManifest|undefined,manifestHash:string|undefined;
  if(plan.assetManifests){
@@ -69,8 +80,9 @@ function finalizedRecord(plan:DeploymentPlan,state:RecoveryState,before:string,s
   const readers=observedBindings.filter(b=>b?.name==='PRIVACY_COMMIT_RECOVERY_V1');
   if(success&&(readers.length!==1||readers[0].type!=='plain_text'||readers[0].text!=='true'))throw new RecoveryError('DEPLOYMENT_READER_FLOOR_PROOF_REQUIRED');
  }
- return JSON.stringify({...record,...(success&&plan.readerFloorPromotion?{compatibleRollbackVersions:{...(record.compatibleRollbackVersions as Record<string,unknown>),[environment]:plan.candidateVersion}}:{}),...(verifiedSchema?{schemaMigrationsByEnvironment:{...(record.schemaMigrationsByEnvironment as Record<string,unknown>|undefined),[environment]:verifiedSchema.schema.migrations.length},schemaEvidenceByEnvironment:{...(record.schemaEvidenceByEnvironment as Record<string,unknown>|undefined),[environment]:{branchId:verifiedSchema.branchId,fingerprint:verifiedSchema.schema,proof:schema}}}:{}),...(snapshot?{latestProviderSnapshot:snapshot.path}:{}),...(monitor?{monitorVersions:{...(record.monitorVersions as Record<string,unknown>),[environment]:version},monitorSources:{...(record.monitorSources as Record<string,unknown>),[environment]:source}}:frontend?{edgeRouting:{...edge,[environment+'FrontendVersion']:version,[environment+'FrontendSource']:source,...(manifest?{[environment+'FrontendAssetsSource']:manifest.source}:{})}}:{[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source}),
- ...(manifest?{[environment+'AssetsSource']:manifest.source,releaseAssets:{...(record.releaseAssets as Record<string,unknown>|undefined),[key]:{version,source:manifest.source,retainedSources:manifest.retainedSources??[],manifestSha256:manifestHash,proof:assets}}}:{}),
+ return JSON.stringify({...record,...(success&&plan.readerFloorPromotion?{compatibleRollbackVersions:{...(record.compatibleRollbackVersions as Record<string,unknown>),[environment]:plan.candidateVersion}}:{}),...(verifiedSchema?{schemaMigrationsByEnvironment:{...(record.schemaMigrationsByEnvironment as Record<string,unknown>|undefined),[environment]:verifiedSchema.schema.migrations.length},schemaEvidenceByEnvironment:{...(record.schemaEvidenceByEnvironment as Record<string,unknown>|undefined),[environment]:{branchId:verifiedSchema.branchId,fingerprint:verifiedSchema.schema,proof:schema}}}:{}),...(snapshot?{latestProviderSnapshot:snapshot.path}:{}),...(monitor?{monitorVersions:{...(record.monitorVersions as Record<string,unknown>),[environment]:version},monitorSources:{...(record.monitorSources as Record<string,unknown>),[environment]:source}}:frontend?{edgeRouting:{...edge,...(plan.routing?{[environment+'Enabled']:success}:{}),[environment+'FrontendVersion']:version,[environment+'FrontendSource']:source,...(manifest&&!(plan.routing&&!success)?{[environment+'FrontendAssetsSource']:manifest.source}:{})}}:{[environment+'Version']:version,[environment+'RuntimeSource']:source,[environment+'Source']:source}),
+ ...(plan.routing&&!frontend?{edgeRouting:{...edge,[environment+'Enabled']:success,[environment+'PlacementObserved']:observedPlacement,[environment+'Placement']:(observedPlacement as {mode:string}).mode,...(success&&manifest?{[environment+'FrontendAssetsSource']:manifest.source}:{}),[environment+'FrontendRouted']:success,[environment+'DomainsOwnedBy']:'porchday-'+environment+(success?'-edge':''),customDomainsReceipt:snapshot?.path,publicHealthReports:{...(edge?.publicHealthReports as Record<string,unknown>|undefined),[environment]:success?'frontend version':'backend version'}}}:{}),
+ ...(manifest?{[environment+'AssetsSource']:manifest.source,releaseAssets:{...(record.releaseAssets as Record<string,unknown>|undefined),[plan.routing?(success?environment+'-edge':environment):key]:{version:plan.routing?(success?(frontend?version:plan.routingFrontendVersion):(frontend?plan.backendVersion:version)):version,source:manifest.source,retainedSources:manifest.retainedSources??[],manifestSha256:manifestHash,proof:assets}}}:{}),
  deploymentRecovery:{...(record.deploymentRecovery as Record<string,unknown>|undefined),[key]:{operationId:plan.operationId,planHash:deploymentPlanHash(plan),outcome:state.phase,version,source,deploymentId:success?state.candidateDeploymentId:state.rollbackDeploymentId,evidenceDigest:plan.evidenceDigest,...(snapshot?{providerSnapshotSha256:snapshot.sha256}:{})}}})+'\n';
 }
 function readFinalization(directory:string,plan:DeploymentPlan,owner:Owner):Finalization|null{
@@ -96,7 +108,7 @@ export class FileDeploymentLease{
  private readonly plan:DeploymentPlan;
  private held=true;
  private resolvingFailure=false;
- private constructor(root:string,db:DatabaseSync,owner:Owner,plan:DeploymentPlan){this.root=root;this.db=db;this.owner=owner;this.plan=Object.freeze({...plan,...(plan.readerFloorPromotion?{readerFloorPromotion:Object.freeze({...plan.readerFloorPromotion})}:{}),...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});}
+ private constructor(root:string,db:DatabaseSync,owner:Owner,plan:DeploymentPlan){this.root=root;this.db=db;this.owner=owner;this.plan=Object.freeze({...plan,...(plan.routing?{routing:structuredClone(plan.routing)}:{}),...(plan.readerFloorPromotion?{readerFloorPromotion:Object.freeze({...plan.readerFloorPromotion})}:{}),...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});}
  /** Read-only early rejection for new operations, before fixture preparation.
   * Not authorization: acquisition and dispatch repeat the canonical checks.
   */
