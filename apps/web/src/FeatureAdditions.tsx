@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { get, post, request, type Json } from "./api";
 import { Alert, Button, Loading, useAction } from "./ui";
 import { Disclosure, type BuilderState } from "./BuilderChat";
@@ -8,7 +8,7 @@ export const featureStatus: Record<string,string> = {
   delivered: "Code delivered · deployment may still be pending", needs_attention: "Needs review · implementation did not finish",
 };
 export function FeatureCard({ feature, busy, onVote }: { feature: Json; busy: boolean; onVote: (value: number) => void }) {
-  return <article className="panel form-stack">
+  return <article className="panel form-stack" id={`feature-${feature.id}`}>
     <h2>{feature.title}</h2>
     <p>{feature.author_handle ? `Proposed by @${feature.author_handle} · ` : ""}{featureStatus[feature.status]}</p>
     <p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{feature.plan}</p>
@@ -27,11 +27,24 @@ export function FeatureAdditions() {
   const [cursor,setCursor] = useState<string | null>(null);
   const [text,setText] = useState("");
   const action = useAction();
+  const target = new URLSearchParams(window.location.search).get("proposal");
+  const scrolled = useRef(false);
   async function refresh(more = false) {
     const [next,board] = await Promise.all([get<BuilderState>("/builder-chat"),get<Json>(`/builder-chat/features${more && cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`)]);
+    if (!more && target && /^[0-9a-f-]{36}$/.test(target)) {
+      while (board.next_cursor && !board.items.some((feature:Json)=>feature.id===target)) {
+        const page=await get<Json>(`/builder-chat/features?cursor=${encodeURIComponent(board.next_cursor)}`);
+        board.items.push(...page.items);board.next_cursor=page.next_cursor;
+      }
+    }
     setState(next); setFeatures(previous => more ? [...previous,...board.items] : board.items); setCursor(board.next_cursor);
   }
   useEffect(() => { action.run(() => refresh()); },[]);
+  useEffect(()=>{
+    if(target && !scrolled.current && features.some(feature=>feature.id===target)) {
+      document.getElementById(`feature-${target}`)?.scrollIntoView();scrolled.current=true;
+    }
+  },[features,target]);
   // Refresh active jobs without silently collapsing pages someone is reading.
   useEffect(() => {
     const timer = setInterval(() => { if (!document.hidden && features.length <= 30) action.run(() => refresh()); },15000);

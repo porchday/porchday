@@ -1,3 +1,4 @@
+import {FeedFeatureCard,mergeFeedFeatures,useFeedFeatures} from "./FeedFeatures";
 import { useNearViewport } from "./near-viewport";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
@@ -456,6 +457,7 @@ export function Feed({
   canModerate?: boolean;
 }) {
   const [rows, setRows] = useState<SocialObject[]>([]);
+  const proposals = useFeedFeatures(!wallId && !groupId && !singleId);
   const [singleDetails, setSingleDetails] = useState<Json | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
@@ -537,21 +539,24 @@ export function Feed({
               ? "Post"
               : "Posts"}
         </span>
-        <button className="text-button" onClick={() => load()}>
+        <button className="text-button" onClick={() => { void load(); void proposals.refresh(); }}>
           <Icon name="clock" size={14} />
           Newest first
         </button>
       </div>
       <Alert>{action.error}</Alert>
+      <Alert>{proposals.error}</Alert>
+      {proposals.error && <Button onClick={proposals.refresh}>Retry feature proposals</Button>}
       {!loaded && action.busy ? (
         <Loading />
       ) : (
-        rows
-          .filter(unexpired)
-          .map((row) => (
+        mergeFeedFeatures(rows.filter(unexpired),proposals.features)
+          .map(({kind,row}) => kind === "feature" ? (
+            <FeedFeatureCard key={"feature:"+row.id} feature={row} busy={proposals.busy || proposals.paused} onVote={value=>proposals.vote(row.id,value)} />
+          ) : (
             <PostCard
               key={row.id + ":" + row.envelope.context.revision}
-              row={row}
+              row={row as SocialObject}
               onChange={refresh}
               expanded={!!singleId}
               initialDetails={singleId ? singleDetails : null}
@@ -582,16 +587,16 @@ export function Feed({
           </Empty>
         </div>
       )}
-      {cursor && (
+      {(cursor || proposals.cursor) && (
         <Button
           variant="outline full"
-          busy={action.busy}
-          onClick={() => load(true)}
+          busy={action.busy || proposals.busy}
+          onClick={() => { if(cursor)void load(true); if(proposals.cursor)void proposals.more(); }}
         >
-          Load more posts
+          Load more
         </Button>
       )}
-      {loaded && rows.length > 0 && !cursor && (
+      {loaded && rows.length > 0 && !cursor && !proposals.cursor && (
         <div className="caught-up">
           <Icon name="check" size={20} />
           <p>
