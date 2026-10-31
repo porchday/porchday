@@ -1,3 +1,4 @@
+import type {PlacementTrialCollector} from './placement-trial-runner.mjs';
 import {assertStagingInflightProbeComplete,type StagingInflightProbe} from './release-inflight-probe.ts';
 import {publicAssetManifestHash} from './release-assets-verify.ts';
 import {createBrowserGate} from './release-browser-gate.ts';
@@ -22,8 +23,8 @@ export async function executeFrontendActivationWithClients(path:string,env:NodeJ
 /** Covers both edge frontends and application workers that serve web assets.
  * API-only releases retain their normal authenticated continuity entry point. */
 export async function executeApplicationActivationWithClients(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal){
- return executeObservedActivation(path,env,observation,signal,false);
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,trialCollector?:PlacementTrialCollector){
+ return executeObservedActivation(path,env,observation,signal,false,false,false,undefined,undefined,trialCollector);
 }
 /** A real staging activation/recovery with a fault confined to the observer.
  * A successful drill requires observed browser failure and verified rollback. */
@@ -44,7 +45,7 @@ export async function executeStagingApiRecoveryDrill(path:string,env:NodeJS.Proc
  return executeObservedActivation(path,env,observation,signal,false,true,true,candidateAction,inflightProbe);
 }
 async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
- observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false,apiOnly=false,candidateAction?:StagingCandidateAction,inflightProbe?:StagingInflightProbe){
+ observation:Parameters<typeof executeActivationWithContinuity>[2],signal:AbortSignal,frontendOnly:boolean,drill=false,apiOnly=false,candidateAction?:StagingCandidateAction,inflightProbe?:StagingInflightProbe,trialCollector?:PlacementTrialCollector){
  signal.throwIfAborted();const manifest=readActivationManifest(path),target=deploymentTarget(manifest.plan.worker),{plan,review}=manifest,e=review.execution;
  if(inflightProbe!==undefined&&(!drill||!apiOnly||target.environment!=='staging'||candidateAction!==undefined||typeof inflightProbe.start!=='function'||typeof inflightProbe.finish!=='function'))throw Error('STAGING_INFLIGHT_SCOPE_INVALID');
  if(candidateAction!==undefined&&(!drill||!apiOnly||target.environment!=='staging'||typeof candidateAction!=='function'))throw Error('CANDIDATE_ACTION_SCOPE_INVALID');
@@ -91,7 +92,7 @@ async function executeObservedActivation(path:string,env:NodeJS.ProcessEnv,
     if(drill&&(report.drill!=='staging-fresh-client-exception'||report.drillExceptionObserved!==true||report.newErrors.pageErrors<1||report.passed!==false))return 'unknown';
     return report.passed?'healthy':'unhealthy';}
    finally{candidateSignal.removeEventListener('abort',cancel);}
-  },inflightProbe);phase='command-returned';retain('command-result',command);
+  },inflightProbe,trialCollector);phase='command-returned';retain('command-result',command);
   if(drill){
    if(inflightProbe)assertStagingInflightProbeComplete(plan,e.proofDirectory,true);
    if(command.status!=='rolled-back'||report?.passed!==false||report.drill!=='staging-fresh-client-exception'||report.drillExceptionObserved!==true||report.newErrors.pageErrors<1)throw Error('BROWSER_RECOVERY_DRILL_UNVERIFIED');

@@ -66,6 +66,7 @@ export function assertActivationInventory(upload:CompletedUpload,plan:Deployment
  if(upload.queueProducerRegistration)expected.queues=registeredQueueInventory({before:upload.queueProducerBaseline,observed:(observed as Inventory)?.queues,worker:target.key,beforeBindings:upload.baselineResources.bindings,afterBindings:upload.candidateResources.bindings,registration:upload.queueProducerRegistration,phase:version===upload.candidateVersion?'candidate':'baseline'});
  if(target.frontend&&expected.workers[target.environment]?.active!==plan.backendVersion)throw Error('ACTIVATION_BACKEND_CHANGED');
  if(plan.routing){
+  if(!target.frontend&&expected.workers[target.environment+'-edge']?.active!==plan.routingFrontendVersion)throw Error('ACTIVATION_ROUTING_FRONTEND_CHANGED');
   const count=routingCompleted??(version===plan.candidateVersion?plan.routing.moves.length:0);
   if(!Number.isSafeInteger(count)||count<0||count>plan.routing.moves.length)throw Error('ACTIVATION_ROUTING_PROGRESS_INVALID');
   for(const [index,move] of plan.routing.moves.entries()){

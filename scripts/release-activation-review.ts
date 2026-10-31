@@ -13,7 +13,7 @@ export const compatibilityChecks=['schemaRollback','denialReaders','webClientOve
 type EvidenceFile={path:string;sha256:string};
 export type CompatibilityReview={readerFloorPromotion?:DeploymentPlan['readerFloorPromotion'];version:1;worker:string;candidate:{version:string;source:string};baseline:{version:string;source:string};schema:ReleaseSchemaFingerprint;publicAssets:{candidate:string;baseline:string};checks:Record<typeof compatibilityChecks[number],{status:'passed'|'scheduled';basis:string;evidence:EvidenceFile[]}>};
 export type ActivationExecution={root:string;workspace:string;uploadManifest:EvidenceFile;proofPath:string;probe:EvidenceFile;journalDirectory:string;proofDirectory:string;journeyDirectory:string};
-export type ActivationReviewEvidence={monitor?:{baseline:EvidenceFile;storageCompatibility:EvidenceFile;incidentRecovery?:EvidenceFile};execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
+export type ActivationReviewEvidence={placementTrial?:{baseline:EvidenceFile;journalDirectory:string};monitor?:{baseline:EvidenceFile;storageCompatibility:EvidenceFile;incidentRecovery?:EvidenceFile};execution?:ActivationExecution;version:1;state:ActivationStateEvidence;compatibility:EvidenceFile;assets:{candidate:PublicAssetManifest;baseline:PublicAssetManifest}};
 const hash=(bytes:Buffer|string)=>createHash('sha256').update(bytes).digest('hex');
 function canonical(value:unknown):string{
  if(value===null||typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value))return JSON.stringify(value);
@@ -39,9 +39,9 @@ function readEvidence(file:EvidenceFile){
 export function verifyActivationReview(plan:DeploymentPlan,manifest:UploadManifest,proofPath:string,input:ActivationReviewEvidence){
  const evidence=structuredClone(input);deploymentPlanHash(plan);
  if(plan.evidenceDigest!==activationReviewHash(evidence))throw Error('ACTIVATION_REVIEW_PLAN_CHANGED');
- keys(evidence,['version','state','compatibility','assets',...(evidence.execution===undefined?[]:['execution']),...(evidence.monitor===undefined?[]:['monitor'])]);keys(evidence.assets,['candidate','baseline']);
+ keys(evidence,['version','state','compatibility','assets',...(evidence.execution===undefined?[]:['execution']),...(evidence.monitor===undefined?[]:['monitor']),...(evidence.placementTrial===undefined?[]:['placementTrial'])]);keys(evidence.assets,['candidate','baseline']);
  if(evidence.version!==1)throw Error('ACTIVATION_REVIEW_INVALID');
- readMonitorReview(plan,evidence);
+ readMonitorReview(plan,evidence);readPlacementTrialReview(plan,evidence);
  const upload=readCompletedUpload(manifest,proofPath);
  if(evidence.state.version!==1||evidence.state.uploadPlanHash!==upload.uploadPlanHash||evidence.state.uploadProofSha256!==upload.proofSha256||upload.worker!==plan.worker||upload.source!==plan.candidateSource||upload.candidateVersion!==plan.candidateVersion||upload.baselineVersion!==plan.baselineVersion)throw Error('ACTIVATION_REVIEW_UPLOAD_CHANGED');
  const publicAssets={candidate:publicAssetManifestHash(evidence.assets.candidate),baseline:publicAssetManifestHash(evidence.assets.baseline)};
@@ -122,4 +122,11 @@ export function readMonitorRecovery(plan:DeploymentPlan,evidence:ActivationRevie
  if(!Array.isArray(value.evidence)||value.evidence.length<1||value.evidence.length>20)throw Error('MONITOR_RECOVERY_EVIDENCE_REQUIRED');
  let size=0;for(const file of value.evidence){size+=readEvidence(file).length;if(size>64*1024*1024)throw Error('ACTIVATION_REVIEW_TOO_LARGE');}
  return{mode:'unavailable-baseline' as const,failureAt:value.failure.at};
+}
+
+export function readPlacementTrialReview(plan:DeploymentPlan,evidence:ActivationReviewEvidence):unknown{
+ if(!plan.placementTrial){if(evidence.placementTrial!==undefined)throw Error('TRIAL_REVIEW_SCOPE_INVALID');return undefined;}
+ const trial=evidence.placementTrial;keys(trial,['baseline','journalDirectory']);
+ if(!trial||typeof trial.journalDirectory!=='string'||!isAbsolute(trial.journalDirectory))throw Error('TRIAL_REVIEW_DIRECTORY_INVALID');
+ return JSON.parse(readEvidence(trial.baseline).toString());
 }

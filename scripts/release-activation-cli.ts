@@ -1,3 +1,5 @@
+import {runPlacementTrial,type PlacementTrialCollector} from './placement-trial-runner.mjs';
+import {validateTrialBaseline} from './placement-trial.mjs';
 import {FileRoutingJournal} from './domain-routing-journal.ts';
 import {CloudflareDomainClient} from './cloudflare-domain-client.ts';
 import {leasedRoutingPorts} from './release-routing-ports.ts';
@@ -17,7 +19,7 @@ import {deploymentPlanHash,deploymentTarget,recoveryTarget,recoverDeployment,typ
 import {FileDeploymentLease} from './deployment-recovery-lease.ts';
 import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
 import {readUploadManifest} from './release-upload-cli.ts';
-import {activationReviewHash,verifyActivationReview,createReviewedActivationPorts,type ActivationReviewEvidence,type ActivationExecution} from './release-activation-review.ts';
+import {activationReviewHash,verifyActivationReview,readPlacementTrialReview,createReviewedActivationPorts,type ActivationReviewEvidence,type ActivationExecution} from './release-activation-review.ts';
 import {finalizePreparedActivation} from './release-activation-finalize.ts';
 import {createReleaseVerifier} from './release-verification.ts';
 import {validateProbeConfig,type ProbeConfig} from './external-monitor-probe.ts';
@@ -44,7 +46,7 @@ function validate(manifest:ActivationManifest,monitor=false){
  for(const p of [e.root,e.workspace,e.proofPath,e.journalDirectory,e.proofDirectory,e.journeyDirectory])if(typeof p!=='string'||!isAbsolute(p)||resolve(p)!==p)throw Error('ACTIVATION_MANIFEST_PATH_INVALID');
  for(const file of [e.uploadManifest,e.probe]){keys(file,['path','sha256']);if(typeof file.path!=='string'||!isAbsolute(file.path)||resolve(file.path)!==file.path||! /^[a-f0-9]{64}$/.test(file.sha256))throw Error('ACTIVATION_MANIFEST_PATH_INVALID');}
  // Journal enumeration must not overlap proofs or private sessions, nor the shared lock.
- const dirs=[e.journalDirectory,...(manifest.plan.routing?[e.journalDirectory+'.routing']:[]),e.proofDirectory,e.journeyDirectory,join(e.root,'deployment-lock')];
+ const dirs=[...(manifest.review.placementTrial?[manifest.review.placementTrial.journalDirectory]:[]),e.journalDirectory,...(manifest.plan.routing?[e.journalDirectory+'.routing']:[]),e.proofDirectory,e.journeyDirectory,join(e.root,'deployment-lock')];
  for(let i=0;i<dirs.length;i++)for(let j=i+1;j<dirs.length;j++)if(dirs[i]===dirs[j]||dirs[i].startsWith(dirs[j]+sep)||dirs[j].startsWith(dirs[i]+sep))throw Error('ACTIVATION_MANIFEST_DIRECTORY_OVERLAP');
  directory(e.root);directory(e.journalDirectory);
 }
@@ -71,7 +73,7 @@ export async function prepareActivationFixtures<T>(input:ActivationManifest,prep
 async function executeScopedActivationWithContinuity(
  monitor:boolean,input:ActivationManifest,env:NodeJS.ProcessEnv,
  observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,
- signal:AbortSignal,browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe,
+ signal:AbortSignal,browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe,trialCollector?:PlacementTrialCollector,
 ){
  signal.throwIfAborted();const manifest=structuredClone(input);validate(manifest,monitor);
  if(inflightProbe&&(monitor||manifest.plan.worker!=='porchday-staging'||manifest.plan.assetManifests||!browserAcceptance||!isDeepStrictEqual(manifest.review.assets.baseline,manifest.review.assets.candidate)||typeof inflightProbe.start!=='function'||typeof inflightProbe.finish!=='function'))throw Error('STAGING_INFLIGHT_SCOPE_INVALID');
@@ -84,27 +86,27 @@ async function executeScopedActivationWithContinuity(
  FileDeploymentLease.preflight(e.root,manifest.plan);
  registerReleaseWatch({plan:manifest.plan,root:e.root,journalDirectory:e.journalDirectory,proofDirectory:e.proofDirectory});
  const gate=createContinuityGate(e.proofDirectory,manifest.plan);gate.assertPromotion();
- return await runCommandWithContinuity({...observation,retain:async event=>{
+ return await runCommandWithContinuity({...observation,placementTrial:manifest.plan.placementTrial,retain:async event=>{
   // Persist the stop decision before yielding to the caller's evidence sink.
   gate.retain(event);
   if(event.kind==='sample'&&!event.sample.healthy)queueReleaseAlert(e.proofDirectory,manifest.plan,'command-failed');
   await observation.retain(event);
  },runCommand:async commandSignal=>{
-  const result=await executeScopedActivationManifest(manifest,env,commandSignal,monitor,'activate',browserAcceptance,inflightProbe);
+  const result=await executeScopedActivationManifest(manifest,env,commandSignal,monitor,'activate',browserAcceptance,inflightProbe,trialCollector);
   if(result.status==='finalized'&&(result.outcome==='complete'||result.outcome==='rolled-back'))return result.outcome;
   return 'attention-required';
  }},signal);
 }
 
-export async function executeActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal,browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe){
- return executeScopedActivationWithContinuity(false,input,env,observation,signal,browserAcceptance,inflightProbe);
+export async function executeActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal,browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe,trialCollector?:PlacementTrialCollector){
+ return executeScopedActivationWithContinuity(false,input,env,observation,signal,browserAcceptance,inflightProbe,trialCollector);
 }
 export async function executeMonitorActivationWithContinuity(input:ActivationManifest,env:NodeJS.ProcessEnv,observation:Omit<Parameters<typeof runCommandWithContinuity>[0],'runCommand'>,signal:AbortSignal){
  return executeScopedActivationWithContinuity(true,input,env,observation,signal);
 }
 
 /** Explicit activate/resume. Archived completion and durable finalization resume need no credentials. */
-async function executeScopedActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,monitor:boolean,action:'activate'|'cancel'='activate',browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe){
+async function executeScopedActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,monitor:boolean,action:'activate'|'cancel'='activate',browserAcceptance?:BrowserAcceptance,inflightProbe?:StagingInflightProbe,trialCollector?:PlacementTrialCollector){
  const manifest=structuredClone(input);validate(manifest,monitor);signal.throwIfAborted();if(!['activate','cancel'].includes(action))throw Error('ACTIVATION_ARGUMENTS');
  const {plan,review}=manifest,e=review.execution,journal=new FileRecoveryJournal(e.journalDirectory),gate=createContinuityGate(e.proofDirectory,plan);
  if(inflightProbe&&(monitor||plan.worker!=='porchday-staging'||plan.assetManifests||!browserAcceptance||!isDeepStrictEqual(review.assets.baseline,review.assets.candidate)||typeof inflightProbe.start!=='function'||typeof inflightProbe.finish!=='function'))throw Error('STAGING_INFLIGHT_SCOPE_INVALID');
@@ -116,6 +118,9 @@ async function executeScopedActivationManifest(input:ActivationManifest,env:Node
   const lease=FileDeploymentLease.acquire(e.root,plan);try{if(await lease.resumeFinalization(journal)){if((await journal.read())?.phase==='complete')gate.assertPromotion();return{status:'resumed-historical-finalization' as const,historical:true,operationId:plan.operationId};}}finally{lease.close();}
  }
  if(e.workspace!==realpathSync(dirname(fileURLToPath(new URL('../package.json',import.meta.url)))))throw Error('ACTIVATION_TOOLING_WORKSPACE_CHANGED');
+ if(plan.placementTrial&&!trialCollector)throw Error('ACTIVATION_TRIAL_COLLECTOR_REQUIRED');
+ if(trialCollector&&!plan.placementTrial)throw Error('ACTIVATION_TRIAL_SCOPE_INVALID');
+ if(plan.placementTrial&&[undefined,'prepared'].includes((await journal.read())?.phase))validateTrialBaseline(readPlacementTrialReview(plan,review),Date.now());
  directory(e.proofDirectory);directory(e.journeyDirectory);
  const uploadBytes=readPinned(e.uploadManifest),upload=readUploadManifest(e.uploadManifest.path);
  if(!isDeepStrictEqual(upload,JSON.parse(uploadBytes.toString())))throw Error('ACTIVATION_MANIFEST_FILE_CHANGED');
@@ -148,11 +153,21 @@ async function executeScopedActivationManifest(input:ActivationManifest,env:Node
   const checked=withReleaseProbePreflight(routed,s=>verifyReleaseProbeFixture({...database,config,signal:s}));
   const ports=inflightProbe?withStagingInflightProbe({...inflightProbe,plan,ports:checked,proofDirectory:e.proofDirectory,assertScope:()=>{lease.assert(plan,signal);}},signal):checked;
   const combine=(s:AbortSignal)=>AbortSignal.any([signal,s]);
-  const bounded:DeploymentPorts={authorize:(p,d,s)=>ports.authorize(p,d,combine(s)),observe:s=>ports.observe(combine(s)),deploy:(v,id,s)=>ports.deploy(v,id,combine(s)),verify:(v,s)=>ports.verify(v,combine(s))};
+  const trial=plan.placementTrial?async(s:AbortSignal)=>{try{return await runPlacementTrial({directory:review.placementTrial!.journalDirectory,operationId:plan.operationId,baseline:readPlacementTrialReview(plan,review),assertLease:()=>{lease.assert(plan,s);gate.assertPromotion();},assertInventory:async checkSignal=>{const completed=readCompletedUpload(upload,e.proofPath);assertActivationInventory(completed,plan,plan.candidateVersion,await reader.snapshot(checkSignal));},collect:trialCollector!,signal:combine(s)});}catch(error){if(error instanceof Error&&error.message==='TRIAL_BASELINE_STALE')return 'unhealthy' as const;throw error;}}:undefined;
+  const bounded:DeploymentPorts={...(trial?{trial}:{}),authorize:(p,d,s)=>ports.authorize(p,d,combine(s)),observe:s=>ports.observe(combine(s)),deploy:(v,id,s)=>ports.deploy(v,id,combine(s)),verify:(v,s)=>ports.verify(v,combine(s))};
   const outcome=await recoverDeployment(plan,journal,bounded,{...(incidentRecovery?{monitorRecoveryObservation:true}:{}),promotionAllowed:()=>!gate.failed()});
   if(!['complete','rolled-back'].includes(outcome))return{status:'attention-required' as const,outcome,operationId:plan.operationId};
   return await final();
  }finally{lease.close();}
+}
+/** Explicit continuation of an already dispatched trial. It cannot create a
+ * new activation or reset its original observation journal after interruption. */
+export async function resumePlacementTrialManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,collector:PlacementTrialCollector){
+ const manifest=structuredClone(input);validate(manifest);
+ if(!manifest.plan.placementTrial)throw Error('ACTIVATION_TRIAL_SCOPE_INVALID');
+ const state=await new FileRecoveryJournal(manifest.review.execution.journalDirectory).read();
+ if(!state||state.phase==='prepared'||state.planHash!==deploymentPlanHash(manifest.plan))throw Error('ACTIVATION_TRIAL_NOT_DISPATCHED');
+ return executeScopedActivationManifest(manifest,env,signal,false,'activate',undefined,undefined,collector);
 }
 export async function executeActivationManifest(input:ActivationManifest,env:NodeJS.ProcessEnv,signal:AbortSignal,action:'activate'|'cancel'='activate'){
  return executeScopedActivationManifest(input,env,signal,false,action);
