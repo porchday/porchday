@@ -30,7 +30,8 @@ export async function runPlacementTrial({directory,operationId,baseline,assertLe
   let state=journal.read()??journal.start();
   while(state.status==='watching') {
     signal.throwIfAborted();assertLease();
-    await sleep(Math.max(0,state.at+60000-Date.now()),signal);
+    const due=startedAt+(Math.floor((state.at-startedAt)/60000)+1)*60000;
+    await sleep(Math.max(0,due-Date.now()),signal);
     const at=Date.now();
     // Do not make additional external reads after an interruption has already
     // invalidated the observation coverage. Persist a stop before returning.
@@ -46,7 +47,7 @@ export async function runPlacementTrial({directory,operationId,baseline,assertLe
           new Promise((_,reject)=>{timer=setTimeout(()=>{controller.abort();reject(Error('TRIAL_COLLECTOR_TIMEOUT'));},45000);}),
         ]);
         // The collector cannot choose the watch clock or replay old minutes.
-        sample={...sample,at};
+        sample={...sample,at:Date.now()};
       }catch{
         signal.throwIfAborted();
         sample={at,auth:false,revocation:false,privacy:false,readiness:false,publicAssets:false,refused:false,connection:null,window:null};

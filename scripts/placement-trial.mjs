@@ -35,7 +35,7 @@ export function validateTrialBaseline(baseline, startedAt) {
     need(timestamp(window.startedAt) && timestamp(window.endedAt) &&
       window.startedAt < window.endedAt && window.endedAt <= startedAt &&
       startedAt - window.startedAt <= 20 * minute &&
-      assessPlacement(window, window).missing.length === 0,
+      assessPlacement(window, window).missing.length === 0 && window.allErrors.requests>0,
     'TRIAL_BASELINE_WINDOWS_INCOMPLETE');
   }
   need(baseline.windows[0].endedAt <= baseline.windows[1].startedAt &&
@@ -57,7 +57,8 @@ export function advanceTrial(previous, sample, baseline) {
   need(previous?.v === 1 && previous.status === 'watching' &&
     previous.baselineHash === sha(baseline), 'TRIAL_STATE_OR_BASELINE_CHANGED');
   need(sample && timestamp(sample.at) && sample.at > previous.at &&
-    sample.at >= previous.startedAt && sample.at - previous.at >= 50000,
+    sample.at >= previous.startedAt &&
+    Math.floor((sample.at-previous.startedAt)/minute)>Math.floor((previous.at-previous.startedAt)/minute),
   'TRIAL_SAMPLE_TIME_INVALID');
   const reasons = [];
   if (sample.at - previous.at >= 2 * minute) reasons.push('observation_gap');
@@ -72,12 +73,13 @@ export function advanceTrial(previous, sample, baseline) {
   if (!sample.readiness && previous.previousReadinessFailure) reasons.push('sustained_readiness');
   const current = sample.connection;
   need(current === null || connection(current), 'TRIAL_CONNECTION_INVALID');
+  if(current?.at!==undefined)need(timestamp(current.at)&&current.at<=sample.at&&sample.at-current.at<=45000,'TRIAL_CONNECTION_STALE');
   if (current?.refused) reasons.push('connection_refusal');
   if (current && current.usable !== baseline.connections[0].usable) reasons.push('capacity_changed');
   if (current && current.total >= current.usable) reasons.push('usable_slots_exhausted');
   const high = !!current && current.total >= 18;
   if (high && previous.previousHigh) reasons.push('sustained_connection_headroom');
-  const lastConnectionAt = current ? sample.at : previous.lastConnectionAt;
+  const lastConnectionAt = current ? current.at??sample.at : previous.lastConnectionAt;
   if (sample.at - previous.lastConnectionAt >= 2 * minute) reasons.push('connection_coverage_gap');
   let assessment = previous.previousAssessment, lastWindowAt = previous.lastWindowAt;
   need(sample.window === null || typeof sample.window === 'object', 'TRIAL_WINDOW_INVALID');

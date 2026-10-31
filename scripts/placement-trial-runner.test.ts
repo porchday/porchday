@@ -31,6 +31,21 @@ it('persists a stop on resumed coverage loss without another external sample',as
   expect(JSON.parse(readFileSync(join(directory,'00002.json'),'utf8')).reasons).toContain('observation_gap');
  }finally{rmSync(directory,{recursive:true,force:true});}
 });
+it('records completed windows on the real clock without slipping the minute cadence',async()=>{
+ vi.useFakeTimers();vi.setSystemTime(t);
+ const directory=realpathSync(mkdtempSync(join(tmpdir(),'trial-runner-')));
+ try{
+  const collect=vi.fn(async input=>{
+   const n=Math.round((input.at-t)/minute),value=sample(input);
+   if(n%5===0){await new Promise(resolve=>setTimeout(resolve,20000));value.window={...metrics,startedAt:input.lastWindowAt,endedAt:Date.now()};}
+   return value;
+  });
+  const result=runPlacementTrial({directory,operationId:id,baseline,collect,assertInventory:async()=>{},assertLease:()=>{},signal:new AbortController().signal});
+  await vi.advanceTimersByTimeAsync(60*minute+20000);expect(await result).toBe('healthy');expect(collect).toHaveBeenCalledTimes(60);
+  const final=JSON.parse(readFileSync(join(directory,'00061.json'),'utf8'));
+  expect(final.at).toBe(t+60*minute+20000);expect(final.sample.window.endedAt).toBe(final.at);
+ }finally{rmSync(directory,{recursive:true,force:true});}
+});
 it('bounds a failed collector and records a rollback decision instead of retrying',async()=>{
  vi.useFakeTimers();vi.setSystemTime(t);
  const directory=realpathSync(mkdtempSync(join(tmpdir(),'trial-runner-'))),collect=vi.fn(()=>new Promise(()=>{}));
