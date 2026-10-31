@@ -97,15 +97,18 @@ export function createBuilderChatRoutes() {
     return c.json({ id: row.id }, 201);
   });
   app.get('/builder-chat/features', async c => {
+    const feed = c.req.query('surface') === 'feed';
     let after: { at: string; id: string } | null = null;
     if (c.req.query('cursor')) {
       try { after = z.object({at:z.iso.datetime(),id:z.uuid()}).parse(JSON.parse(atob(c.req.query('cursor')!))); }
       catch { return fail(c, 'INVALID_MESSAGE'); }
     }
-    const [row] = await withMember(c.env, c.get('memberId'), db => db`select app.feature_board(${after?.at ?? null}::text::timestamptz,${after?.id ?? null}::uuid) as items`);
+    const [row] = await withMember(c.env, c.get('memberId'), db => feed
+      ? db`select case when coalesce((app.builder_chat_state()->>'disclosure_version')::integer,0)>=${BUILDER_CHAT.disclosureVersion} then app.feature_board(${after?.at ?? null}::text::timestamptz,${after?.id ?? null}::uuid) else null end as items`
+      : db`select app.feature_board(${after?.at ?? null}::text::timestamptz,${after?.id ?? null}::uuid) as items`);
     if (row.items === null) return fail(c, 'NOT_FOUND');
     const items = row.items.slice(0,30), last = items.at(-1);
-    return c.json({items:items.map(({cursor_at,...item}: any) => item),next_cursor:row.items.length>30 && last ? btoa(JSON.stringify({at:last.cursor_at,id:last.id})) : null});
+    return c.json({items:items.filter((item:any)=>!feed || item.status==='voting').map(({cursor_at,...item}: any) => item),next_cursor:row.items.length>30 && last ? btoa(JSON.stringify({at:last.cursor_at,id:last.id})) : null,...(feed ? {paused:builderChatPaused(c.env),feed_eligible:true} : {})});
   });
   app.post('/builder-chat/features', async c => {
     if (builderChatPaused(c.env)) return fail(c, (await state(c)) ? 'BUILDER_CHAT_PAUSED' : 'NOT_FOUND');

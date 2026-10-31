@@ -190,11 +190,36 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   await clearQueue();
  });
 
+ it('paginates feed proposals without duplicates across closed rows and revokes access',async()=>{
+  const p=await person();await allow(p);
+  const marker='Feed '+randomUUID();
+  await owner.query(`WITH messages AS (
+    INSERT INTO app.builder_chat_messages(member_id,body,status,task_kind,share_plan)
+    SELECT $1::uuid,$2,'answered','feature_plan',true FROM generate_series(1,32) RETURNING id
+  ) INSERT INTO app.feature_additions(member_id,source_message,title,plan)
+    SELECT $1::uuid,id,$2,'Synthetic public test plan' FROM messages`,[p.id,marker]);
+  await owner.query("UPDATE app.feature_additions SET status='delivered' WHERE id=(SELECT id FROM app.feature_additions WHERE title=$1 LIMIT 1)",[marker]);
+  let cursor:string|null=null;const seen=new Set<string>();let matching=0;
+  do {
+    const response=await member(p,'GET','/features?surface=feed'+(cursor?'&cursor='+encodeURIComponent(cursor):''));
+    expect(response.status).toBe(200);const page=await response.json();
+    for(const feature of page.items){expect(seen.has(feature.id)).toBe(false);seen.add(feature.id);expect(feature.status).toBe('voting');if(feature.title===marker)matching++;}
+    cursor=page.next_cursor;
+  }while(cursor);
+  expect(matching).toBe(31);
+  await owner.query('DELETE FROM app.builder_chat_access WHERE member_id=$1',[p.id]);
+  expect((await member(p,'GET','/features?surface=feed')).status).toBe(404);
+  await owner.query('DELETE FROM app.members WHERE id=$1',[p.id]);
+ });
+
  it('publishes plans with consent and dispatches exactly once at net +3',async()=>{
   await clearQueue();
   const author=await person(),b=await person(),c=await person(),d=await person(),outsider=await person();
   for(const p of [author,b,c,d])await allow(p);
   expect((await member(outsider,'GET','/features')).status).toBe(404);
+  expect((await member(outsider,'GET','/features?surface=feed')).status).toBe(404);
+  const unconsented=await person();await allow(unconsented,false);
+  expect((await member(unconsented,'GET','/features?surface=feed')).status).toBe(404);
   const task=(await (await member(author,'POST','/features',{message:'Add a feature board'})).json()).id;
   const claimed=await claim();expect(claimed).toMatchObject({id:task,task_kind:'feature_plan',share_plan:true});
   const finish={status:'answered',reply:'Plan posted',commits:[],held_back:[],proposal:{title:'Feature test',plan:'Add the capability. Verify permissions and tests.'}};
@@ -203,6 +228,9 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   const board=await (await member(author,'GET','/features')).json();expect(board.items.filter((p:any)=>p.title==='Feature test')).toHaveLength(1);
   const feature=board.items.find((p:any)=>p.title==='Feature test'),path=`/features/${feature.id}/vote`;
   expect(feature.score).toBe(0);
+  const feed=await (await member(author,'GET','/features?surface=feed')).json();
+  expect(feed.items.find((p:any)=>p.id===feature.id)).toMatchObject({score:0,my_vote:0,status:'voting'});
+  expect(feed.paused).toBe(false);
   expect((await member(outsider,'PUT',path,{value:1})).status).toBe(404);
   for(const p of [author,b,c])expect((await member(p,'PUT',path,{value:1})).status).toBe(200);
   await member(d,'PUT',path,{value:-1});
@@ -210,6 +238,7 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   expect(voteExport.feature_votes).toEqual([{feature_id:feature.id,value:-1}]);
   await member(author,'PUT',path,{value:1});
   expect((await (await member(b,'GET','/features')).json()).items.find((p:any)=>p.id===feature.id).score).toBe(2);
+  expect((await (await member(b,'GET','/features?surface=feed')).json()).items.find((p:any)=>p.id===feature.id)).toMatchObject({score:2,my_vote:1});
   expect(await claim()).toBeNull();
   await member(d,'PUT',path,{value:0});
   // Legacy bridges cannot accidentally execute an unframed approved job.
@@ -219,6 +248,7 @@ suite('builder chat through real sessions and restricted SQL roles',()=>{
   const build=results.find(Boolean);expect(results.filter(Boolean)).toHaveLength(1);
   expect(build).toMatchObject({task_kind:'feature_build',feature:{id:feature.id,title:'Feature test',plan:finish.proposal.plan}});
   expect((await member(d,'PUT',path,{value:-1})).status).toBe(409);
+  expect((await (await member(d,'GET','/features?surface=feed')).json()).items.some((p:any)=>p.id===feature.id)).toBe(false);
   await bridge(`/messages/${build.id}/finish`,{status:'answered',reply:'Implemented',commits:['abcd1234'],held_back:[]});
   expect((await (await member(author,'GET','/features')).json()).items.find((p:any)=>p.id===feature.id)).toMatchObject({status:'delivered',commits:['abcd1234']});
   expect(await claim()).toBeNull();

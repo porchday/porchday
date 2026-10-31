@@ -1,0 +1,29 @@
+name: Verify feed feature voting
+on:
+  push:
+    paths:
+      - 'apps/web/src/**'
+      - 'scripts/check-feed-features.mjs'
+      - 'package-lock.json'
+      - '.github/workflows/feed-features.yml'
+  pull_request:
+    paths:
+      - 'apps/web/src/**'
+      - 'scripts/check-feed-features.mjs'
+      - 'package-lock.json'
+      - '.github/workflows/feed-features.yml'
+permissions:
+  contents: read
+jobs:
+  feature-browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: node scripts/check-feed-features.mjs
+      - run: TEST_BROWSER=webkit node scripts/check-feed-features.mjs
