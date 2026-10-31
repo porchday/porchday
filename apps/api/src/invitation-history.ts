@@ -9,21 +9,24 @@ export async function invitationRecipientKey(secret:string,email:string) {
  return [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-type HistoryInput={sender:string;email:string;key:string;requestedAt:Date;expiresAt:Date;tokenHash:string|null;claimedUser?:string|null;joinedAt?:Date|null};
+type HistoryInput={sender:string;email:string;key:string;requestedAt:Date;expiresAt:Date;tokenHash:string|null;claimedUser?:string|null;joinedAt?:Date|null;connectionKind?:string|null};
 /** Every accepted request gets a receipt, including suppressed requests. */
 export async function recordInvitationHistory(db:Pick<Pool|PoolClient,'query'>,env:Env,input:HistoryInput) {
  const encrypted=await encryptAccountEmail(env,{to:input.email,subject:'Porchday invitation receipt',text:input.sender+'\n'+input.key});
  await db.query(`INSERT INTO public.platform_invitation_history
-  (id,sender_id,recipient_key,encrypted_recipient,requested_at,expires_at,invitation_token_hash,claimed_user,joined_at)
-  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+  (id,sender_id,recipient_key,encrypted_recipient,requested_at,expires_at,invitation_token_hash,claimed_user,joined_at,connection_kind)
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
   ON CONFLICT(sender_id,recipient_key) DO UPDATE SET
    encrypted_recipient=EXCLUDED.encrypted_recipient,
+   connection_kind=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at THEN EXCLUDED.connection_kind ELSE platform_invitation_history.connection_kind END,
+   revoked_at=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN NULL ELSE platform_invitation_history.revoked_at END,
+   connection_checked_at=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN NULL ELSE platform_invitation_history.connection_checked_at END,
    requested_at=greatest(platform_invitation_history.requested_at,EXCLUDED.requested_at),
    expires_at=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at THEN EXCLUDED.expires_at ELSE platform_invitation_history.expires_at END,
    invitation_token_hash=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at THEN EXCLUDED.invitation_token_hash ELSE platform_invitation_history.invitation_token_hash END,
-   claimed_user=coalesce(platform_invitation_history.claimed_user,EXCLUDED.claimed_user),
-   joined_at=coalesce(platform_invitation_history.joined_at,EXCLUDED.joined_at)`,
-  [crypto.randomUUID(),input.sender,input.key,encrypted,input.requestedAt,input.expiresAt,input.tokenHash,input.claimedUser||null,input.joinedAt||null]);
+   claimed_user=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN EXCLUDED.claimed_user ELSE coalesce(platform_invitation_history.claimed_user,EXCLUDED.claimed_user) END,
+   joined_at=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN EXCLUDED.joined_at ELSE coalesce(platform_invitation_history.joined_at,EXCLUDED.joined_at) END`,
+  [crypto.randomUUID(),input.sender,input.key,encrypted,input.requestedAt,input.expiresAt,input.tokenHash,input.claimedUser||null,input.joinedAt||null,input.connectionKind||null]);
 }
 
 export async function invitationHistoryRecipient(env:Env,row:{sender_id:string;recipient_key:string;encrypted_recipient:string}) {
