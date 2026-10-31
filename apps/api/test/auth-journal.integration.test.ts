@@ -1,6 +1,10 @@
 import {persistSessionDenial} from '../src/session-denial';
 import {provePrivacyCommits} from '../src/privacy-commit-proof';
 import {proveAuthCommitCohort} from '../../../scripts/auth-commit-cohort-proof';
+import {createStagingInflightRevocation} from '../../../scripts/auth-inflight-revocation';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions} from '../src/session-denial-candidates';
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
@@ -702,6 +706,33 @@ suite("Authenticated account privacy journal boundary", () => {
       const cohort=await proveAuthCommitCohort({db:owner,store,baselineSequence:baseline,generation,assertScope:()=>{},requests:results.map((r,i)=>({memberId:people[i].id,sessionId:sessions[i],startedAt:r.startedAt,endedAt:r.endedAt,status:200,deniedStatus:401}))},AbortSignal.timeout(10000));
       expect(cohort).toMatchObject({passed:true,count,canonicalMarkersAndReceipts:true,perRequestIdentityProved:false});
     }finally{release();await Promise.allSettled(requests);store.beforeWrite=undefined;env.PRIVACY_COMMIT_WRITER_V1=previousWriter;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;}
+  }),15000);
+  it('observes a real auth request blocked by its owned identity lock on both sides of a release barrier',async()=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(),directory=await mkdtemp(join(tmpdir(),'auth-inflight-integration-'));
+    const sessionId=(await owner.query('SELECT id FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0].id;
+    const previousWriter=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';
+    const probe=createStagingInflightRevocation({directory,db:owner,lock:await owner.connect(),session:{memberId:p.id,sessionId,cookie:p.cookie},assertScope:()=>{},transport:async(url,init)=>{
+      const path=new URL(String(url)).pathname;
+      expect(new Headers(init?.headers).get('Cookie')).toBe(p.cookie);
+      // Exercise the actual auth routes locally. This suite mounts only auth,
+      // so its denial read uses list-sessions rather than the hosted /me route.
+      return(await call(path==='/api/auth/revoke-sessions'?'revoke-sessions':'list-sessions',init?.method==='POST'?{}:undefined,p.cookie)).response;
+    }},AbortSignal.timeout(12000));
+    try{
+      expect(await probe.start(AbortSignal.timeout(10000))).toBe('in-flight');
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[sessionId])).rowCount).toBe(1);
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      expect(await probe.finish(AbortSignal.timeout(5000))).toBe('verified');
+      const result=probe.result();expect(result.waitingBeforeDispatch&&result.waitingAfterRestore).toBe(true);
+      const fences=(await owner.query('SELECT operation_id FROM app.privacy_operation_commits WHERE sequence>$1::bigint',[result.markerBefore])).rows;expect(fences).toHaveLength(1);
+      const control=(await readJournalControl(store)).value;expect(control.pending).toHaveLength(0);expect(control.mode).toBe('active');
+      const intent=privacyIntentSchema.parse(JSON.parse(store.rows.get(`intents/${fences[0].operation_id}.json`)!.value));
+      const proofControl={...control,pending:[{id:intent.id,started_at:intent.started_at}]};
+      expect((await provePrivacyCommits(store,proofControl)).has(intent.id)).toBe(true);expect((await provePrivacyReceipts(store,proofControl)).has(intent.id)).toBe(true);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[sessionId])).rowCount).toBe(0);
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+    }finally{await probe.close();env.PRIVACY_COMMIT_WRITER_V1=previousWriter;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;await rm(directory,{recursive:true,force:true});}
   }),15000);
   it("leaves an ambiguous post-commit R2 failure unresolved and fails closed", async () => {
     const p = await person(),
