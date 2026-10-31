@@ -25,3 +25,31 @@ A label change removes the peer's server-side grants for the changing author's p
 Both label transitions enter the privacy journal because either transition leaves a restricted audience. Restore replay conservatively removes the relationship rather than restoring an older classification or silently recreating access. This reuses the existing connection-removal journal format. Unfriending, blocking, expiration, deletion, key trust and signed-envelope checks keep their existing behavior.
 
 Verification must cover asymmetric labels in both member orderings, independent acceptance defaults and retry, immediate relabeling, directional reads/revocation, exports, stale audience snapshots, and privacy-journal replay. Deployment and hosted acceptance evidence belong in issue #25; local fixtures do not establish a real member's device or inbox acceptance.
+
+## Inviting someone new
+
+New clients send an explicit `kind: friend | family` with a platform invitation.
+The sender UI and email explain that accepting the invitation and verifying the
+invited email creates a connection with that initial label in both directions.
+History is future-only; each person can independently change their own label or
+disconnect later. Existing members still use normal connection requests.
+
+Migration `058_invitation_connections.sql` is additive. Invitations without a
+label, including those created by older clients, retain admission-only behavior.
+Verification creates the relationship transactionally, respecting blocks, member
+status and the 300-person limit. Once checked, re-verification cannot restore a
+removed connection or overwrite preferences. An unavailable or blocked inviter
+cannot gain access through signup.
+
+Senders can revoke pending invitations, including a claimed invitation whose
+account has not yet been verified. This invalidates its signup credential and
+prevents its automatic connection; it does not delete an account already created.
+Joined invitations cannot be revoked as a shortcut to removing a connection.
+Revocation and verification serialize on the invitation receipt. Queued delivery
+checks the invalidated credential; an email already sent cannot be recalled.
+
+List clients request `?v=2` for the Revoked status. Older web/native clients see
+revoked invitations as Expired, which they already support. Suppressed requests
+retain the requested label and generic pending receipt without revealing account
+existence or another sender's invitation. Rollout applies the expansion, API,
+then UI; rollback keeps the expansion and its consent/revocation enforcement.

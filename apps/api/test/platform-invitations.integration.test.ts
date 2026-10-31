@@ -54,6 +54,104 @@ suite('member platform invitations through real auth sessions and restricted SQL
    await admin.query('DROP DATABASE IF EXISTS '+database);await admin.query('DROP ROLE IF EXISTS '+role);
   }finally{await admin.end();}
  });
+ it.each(['friend','family'])('connects an opted-in %s invitation only on verification, once, with future-only history',async kind=>{
+  const a=await person(),email=randomUUID()+'@example.test',id=randomUUID();
+  expect((await call('/api/v1/platform-invitations',{email,kind},a.cookie)).status).toBe(202);
+  const invitation=await row(email),message=await decryptAccountEmail(env,invitation.encrypted_payload);
+  expect(message.text).toContain('automatically connects');
+  expect(invitation.connection_kind).toBe(kind);
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2',[id,invitation.token_hash]);
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$1,$2,false)',[id,email]);
+  await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,'i_'+id.replaceAll('-','').slice(0,16)]);
+  expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(0);
+  // Run verification with the same restricted auth role used by the server.
+  const auth=new Pool({connectionString:env.HYPERDRIVE_AUTH.connectionString});
+  try {await auth.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);} finally {await auth.end();}
+  const connections=(await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows;
+  expect(connections).toHaveLength(1);expect(connections[0]).toMatchObject({kind_a:kind,kind_b:kind,history_a:'future',history_b:'future'});
+  const list=await (await history(a.cookie,'?v=2')).json() as any;
+  expect(list.items[0]).toMatchObject({status:'joined',kind});
+  expect((await call('/api/v1/platform-invitations/'+list.items[0].id+'/revoke',{},a.cookie)).status).toBe(409);
+  await owner.query('DELETE FROM app.connections WHERE id=$1',[connections[0].id]);
+  await owner.query('UPDATE public.auth_user SET "emailVerified"=false WHERE id=$1',[id]);
+  await owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);
+  expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(0);
+ });
+ it('revokes only the sender receipt, invalidates claims and queued mail, and supports old list clients',async()=>{
+  const a=await person(),b=await person(),email=randomUUID()+'@example.test';
+  await call('/api/v1/platform-invitations',{email,kind:'family'},a.cookie);
+  const invitation=await row(email),list=await (await history(a.cookie,'?v=2')).json() as any,id=list.items[0].id;
+  expect(list.items[0]).toMatchObject({status:'pending',kind:'family'});
+  expect((await call('/api/v1/platform-invitations/'+id+'/revoke',{},b.cookie)).status).toBe(404);
+  expect((await call('/api/v1/platform-invitations/'+id+'/revoke',{},a.cookie,{SOCIAL_INVITATIONS_PAUSED:'true'})).status).toBe(200);
+  expect((await call('/api/v1/platform-invitations/'+id+'/revoke',{},a.cookie)).status).toBe(200);
+  expect(((await (await history(a.cookie,'?v=2')).json()) as any).items[0].status).toBe('revoked');
+  expect(((await (await history(a.cookie)).json()) as any).items[0].status).toBe('expired');
+  expect((await owner.query('SELECT public.platform_invitation_deliverable($1) AS value',[invitation.token_hash])).rows[0].value).toBe(false);
+  expect((await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2 RETURNING token_hash',[randomUUID(),invitation.token_hash])).rowCount).toBe(0);
+ });
+ it('revocation after claiming but before verification prevents the automatic connection',async()=>{
+  const a=await person(),email=randomUUID()+'@example.test',id=randomUUID();
+  await call('/api/v1/platform-invitations',{email,kind:'friend'},a.cookie);
+  const invitation=await row(email);
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2',[id,invitation.token_hash]);
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$1,$2,false)',[id,email]);
+  await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,'i_'+id.replaceAll('-','').slice(0,16)]);
+  const list=await (await history(a.cookie,'?v=2')).json() as any;
+  expect((await call('/api/v1/platform-invitations/'+list.items[0].id+'/revoke',{},a.cookie)).status).toBe(200);
+  await owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);
+  expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(0);
+ });
+ it('does not reveal suppressed invitations through the requested label',async()=>{
+  const a=await person(),existing=await person(),email=randomUUID()+'@example.test';
+  for(const recipient of [existing.email,email])expect((await call('/api/v1/platform-invitations',{email:recipient,kind:'family'},a.cookie)).status).toBe(202);
+  const list=await (await history(a.cookie,'?v=2')).json() as any;
+  expect(list.items.map((i:any)=>({kind:i.kind,status:i.status}))).toEqual([{kind:'family',status:'pending'},{kind:'family',status:'pending'}]);
+ });
+ it('serializes concurrent verification and revocation without connecting after a successful revoke',async()=>{
+  for(let attempt=0;attempt<4;attempt++){
+   const a=await person(),email=randomUUID()+'@example.test',id=randomUUID();
+   await call('/api/v1/platform-invitations',{email,kind:'family'},a.cookie);
+   const invitation=await row(email);
+   await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2',[id,invitation.token_hash]);
+   await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$1,$2,false)',[id,email]);
+   await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,'i_'+id.replaceAll('-','').slice(0,16)]);
+   const list=await (await history(a.cookie,'?v=2')).json() as any;
+   const [revocation]=await Promise.all([
+    call('/api/v1/platform-invitations/'+list.items[0].id+'/revoke',{},a.cookie),
+    owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id])
+   ]);
+   expect([200,409]).toContain(revocation.status);
+   expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(revocation.status===200?0:1);
+  }
+ });
+ it.each(['blocked','restricted'])('does not connect when the inviter becomes %s before verification',async state=>{
+  const a=await person(),email=randomUUID()+'@example.test',id=randomUUID();
+  await call('/api/v1/platform-invitations',{email,kind:'family'},a.cookie);
+  const invitation=await row(email);
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2',[id,invitation.token_hash]);
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$1,$2,false)',[id,email]);
+  await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,'i_'+id.replaceAll('-','').slice(0,16)]);
+  if(state==='blocked')await owner.query('INSERT INTO app.blocks(actor,target) VALUES($1,$2)',[a.id,id]);
+  else await owner.query("UPDATE app.members SET status='restricted' WHERE id=$1",[a.id]);
+  await owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);
+  expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(0);
+ });
+ it('a fresh credential after the cooldown clears an old revocation without changing a duplicate label',async()=>{
+  const a=await person(),email=randomUUID()+'@example.test';
+  await call('/api/v1/platform-invitations',{email,kind:'family'},a.cookie);
+  await call('/api/v1/platform-invitations',{email,kind:'friend'},a.cookie);
+  let list=await (await history(a.cookie,'?v=2')).json() as any;
+  expect(list.items[0].kind).toBe('family');
+  const old=await row(email);
+  await call('/api/v1/platform-invitations/'+list.items[0].id+'/revoke',{},a.cookie);
+  await owner.query("UPDATE public.platform_invitation_requests SET created_at=now()-interval '8 days' WHERE sender_id=$1",[a.id]);
+  await owner.query('DELETE FROM public.pilot_invitations WHERE token_hash=$1',[old.token_hash]);
+  await call('/api/v1/platform-invitations',{email,kind:'friend'},a.cookie);
+  list=await (await history(a.cookie,'?v=2')).json() as any;
+  expect(list.items[0]).toMatchObject({kind:'friend',status:'pending'});
+  expect((await row(email)).token_hash).not.toBe(old.token_hash);
+ });
  it('requires Origin, verified active session, signup gate, privacy guard and incident permission before creating mail',async()=>{
   const a=await person(),email=randomUUID()+'@example.test';
   expect((await invite('',email)).status).toBe(401);
@@ -118,7 +216,7 @@ suite('member platform invitations through real auth sessions and restricted SQL
   const response=await history(a.cookie),body=await response.json() as any;
   expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('no-store');
   expect(body.items).toHaveLength(2);expect(body.items.map((row:any)=>row.status)).toEqual(['pending','pending']);
-  for(const item of body.items)expect(Object.keys(item).sort()).toEqual(['email','expires_at','id','requested_at','status']);
+  for(const item of body.items)expect(Object.keys(item).sort()).toEqual(['email','expires_at','id','kind','requested_at','status']);
   const other=await(await history(b.cookie)).json() as any;expect(other.items).toHaveLength(1);expect(other.items[0].email).toBe(email);expect(other.items[0].status).toBe('pending');
   const stored=(await owner.query('SELECT * FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows;
   expect(JSON.stringify(stored)).not.toContain(email);expect(JSON.stringify(stored)).not.toContain(existing.email);
@@ -267,8 +365,8 @@ suite('member platform invitations through real auth sessions and restricted SQL
   expect(delivered.length-before).toBe(10);
   mailFails=true;
  });
- it('uses the real email-bound one-use signup gate and never auto-connects the new account',async()=>{
-  const a=await person(),email=randomUUID()+'@example.test';await invite(a.cookie,email);
+ it.each([null,'friend','family'])('uses the real signup and verification flow with label %s',async kind=>{
+  const a=await person(),email=randomUUID()+'@example.test';await call('/api/v1/platform-invitations',{email,...(kind?{kind}:{})},a.cookie);
   const stored=await row(email),message=await decryptAccountEmail(env,stored.encrypted_payload);
   const token=message.text.match(/#invite=([A-Za-z0-9_-]+)/)![1];
   const body={email,handle:'new_'+randomUUID().replaceAll('-','').slice(0,15),password:'synthetic-invitation-password-12345',adult:true,acceptedRules:true,inviteCode:token};
@@ -280,6 +378,16 @@ suite('member platform invitations through real auth sessions and restricted SQL
   expect((await owner.query('SELECT "emailVerified" FROM public.auth_user WHERE id=$1',[id])).rows[0].emailVerified).toBe(false);
   expect((await owner.query('SELECT count(*)::int AS n FROM app.connections WHERE member_a=$1 OR member_b=$1',[id])).rows[0].n).toBe(0);
   expect((await owner.query('SELECT count(*)::int AS n FROM app.connection_requests WHERE sender=$1 OR recipient=$1',[id])).rows[0].n).toBe(0);
+  const mail=(await owner.query("SELECT encrypted_payload FROM public.auth_email_outbox WHERE member_id=$1 AND purpose='account' ORDER BY created_at DESC LIMIT 1",[id])).rows[0];
+  const verification=await decryptAccountEmail(env,mail.encrypted_payload);
+  const url=verification.text.match(/http:\/\/localhost:8787\/api\/auth\/verify-email[^\s]+/)![0];
+  const pending:Promise<unknown>[]=[];
+  const verified=await app.fetch(new Request(url),env,{waitUntil(p:Promise<unknown>){pending.push(p);},passThroughOnException(){},props:{}} as ExecutionContext);
+  await Promise.all(pending);expect(verified.status).toBeLessThan(400);
+  expect((await owner.query('SELECT "emailVerified" FROM public.auth_user WHERE id=$1',[id])).rows[0].emailVerified).toBe(true);
+  const links=(await owner.query('SELECT kind_a,kind_b FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows;
+  expect(links).toEqual(kind?[{kind_a:kind,kind_b:kind}]:[]);
+
  });
  it('suppresses mail and signup for inactive inviter, expiry or deletion; restore purge removes queued capabilities; runtime roles stay isolated',async()=>{
   const a=await person(),email=randomUUID()+'@example.test';await invite(a.cookie,email);const stored=await row(email);

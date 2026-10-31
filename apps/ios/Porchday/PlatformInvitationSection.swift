@@ -3,6 +3,8 @@ import SwiftUI
 struct PlatformInvitationSection: View {
     @EnvironmentObject var model: AppModel
     @State private var email = ""
+    @State private var kind = "friend"
+    @State private var revoking: String?
     @State private var sending = false
     @State private var notice: String?
     @State private var error: String?
@@ -21,9 +23,10 @@ struct PlatformInvitationSection: View {
                 .textInputAutocapitalization(.never).autocorrectionDisabled()
                 .accessibilityLabel("Invitation email address")
                 .disabled(sending || !model.canWriteSocial)
+            Picker("Connect as", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }.disabled(sending)
             Button(sending ? "Requesting invitation…" : "Send invitation") { Task { await send() } }
                 .disabled(sending || email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.canWriteSocial)
-            Text("For someone who hasn’t joined. Up to 10 requests every 24 hours. Invitations last seven days and work only for that email address. Joining does not create a friendship.")
+            Text("For someone who hasn’t joined. Up to 10 requests every 24 hours. Invitations last seven days and work only for that email address. Accepting and verifying their email connects you using the selected label, sharing future posts for that audience. Either person can change their own label or disconnect later.")
                 .font(.footnote).foregroundStyle(.secondary)
             if let notice { Text(notice).font(.callout).accessibilityFocused($feedbackFocused) }
             if let error { Text(error).font(.callout).foregroundStyle(.red).accessibilityFocused($feedbackFocused) }
@@ -40,7 +43,10 @@ struct PlatformInvitationSection: View {
                         if invitation.status == "pending" { Text("Expires " + invitation.expires.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) }
                     }
                     Spacer()
-                    Text(invitation.statusLabel).font(.caption)
+                    VStack { Text(invitation.statusLabel).font(.caption)
+                        if let kind = invitation.kind { Text(kind == "family" ? "Family" : "Friend").font(.caption) }
+                        if invitation.status == "pending" { Button("Revoke") { Task { await revoke(invitation) } }.disabled(revoking != nil) }
+                    }
                 }
             }
             if loading { ProgressView("Loading invitations…") }
@@ -55,7 +61,7 @@ struct PlatformInvitationSection: View {
         readID = attempt; loading = true; listError = nil
         defer { if readID == attempt { loading = false } }
         do {
-            let result = try await model.api.social("/platform-invitations" + (more ? cursor.map { "?cursor=" + $0 } ?? "" : ""))
+            let result = try await model.api.social("/platform-invitations?v=2" + (more ? cursor.map { "&cursor=" + $0 } ?? "" : ""))
             guard readID == attempt, model.member?.id == memberID, !Task.isCancelled else { return }
             let rows = try result["items"].array.map(SentPlatformInvitation.init)
             invitations = more ? invitations + rows.filter { row in !invitations.contains { $0.id == row.id } } : rows
@@ -63,12 +69,22 @@ struct PlatformInvitationSection: View {
         } catch { if readID == attempt, model.member?.id == memberID, !Task.isCancelled { listError = "Could not load your invitations. Try again." } }
     }
 
+    @MainActor private func revoke(_ invitation: SentPlatformInvitation) async {
+        guard revoking == nil else { return }
+        revoking = invitation.id
+        defer { revoking = nil }
+        do {
+            _ = try await model.api.social("/platform-invitations/" + invitation.id + "/revoke", method: "POST")
+            await load()
+        } catch { listError = "Could not confirm revocation. Refresh invitations; if they already joined, manage the connection separately." }
+    }
+
     @MainActor private func send() async {
         guard !sending, let member = model.member else { return }
         sending = true; notice = nil; error = nil
         defer { sending = false }
         do {
-            let response = try await PlatformInvitation.send(email: email, member: member) { path, body in
+            let response = try await PlatformInvitation.send(email: email, member: member, kind: kind) { path, body in
                 try await model.api.social(path, method: "POST", body: body)
             }
             guard model.member?.id == member.id, !Task.isCancelled else { return }
