@@ -720,3 +720,11 @@ output, redacts the supplied provider credential, fsyncs the receipt, and refuse
 to overwrite earlier evidence. Diagnostics remain private; thrown errors stay
 sanitized. These receipts supplement provider reconciliation and never prove a
 write's outcome by themselves.
+
+The absence reconciler also accepts the specific retained Cloudflare error 10305
+("Cannot use an assets binding without assets") when Wrangler retained that
+provider response but omitted its HTTP status from the log. The receipt records
+`providerErrorCode: 10305` instead of inventing a status. Unknown provider codes,
+combined status/code claims, incomplete catalogues and changed inventories still
+fail closed. The caller must verify the original process receipt and exact failed
+version-upload endpoint; code-only evidence never permits replay of the operation.

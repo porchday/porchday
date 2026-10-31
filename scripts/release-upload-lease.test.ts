@@ -181,6 +181,23 @@ describe('rejected upload without a version',()=>{
    const next=FileUploadLease.acquire(f.root,{...f.plan,operationId:id(8)});next.cancelBeforeDispatch();
   }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
  });
+ it('accepts retained provider rejection 10305 without inventing an HTTP status',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
+  try{
+   await lease.dispatchOnce(async()=>{},async()=>{throw Error('10305');},signal());
+   const {httpStatus,...proof}=rejection(f.plan);
+   for(const code of [10000,10300,10306,429,500]){
+    await expect(lease.rejectAbsent(async()=>({...proof,providerErrorCode:code}) as any,signal())).rejects.toThrow('UPLOAD_ABSENT_REJECTION_INVALID');
+    expect(existsSync(join(f.root,'deployment-lock/upload-intent.json'))).toBe(true);
+   }
+   await expect(lease.rejectAbsent(async()=>({...proof,httpStatus,providerErrorCode:10305}) as any,signal())).rejects.toThrow('UPLOAD_ABSENT_REJECTION_INVALID');
+   await lease.rejectAbsent(async()=>({...proof,providerErrorCode:10305}),signal());
+   const record=JSON.parse(readFileSync(join(f.root,'release-upload-rejected-absent-'+f.plan.operationId,'upload-rejected-absent.json'),'utf8'));
+   expect(record.providerErrorCode).toBe(10305);expect(record.httpStatus).toBeUndefined();
+   expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
+   expect(()=>FileUploadLease.acquire(f.root,f.plan)).toThrow('UPLOAD_ALREADY_REJECTED');
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
  it('does not reinterpret a verified candidate as absent',async()=>{
   const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
   try{
