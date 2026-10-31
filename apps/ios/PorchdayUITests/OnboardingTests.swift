@@ -12,7 +12,10 @@ final class OnboardingTests:XCTestCase {
         let app=openApp();XCTAssertTrue(app.buttons["Log in"].exists)
         tapVisible(app.buttons["toggle-signup"],in:app)
         XCTAssertTrue(app.switches["I am at least 18 years old"].waitForExistence(timeout:5))
-        XCTAssertTrue(app.buttons["Create account"].exists);XCTAssertFalse(app.buttons["Create account"].isEnabled)
+        let createAccount=app.buttons["Create account"]
+        // Form rows below the connection disclosure may not exist until scrolled into view.
+        for _ in 0..<5 { if createAccount.exists { break };app.swipeUp() }
+        XCTAssertTrue(createAccount.exists);XCTAssertFalse(createAccount.isEnabled)
     }
     @MainActor func testStolenAccountReportAvailableWithoutLogin() {
         let app=openApp();tapVisible(app.buttons["report-stolen-account"],in:app)
