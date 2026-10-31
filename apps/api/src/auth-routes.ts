@@ -1,3 +1,4 @@
+import {logoutJournalTiming,measureJournalPhase} from './journal-timing';
 import {publishSessionDenial} from './session-denial';
 import {deleteDeniedSession} from './session-denial-cleanup';
 import { Hono, type Context } from "hono";
@@ -305,6 +306,7 @@ authRoutes.all("/*", async (c) => {
   if (c.req.method !== expectedMethod)
     return c.json({ error: { code: "METHOD_NOT_ALLOWED" } }, 405);
   const physicalPool = authPool(c.env);
+  const logoutTiming = logoutJournalTiming(c.env,c.req);
   let committedAndConfirmed = false;
   try {
     // Commit the rate limit before any operation transaction or R2 write.
@@ -312,12 +314,12 @@ authRoutes.all("/*", async (c) => {
     const key = await hashToken(
       c.env.BETTER_AUTH_SECRET + "|" + ip + "|" + path,
     );
-    const limited = await physicalPool.query(
+    const limited = await measureJournalPhase(logoutTiming,'rate_limit',()=>physicalPool.query(
       `INSERT INTO public.auth_rate_limits(key,count,expires_at) VALUES($1,1,now()+interval '1 minute')
       ON CONFLICT(key) DO UPDATE SET count=CASE WHEN auth_rate_limits.expires_at<now() THEN 1 ELSE auth_rate_limits.count+1 END,
       expires_at=CASE WHEN auth_rate_limits.expires_at<now() THEN now()+interval '1 minute' ELSE auth_rate_limits.expires_at END RETURNING count`,
       [key],
-    );
+    ));
     if (limited.rows[0].count > (path === "get-session" ? 60 : 10))
       reject("RATE_LIMIT", 429);
     let incoming: Record<string, unknown> = {};
@@ -345,7 +347,7 @@ authRoutes.all("/*", async (c) => {
         reject("INVALID_CODE");
     }
     const proof = sensitive(path)
-      ? await authorize(c, physicalPool, path, incoming)
+      ? await measureJournalPhase(logoutTiming,'initial_authorization',()=>authorize(c, physicalPool, path, incoming))
       : null;
     if(path==='sign-out'&&c.env.SESSION_DENIAL_WRITER_V1==='true'){
       if(!proof?.sessionId||!proof.auth)reject('UNAUTHORIZED',401);
@@ -368,7 +370,7 @@ authRoutes.all("/*", async (c) => {
       ).rows[0]?.id;
     let completedEmailChange = false;
     const work = async () => {
-      const client = await physicalPool.connect();
+      const client = await measureJournalPhase(logoutTiming,'work_pool_acquire',()=>physicalPool.connect());
       const proxyClient = {
         query: client.query.bind(client),
         release: () => {},
@@ -381,15 +383,17 @@ authRoutes.all("/*", async (c) => {
       let transaction = false;
       let commitAttempted = false;
       try {
-        await client.query("BEGIN");
-        transaction = true;
-        await client.query("SET LOCAL lock_timeout='10s'");
+        await measureJournalPhase(logoutTiming,'work_begin',async()=>{
+          await client.query("BEGIN");
+          transaction = true;
+          await client.query("SET LOCAL lock_timeout='10s'");
+        });
         if (memberToLock && uuid.test(memberToLock))
-          await pool.query(
+          await measureJournalPhase(logoutTiming,'work_identity_lock',()=>pool.query(
             "SELECT pg_advisory_xact_lock(hashtextextended('porchday-identity:'||$1,0))",
             [memberToLock],
-          );
-        const checked = proof ? await authorize(c, pool, path, incoming) : null;
+          ));
+        const checked = proof ? await measureJournalPhase(logoutTiming,'work_reauthorization',()=>authorize(c, pool, path, incoming)) : null;
         if (checked && checked.memberId !== proof?.memberId)
           reject("UNAUTHORIZED", 401);
         let request = c.req.raw;
@@ -561,17 +565,17 @@ authRoutes.all("/*", async (c) => {
           }
           return response;
         };
-        const response = await handle();
+        const response = await measureJournalPhase(logoutTiming,'work_handler',handle);
         // The journal wrapper observes the committed database cursor. No R2
         // mutation happens while this request holds SQL/advisory locks. Session
         // denial reads are bounded and repeat during in-transaction authorization.
         commitAttempted = true;
-        await client.query("COMMIT");
+        await measureJournalPhase(logoutTiming,'work_commit',()=>client.query("COMMIT"));
         transaction = false;
         return response;
       } catch (error) {
         if (transaction) {
-          const rollback = await client.query("ROLLBACK").catch(() => null);
+          const rollback = await measureJournalPhase(logoutTiming,'work_rollback',()=>client.query("ROLLBACK")).catch(() => null);
           // Only an acknowledged rollback before any COMMIT attempt proves that
           // this transaction did not commit. Preserve ambiguous outcomes.
           if (!commitAttempted && rollback?.command === "ROLLBACK")
@@ -583,7 +587,7 @@ authRoutes.all("/*", async (c) => {
       }
     };
     const response = proof?.journal
-      ? await withHttpPrivacyJournal(c, work)
+      ? await withHttpPrivacyJournal(c, work, logoutTiming)
       : await work();
     committedAndConfirmed = true;
     // The shared callback describes both steps. Show completion only after the
@@ -630,6 +634,7 @@ authRoutes.all("/*", async (c) => {
       503,
     );
   } finally {
+    logoutTiming?.finish(committedAndConfirmed);
     // Reads and MFA/session-only operations cannot enqueue mail. Cron/queue
     // retries remain responsible for previously queued delivery failures.
     if (committedAndConfirmed && authMailRoutes.has(path))
