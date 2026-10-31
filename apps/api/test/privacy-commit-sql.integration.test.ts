@@ -1,0 +1,271 @@
+import {beforeAll,afterAll,describe,it,expect,vi} from 'vitest';
+import {readdir,readFile} from 'node:fs/promises';
+import postgres,{type Sql} from 'postgres';
+import {randomUUID} from 'node:crypto';
+import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
+import {fork} from 'node:child_process';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {ProcessJournalStore} from './fixtures/commit-process-store';
+import {initializePrivacyJournal,readJournalControl,checkpointJournal,assertJournalReadable,type JournalDatabase} from '../src/privacy-journal';
+import {provePrivacyCommits} from '../src/privacy-commit-proof';
+import {commitDrillIdentity,commitDrillSession} from '../../../scripts/commit-drill-transaction';
+import {createCommitDrillStore} from '../../../scripts/commit-drill-store';
+import {serveCommitDrillJournal} from '../../../scripts/commit-drill-ipc';
+import {killCommittedDrillChild} from '../../../scripts/commit-drill-supervisor';
+import {runCommitDrillChild} from '../../../scripts/commit-drill-runner';
+import {observeCommittedDrill} from '../../../scripts/commit-drill-observe';
+import {observeRecoveredDrill} from '../../../scripts/commit-drill-recovered';
+
+const url=process.env.PRIVACY_COMMIT_TEST_DATABASE_URL;
+const suite=url?describe:describe.skip;
+let owner:Sql,auth:Sql,generation:string;
+const digest='a'.repeat(64);
+async function fixture(){const id=randomUUID();await owner`insert into public.commit_fixture(id,value) values(${id},0)`;return id;}
+async function value(id:string){return Number((await owner`select value from public.commit_fixture where id=${id}`)[0].value);}
+async function cursor(){return String((await owner`select sequence from app.safety_journal_state where id`)[0].sequence);}
+async function run(id:string,operation:string,hash=digest,rollback=false){
+ return auth.begin(async tx=>{
+  await tx`update public.commit_fixture set value=value+1 where id=${id}`;
+  const [row]=await tx`select app.complete_privacy_transaction(${operation}::uuid,${hash},${generation}::uuid) as sequence`;
+  if(rollback)throw Error('ROLLBACK_FIXTURE');return String(row.sequence);
+ });
+}
+suite('Atomic privacy commit marker and restore compatibility',()=>{
+ beforeAll(async()=>{
+  if(!url||!['localhost','127.0.0.1'].includes(new URL(url).hostname)||!new URL(url).pathname.endsWith('/porchday_commit_proof_test'))throw Error('DISPOSABLE_LOCAL_COMMIT_PROOF_DATABASE_REQUIRED');
+  owner=postgres(url,{max:3,prepare:false,onnotice:()=>{}});
+  await owner`drop schema if exists app cascade`;await owner`drop schema public cascade`;await owner`create schema public`;
+  for(const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())await owner.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  await owner.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_commit_auth_test') THEN CREATE ROLE porchday_commit_auth_test LOGIN PASSWORD 'local-commit-proof-only' IN ROLE porchday_auth; END IF; END $$");
+  await owner`create table public.commit_fixture(id uuid primary key,value integer not null)`;
+  await owner`grant select,update on public.commit_fixture to porchday_auth`;
+  generation=(await owner`select generation from app.safety_journal_state where id`)[0].generation;
+  await owner.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_commit_jobs_test') THEN CREATE ROLE porchday_commit_jobs_test LOGIN PASSWORD 'local-commit-proof-only' IN ROLE porchday_jobs; END IF; END $$");
+  const connection=new URL(url);connection.username='porchday_commit_auth_test';connection.password='local-commit-proof-only';auth=postgres(connection.href,{max:2,prepare:false,onnotice:()=>{}});
+ },30000);
+ afterAll(async()=>{await auth?.end();await owner?.end();});
+ it('commits SQL work, marker, counter and unique fence atomically',async()=>{
+  const id=await fixture(),operation=randomUUID(),sequence=await run(id,operation);
+  expect(await value(id)).toBe(1);
+  const [event]=await owner`select decision from app.safety_journal where sequence=${sequence}`;
+  expect(event.decision).toEqual({kind:'privacy_operation_committed',operation_id:operation,scope_sha256:digest});
+  const [fence]=await owner`select scope_sha256,generation,sequence::text from app.privacy_operation_commits where operation_id=${operation}`;
+  expect(fence).toEqual({scope_sha256:digest,generation,sequence});
+ });
+ it('rolls back every part, including the sequence allocation',async()=>{
+  const id=await fixture(),operation=randomUUID(),before=await cursor();
+  await expect(run(id,operation,digest,true)).rejects.toThrow('ROLLBACK_FIXTURE');
+  expect(await value(id)).toBe(0);expect(await cursor()).toBe(before);
+  expect(await owner`select 1 from app.privacy_operation_commits where operation_id=${operation}`).toHaveLength(0);
+  expect(await owner`select 1 from app.safety_journal where decision->>'operation_id'=${operation}`).toHaveLength(0);
+ });
+ it('aborts a duplicate attempt instead of returning the previous completion',async()=>{
+  const id=await fixture(),operation=randomUUID();await run(id,operation);const before=await cursor();
+  for(const hash of [digest,'b'.repeat(64)])await expect(run(id,operation,hash)).rejects.toMatchObject({code:'23505'});
+  expect(await value(id)).toBe(1);expect(await cursor()).toBe(before);
+ });
+ it('allows only one of two concurrent attempts to commit',async()=>{
+  const a=await fixture(),b=await fixture(),operation=randomUUID();
+  const results=await Promise.allSettled([run(a,operation),run(b,operation)]);
+  expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);
+  expect(await value(a)+await value(b)).toBe(1);
+  expect(await owner`select 1 from app.safety_journal where decision->>'operation_id'=${operation}`).toHaveLength(1);
+ });
+ it('refuses a wrong generation, quarantine and restore suppression',async()=>{
+  const id=await fixture(),before=await cursor();
+  await expect(auth.begin(async tx=>{await tx`update public.commit_fixture set value=9 where id=${id}`;await tx`select app.complete_privacy_transaction(${randomUUID()}::uuid,${digest},${randomUUID()}::uuid)`;})).rejects.toThrow('DATABASE_ROLLBACK_DETECTED');
+  await owner`update app.safety_journal_state set restore_quarantined=true where id`;
+  try{await expect(run(id,randomUUID())).rejects.toThrow('RESTORE_QUARANTINED');}finally{await owner`update app.safety_journal_state set restore_quarantined=false where id`;}
+  await expect(auth.begin(async tx=>{await tx`select set_config('app.restore_replay','on',true)`;await tx`select app.complete_privacy_transaction(${randomUUID()}::uuid,${digest},${generation}::uuid)`;})).rejects.toThrow('RESTORE_QUARANTINED');
+  expect(await value(id)).toBe(0);expect(await cursor()).toBe(before);
+ });
+ it('refuses malformed scopes without allocating a marker',async()=>{
+  const before=await cursor();
+  for(const hash of ['',null,'A'.repeat(64),'a'.repeat(63)])await expect(auth`select app.complete_privacy_transaction(${randomUUID()}::uuid,${hash},${generation}::uuid)`).rejects.toThrow('INVALID_PRIVACY_COMMIT_SCOPE');
+  await expect(auth`select app.complete_privacy_transaction(null,${digest},${generation}::uuid)`).rejects.toThrow('INVALID_PRIVACY_COMMIT_SCOPE');
+  await expect(auth`select app.complete_privacy_transaction(${randomUUID()}::uuid,${digest},null)`).rejects.toThrow('INVALID_PRIVACY_COMMIT_SCOPE');
+  expect(await cursor()).toBe(before);
+ });
+ it('does not grant runtime roles direct fence access or non-auth marker execution',async()=>{
+  await expect(auth`select * from app.privacy_operation_commits`).rejects.toMatchObject({code:'42501'});
+  await expect(auth`delete from app.privacy_operation_commits`).rejects.toMatchObject({code:'42501'});
+  for(const role of ['porchday_social','porchday_jobs'])await expect(owner.begin(async tx=>{await tx.unsafe('SET LOCAL ROLE '+role);await tx`select app.complete_privacy_transaction(${randomUUID()}::uuid,${digest},${generation}::uuid)`;})).rejects.toMatchObject({code:'42501'});
+ });
+ it('restores a validated marker and fence without changing application data',async()=>{
+  const id=await fixture(),operation=randomUUID(),sequence=await run(id,operation);
+  const [event]=await owner`select sequence::text,id,occurred_at,decision from app.safety_journal where sequence=${sequence}`;
+  await owner.begin(async tx=>{
+   await tx`update app.safety_journal_state set restore_quarantined=true where id`;
+   await tx`delete from app.privacy_operation_commits where operation_id=${operation}`;await tx`delete from app.safety_journal where sequence=${sequence}`;
+   for(let i=0;i<2;i++)expect((await tx`select app.replay_safety_batch(${tx.json([event])}) as count`)[0].count).toBe(1);
+   expect((await tx`select value from public.commit_fixture where id=${id}`)[0].value).toBe(1);
+   expect(await tx`select 1 from app.privacy_operation_commits where operation_id=${operation} and sequence=${sequence}`).toHaveLength(1);
+   await tx`update app.safety_journal_state set restore_quarantined=false where id`;
+  });
+  await expect(run(id,operation)).rejects.toMatchObject({code:'23505'});
+ });
+ it('rejects malformed or conflicting replay markers',async()=>{
+  const operation=randomUUID(),id=await fixture(),sequence=await run(id,operation);
+  const [event]=await owner`select sequence::text,id,occurred_at,decision from app.safety_journal where sequence=${sequence}`;
+  for(const decision of [
+   {kind:'privacy_operation_committed',operation_id:operation},
+   {...event.decision,scope_sha256:123}, {...event.decision,operation_id:'not-a-uuid'},
+   {...event.decision,extra:true},{...event.decision,action:'delete'},
+  ])await expect(owner.begin(async tx=>{await tx`update app.safety_journal_state set restore_quarantined=true where id`;await tx`select app.replay_safety_batch(${tx.json([{...event,decision}])})`;})).rejects.toThrow('INVALID_PRIVACY_COMMIT_MARKER');
+  for(const changed of [{...event,decision:{...event.decision,scope_sha256:'b'.repeat(64)}},{...event,sequence:String(BigInt(sequence)+1n)}])await expect(owner.begin(async tx=>{await tx`update app.safety_journal_state set restore_quarantined=true where id`;await tx`select app.replay_safety_batch(${tx.json([changed])})`;})).rejects.toThrow('PRIVACY_COMMIT_FENCE_CONFLICT');
+  expect(await value(id)).toBe(1);expect((await owner`select restore_quarantined from app.safety_journal_state where id`)[0].restore_quarantined).toBe(false);
+ });
+ it('retains legacy restore actions and the operator quarantine requirement',async()=>{
+  const event={sequence:String(BigInt(await cursor())+1n),id:randomUUID(),occurred_at:new Date().toISOString(),decision:{action:'deadline',kind:'posts',id:randomUUID(),expires_at:new Date().toISOString()}};
+  await expect(owner`select app.replay_safety_batch(${owner.json([event])})`).rejects.toThrow('RESTORE_QUARANTINE_REQUIRED');
+  await owner.begin(async tx=>{await tx`update app.safety_journal_state set restore_quarantined=true where id`;expect((await tx`select app.replay_safety_batch(${tx.json([event])}) as count`)[0].count).toBe(1);await tx`delete from app.safety_journal where sequence=${event.sequence}`;await tx`update app.safety_journal_state set restore_quarantined=false where id`;});
+ });
+ it.each(['commit','wrong-owner','wrong-generation','duplicate-marker'])('scoped hosted-drill transaction handles %s atomically under auth role',async mode=>{
+  const fixture={runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()},identity=commitDrillIdentity(fixture),operationId=randomUUID();
+  await owner`insert into public.auth_user(id,name,email) values(${fixture.memberId},${identity.name},${identity.email})`;
+  await owner`insert into public.auth_session(id,"userId",token,"expiresAt") values(${fixture.sessionId},${fixture.memberId},${randomUUID()},now()+interval '1 hour')`;
+  const scope={operationId,scopeSha256:digest,generation};
+  if(mode==='duplicate-marker')await auth`select app.complete_privacy_transaction(${operationId}::uuid,${digest},${generation}::uuid)`;
+  const before=await cursor();
+  if(mode==='commit'){
+   const result=await commitDrillSession(auth,fixture,scope);
+   expect(await owner`select 1 from public.auth_session where id=${fixture.sessionId}`).toHaveLength(0);
+   const rows=await owner`select sequence::text,scope_sha256 from app.privacy_operation_commits where operation_id=${operationId}`;
+   expect(rows).toHaveLength(1);expect(rows[0]).toEqual({sequence:result.sequence,scope_sha256:digest});
+  }else{
+   await expect(commitDrillSession(auth,mode==='wrong-owner'?{...fixture,runId:randomUUID()}:fixture,mode==='wrong-generation'?{...scope,generation:randomUUID()}:scope)).rejects.toThrow();
+   expect(await owner`select 1 from public.auth_session where id=${fixture.sessionId}`).toHaveLength(1);expect(await cursor()).toBe(before);
+  }
+  await owner`delete from public.auth_user where id=${fixture.memberId}`;
+ });
+ it('runs the real IPC child, independently confirms its SQL commit, and recovers after SIGKILL',async()=>{
+  const directory=await mkdtemp(join(tmpdir(),'porchday-drill-child-')),store=new ProcessJournalStore(directory);
+  const fixture={runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()},identity=commitDrillIdentity(fixture);
+  await owner`insert into public.auth_user(id,name,email) values(${fixture.memberId},${identity.name},${identity.email})`;
+  await owner`insert into public.auth_session(id,"userId",token,"expiresAt") values(${fixture.sessionId},${fixture.memberId},${randomUUID()},now()+interval '1 hour')`;
+  const db:JournalDatabase={async status(){return(await owner`select app.safety_status() as value`)[0].value;},async page(after){return(await owner`select app.safety_page(${after}::bigint,200) as value`)[0].value;}};
+  await initializePrivacyJournal(store,db);const initial=await readJournalControl(store);await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
+  const gate=createCommitDrillStore({store,assertScope:()=>{},retain:async event=>{await store.put(`evidence/${event.request}-${event.phase}.json`,JSON.stringify(event),{onlyIf:{etagDoesNotMatch:'*'}});}});
+  const child=fork(new URL('../../../scripts/commit-drill-child.ts',import.meta.url),[],{execArgv:['--import','tsx'],env:{PATH:process.env.PATH},stdio:['ignore','ignore','ignore','ipc']});
+  let exited=false;const exit=new Promise<void>(resolve=>child.once('exit',()=>{exited=true;resolve();}));
+  const server=serveCommitDrillJournal({send:message=>{child.send(message as never);},subscribe:receive=>{const listener=(message:any)=>{if(message?.type==='journal')receive(message);};child.on('message',listener);return()=>{child.off('message',listener);};}},gate.store,()=>gate.close());
+  const phases:any[]=[];
+  try{
+   await new Promise<void>((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('DRILL_CHILD_TIMEOUT')),10000);const listener=(message:any)=>{if(message?.type!=='phase')return;phases.push(message);if(message.phase==='failed'||message.phase==='committed'){clearTimeout(timer);child.off('message',listener);message.phase==='committed'?resolve():reject(Error('DRILL_CHILD_FAILED'));}};child.on('message',listener);child.send({type:'init',target:'local-test',connection:url,fixture});});
+   expect(phases.map(p=>p.phase)).toEqual(['registered','scoped','committed']);const scope=phases[1],operationId=scope.operationId;
+   expect(operationId).toBe(gate.operationId());const records:any[]=[];
+   const expected={operationId,scopeSha256:scope.scopeSha256,generation:scope.generation,memberId:fixture.memberId,sessionId:fixture.sessionId};
+   await killCommittedDrillChild({child,expected,sealJournal:()=>gate.close(),retain:async e=>{records.push(e);},observe:async()=>{
+    const [fence]=await owner`select scope_sha256,generation,sequence::text from app.privacy_operation_commits where operation_id=${operationId}`;
+    const [event]=await owner`select sequence::text,decision from app.safety_journal where sequence=${fence.sequence}`;
+    const control=await readJournalControl(store),status=await db.status(),users=await owner`select id from public.auth_user where id=${fixture.memberId} and email=${identity.email} and name=${identity.name}`;
+    expect(event.decision).toEqual({kind:'privacy_operation_committed',operation_id:operationId,scope_sha256:scope.scopeSha256});
+    return{...expected,scopeSha256:fence.scope_sha256,generation:fence.generation,sequence:event.sequence,fenceSequence:fence.sequence,sessionAbsent:(await owner`select id from public.auth_session where id=${fixture.sessionId}`).length===0,ownedAccountVerified:users.length===1,pendingExact:control.value.pending.length===1&&control.value.pending[0].id===operationId,receiptAbsent:await store.get(`receipts/${operationId}.json`)===null,generationUnchanged:control.value.generation===status.generation,quarantined:status.quarantined||control.value.mode!=='active',childReportedCommit:phases[2].sequence===fence.sequence};
+   }},AbortSignal.timeout(10000));await exit;expect(records.map(r=>r.phase)).toEqual(['commit-verified','kill-intent','killed']);
+   expect(await store.get(`receipts/${operationId}.json`)).toBeNull();const pending=(await readJournalControl(store)).value.pending;
+   const clock=vi.spyOn(Date,'now').mockReturnValue(Date.parse(pending[0].started_at)+120001);
+   try{await assertJournalReadable(store,db,undefined,true);}finally{clock.mockRestore();}
+   expect((await readJournalControl(store)).value.pending).toEqual([]);expect(await store.get(`receipts/${operationId}.json`)).not.toBeNull();
+   expect(await owner`select 1 from app.privacy_operation_commits where operation_id=${operationId}`).toHaveLength(1);
+  }finally{server.close();if(!exited){child.kill('SIGKILL');await exit;}await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
+ });
+ it.each(['filesystem','native-r2'])('uses the complete parent runner with %s to verify and kill the committed child without publishing its receipt',async transport=>{
+  const directory=await mkdtemp(join(tmpdir(),'porchday-parent-runner-')),evidenceStore=new ProcessJournalStore(directory);
+  let native:Miniflare|undefined;
+  if(transport==='native-r2')native=new Miniflare(convertV4MiniflareOptions({name:'operator',modules:true,scriptPath:new URL('../../../scripts/r2-operator-worker.mjs',import.meta.url).pathname,compatibilityDate:'2026-10-01',bindings:{OPERATOR_BEARER:'synthetic-operator-test',OPERATOR_EXPIRES_AT:String(Date.now()+600000)},r2Buckets:['JOURNAL']}));
+  const request=async(path:string,body:unknown)=>native!.dispatchFetch('https://ops.porchday.test'+path,{method:'POST',headers:{Authorization:'Bearer synthetic-operator-test','Content-Type':'application/json'},body:JSON.stringify(body)});
+  const store:import('../src/privacy-journal').JournalStore=native?{
+   async get(key){const response=await request('/journal/get',{key});if(response.status===404)return null;expect(response.status).toBe(200);const body=await response.json() as {etag:string;value:string};return{etag:body.etag,text:async()=>body.value};},
+   async put(key,value,condition){const response=await request('/journal/put',{key,value,ifMatch:condition?.onlyIf?.etagMatches,ifNoneMatch:condition?.onlyIf?.etagDoesNotMatch});if(response.status===412)return null;expect(response.status).toBe(200);return await response.json() as {etag:string};},
+  }:evidenceStore;
+  const fixture={runId:randomUUID(),memberId:randomUUID(),sessionId:randomUUID()},identity=commitDrillIdentity(fixture);
+  await owner`insert into public.auth_user(id,name,email) values(${fixture.memberId},${identity.name},${identity.email})`;
+  await owner`insert into public.auth_session(id,"userId",token,"expiresAt") values(${fixture.sessionId},${fixture.memberId},${randomUUID()},now()+interval '1 hour')`;
+  const db:JournalDatabase={async status(){return(await owner`select app.safety_status() as value`)[0].value;},async page(after){return(await owner`select app.safety_page(${after}::bigint,200) as value`)[0].value;}};
+  await initializePrivacyJournal(store,db);const initial=await readJournalControl(store);await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
+  const records:Record<string,unknown>[]=[];
+  try{
+   const authUrl=new URL(url!),jobsUrl=new URL(url!);authUrl.username='porchday_commit_auth_test';authUrl.password='local-commit-proof-only';jobsUrl.username='porchday_commit_jobs_test';jobsUrl.password='local-commit-proof-only';
+   // Actual restricted login roles catch hosted permission mismatches that the
+   // database owner can mask. Auth cannot read the journal; jobs cannot commit.
+   await expect(auth`select app.safety_status()`).rejects.toMatchObject({code:'42501'});
+   const jobs=postgres(jobsUrl.href,{max:1,prepare:false,onnotice:()=>{}});
+   try{await expect(jobs`select app.complete_privacy_transaction(${randomUUID()}::uuid,${'a'.repeat(64)},${generation}::uuid)`).rejects.toMatchObject({code:'42501'});}finally{await jobs.end();}
+   const result=await runCommitDrillChild({target:'local-test',connection:authUrl.href,journalConnection:jobsUrl.href,fixture,generation,store,sql:owner,assertScope:()=>{},retain:async record=>{await evidenceStore.put(`parent-evidence/${records.length}.json`,JSON.stringify(record),{onlyIf:{etagDoesNotMatch:'*'}});records.push(record);}},AbortSignal.timeout(15000));
+   expect(result.signal).toBe('SIGKILL');expect(result.recoveryVerified).toBe(false);
+   expect(records.filter(r=>r.kind==='child-phase').map(r=>r.phase)).toEqual(['registered','scoped','committed']);
+   expect(records.filter(r=>r.kind==='supervisor').map(r=>r.phase)).toEqual(['commit-verified','kill-intent','killed']);
+   expect(JSON.stringify(records)).not.toContain('postgres://');
+   expect(await store.get(`receipts/${result.operationId}.json`)).toBeNull();const pending=(await readJournalControl(store)).value.pending;expect(pending).toHaveLength(1);
+   const scoped=records.find(r=>r.kind==='child-phase'&&r.phase==='scoped')!;
+   const expected={operationId:result.operationId,scopeSha256:String(scoped.scopeSha256),generation,memberId:fixture.memberId,sessionId:fixture.sessionId};
+   const observation={sql:owner,store,fixture,expected,publicationSha256:expected.scopeSha256,reportedSequence:result.sequence};
+   await expect(observeCommittedDrill({...observation,publicationSha256:'0'.repeat(64)},new AbortController().signal)).rejects.toThrow('INDEPENDENT_PROOF_INVALID');
+   expect((await observeCommittedDrill({...observation,reportedSequence:'999999'},new AbortController().signal)).childReportedCommit).toBe(false);
+   const altered={get:async(key:string)=>{const value=await store.get(key);return key.startsWith('commit-scopes/')&&value?{etag:value.etag,text:async()=>JSON.stringify({...JSON.parse(await value.text()),intent_sha256:'0'.repeat(64)})}:value;},put:async()=>{throw Error('unexpected write');}};
+   await expect(observeCommittedDrill({...observation,store:altered},new AbortController().signal)).rejects.toThrow('INDEPENDENT_PROOF_INVALID');
+   const recoveryOptions={...observation,pendingAtKill:pending};
+   await expect(observeRecoveredDrill(recoveryOptions,new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+   const clock=vi.spyOn(Date,'now').mockReturnValue(Date.parse(pending[0].started_at)+120001);
+   try{
+    await expect(observeRecoveredDrill(recoveryOptions,new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+    await assertJournalReadable(store,db,undefined,true);
+    const readOnly={get:store.get.bind(store),put:async()=>{throw Error('observer wrote journal');}};
+    const recovered=await observeRecoveredDrill({...recoveryOptions,store:readOnly},new AbortController().signal);
+    expect(recovered).toMatchObject({sequence:result.sequence,recoveryStateVerified:true,hostedRecoveryPathVerified:false});
+    const missingReceipt={...readOnly,get:async(key:string)=>key.startsWith('receipts/')?null:readOnly.get(key)};
+    await expect(observeRecoveredDrill({...recoveryOptions,store:missingReceipt},new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+    const oldReceipt={...readOnly,get:async(key:string)=>key.startsWith('receipts/')?{etag:'test',text:async()=>JSON.stringify({v:1,id:result.operationId,generation,sequence:'0',head:null})}:readOnly.get(key)};
+    await expect(observeRecoveredDrill({...recoveryOptions,store:oldReceipt},new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+    await expect(observeRecoveredDrill({...recoveryOptions,pendingAtKill:[...pending,{id:randomUUID(),started_at:pending[0].started_at}]},new AbortController().signal)).rejects.toThrow('DRILL_RECOVERY_UNVERIFIED');
+   }finally{clock.mockRestore();}
+   expect((await readJournalControl(store)).value.pending).toEqual([]);expect(await store.get(`receipts/${result.operationId}.json`)).not.toBeNull();
+  }finally{await native?.dispose();await owner`delete from public.auth_user where id=${fixture.memberId}`;await rm(directory,{recursive:true,force:true});}
+ });
+ it.each(['registered','before-commit','after-commit','after-checkpoint','after-receipt','after-retirement'])('retains authoritative evidence after SIGKILL at %s',async phase=>{
+  const directory=await mkdtemp(join(tmpdir(),'porchday-commit-process-')),store=new ProcessJournalStore(directory),id=await fixture();
+  const db:JournalDatabase={async status(){return(await owner`select app.safety_status() as value`)[0].value;},async page(after){return(await owner`select app.safety_page(${after}::bigint,200) as value`)[0].value;}};
+  await initializePrivacyJournal(store,db);const initial=await readJournalControl(store);
+  await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
+  const child=fork(new URL('./fixtures/commit-process-child.ts',import.meta.url),[],{execArgv:['--import','tsx'],env:{...process.env,COMMIT_PROCESS_DATABASE_URL:url!,COMMIT_PROCESS_DIRECTORY:directory,COMMIT_PROCESS_PHASE:phase,COMMIT_PROCESS_FIXTURE:id},stdio:['ignore','ignore','ignore','ipc']});
+  let operationId='',exited=false;const exit=new Promise<{code:number|null;signal:NodeJS.Signals|null}>(resolve=>child.once('exit',(code,signal)=>{exited=true;resolve({code,signal});}));
+  try{
+   await new Promise<void>((resolve,reject)=>{
+    const timer=setTimeout(()=>reject(Error('CHILD_BOUNDARY_TIMEOUT')),10000);
+    child.once('error',()=>{clearTimeout(timer);reject(Error('CHILD_SPAWN_FAILED'));});
+    child.once('exit',()=>{clearTimeout(timer);reject(Error('CHILD_EXITED_BEFORE_BOUNDARY'));});
+    child.on('message',(message:any)=>{
+     if(message.operationId)operationId=message.operationId;
+     if(message.failed){clearTimeout(timer);reject(Error('CHILD_FAILED'));}
+     if(message.phase===phase){clearTimeout(timer);resolve();}
+    });
+   });
+   expect(operationId).toMatch(/^[a-f0-9-]{36}$/);expect(child.kill('SIGKILL')).toBe(true);
+   expect((await exit).signal).toBe('SIGKILL');
+   const committed=!['registered','before-commit'].includes(phase);
+   expect(await value(id)).toBe(committed?1:0);
+   let control=(await readJournalControl(store)).value;
+   const before=await provePrivacyCommits(store,control);
+   expect(before.has(operationId)).toBe(['after-checkpoint','after-receipt'].includes(phase));
+   await checkpointJournal(store,db);control=(await readJournalControl(store)).value;
+   expect((await provePrivacyCommits(store,control)).has(operationId)).toBe(committed&&phase!=='after-retirement');
+   expect(!!await store.get(`receipts/${operationId}.json`)).toBe(['after-receipt','after-retirement'].includes(phase));
+   if(phase==='after-retirement'){expect(control.pending).toHaveLength(0);await expect(assertJournalReadable(store,db)).resolves.toBeDefined();}
+   else expect(control.pending.map(p=>p.id)).toContain(operationId); // Proof is read-only; it never retires the operation.
+   const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+120001);
+   try{
+    if(committed){
+     await expect(assertJournalReadable(store,db,undefined,true)).resolves.toBeDefined();
+     expect((await readJournalControl(store)).value.pending).toHaveLength(0);
+     expect(await store.get(`receipts/${operationId}.json`)).not.toBeNull();
+    }else{
+     await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('RESTORE_QUARANTINED');
+     expect((await readJournalControl(store)).value.pending.map(p=>p.id)).toContain(operationId);
+     expect(await store.get(`receipts/${operationId}.json`)).toBeNull();
+    }
+   }finally{clock.mockRestore();}
+  }finally{if(!exited){child.kill('SIGKILL');await exit;}await rm(directory,{recursive:true,force:true});}
+ },15000);
+});

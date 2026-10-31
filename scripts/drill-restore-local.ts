@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import {mkdtemp,readFile,readdir,writeFile,rm,chmod} from 'node:fs/promises';
+import {mkdtemp,readFile,readdir,writeFile,rm,chmod,symlink,mkdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
-import {join} from 'node:path';
+import {join,resolve} from 'node:path';
+import {pathToFileURL} from 'node:url';
 import {randomUUID,createHash} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import postgres,{type Sql} from 'postgres';
@@ -10,19 +11,24 @@ import {createSocialRoutes} from '../apps/api/src/social.js';
 import type {Env,Variables} from '../apps/api/src/types.js';
 import {Miniflare,convertV4MiniflareOptions} from 'miniflare';
 import {canonicalJson,generateDeviceKeys,unlockPrivateKey,encryptObject,decryptObject,type ContentContext,type EncryptedEnvelope} from '../packages/crypto/src/index.js';
-import {initializePrivacyJournal,readJournalControl,assertJournalReadable,beginPrivacyIntent,completePrivacyIntent,quarantineJournal,verifyJournalChain,type JournalDatabase,type JournalStore} from '../apps/api/src/privacy-journal.js';
+import {initializePrivacyJournal,readJournalControl,assertJournalReadable,beginPrivacyIntent,publishAuthPrivacyCommitScope,completePrivacyIntent,quarantineJournal,verifyJournalChain,type JournalDatabase,type JournalStore} from '../apps/api/src/privacy-journal.js';
 import {restoreMediaSnapshot} from './restore-media.js';
 import {beginMediaBackup,copyMediaBackupPage,verifyMediaBackup,backupDatabase} from '../apps/api/src/media-backup.js';
 import {replayPrivacyJournal,releasePrivacyQuarantine} from '../apps/api/src/restore-journal.js';
 
 // Creates two NEW databases only. Never selects the main application database,
 // a provider URL, real R2 or secrets.env. The Docker container must be the local
-// development PostgreSQL container, and uses its existing local socket identity.
-if(process.argv[2]!=='--run')throw Error('USE_NPX_TSX_SCRIPTS_DRILL_RESTORE_LOCAL_TS_RUN');
+// development PostgreSQL container, or a labeled disposable container for the
+// opt-in commit-protocol drill. Both use local socket identity for dump/restore.
+if(process.argv[2]!=='--run'||process.argv.slice(3).some(arg=>arg!=='--commit-protocol'))throw Error('USE_NPX_TSX_SCRIPTS_DRILL_RESTORE_LOCAL_TS_RUN');
+const commitProtocol=process.argv.includes('--commit-protocol');
+const legacyCommit='3810d1d6383415eb2559c54829b68dee6113618c';
 const adminUrl=process.env.LOCAL_DRILL_ADMIN_URL??'postgres://postgres:porchday-local@127.0.0.1:54329/postgres';
 const parsed=new URL(adminUrl);
-if(!['127.0.0.1','localhost','[::1]'].includes(parsed.hostname)||parsed.pathname!=='/postgres'||parsed.port!=='54329')throw Error('LOCAL_DRILL_DATABASE_REQUIRED');
-const container='porchday-postgres',suffix=randomUUID().replaceAll('-','').slice(0,12);
+if(!['127.0.0.1','localhost','[::1]'].includes(parsed.hostname)||parsed.pathname!=='/postgres'||(!commitProtocol&&parsed.port!=='54329'))throw Error('LOCAL_DRILL_DATABASE_REQUIRED');
+const container=commitProtocol?process.env.LOCAL_DRILL_CONTAINER??'':'porchday-postgres';
+if(commitProtocol&&!/^porchday-commit-restore-[a-f0-9]{12}$/.test(container))throw Error('OWNED_COMMIT_RESTORE_CONTAINER_REQUIRED');
+const suffix=randomUUID().replaceAll('-','').slice(0,12);
 const sourceName='porchday_drill_'+suffix+'_source',targetName='porchday_drill_'+suffix+'_target';
 const directory=await mkdtemp(join(tmpdir(),'porchday-restore-drill-'));await chmod(directory,0o700);
 const admin=postgres(adminUrl,{max:1,prepare:false,onnotice:()=>{}});
@@ -40,11 +46,25 @@ async function docker(args:string[],input?:Uint8Array):Promise<Buffer>{return ne
  child.on('close',code=>{clearTimeout(timer);code===0?resolve(Buffer.concat(out)):reject(Error('LOCAL_DRILL_POSTGRES_TOOL_FAILED'));});
  child.stdin.on('error',()=>{});child.stdin.end(input);
  });}
+async function command(file:string,args:string[],input?:Buffer):Promise<Buffer>{return new Promise((resolve,reject)=>{
+ const child=spawn(file,args,{stdio:['pipe','pipe','pipe']}),chunks:Buffer[]=[];let size=0;
+ const timer=setTimeout(()=>{child.kill();reject(Error('COMPATIBILITY_PROCESS_TIMEOUT'));},60000);
+ child.stdout.on('data',(chunk:Buffer)=>{size+=chunk.length;if(size>32*1024*1024){child.kill();reject(Error('COMPATIBILITY_OUTPUT_LIMIT'));}else chunks.push(chunk);});
+ child.stderr.resume();child.on('error',()=>{clearTimeout(timer);reject(Error('COMPATIBILITY_PROCESS_FAILED'));});
+ child.on('close',code=>{clearTimeout(timer);code===0?resolve(Buffer.concat(chunks)):reject(Error('COMPATIBILITY_PROCESS_FAILED'));});child.stdin.on('error',()=>{});child.stdin.end(input);
+});}
 const digest=(bytes:Uint8Array|string)=>createHash('sha256').update(bytes).digest('hex');
 try {
+ phase='VERIFY_LOCAL_CONTAINER';
+ if(commitProtocol){
+  const inspect=JSON.parse((await command('docker',['inspect',container])).toString())[0];
+  assert.equal(inspect.Config.Labels?.['porchday.commit-restore-drill'],'true');
+  const binding=inspect.NetworkSettings.Ports['5432/tcp'];assert.equal(binding.length,1);
+  assert.equal(binding[0].HostIp,'127.0.0.1');assert.equal(binding[0].HostPort,parsed.port);
+ }
  phase='CREATE_DATABASES';await admin.unsafe('CREATE DATABASE '+sourceName);sourceCreated=true;await admin.unsafe('CREATE DATABASE '+targetName);targetCreated=true;
  source=database(sourceName);target=database(targetName);
- phase='MIGRATE_SOURCE';for(const name of(await readdir(new URL('../apps/api/migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())await source.unsafe(await readFile(new URL('../apps/api/migrations/'+name,import.meta.url),'utf8'));
+ phase='MIGRATE_SOURCE';for(const name of(await readdir(new URL('../apps/api/migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')&&(!commitProtocol||n<'057')).sort())await source.unsafe(await readFile(new URL('../apps/api/migrations/'+name,import.meta.url),'utf8'));
  mf=r2();let journal=await mf.getR2Bucket('JOURNAL') as unknown as JournalStore;let sourceMedia=await mf.getR2Bucket('SOURCE_MEDIA');
  phase='SEED_ENCRYPTED_FIXTURES';
  const alice=randomUUID(),bob=randomUUID(),outsider=randomUUID(),aliceDevice=randomUUID(),bobDevice=randomUUID();
@@ -102,6 +122,36 @@ try {
  const dump=await docker(['pg_dump','--format=custom','--username=postgres','--dbname='+sourceName]);assert(dump.byteLength>1000);
  await writeFile(join(directory,'database.dump'),dump,{mode:0o600});await writeFile(join(directory,'media-manifest.json'),JSON.stringify({version:1,objects:mediaRecords}),{mode:0o600});
  const snapshotStatus=await sourceDb.status();
+ let markerOperation:string|undefined,legacy:any;
+ if(commitProtocol){
+  phase='LOAD_PREVIOUS_JOURNAL_EXECUTABLE';
+  const archive=await command('git',['archive',legacyCommit,'apps/api/src']);
+  const legacyRoot=join(directory,'legacy');await mkdir(legacyRoot,{mode:0o700});
+  await command('tar',['-x','-C',legacyRoot],archive);
+  await writeFile(join(legacyRoot,'package.json'),JSON.stringify({type:'module'}),{mode:0o600});
+  await symlink(resolve('node_modules'),join(legacyRoot,'node_modules'));
+  legacy=await import(pathToFileURL(join(legacyRoot,'apps/api/src/privacy-journal.ts')).href);
+  await legacy.assertJournalReadable(journal,sourceDb);
+  assert.equal((await source`select to_regclass('app.privacy_operation_commits') as name`)[0].name,null);
+  phase='UPGRADE_SOURCE_AND_CHECK_PREVIOUS_EXECUTABLE';
+  await source.unsafe(await readFile(new URL('../apps/api/migrations/057_privacy_transaction_commits.sql',import.meta.url),'utf8'));
+  const runtimeUrl=new URL(adminUrl);runtimeUrl.pathname='/'+sourceName;
+  await legacy.withPrivacyJournal({ENVIRONMENT:'development',RECOVERY_JOURNAL:journal,HYPERDRIVE_JOBS:{connectionString:runtimeUrl.href}},async()=>{});
+  phase='COMMIT_AUTH_WITHOUT_RECEIPT';
+  const authIntent=await beginPrivacyIntent(journal,sourceDb),scope=await publishAuthPrivacyCommitScope(journal,sourceDb,authIntent);markerOperation=authIntent.id;
+  await source.begin(async tx=>{
+   await tx`update public.auth_user set credentials_changed_at=now() where id=${bob}`;
+   await tx`select app.set_security_hold(${bob})`;await tx`update app.members set status='active' where id=${bob}`;
+   await tx`select app.complete_privacy_transaction(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid)`;
+  });
+  assert.equal(await journal.get('receipts/'+markerOperation+'.json'),null);
+  const realNow=Date.now,stale=realNow()+120001;Date.now=()=>stale;
+  try{await assertJournalReadable(journal,sourceDb,undefined,true);}finally{Date.now=realNow;}
+  assert.equal((await readJournalControl(journal)).value.pending.length,0);
+  assert(await journal.get('receipts/'+markerOperation+'.json'));
+  await legacy.assertJournalReadable(journal,sourceDb);
+ }
+
  phase='CAPTURE_POST_BACKUP_PRIVACY_CHANGES';const intent=await beginPrivacyIntent(journal,sourceDb);
  await source`delete from app.posts where id=${ids.deleted}`;
  await source`update app.posts set expires_at=now()-interval '1 hour' where id=${ids.timed}`;
@@ -118,6 +168,18 @@ try {
  assert.equal((await readJournalControl(journal)).value.sequence,latest.sequence);
  phase='RESTORE_ISOLATED_DATABASE_AND_MEDIA';
  await docker(['pg_restore','--exit-on-error','--username=postgres','--dbname='+targetName],await readFile(join(directory,'database.dump')));
+ if(commitProtocol){
+  phase='UPGRADE_PRE_057_BACKUP';
+  const [marker]=await source`select sequence::text,id,occurred_at,decision from app.safety_journal where decision->>'operation_id'=${markerOperation!}`;
+  assert(marker);
+  await assert.rejects(target.begin(async tx=>{
+   await tx`update app.safety_journal_state set restore_quarantined=true where id`;
+   await tx`select app.replay_safety_batch(${tx.json([marker])})`;
+  }),/INVALID_JOURNAL_ACTION/);
+  assert.equal((await target`select to_regclass('app.privacy_operation_commits') as name`)[0].name,null);
+  await target.unsafe(await readFile(new URL('../apps/api/migrations/057_privacy_transaction_commits.sql',import.meta.url),'utf8'));
+  assert.equal((await target`select count(*)::int n from app.privacy_operation_commits`)[0].n,0);
+ }
  const targetMedia=await mf.getR2Bucket('TARGET_MEDIA');
  await verifyMediaBackup(await mf.getR2Bucket('BACKUP') as unknown as R2Bucket,backupID,backupInfo.restore_at,async(item,bytes)=>{assert(bytes);await targetMedia.put(item.object_key,bytes);});
  const targetDb=journalDb(target);assert.equal((await targetDb.status()).sequence,snapshotStatus.sequence);
@@ -132,6 +194,10 @@ try {
  await assert.rejects(assertJournalReadable(journal,targetDb),/RESTORE_QUARANTINED/);
  assert(await targetMedia.get('media/'+alice+'/'+ids.deletedMedia));
  const result=await replayPrivacyJournal(journal,target,async key=>{await targetMedia.delete(key);});
+ if(commitProtocol){
+  assert.equal((await target`select 1 from app.privacy_operation_commits where operation_id=${markerOperation!}`).length,1);
+  assert.equal((await target`select 1 from app.safety_journal where decision->>'operation_id'=${markerOperation!}`).length,1);
+ }
  assert.equal(result.heldAccounts,1);assert(result.deletedObjects>=1);assert(result.replayed>5);
  for(const id of[ids.deleted,ids.timed,ids.edited])assert.equal((await target`select id from app.posts where id=${id}`).length,0);
  assert.equal((await target`select id from app.comments`).length,0);assert.equal((await target`select envelope from app.profiles where member_id=${alice}`)[0].envelope,null);
@@ -151,6 +217,13 @@ try {
  await assert.rejects(releasePrivacyQuarantine(journal,target,async()=>{throw Error('SYNTHETIC_MEDIA_VERIFY_FAILED');}),/SYNTHETIC_MEDIA_VERIFY_FAILED/);
  await assert.rejects(assertJournalReadable(journal,targetDb),/RESTORE_QUARANTINED/);
  await releasePrivacyQuarantine(journal,target,async item=>{const object=await reconciled.get(item.key);assert(object);const bytes=await object.arrayBuffer();assert.equal(bytes.byteLength,item.byteSize);assert.equal(digest(new Uint8Array(bytes)),item.sha256);});await assertJournalReadable(journal,targetDb);
+ if(commitProtocol){
+  phase='PREVIOUS_EXECUTABLE_AFTER_RESTORE';
+  await legacy.assertJournalReadable(journal,targetDb);
+  const runtimeUrl=new URL(adminUrl);runtimeUrl.pathname='/'+targetName;
+  await legacy.withPrivacyJournal({ENVIRONMENT:'development',RECOVERY_JOURNAL:journal,HYPERDRIVE_JOBS:{connectionString:runtimeUrl.href}},async()=>{});
+  await assertJournalReadable(journal,targetDb,undefined,true);
+ }
  const own=await target.begin(async tx=>{await tx`set local role porchday_social`;await tx`select set_config('app.member_id',${alice},true)`;return tx`select id,envelope from app.posts order by id`;});assert.equal(own.length,2);
  for(const actor of[bob,outsider]){const rows=await target.begin(async tx=>{await tx`set local role porchday_social`;await tx`select set_config('app.member_id',${actor},true)`;return tx`select id from app.posts`;});assert.equal(rows.length,0);}
  await assert.rejects(target.begin(async tx=>{await tx`set local role porchday_social`;return tx`select * from public.auth_session`;}),{code:'42501'});
@@ -158,7 +231,7 @@ try {
  assert.deepEqual(await decryptObject({envelope:restored,expectedContext:postEnvelopes.get(ids.surviving)!.context,privateKey,authorPublicKey:keys.publicKey}),{text:'Synthetic private restore fixture'});
  const photoObject=await targetMedia.get('media/'+alice+'/'+ids.survivingMedia);assert(photoObject);const photo=JSON.parse(await photoObject.text()) as EncryptedEnvelope;
  assert.deepEqual(await decryptObject({envelope:photo,expectedContext:photo.context,privateKey,authorPublicKey:keys.publicKey}),{mime:'image/jpeg',data:'synthetic-photo-bytes',alt:'Synthetic photo'});
- console.log(JSON.stringify({passed:true,scope:'synthetic local PostgreSQL dump/restore and native R2',snapshotSequence:snapshotStatus.sequence,replayed:result.replayed,deletedObjects:result.deletedObjects,heldAccounts:result.heldAccounts,survivingPosts:own.length,encryptedMediaVerified:true,rlsAndAuthRevocationVerified:true,persistedIndependentJournalVerified:true,failedCleanupRetryVerified:true,scheduledBackupManifestVerified:true,actualHttpUploadDigestRegressionVerified:true,privacyFilteredMediaRestoreVerified:true,releaseRequiresLiveMediaVerification:true,elapsedMs:Math.round(performance.now()-started)}));
+ console.log(JSON.stringify({passed:true,commitProtocol,legacyJournalCommit:commitProtocol?legacyCommit:undefined,pre057BackupUpgradeVerified:commitProtocol,oldRestoreRejectsMarkerVerified:commitProtocol,atomicMarkerRecoveredAndRestored:commitProtocol,scope:'synthetic local PostgreSQL dump/restore and native R2',snapshotSequence:snapshotStatus.sequence,replayed:result.replayed,deletedObjects:result.deletedObjects,heldAccounts:result.heldAccounts,survivingPosts:own.length,encryptedMediaVerified:true,rlsAndAuthRevocationVerified:true,persistedIndependentJournalVerified:true,failedCleanupRetryVerified:true,scheduledBackupManifestVerified:true,actualHttpUploadDigestRegressionVerified:true,privacyFilteredMediaRestoreVerified:true,releaseRequiresLiveMediaVerification:true,elapsedMs:Math.round(performance.now()-started)}));
 } catch(error) {
  const code=(error as {code?:string}).code;console.error(JSON.stringify({passed:false,phase,code:typeof code==='string'&&/^[A-Z0-9_]+$/.test(code)?code:'LOCAL_DRILL_FAILED'}));process.exitCode=1;
 } finally {

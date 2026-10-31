@@ -10,7 +10,7 @@ import { authPool, createAuth, hashToken } from "./auth";
 import type { Env, Variables } from "./types";
 import { event } from "./telemetry";
 import { enqueueAccountEmail, processAccountEmails } from "./email-outbox";
-import { JournalError, withHttpPrivacyJournal } from "./privacy-journal";
+import { JournalError, withHttpAuthPrivacyJournal, type AuthPrivacyCommitScope } from "./privacy-journal";
 import { ConfirmedTransactionRollback } from "./confirmed-rollback";
 
 type AuthContext = Context<{ Bindings: Env; Variables: Variables }>;
@@ -369,7 +369,7 @@ authRoutes.all("/*", async (c) => {
         )
       ).rows[0]?.id;
     let completedEmailChange = false;
-    const work = async () => {
+    const work = async (commitScope?: AuthPrivacyCommitScope) => {
       const client = await measureJournalPhase(logoutTiming,'work_pool_acquire',()=>physicalPool.connect());
       const proxyClient = {
         query: client.query.bind(client),
@@ -566,6 +566,10 @@ authRoutes.all("/*", async (c) => {
           return response;
         };
         const response = await measureJournalPhase(logoutTiming,'work_handler',handle);
+        if(commitScope)await pool.query(
+          'SELECT app.complete_privacy_transaction($1::uuid,$2,$3::uuid)',
+          [commitScope.operationId,commitScope.scopeSha256,commitScope.generation],
+        );
         // The journal wrapper observes the committed database cursor. No R2
         // mutation happens while this request holds SQL/advisory locks. Session
         // denial reads are bounded and repeat during in-transaction authorization.
@@ -587,7 +591,7 @@ authRoutes.all("/*", async (c) => {
       }
     };
     const response = proof?.journal
-      ? await withHttpPrivacyJournal(c, work, logoutTiming)
+      ? await withHttpAuthPrivacyJournal(c, work, logoutTiming)
       : await work();
     committedAndConfirmed = true;
     // The shared callback describes both steps. Show completion only after the

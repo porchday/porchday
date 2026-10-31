@@ -3,7 +3,7 @@ import {readdir,readFile} from 'node:fs/promises';
 import postgres,{type Sql} from 'postgres';
 import {randomUUID} from 'node:crypto';
 import {Hono} from 'hono';
-import {initializePrivacyJournal,readJournalControl,assertJournalReadable,beginPrivacyIntent,completePrivacyIntent,checkpointJournal,quarantineJournal,verifyJournalChain,detectStalePrivacyIntents,isPrivacyMutation,privacyMutationMiddleware,type JournalStore,type JournalDatabase,type JournalEvent} from '../src/privacy-journal';
+import {initializePrivacyJournal,readJournalControl,assertJournalReadable,beginPrivacyIntent,publishAuthPrivacyCommitScope,completePrivacyIntent,checkpointJournal,quarantineJournal,verifyJournalChain,detectStalePrivacyIntents,isPrivacyMutation,privacyMutationMiddleware,type JournalStore,type JournalDatabase,type JournalEvent} from '../src/privacy-journal';
 import {replayPrivacyJournal,releasePrivacyQuarantine,reconcileDurableReceipts} from '../src/restore-journal';
 import type {Env,Variables} from '../src/types';
 
@@ -225,7 +225,7 @@ suite('PostgreSQL restore reconciliation',()=>{
     await expect(assertJournalReadable(store,db)).rejects.toThrow('RESTORE_QUARANTINED');
     await sql`update app.safety_journal_state set sequence=(select max(sequence) from app.safety_journal),restore_quarantined=false`;
   });
-  it('removes stale edited ciphertext, revokes restored tokens and preserves credential holds through later active events',async()=>{
+  it.each([false,true])('restores credential holds and invalidates tokens with terminal marker=%s',async terminalMarker=>{
     const member=randomUUID(),post=randomUUID();const oldDate=new Date(Date.now()-86400000);
     await sql`insert into public.auth_user(id,name,email,"emailVerified",credentials_changed_at) values(${member},'Restore fixture',${member+'@example.test'},true,${oldDate})`;
     await sql`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${member},now(),now())`;
@@ -234,11 +234,15 @@ suite('PostgreSQL restore reconciliation',()=>{
     const store=new MemoryStore();const db:JournalDatabase={async status(){const[r]=await sql`select app.safety_status() value`;return r.value;},async page(after){const[r]=await sql`select app.safety_page(${after}::bigint,200) value`;return r.value;}};
     await initializePrivacyJournal(store,db);await activate(store);const before=await db.status();
     const intent=await beginPrivacyIntent(store,db);
-    await sql`update public.auth_user set credentials_changed_at=now() where id=${member}`;
-    await sql`select app.set_security_hold(${member})`;
-    await sql`update app.members set status='active' where id=${member}`;
-    await sql`update app.profiles set envelope='{"context":{"revision":2},"ciphertext":"new encrypted profile"}' where member_id=${member}`;
-    await sql`update app.posts set envelope='{"context":{"revision":2},"ciphertext":"new encrypted post"}' where id=${post}`;
+    const scope=terminalMarker?await publishAuthPrivacyCommitScope(store,db,intent):undefined;
+    await sql.begin(async tx=>{
+      await tx`update public.auth_user set credentials_changed_at=now() where id=${member}`;
+      await tx`select app.set_security_hold(${member})`;
+      await tx`update app.members set status='active' where id=${member}`;
+      await tx`update app.profiles set envelope='{"context":{"revision":2},"ciphertext":"new encrypted profile"}' where member_id=${member}`;
+      await tx`update app.posts set envelope='{"context":{"revision":2},"ciphertext":"new encrypted post"}' where id=${post}`;
+      if(scope)await tx`select app.complete_privacy_transaction(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid)`;
+    });
     await completePrivacyIntent(store,db,intent);
     await quarantineJournal(store,'restore_test');
     await sql.begin(async tx=>{
@@ -247,6 +251,7 @@ suite('PostgreSQL restore reconciliation',()=>{
       await tx`update app.profiles set envelope='{"context":{"revision":1},"ciphertext":"old encrypted profile"}' where member_id=${member}`;
       await tx`update app.posts set envelope='{"context":{"revision":1},"ciphertext":"old encrypted post"}' where id=${post}`;
       await tx`delete from app.safety_journal where sequence>${before.sequence}::bigint`;
+      if(scope)await tx`delete from app.privacy_operation_commits where operation_id=${scope.operationId}`;
       await tx`update app.safety_journal_state set sequence=${before.sequence}::bigint`;
       await tx`insert into public.auth_session(id,"userId",token,"expiresAt") values(${randomUUID()},${member},${randomUUID()},now()+interval '1 day')`;
       await tx`insert into public.auth_verification(id,identifier,value,"expiresAt") values(${randomUUID()},'restored-reset','sensitive-token-fixture',now()+interval '1 day')`;
@@ -255,6 +260,7 @@ suite('PostgreSQL restore reconciliation',()=>{
       values(${randomUUID()},${member},${'f'.repeat(64)},'encrypted-receipt-fixture',now()+interval '1 day')`;
     const removed:string[]=[];const result=await replayPrivacyJournal(store,sql,async key=>{removed.push(key);});
     expect(await sql`select id from public.platform_invitation_history`).toHaveLength(0);
+    if(scope)expect(await sql`select 1 from app.privacy_operation_commits where operation_id=${scope.operationId} and scope_sha256=${scope.scopeSha256}`).toHaveLength(1);
     expect(result.heldAccounts).toBe(1);expect(result.replayed).toBeGreaterThan(3);
     expect((await sql`select status from app.members where id=${member}`)[0].status).toBe('hold');
     expect((await sql`select envelope from app.profiles where member_id=${member}`)[0].envelope).toBeNull();

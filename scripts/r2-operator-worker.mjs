@@ -1,6 +1,6 @@
 const json=(value,status=200)=>Response.json(value,{status,headers:{'Cache-Control':'no-store','X-Content-Type-Options':'nosniff'}});
 const streamDigest=async body=>{const digest=new crypto.DigestStream('SHA-256');await body.pipeTo(digest);return [...new Uint8Array(await digest.digest)].map(b=>b.toString(16).padStart(2,'0')).join('');};
-const journalKey=key=>typeof key==='string' && (key==='control.json' || /^(intents|receipts|probes)\/[a-f0-9-]{36}\.json$/.test(key) || /^batches\/[a-f0-9-]{36}\/[0-9]+-[0-9]+-[a-f0-9]{64}\.json$/.test(key));
+const journalKey=key=>typeof key==='string' && (key==='control.json' || /^(intents|receipts|probes)\/[a-f0-9-]{36}\.json$/.test(key) || /^commit-scopes\/v1\/[a-f0-9-]{36}\.json$/.test(key) || /^batches\/[a-f0-9-]{36}\/[0-9]+-[0-9]+-[a-f0-9]{64}\.json$/.test(key));
 export default {async fetch(request,env) {
   // No body parsing, R2 access or diagnostic content before authorization.
   const expires=Number(env.OPERATOR_EXPIRES_AT);

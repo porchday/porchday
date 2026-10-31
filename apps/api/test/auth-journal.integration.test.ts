@@ -1,4 +1,10 @@
 import {persistSessionDenial} from '../src/session-denial';
+import {provePrivacyCommits} from '../src/privacy-commit-proof';
+import {proveAuthCommitCohort} from '../../../scripts/auth-commit-cohort-proof';
+import {createStagingInflightRevocation} from '../../../scripts/auth-inflight-revocation';
+import {mkdtemp,rm} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions} from '../src/session-denial-candidates';
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
@@ -13,6 +19,8 @@ import {
   initializePrivacyJournal,
   readJournalControl,
   detectStalePrivacyIntents,
+  provePrivacyReceipts,
+  privacyIntentSchema,
   type JournalDatabase,
   type JournalStore,
 } from "../src/privacy-journal";
@@ -646,6 +654,86 @@ suite("Authenticated account privacy journal boundary", () => {
       expect(row.value).not.toContain(p.email);
     }
   });
+  it('independently proves the atomic auth commit after receipt publication fails',async()=>{
+    const p=await person(),store=await journal(p.id),previous=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';store.failPrefix='receipts/';
+    try{
+      const result=await call('change-password',{currentPassword:p.password,newPassword:'synthetic-atomic-commit-password'},p.cookie);
+      expect(result.response.status).toBe(503);
+      const control=(await readJournalControl(store)).value;expect(control.pending).toHaveLength(1);
+      const operation=control.pending[0].id,proof=await provePrivacyCommits(store,control);
+      expect(proof.has(operation)).toBe(true);expect(store.rows.has(`receipts/${operation}.json`)).toBe(false);
+      const fence=(await owner.query('SELECT sequence::text,scope_sha256 FROM app.privacy_operation_commits WHERE operation_id=$1',[operation])).rows[0];
+      expect(fence).toEqual({sequence:proof.get(operation)!.sequence,scope_sha256:proof.get(operation)!.scopeSha256});
+      expect((await owner.query('SELECT credentials_changed_at IS NOT NULL AS changed FROM public.auth_user WHERE id=$1',[p.id])).rows[0].changed).toBe(true);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+    }finally{env.PRIVACY_COMMIT_WRITER_V1=previous;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;store.failPrefix='';}
+  });
+  it.each([2,4])('preserves %i concurrent auth commits after overlapping intent publication',async count=>writer(async()=>{
+    const people=[];for(let i=0;i<count;i++)people.push(await person());
+    const other=await person(),store=await journal();
+    const previousWriter=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';
+    const baseline=(await owner.query('SELECT coalesce(max(sequence),0)::text AS n FROM app.privacy_operation_commits')).rows[0].n;
+    const generation=(await readJournalControl(store)).value.generation;
+    const sessions=await Promise.all(people.map(async p=>(await owner.query('SELECT id FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0].id as string));
+    let release!:()=>void;const barrier=new Promise<void>(resolve=>{release=resolve;});
+    const arrived=new Set<string>();
+    store.beforeWrite=async key=>{if(key.startsWith('intents/')){arrived.add(key);await barrier;}};
+    const requests=people.map(async p=>{const startedAt=Date.now(),result=await call('revoke-sessions',{},p.cookie);return{...result,startedAt,endedAt:Date.now()};});
+    try{
+      // All independent requests reach immutable intent publication before any
+      // can register its intent or acquire the SQL mutation lock.
+      await vi.waitFor(()=>expect(arrived.size).toBe(count),{timeout:3000});release();
+      const results=await Promise.all(requests);expect(results.map(r=>r.response.status)).toEqual(Array(count).fill(200));
+      const control=(await readJournalControl(store)).value;expect(control.mode).toBe('active');expect(control.pending).toHaveLength(0);
+      const fences=(await owner.query('SELECT operation_id,sequence::text,scope_sha256 FROM app.privacy_operation_commits WHERE sequence>$1::bigint ORDER BY sequence',[baseline])).rows;
+      expect(fences).toHaveLength(count);expect(new Set(fences.map(f=>f.operation_id)).size).toBe(count);
+      const intents=fences.map(f=>privacyIntentSchema.parse(JSON.parse(store.rows.get(`intents/${f.operation_id}.json`)!.value)));
+      expect(new Set(intents.map(i=>`intents/${i.id}.json`))).toEqual(arrived);
+      const proofControl={...control,pending:intents.map(({id,started_at})=>({id,started_at}))};
+      const proofs=await provePrivacyCommits(store,proofControl),receipts=await provePrivacyReceipts(store,proofControl);
+      for(const fence of fences){expect(proofs.get(fence.operation_id)).toEqual({sequence:fence.sequence,scopeSha256:fence.scope_sha256});expect(receipts.has(fence.operation_id)).toBe(true);}
+      for(const p of people){
+        expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1',[p.id])).rowCount).toBe(0);
+        expect((await(await call('get-session',undefined,p.cookie)).response.json())).toBeNull();
+        expect((await call('list-sessions',undefined,p.cookie)).response.status).toBe(401);
+        expect((await owner.query('SELECT 1 FROM public.auth_user WHERE id=$1',[p.id])).rowCount).toBe(1);
+      }
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      const sql=(await owner.query('SELECT app.safety_status() AS status')).rows[0].status;
+      expect(sql.quarantined).toBe(false);expect(sql.generation).toBe(control.generation);
+      const cohort=await proveAuthCommitCohort({db:owner,store,baselineSequence:baseline,generation,assertScope:()=>{},requests:results.map((r,i)=>({memberId:people[i].id,sessionId:sessions[i],startedAt:r.startedAt,endedAt:r.endedAt,status:200,deniedStatus:401}))},AbortSignal.timeout(10000));
+      expect(cohort).toMatchObject({passed:true,count,canonicalMarkersAndReceipts:true,perRequestIdentityProved:false});
+    }finally{release();await Promise.allSettled(requests);store.beforeWrite=undefined;env.PRIVACY_COMMIT_WRITER_V1=previousWriter;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;}
+  }),15000);
+  it('observes a real auth request blocked by its owned identity lock on both sides of a release barrier',async()=>writer(async()=>{
+    const p=await person(),other=await person(),store=await journal(),directory=await mkdtemp(join(tmpdir(),'auth-inflight-integration-'));
+    const sessionId=(await owner.query('SELECT id FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0].id;
+    const previousWriter=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';
+    const probe=createStagingInflightRevocation({directory,db:owner,lock:await owner.connect(),session:{memberId:p.id,sessionId,cookie:p.cookie},assertScope:()=>{},transport:async(url,init)=>{
+      const path=new URL(String(url)).pathname;
+      expect(new Headers(init?.headers).get('Cookie')).toBe(p.cookie);
+      // Exercise the actual auth routes locally. This suite mounts only auth,
+      // so its denial read uses list-sessions rather than the hosted /me route.
+      return(await call(path==='/api/auth/revoke-sessions'?'revoke-sessions':'list-sessions',init?.method==='POST'?{}:undefined,p.cookie)).response;
+    }},AbortSignal.timeout(12000));
+    try{
+      expect(await probe.start(AbortSignal.timeout(10000))).toBe('in-flight');
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[sessionId])).rowCount).toBe(1);
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+      expect(await probe.finish(AbortSignal.timeout(5000))).toBe('verified');
+      const result=probe.result();expect(result.waitingBeforeDispatch&&result.waitingAfterRestore).toBe(true);
+      const fences=(await owner.query('SELECT operation_id FROM app.privacy_operation_commits WHERE sequence>$1::bigint',[result.markerBefore])).rows;expect(fences).toHaveLength(1);
+      const control=(await readJournalControl(store)).value;expect(control.pending).toHaveLength(0);expect(control.mode).toBe('active');
+      const intent=privacyIntentSchema.parse(JSON.parse(store.rows.get(`intents/${fences[0].operation_id}.json`)!.value));
+      const proofControl={...control,pending:[{id:intent.id,started_at:intent.started_at}]};
+      expect((await provePrivacyCommits(store,proofControl)).has(intent.id)).toBe(true);expect((await provePrivacyReceipts(store,proofControl)).has(intent.id)).toBe(true);
+      expect((await owner.query('SELECT 1 FROM public.auth_session WHERE id=$1',[sessionId])).rowCount).toBe(0);
+      expect((await(await call('get-session',undefined,other.cookie)).response.json()).user.id).toBe(other.id);
+    }finally{await probe.close();env.PRIVACY_COMMIT_WRITER_V1=previousWriter;env.PRIVACY_COMMIT_RECOVERY_V1=previousRecovery;await rm(directory,{recursive:true,force:true});}
+  }),15000);
   it("leaves an ambiguous post-commit R2 failure unresolved and fails closed", async () => {
     const p = await person(),
       store = await journal(p.id);

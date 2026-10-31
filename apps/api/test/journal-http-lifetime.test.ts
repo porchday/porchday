@@ -5,7 +5,8 @@ import type {Env,Variables} from '../src/types';
 const database=vi.hoisted(()=>({query:Object.assign(vi.fn(),{end:vi.fn()})}));
 vi.mock('postgres',()=>({default:()=>database.query}));
 import {logoutJournalTiming} from '../src/journal-timing';
-import {withHttpPrivacyJournal,privacyReadGuard,privacyMutationMiddleware,readJournalControl,type JournalStore} from '../src/privacy-journal';
+import {withHttpPrivacyJournal,withHttpAuthPrivacyJournal,privacyReadGuard,privacyMutationMiddleware,readJournalControl,type JournalStore} from '../src/privacy-journal';
+import {privacyCommitScopeSchema} from '../src/privacy-commit-proof';
 
 function deferred<T=void>(){
  let resolve!:(value:T|PromiseLike<T>)=>void,reject!:(error:unknown)=>void;
@@ -34,6 +35,39 @@ describe('HTTP privacy operations retain one awaited durability lifecycle',()=>{
    throw Error('Unexpected test query');
   });
   env={ENVIRONMENT:'production',RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:'synthetic-not-connected'}} as unknown as Env;
+ });
+ it('publishes an exact auth scope before work only with explicit opt-in',async()=>{
+  env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';
+  await withHttpAuthPrivacyJournal({env,executionCtx:execution()},async scope=>{
+   expect(scope).toBeDefined();
+   const raw=store.rows.get(`commit-scopes/v1/${scope!.operationId}.json`)!.text;
+   const parsed=privacyCommitScopeSchema.parse(JSON.parse(raw));
+   expect(parsed.id).toBe(scope!.operationId);expect(parsed.generation).toBe(scope!.generation);
+   expect((await readJournalControl(store)).value.pending.map(p=>p.id)).toContain(scope!.operationId);
+   return 42;
+  });
+ });
+ it('never opts generic middleware into a single-transaction contract',async()=>{
+  env.PRIVACY_COMMIT_WRITER_V1='true';const work=vi.fn(async()=>42);
+  await withHttpPrivacyJournal({env,executionCtx:execution()},work);
+  expect(work).toHaveBeenCalledWith();expect([...store.rows.keys()].filter(k=>k.startsWith('commit-scopes/'))).toHaveLength(0);
+ });
+ it('refuses writer-only configuration before registering an intent or starting work',async()=>{
+  env.PRIVACY_COMMIT_WRITER_V1='true';const work=vi.fn();
+  await expect(withHttpAuthPrivacyJournal({env,executionCtx:execution()},work)).rejects.toThrow('PRIVACY_COMMIT_RECOVERY_REQUIRED');
+  expect(work).not.toHaveBeenCalled();expect((await readJournalControl(store)).value.pending).toHaveLength(0);
+ });
+ it.each([undefined,'false'])('leaves the auth writer disabled for flag %s',async flag=>{
+  env.PRIVACY_COMMIT_WRITER_V1=flag;const work=vi.fn(async()=>42);
+  await withHttpAuthPrivacyJournal({env,executionCtx:execution()},work);
+  expect(work).toHaveBeenCalledWith();expect([...store.rows.keys()].filter(k=>k.startsWith('commit-scopes/'))).toHaveLength(0);
+ });
+ it('does not start SQL work when scope publication is unconfirmed',async()=>{
+  env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';const put=store.put.bind(store),work=vi.fn();
+  store.put=async(key,...args)=>{if(key.startsWith('commit-scopes/'))throw Error('synthetic scope I/O failure');return put(key,...args);};
+  await expect(withHttpAuthPrivacyJournal({env,executionCtx:execution()},work)).rejects.toThrow();
+  expect(work).not.toHaveBeenCalled();expect((await readJournalControl(store)).value.pending).toHaveLength(1);
+  expect([...store.rows.keys()].filter(k=>k.startsWith('receipts/'))).toHaveLength(0);
  });
  it.each([false,true])('times the outer logout guard and close without bypassing failed checks (%s)',async(fail)=>{
   const writeDataPoint=vi.fn(),handler=vi.fn(c=>c.json({ok:true}));

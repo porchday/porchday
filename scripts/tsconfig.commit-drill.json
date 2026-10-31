@@ -1,0 +1,25 @@
+{
+  "extends": "../apps/api/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": [
+      "ES2023"
+    ]
+  },
+  "include": [],
+  "files": [
+    "commit-drill-store.ts",
+    "commit-drill-ipc.ts",
+    "commit-drill-transaction.ts",
+    "commit-drill-supervisor.ts",
+    "commit-drill-child.ts",
+    "commit-drill-observe.ts",
+    "commit-drill-runner.ts",
+    "commit-drill-recovered.ts",
+    "r2-operator-bridge.ts",
+    "r2-journal-audit-store.ts",
+    "auth-commit-cohort-proof.ts",
+    "auth-commit-cohort-dispatch.ts",
+    "auth-inflight-revocation.ts"
+  ]
+}
