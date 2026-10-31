@@ -700,3 +700,23 @@ The Mac watcher was updated to `7d7ee36` after all six CI checks passed. Live
 verification confirmed the previously suppressed alert's exact bot comment,
 persisted delivery and two clean polls, with application state unchanged. See the
 [installation and staging rehearsal evidence](evidence/frontend-browser-roundtrip-staging-2026-10-29.md).
+
+### Rejected upload with no created version
+
+`FileUploadLease.rejectAbsent` resolves only the original durable intent after
+an explicit HTTP 400/401/403/413/422 rejection and read-only reconciliation.
+The caller must retain the rejection evidence, prove the version catalogue covers
+the attempted write and contains no candidate for its operation, and bracket that
+check with identical provider inventories. Unavailable, partial or ambiguous
+reads and timeout/server/rate-limit/conflict responses must retain the lease.
+The method archives the owner, intent and rejection proof together without
+changing canonical deployment state. That operation ID can never dispatch again.
+A corrected rollout needs a separately reviewed plan after this disposition.
+This is an operator reconciliation interface, not an automatic retry policy.
+
+The maintained upload subprocess now writes a bounded owner-only process receipt
+for successful and failed exits. It records exit/signal and captured diagnostic
+output, redacts the supplied provider credential, fsyncs the receipt, and refuses
+to overwrite earlier evidence. Diagnostics remain private; thrown errors stay
+sanitized. These receipts supplement provider reconciliation and never prove a
+write's outcome by themselves.

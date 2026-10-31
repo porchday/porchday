@@ -153,3 +153,39 @@ setInterval(()=>{},1000);`;
   }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
  });
 });
+
+describe('rejected upload without a version',()=>{
+ const rejection=(plan:UploadPlan)=>({operationId:plan.operationId,httpStatus:400 as const,rejectionEvidenceSha256:'a'.repeat(64),beforeInventorySha256:'b'.repeat(64),afterInventorySha256:'b'.repeat(64),catalogueComplete:true as const,candidateAbsent:true as const,evidenceDigest:'c'.repeat(64)});
+ it('requires an original intent and retains it on incomplete or changed evidence',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
+  try{
+   await expect(lease.rejectAbsent(async()=>rejection(f.plan),signal())).rejects.toThrow('UPLOAD_INTENT_REQUIRED');
+   await lease.dispatchOnce(async()=>{},async()=>{throw Error('400');},signal());
+   for(const patch of [{httpStatus:500},{httpStatus:408},{httpStatus:409},{httpStatus:429},{candidateAbsent:false},{catalogueComplete:false},{operationId:id(7)},{afterInventorySha256:'d'.repeat(64)},{rejectionEvidenceSha256:''}]){
+    await expect(lease.rejectAbsent(async()=>({...rejection(f.plan),...patch}) as any,signal())).rejects.toThrow('UPLOAD_ABSENT_REJECTION_INVALID');
+    expect(existsSync(join(f.root,'deployment-lock/upload-intent.json'))).toBe(true);
+   }
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('archives evidence permanently without changing canonical or allowing replay',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
+  try{
+   await lease.dispatchOnce(async()=>{},async()=>{throw Error('400');},signal());
+   const intent=readFileSync(join(f.root,'deployment-lock/upload-intent.json'),'utf8');
+   await lease.rejectAbsent(async()=>rejection(f.plan),signal());
+   const archive=join(f.root,'release-upload-rejected-absent-'+f.plan.operationId);
+   expect(readFileSync(join(archive,'upload-intent.json'),'utf8')).toBe(intent);
+   expect(JSON.parse(readFileSync(join(archive,'upload-rejected-absent.json'),'utf8')).httpStatus).toBe(400);
+   expect(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8')).toBe(f.canonical);
+   expect(()=>FileUploadLease.acquire(f.root,f.plan)).toThrow('UPLOAD_ALREADY_REJECTED');
+   const next=FileUploadLease.acquire(f.root,{...f.plan,operationId:id(8)});next.cancelBeforeDispatch();
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('does not reinterpret a verified candidate as absent',async()=>{
+  const f=fixture(),lease=FileUploadLease.acquire(f.root,f.plan);
+  try{
+   await lease.dispatchOnce(async()=>{},async()=>{},signal());await lease.reconcile(verified,signal());
+   await expect(lease.rejectAbsent(async()=>rejection(f.plan),signal())).rejects.toThrow('UPLOAD_ALREADY_RESOLVED');
+  }finally{lease.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+});
