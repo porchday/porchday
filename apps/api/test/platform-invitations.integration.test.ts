@@ -125,6 +125,33 @@ suite('member platform invitations through real auth sessions and restricted SQL
    expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(revocation.status===200?0:1);
   }
  });
+ it.each(['blocked','restricted'])('does not connect when the inviter becomes %s before verification',async state=>{
+  const a=await person(),email=randomUUID()+'@example.test',id=randomUUID();
+  await call('/api/v1/platform-invitations',{email,kind:'family'},a.cookie);
+  const invitation=await row(email);
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2',[id,invitation.token_hash]);
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$1,$2,false)',[id,email]);
+  await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,'i_'+id.replaceAll('-','').slice(0,16)]);
+  if(state==='blocked')await owner.query('INSERT INTO app.blocks(actor,target) VALUES($1,$2)',[a.id,id]);
+  else await owner.query("UPDATE app.members SET status='restricted' WHERE id=$1",[a.id]);
+  await owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);
+  expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(0);
+ });
+ it('a fresh credential after the cooldown clears an old revocation without changing a duplicate label',async()=>{
+  const a=await person(),email=randomUUID()+'@example.test';
+  await call('/api/v1/platform-invitations',{email,kind:'family'},a.cookie);
+  await call('/api/v1/platform-invitations',{email,kind:'friend'},a.cookie);
+  let list=await (await history(a.cookie,'?v=2')).json() as any;
+  expect(list.items[0].kind).toBe('family');
+  const old=await row(email);
+  await call('/api/v1/platform-invitations/'+list.items[0].id+'/revoke',{},a.cookie);
+  await owner.query("UPDATE public.platform_invitation_requests SET created_at=now()-interval '8 days' WHERE sender_id=$1",[a.id]);
+  await owner.query('DELETE FROM public.pilot_invitations WHERE token_hash=$1',[old.token_hash]);
+  await call('/api/v1/platform-invitations',{email,kind:'friend'},a.cookie);
+  list=await (await history(a.cookie,'?v=2')).json() as any;
+  expect(list.items[0]).toMatchObject({kind:'friend',status:'pending'});
+  expect((await row(email)).token_hash).not.toBe(old.token_hash);
+ });
  it('requires Origin, verified active session, signup gate, privacy guard and incident permission before creating mail',async()=>{
   const a=await person(),email=randomUUID()+'@example.test';
   expect((await invite('',email)).status).toBe(401);
