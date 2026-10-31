@@ -102,6 +102,9 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  const promotionAllowed=options.promotionAllowed??(()=>true);
  const assertPromotion=()=>{if(!promotionAllowed())throw new RecoveryError('DEPLOYMENT_CONTINUITY_FAILED');};
  const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,...(plan.routing?{routing:structuredClone(plan.routing)}:{}),...(plan.readerFloorPromotion?{readerFloorPromotion:Object.freeze({...plan.readerFloorPromotion})}:{}),...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
+ // Each reviewed domain requires inventory, preview, one write and reconciliation.
+ // Keep ordinary Worker deadlines unchanged; routing remains bounded per domain.
+ const routingAllowance=(plan.routing?.moves.length??0)*60000;
  const rollbackId=rollbackOperationId(plan.operationId);
  let state=await journal.read();if(state){validateRecoveryState(state);if(state.planHash!==hash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');}
  const advance=async(phase:Phase,fields:Partial<RecoveryState>={})=>{const next:RecoveryState={...state,...fields,v:1,revision:(state?.revision??0)+1,planHash:hash,phase};validateRecoveryTransition(state,next);await journal.write(state,next);state=next;};
@@ -124,7 +127,7 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  }
  if(state!.phase==='candidate-observed'){
   const observed=await observe();if(!observed)return 'observation-unavailable';if(!candidate(observed)||observed.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
-  let health:'healthy'|'unhealthy'|'unknown';try{health=promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
+  let health:'healthy'|'unhealthy'|'unknown';try{health=promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000+routingAllowance,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
   if(health==='healthy'&&plan.placementTrial){
    try{health=ports.trial?await bounded(65*60*1000,s=>ports.trial!(s)):'unknown';if(!promotionAllowed())health='unhealthy';}catch{health=promotionAllowed()?'unknown':'unhealthy';}
   }
@@ -133,7 +136,7 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
    const after=await observe();if(!after)return 'observation-unavailable';if(!candidate(after)||after.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
    if(promotionAllowed()){await advance('complete');return 'complete';}
   }
-  await bounded(10000,signal=>ports.authorize(plan,'rollback',signal));const before=await observe();if(!before)return 'observation-unavailable';if(!candidate(before)||before.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
+  await bounded(10000+routingAllowance,signal=>ports.authorize(plan,'rollback',signal));const before=await observe();if(!before)return 'observation-unavailable';if(!candidate(before)||before.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
   await advance('rollback-intent');
   try{await bounded(10000,signal=>ports.deploy(plan.baselineVersion,rollbackId,signal));}catch{/* Never replay an uncertain rollback POST. */}
  }

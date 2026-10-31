@@ -1,4 +1,4 @@
-import {it,expect} from 'vitest';
+import {it,expect,vi} from 'vitest';
 import {withRoutingRecovery} from './release-routing-controller.ts';
 import {recoverDeployment,deploymentPlanHash,type DeploymentPlan,type RecoveryState,type DeploymentObservation} from './deployment-recovery.ts';
 import type {RoutingState,RoutingPorts} from './domain-routing-recovery.ts';
@@ -51,4 +51,20 @@ it('resumes interrupted domain rollback without returning to forward routing',as
  const journal={read:async()=>deployment,write:async(_p:RecoveryState|null,n:RecoveryState)=>{deployment=n;}};
  await expect(recoverDeployment(plan,journal,ports)).rejects.toThrow('interruption');
  expect(await recoverDeployment(plan,journal,ports)).toBe('rolled-back');expect(assignments).toEqual([after.service,before.service]);
+});
+
+it('allows bounded multi-step routing verification and restoration before Worker rollback',async()=>{
+ vi.useFakeTimers();
+ try{
+  let deployment:RecoveryState|null=null,routingState:RoutingState|null=null,target=before;
+  let observed:DeploymentObservation={version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null};
+  const assignments:string[]=[];
+  const ports=withRoutingRecovery(plan,{authorize:async()=>{},observe:async()=>observed,deploy:async(v,id)=>{observed={version:v,operationId:id,deploymentId:uuid(v===plan.candidateVersion?5:6)};},verify:async v=>v===plan.candidateVersion?'unhealthy':'healthy'}, {
+   read:async()=>routingState,write:async(_p,n)=>{routingState=n;},authorize:async()=>{},observe:async()=>target,
+   assign:async(t,signal)=>{await new Promise(r=>setTimeout(r,t.service===after.service?50000:20000));signal?.throwIfAborted();target=t;assignments.push(t.service);}
+  });
+  const pending=recoverDeployment(plan,{read:async()=>deployment,write:async(_p,n)=>{deployment=n;}},ports);
+  await vi.advanceTimersByTimeAsync(70001);
+  expect(await pending).toBe('rolled-back');expect(assignments).toEqual([after.service,before.service]);
+ }finally{vi.useRealTimers();}
 });
