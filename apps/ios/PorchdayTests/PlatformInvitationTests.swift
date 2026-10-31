@@ -6,7 +6,7 @@ final class PlatformInvitationTests: XCTestCase {
         try Member(.object(["id": .string("synthetic-member"), "handle": .string("synthetic"), "status": .string(status)]))
     }
 
-    @MainActor func testAcceptedInvitationUsesOnlyEmailAndDoesNotCreateConnection() async throws {
+    @MainActor func testAcceptedInvitationSendsEmailAndConnectionLabel() async throws {
         var requests: [(String, JSON)] = []
         let notice = try await PlatformInvitation.send(email: "  Person+invite@Example.Test \n", member: member()) { path, body in
             requests.append((path, body))
@@ -14,7 +14,7 @@ final class PlatformInvitationTests: XCTestCase {
         }
         XCTAssertEqual(requests.count, 1)
         XCTAssertEqual(requests.first?.0, "/platform-invitations")
-        XCTAssertEqual(requests.first?.1, .object(["email": .string("person+invite@example.test")]))
+        XCTAssertEqual(requests.first?.1, .object(["email": .string("person+invite@example.test"), "kind": .string("friend")]))
         XCTAssertEqual(notice, PlatformInvitation.acceptedNotice)
         XCTAssertFalse(notice.contains("delivered"))
     }
@@ -79,7 +79,7 @@ final class PlatformInvitationTests: XCTestCase {
     }
 
     func testSentInvitationStatusesAndDates() throws {
-        for (status, label) in [("pending", "Pending"), ("joined", "Joined"), ("expired", "Expired")] {
+        for (status, label) in [("pending", "Pending"), ("joined", "Joined"), ("expired", "Expired"), ("revoked", "Revoked")] {
             let raw: JSON = .object(["id": .string(UUID().uuidString), "email": .string("person@example.test"),
                 "requested_at": .string("2026-10-27T00:00:00Z"), "expires_at": .string("2026-11-03T00:00:00Z"), "status": .string(status)])
             let invitation = try SentPlatformInvitation(raw)

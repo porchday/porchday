@@ -177,7 +177,7 @@ export function AuthPage({
           </h1>
           <p>
             {join
-              ? "An invitation is required. You must be 18 or older to join."
+              ? "An invitation is required. You must be 18 or older to join. If your invitation email names a Friend or Family connection, accepting and verifying your email creates that connection automatically. You will share future posts for that audience; you can change your label or disconnect later."
               : forgot
                 ? "We’ll email a reset link if there’s an eligible account. Your encryption recovery secret is separate."
                 : reset
