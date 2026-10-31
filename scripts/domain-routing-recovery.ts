@@ -15,7 +15,7 @@ export interface RoutingPorts {
  authorize(plan:RoutingPlan):Promise<void>;
  observe(hostname:string):Promise<DomainTarget>;
  /** Single bounded provider call. No retry even on a lost reply. */
- assign(target:DomainTarget):Promise<void>;
+ assign(target:DomainTarget,signal?:AbortSignal):Promise<void>;
 }
 const equal=(a:DomainTarget,b:DomainTarget)=>a.hostname===b.hostname&&a.service===b.service&&a.environment===b.environment&&a.zoneId===b.zoneId;
 export function routingPlanHash(plan:RoutingPlan):string {

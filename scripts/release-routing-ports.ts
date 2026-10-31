@@ -32,12 +32,12 @@ export function leasedRoutingPorts(options:{plan:DeploymentPlan;lease:Pick<FileD
   read:()=>routingJournal.read(),write:(previous,next)=>routingJournal.write(previous,next),
   authorize:async input=>{if(routingPlanHash(input)!==routingPlanHash(routing))throw Error('ROUTING_PLAN_CHANGED');await identity();await progress(await routingJournal.read());await identity();},
   observe:async hostname=>{await identity();return provider.observe(hostname);},
-  assign:async target=>{
+  assign:async (target,operationSignal)=>{
    await identity();const state=await routingJournal.read();
    if(!state?.intent||state.planHash!==routingPlanHash(routing))throw Error('ROUTING_INTENT_REQUIRED');
    const move=routing.moves[state.direction==='forward'?state.completed:state.completed-1],expected=state.direction==='forward'?move?.after:move?.before;
    if(!expected||JSON.stringify(target)!==JSON.stringify(expected))throw Error('ROUTING_WRITE_NOT_AUTHORIZED');
-   await progress(state);await identity();await provider.assign(target);
+   await progress(state);await identity();operationSignal?.throwIfAborted();await provider.assign(target,operationSignal?AbortSignal.any([signal,operationSignal]):signal);
   },
  };
 }

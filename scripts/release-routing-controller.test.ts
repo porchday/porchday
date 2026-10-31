@@ -5,6 +5,14 @@ import type {RoutingState,RoutingPorts} from './domain-routing-recovery.ts';
 const uuid=(n:number)=>n.toString().padStart(8,'0')+'-0000-0000-0000-000000000000';
 const before={hostname:'staging.porchday.com',service:'porchday-staging',environment:'production',zoneId:'a'.repeat(32)},after={...before,service:'porchday-staging-edge'};
 const plan:DeploymentPlan={operationId:uuid(1),worker:after.service,candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64),backendVersion:uuid(8),backendReaderFloor:uuid(9),routing:{operationId:uuid(1),moves:[{before,after}]}};
+it.each(['forward','rollback'] as const)('does not dispatch routing work after cancellation during %s authorization',async direction=>{
+ const controller=new AbortController(),events:string[]=[];
+ const ports=withRoutingRecovery(plan,{authorize:async()=>{},observe:async()=>({version:plan.candidateVersion,deploymentId:uuid(5),operationId:plan.operationId}),deploy:async()=>{},verify:async()=> 'healthy'}, {
+  read:async()=>null,write:async()=>{events.push('write');},authorize:async()=>{await Promise.resolve();controller.abort(Error('cancelled'));},observe:async()=>{events.push('observe');return before;},assign:async()=>{events.push('assign');}
+ });
+ const operation=direction==='forward'?ports.verify(plan.candidateVersion,controller.signal):ports.authorize(plan,'rollback',controller.signal);
+ await expect(operation).rejects.toThrow('cancelled');expect(events).toEqual([]);
+});
 it('rejects a trial marker outside a pinned API/domain operation',()=>{
  expect(()=>deploymentPlanHash({...plan,placementTrial:true})).toThrow('TRIAL_SCOPE_INVALID');
  const api:DeploymentPlan={...plan,worker:before.service,backendVersion:undefined,backendReaderFloor:undefined,routingFrontendVersion:uuid(20),placementTrial:true};
