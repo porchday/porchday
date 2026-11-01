@@ -244,6 +244,15 @@ try {
     ),
   );
   assert(calls.some(c=>c.path==='/api/v1/posts'&&c.body.on_behalf_of===child&&c.body.envelope.payload.tags.some(t=>t.id===child)));
+  for (const [extension,mime] of [['mp4','video/mp4'],['mov','video/quicktime']]) {
+    const bytes=await readFile(`apps/web/test/fixtures/synthetic-video.${extension}`);
+    const result=await page.evaluate(async encoded=>{
+      const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
+      const media=await window.validateVideo(bytes);
+      return {mime:media.mime,width:media.width,height:media.height,poster:!!media.poster};
+    },bytes.toString('base64'));
+    assert.deepEqual(result,{mime,width:160,height:120,poster:true});
+  }
   // Real browser-generated video; no member data or external media source.
   const encoded = await page.evaluate(async () => {
     const canvas = document.createElement('canvas'); canvas.width=160; canvas.height=120;
