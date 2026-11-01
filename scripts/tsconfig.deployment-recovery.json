@@ -38,6 +38,7 @@
     "release-watch-cli.ts",
     "release-continuity-command.ts",
     "release-monitor-state.ts",
-    "queue-admission-lease.ts"
+    "queue-admission-lease.ts",
+    "reconcile-failed-activation.ts"
   ]
 }
