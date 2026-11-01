@@ -46,13 +46,19 @@ const jpeg = JSON.parse(
   await readFile("apps/web/test/fixtures/jpeg-variants.json", "utf8"),
 ).fixtures.find((f) => f.name === "baseline").base64;
 const css = await readFile("apps/web/src/styles.css");
+// Exercise the deployed policy: decrypted media uses local blob URLs.
+const securityHeaders = Object.fromEntries(
+  (await readFile("apps/web/public/_headers", "utf8")).split("\n")
+    .filter(line => /^\s+[^:]+:/.test(line))
+    .map(line => { const colon = line.indexOf(":"); return [line.slice(0, colon).trim(), line.slice(colon + 1).trim()]; }),
+);
 let calls = [];
 let highlights = [];
 const uploadedMedia = new Map();
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const send = (data, mime = "application/json") => {
-    res.writeHead(200, { "Content-Type": mime });
+    res.writeHead(200, { ...securityHeaders, "Content-Type": mime });
     res.end(mime === "application/json" ? JSON.stringify(data) : data);
   };
   if (url.pathname === "/logo.svg") return send(await readFile("apps/web/public/logo.svg"),"image/svg+xml");
