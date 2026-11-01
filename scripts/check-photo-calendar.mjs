@@ -54,6 +54,7 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { "Content-Type": mime });
     res.end(mime === "application/json" ? JSON.stringify(data) : data);
   };
+  if (url.pathname === "/logo.svg") return send(await readFile("apps/web/public/logo.svg"),"image/svg+xml");
   if (url.pathname === "/fixture.js")
     return send(bundle.outputFiles[0].contents, "text/javascript");
   if (url.pathname === "/styles.css") return send(css, "text/css");
@@ -227,6 +228,9 @@ try {
   assert.equal(save.body.envelope.payload.birthday, undefined);
   await page.goto(origin + "/app/photos");
   await page.getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
+  const thumbnail=page.getByRole('img',{name:'Synthetic photo',exact:true});
+  await thumbnail.evaluate(async i=>{await i.decode();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
+  assert(await thumbnail.evaluate(i=>{const image=i.getBoundingClientRect(),cell=i.closest('button').getBoundingClientRect();return i.naturalWidth===32&&image.width>0&&image.left>=cell.left&&image.right<=cell.right&&image.top>=cell.top&&image.bottom<=cell.bottom;}));
   if(process.env.CALENDAR_SCREENSHOT)await page.screenshot({path:process.env.CALENDAR_SCREENSHOT});
   const nav = page.getByRole("navigation", { name: "Mobile navigation" });
   assert.deepEqual(await nav.getByRole("link").allTextContents(), [
