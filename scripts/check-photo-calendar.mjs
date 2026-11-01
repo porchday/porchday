@@ -10,7 +10,7 @@ const self = "00000000-0000-4000-8000-000000000001",
   child = "00000000-0000-4000-8000-000000000003";
 const bundle = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer} from './apps/web/src/Social';import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';createRoot(document.getElementById('root')).render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>createRoot(document.getElementById('root')).render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';createRoot(document.getElementById('root')).render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>);`,
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -48,6 +48,7 @@ const jpeg = JSON.parse(
 const css = await readFile("apps/web/src/styles.css");
 let calls = [];
 let highlights = [];
+const uploadedMedia = new Map();
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const send = (data, mime = "application/json") => {
@@ -70,6 +71,14 @@ const server = createServer(async (req, res) => {
     method: req.method,
     body: body ? JSON.parse(body) : null,
   });
+  if (url.pathname === "/api/v1/media" && req.method === "POST") {
+    const data = JSON.parse(body);
+    uploadedMedia.set(data.id, data.envelope);
+    return send({ upload_url: `/api/v1/media/${data.id}/bytes` });
+  }
+  if (url.pathname.endsWith("/bytes") && req.method === "PUT") return send({ ok: true });
+  if (url.pathname.endsWith("/bytes") && uploadedMedia.has(url.pathname.split("/").at(-2)))
+    return send(uploadedMedia.get(url.pathname.split("/").at(-2)));
   if (url.pathname.endsWith("/bytes"))
     return send({
       context: { id: "00000000-0000-4000-8000-000000000006", expiresAt: null },
@@ -187,6 +196,28 @@ try {
         c.body.post_id.endsWith("004"),
     ),
   );
+  const dayTitle = await page.getByRole("dialog").getByRole("heading").textContent();
+  async function swipe(dx, dy = 0, target = ".calendar-day-content") {
+    await page.locator(target).evaluate((el, {dx, dy}) => {
+      const touch = (x,y) => new Touch({identifier:1,target:el,clientX:x,clientY:y});
+      el.dispatchEvent(new TouchEvent("touchstart",{bubbles:true,touches:[touch(150,200)]}));
+      el.dispatchEvent(new TouchEvent("touchend",{bubbles:true,touches:[],changedTouches:[touch(150+dx,200+dy)]}));
+    }, {dx,dy});
+  }
+  await swipe(-100);
+  await page.getByText("No matching posts for this day.").waitFor();
+  assert.notEqual(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  await swipe(100);
+  await page.getByText("Picnic in the park", {exact:true}).waitFor();
+  assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  await swipe(100,150);
+  assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  await swipe(-100,0,'[aria-label="Day navigation"] button:first-child');
+  assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  for(let i=0;i<12;i++) await page.getByRole("button",{name:"Previous day",exact:true}).click();
+  await page.getByText("No matching posts for this day.").waitFor();
+  assert(calls.filter(c=>c.path==='/api/v1/calendar').length>=2);
+  await page.getByRole("button",{name:"Next day",exact:true}).click();
   await page.keyboard.press("Escape");
   assert.equal(
     await page.evaluate(
@@ -212,6 +243,39 @@ try {
     ),
   );
   assert(calls.some(c=>c.path==='/api/v1/posts'&&c.body.on_behalf_of===child&&c.body.envelope.payload.tags.some(t=>t.id===child)));
+  // Real browser-generated video; no member data or external media source.
+  const encoded = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width=160; canvas.height=120;
+    const ctx=canvas.getContext('2d'); ctx.fillStyle='orange'; ctx.fillRect(0,0,160,120);
+    const stream=canvas.captureStream(10), recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'}), chunks=[];
+    const done=new Promise(resolve=>{recorder.ondataavailable=e=>chunks.push(e.data);recorder.onstop=resolve;});
+    recorder.start();
+    await new Promise(resolve=>setTimeout(resolve,250)); ctx.fillStyle='blue';ctx.fillRect(10,10,50,50);
+    await new Promise(resolve=>setTimeout(resolve,250)); recorder.stop();await done;stream.getTracks().forEach(t=>t.stop());
+    const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());
+    const decoded=await window.validateVideo(bytes);
+    if(decoded.width!==160||decoded.height!==120||!decoded.poster)throw Error('Video validation failed');
+    return btoa(String.fromCharCode(...bytes));
+  });
+  await page.locator('input[type=file]').setInputFiles({name:'memory.webm',mimeType:'video/webm',buffer:Buffer.from(encoded,'base64')});
+  await page.getByLabel('Video preview').waitFor();
+  await page.getByLabel('Photo or video description').fill('Synthetic video');
+  await page.getByRole('button',{name:/Share/}).click();
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Video preview"]'));
+  const saved=calls.filter(c=>c.path==='/api/v1/posts').at(-1).body.envelope.payload.media[0];
+  assert.equal(saved.mime,'video/webm');assert(saved.poster);assert.equal(saved.posterExpiresAt,null);
+  assert.equal(uploadedMedia.get(saved.id).payload.bytes,encoded);
+  await page.goto(origin + '/video');
+  const readsBefore=calls.filter(c=>c.path.endsWith('/bytes')).length;
+  await page.evaluate(media=>window.showMedia(media),saved);
+  await page.getByRole('button',{name:'Load video'}).waitFor();
+  assert.equal(calls.filter(c=>c.path.endsWith('/bytes')).length,readsBefore);
+  await page.getByRole('button',{name:'Load video'}).click();
+  await page.getByLabel('Synthetic video').waitFor();
+  await page.locator('video').evaluate(async video=>{await video.play();});
+  assert.equal(await page.locator('video').evaluate(v=>v.videoWidth),160);
+  // Actual decoder rejects a signature-only fake clip.
+  assert.equal(await page.evaluate(async()=>{try{await window.validateVideo(new Uint8Array([0,0,0,20,102,116,121,112,105,115,111,109,0,0,0,0,105,115,111,109]));return false;}catch{return true;}}),true);
   await page.goto(origin + "/children");
   await page.getByRole("button", { name: "Add child" }).click();
   await page.getByLabel("Child’s name").fill("Another synthetic child");
@@ -263,7 +327,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "Chromium mobile calendar, author/tag filters, personal highlight, encrypted tag payload and child settings passed.",
+    "Chromium calendar swipes/month boundaries, filters/highlights, video validation/upload/click-to-load playback, encrypted tag payload and child settings passed.",
   );
 } finally {
   await browser?.close();

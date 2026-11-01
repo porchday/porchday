@@ -61,6 +61,8 @@ export type MediaPayload = {
   id: string;
   alt: string;
   mime: string;
+  poster?: string;
+  posterExpiresAt?: string | null;
   name: string;
   width: number;
   height: number;

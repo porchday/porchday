@@ -6,6 +6,8 @@ import { EncryptedPhoto } from "./Social";
 import { contentTags, Tags } from "./PeopleTags";
 import {
   localDay,
+  adjacentDay,
+  swipeDay,
   monthRange,
   monthCells,
   filterEntries,
@@ -29,6 +31,17 @@ export function PhotosCalendar() {
     [next, setNext] = useState<{ at: string; id: string } | null>(null),
     [refresh, setRefresh] = useState(0),
     [clock, setClock] = useState(Date.now());
+  const touch = useRef<{ x: number; y: number; at: number } | null>(null);
+  function changeDay(offset: number) {
+    if (!selected) return;
+    const day = adjacentDay(selected, offset);
+    const date = new Date(day + "T12:00:00");
+    setSelected(day);
+    if (date.getFullYear() !== month.getFullYear() || date.getMonth() !== month.getMonth()) {
+      setEntries([]); setHighlights([]); setNext(null); setLoading(true);
+      setMonth(new Date(date.getFullYear(), date.getMonth(), 1));
+    }
+  }
   const generation = useRef(0),
     range = monthRange(month.getFullYear(), month.getMonth());
   async function load(more = false) {
@@ -312,9 +325,29 @@ export function PhotosCalendar() {
           )}
           onClose={() => setSelected(null)}
         >
+          <div className="calendar-day-content" style={{ touchAction: "pan-y" }}
+            onTouchStart={event => {
+              const target = event.target as HTMLElement;
+              if (event.touches.length !== 1 || target.closest("button,a,input,select,textarea,video")) { touch.current = null; return; }
+              touch.current = { x: event.touches[0].clientX, y: event.touches[0].clientY, at: Date.now() };
+            }}
+            onTouchCancel={() => { touch.current = null; }}
+            onTouchEnd={event => {
+              const start = touch.current; touch.current = null;
+              if (!start || event.changedTouches.length !== 1) return;
+              const end = event.changedTouches[0];
+              const offset = swipeDay(end.clientX - start.x, end.clientY - start.y, Date.now() - start.at);
+              if (offset) changeDay(offset);
+            }}>
+          <nav aria-label="Day navigation">
+            <Button onClick={() => changeDay(-1)}>Previous day</Button>
+            <Button onClick={() => changeDay(1)}>Next day</Button>
+          </nav>
+          {loading && <Loading />}
+          <Alert>{loadError}</Alert>
           <Alert>{action.error}</Alert>
           <Alert success>{action.notice}</Alert>
-          {!(byDay.get(selected) || []).length && (
+          {!loading && !loadError && !(byDay.get(selected) || []).length && (
             <p>
               No matching posts for this day
               {next ? " in the posts loaded so far" : ""}.
@@ -334,7 +367,7 @@ export function PhotosCalendar() {
                     busy={action.busy}
                     onClick={() => choose(selected, row.id, media.id)}
                   >
-                    Feature this photo
+                    {media.mime.startsWith("video/") ? "Feature this video" : "Feature this photo"}
                   </Button>
                 </div>
               ))}
@@ -357,6 +390,7 @@ export function PhotosCalendar() {
           >
             Use automatic highlight
           </Button>
+          </div>
         </Modal>
       )}
     </>

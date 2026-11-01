@@ -4794,3 +4794,13 @@ button.trace-row:focus-visible {
 .calendar-thumbnail { height:100%; width:100%; }
 .calendar-thumbnail .photo-placeholder { min-height:0; height:100%; padding:.3rem; }
 .calendar-thumbnail .photo-placeholder span { display:none; }
+
+.post-photos video, .photo-draft video, .calendar-post video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 75vh;
+  border-radius: 12px;
+}
+.calendar-day-content { min-height: 160px; }
+.calendar-day-content nav { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
