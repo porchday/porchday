@@ -7,7 +7,7 @@ import {deploymentPlanHash,type DeploymentPlan} from './deployment-recovery.ts';
  * This authorizes abandonment, never retry of the original operation. */
 export function verifyFailedActivation(plan:DeploymentPlan,accountId:string,audit:unknown,before:unknown,after:unknown,notBefore:string,now=Date.now()){
  const fail=()=>{throw Error('DEPLOYMENT_AUDIT_RECONCILIATION_UNPROVEN');};
- if(!/^[a-f0-9]{32}$/.test(accountId)||!Number.isFinite(Date.parse(notBefore)))fail();
+ if(!Number.isFinite(now)||!/^[a-f0-9]{32}$/.test(accountId)||!Number.isFinite(Date.parse(notBefore)))fail();
  const history=(value:any)=>{
   if(value?.success!==true||!Array.isArray(value.result?.deployments)||!value.result.deployments.length)fail();
   const rows=value.result.deployments,first=rows[0];
