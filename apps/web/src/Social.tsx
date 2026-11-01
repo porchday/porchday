@@ -1,3 +1,4 @@
+import { isVideo, VIDEO_ACCEPT, prepareVideo, validatedMedia } from "./video";
 import {TagPicker, Tags, validTags, usePeopleDirectory, type PersonTag} from "./PeopleTags";
 import { useNearViewport } from "./near-viewport";
 import { MemberAvatar } from "./MemberAvatar";
@@ -226,6 +227,8 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
   };
 }
 type PendingPhoto = {
+  mime?: string;
+  poster?: string;
   tags?: PersonTag[];
   id: string;
   name: string;
@@ -252,16 +255,24 @@ export function Composer({
   );
   const [timer, setTimer] = useState("");
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const draftUrls = useRef(new Set<string>());
+  useEffect(() => {
+    const current = new Set(photos.filter(p => isVideo(p.mime)).map(p => p.preview));
+    for (const url of draftUrls.current) if (!current.has(url)) URL.revokeObjectURL(url);
+    draftUrls.current = current;
+  }, [photos]);
+  useEffect(() => () => { for (const url of draftUrls.current) URL.revokeObjectURL(url); }, []);
   const input = useRef<HTMLInputElement>(null);
   const action = useAction();
   async function selectPhotos(files: FileList | null) {
     if (!files) return;
     await action.run(async () => {
       if (files.length + photos.length > 10)
-        throw new Error("You can share up to 10 photos in a post.");
+        throw new Error("You can share up to 10 photos or videos in a post.");
       const next: PendingPhoto[] = [];
-      for (const file of Array.from(files)) {
-        const prepared = await preparePhoto(file);
+      try { for (const file of Array.from(files)) {
+        const prepared = file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name)
+          ? await prepareVideo(file) : await preparePhoto(file);
         next.push({
           id: crypto.randomUUID(),
           name: file.name,
@@ -269,6 +280,7 @@ export function Composer({
           ...prepared,
         });
       }
+      } catch (error) { for (const item of next) if (isVideo(item.mime)) URL.revokeObjectURL(item.preview); throw error; }
       setPhotos([...photos, ...next]);
     });
     if (input.current) input.current.value = "";
@@ -290,7 +302,8 @@ export function Composer({
           id: crypto.randomUUID(),
           alt: photo.alt,
           tags: photo.tags || [],
-          mime: "image/jpeg",
+          mime: photo.mime || "image/jpeg",
+          ...(photo.poster ? { poster: photo.poster, posterExpiresAt: expiresAt } : {}),
           name: photo.name,
           width: photo.width,
           height: photo.height,
@@ -313,6 +326,7 @@ export function Composer({
           },
         );
         const bytes = new TextEncoder().encode(JSON.stringify(envelope));
+        if (bytes.length > 22_020_096) throw Error("This encrypted attachment is too large for this audience. Choose a smaller file.");
         const upload = await post("/media", {
           id: meta.id,
           envelope,
@@ -373,9 +387,9 @@ export function Composer({
         <div className="photo-editor">
           {photos.map((photo) => (
             <div className="photo-draft" key={photo.id}>
-              <img src={photo.preview} alt="Photo preview" />
+              {isVideo(photo.mime) ? <video src={photo.preview} controls playsInline preload="metadata" aria-label="Video preview" /> : <img src={photo.preview} alt="Photo preview" />}
               <Field
-                label="Photo description"
+                label="Photo or video description"
                 value={photo.alt}
                 onChange={(e) =>
                   setPhotos(
@@ -385,9 +399,9 @@ export function Composer({
                   )
                 }
                 maxLength={1000}
-                placeholder="Describe this photo for everyone"
+                placeholder="Describe this photo or video for everyone"
               />
-              <TagPicker label="People in this photo" value={photo.tags||[]} disabled={action.busy} onChange={tags=>setPhotos(photos.map(p=>p.id===photo.id?{...p,tags}:p))}/>
+              <TagPicker label="People in this photo or video" value={photo.tags||[]} disabled={action.busy} onChange={tags=>setPhotos(photos.map(p=>p.id===photo.id?{...p,tags}:p))}/>
               <button
                 type="button"
                 className="icon-button"
@@ -409,7 +423,8 @@ export function Composer({
           <input
             ref={input}
             type="file"
-            accept={PHOTO_ACCEPT}
+            disabled={action.busy}
+            accept={`${PHOTO_ACCEPT},${VIDEO_ACCEPT}`}
             multiple
             className="sr-only"
             tabIndex={-1}
@@ -421,7 +436,7 @@ export function Composer({
             onClick={() => input.current?.click()}
           >
             <Icon name="photo" size={18} />
-            <span>Photos</span>
+            <span>Photos & videos</span>
           </button>
           <TimerSelect value={timer} onChange={setTimer} />
         </div>
@@ -434,6 +449,7 @@ export function Composer({
           Share <Icon name="arrow" size={16} />
         </Button>
       </div>
+      <p className="muted">Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience.</p>
       <div className="composer-privacy">
         <Icon name="lock" size={13} />
         {groupId ? (
@@ -899,8 +915,8 @@ export function PostCard({
           <TagPicker value={editTags} onChange={setEditTags} disabled={action.busy}/>
           {editMedia.map(media=><div key={media.id} className="photo-draft">
             <EncryptedPhoto media={media}/>
-            <Field label="Photo caption" value={media.alt} maxLength={1000} onChange={e=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,alt:e.target.value}:m))}/>
-            <TagPicker label="People in this photo" value={media.tags||[]} disabled={action.busy} onChange={tags=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,tags}:m))}/>
+            <Field label={isVideo(media.mime) ? "Video caption" : "Photo caption"} value={media.alt} maxLength={1000} onChange={e=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,alt:e.target.value}:m))}/>
+            <TagPicker label="People in this photo or video" value={media.tags||[]} disabled={action.busy} onChange={tags=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,tags}:m))}/>
           </div>)}
           <TimerSelect
             value={editTimer}
@@ -995,13 +1011,35 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const imageRef = useRef<HTMLImageElement>(null);
+  const video = isVideo(media.mime);
+  const [requested, setRequested] = useState<string | null>(null);
+  const [poster, setPoster] = useState<{ id: string; url: string } | null>(null);
+  useEffect(() => {
+    let alive = true, url = "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setPoster(null);
+    const deadline = media.posterExpiresAt === null ? Infinity : Date.parse(media.posterExpiresAt || "");
+    if (near && video && deadline > Date.now() && typeof media.poster === "string" && media.poster.length <= 100000) {
+      void Promise.resolve().then(() => validatedPhoto(base64ToBytes(media.poster!))).then(({ blob }) => {
+        if (alive && deadline > Date.now()) {
+          url = URL.createObjectURL(blob); setPoster({ id: media.id, url });
+          const expire = () => {
+            if (deadline <= Date.now()) { URL.revokeObjectURL(url); url = ""; setPoster(null); }
+            else if (Number.isFinite(deadline)) timer = setTimeout(expire, Math.min(deadline - Date.now(), 2147483647));
+          };
+          expire();
+        }
+      }).catch(() => {});
+    }
+    return () => { alive = false; if (timer) clearTimeout(timer); if (url) URL.revokeObjectURL(url); };
+  }, [media.id, media.poster, media.posterExpiresAt, near, video]);
   const [opened, setOpened] = useState<{ id: string; url: string; expiresAt: number | null } | null>(
     null,
   );
   const [error, setError] = useState("");
   const url = opened?.id === media.id ? opened.url : "";
   useEffect(() => {
-    if (!near) return;
+    if (!near || (video && (thumbnail || requested !== media.id))) return;
     let alive = true;
     let objectUrl = "";
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1014,19 +1052,19 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (!response.ok) throw new Error("This photo is no longer available.");
+        if (!response.ok) throw new Error("This attachment is no longer available.");
         const envelope = (await response.json()) as EncryptedEnvelope;
         const payload = await vault.open({ envelope, id: media.id });
-        if (payload.mime !== "image/jpeg" || typeof payload.bytes !== "string")
-          throw new Error("Unsupported photo format.");
+        if (payload.mime !== media.mime || typeof payload.bytes !== "string")
+          throw new Error("Unsupported media format.");
         const bytes = base64ToBytes(payload.bytes);
-        const { blob } = await traced("photo decode", () => validatedPhoto(bytes), { bytes: bytes.length });
+        const { blob } = await traced("media decode", () => validatedMedia(bytes, media.mime), { bytes: bytes.length });
         if (!alive) return;
         const expiry = envelope.context.expiresAt
           ? Date.parse(envelope.context.expiresAt)
           : null;
         if (expiry !== null && expiry <= Date.now())
-          throw new Error("This photo expired.");
+          throw new Error("This attachment expired.");
         objectUrl = URL.createObjectURL(blob);
         markOnce("photo-decoded");
         setOpened({ id: media.id, url: objectUrl, expiresAt: expiry });
@@ -1037,7 +1075,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
             URL.revokeObjectURL(objectUrl);
             objectUrl = "";
             setOpened(null);
-            setError("This photo expired.");
+            setError("This attachment expired.");
           } else
             expiryTimer = setTimeout(
               checkExpiry,
@@ -1055,7 +1093,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
       if (expiryTimer) clearTimeout(expiryTimer);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [media.id, near]);
+  }, [media.id, media.mime, near, requested, thumbnail, video]);
   useEffect(() => {
     const element = imageRef.current;
     if (!currentTraceId() || !element || !url || !opened) return;
@@ -1065,7 +1103,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
   }, [url, opened]);
   return <div ref={photoRef} className={thumbnail ? "calendar-thumbnail" : undefined}>{url ? (
     <figure>
-      <img
+      {video ? <video src={url} controls playsInline preload="metadata" aria-label={media.alt || "Shared video"} width={media.width} height={media.height} /> : <img
         ref={imageRef}
         src={url}
         alt={media.alt || "Shared photo (no description provided)"}
@@ -1073,14 +1111,21 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
         decoding="async"
         width={media.width}
         height={media.height}
-      />
+      />}
       {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
       {!thumbnail && <Tags value={media.tags}/>}
+    </figure>
+  ) : video && requested !== media.id ? (
+    <figure>
+      {poster?.id === media.id && <img src={poster.url} alt={media.alt || "Video preview"} />}
+      {thumbnail ? <span className="calendar-video-indicator" aria-label="Video">▶</span> : <Button onClick={() => setRequested(media.id)}>Load video</Button>}
+      {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
+      {!thumbnail && <Tags value={media.tags} />}
     </figure>
   ) : (
     <div className="photo-placeholder">
       <Icon name={error ? "shield" : "photo"} size={24} />
-      <span>{error || (near ? "Opening encrypted photo…" : "Photo loads as you scroll")}</span>
+      <span>{error || (near ? "Opening encrypted media…" : "Media loads as you scroll")}</span>
     </div>
   )}</div>;
 }
@@ -1872,17 +1917,17 @@ function ReshareDialog({
             id: photo.id,
           });
           if (
-            original.mime !== "image/jpeg" ||
+            (!isVideo(original.mime) && original.mime !== "image/jpeg") ||
             typeof original.bytes !== "string"
           )
             throw new Error("An original photo has an unsupported format.");
           const bytes = base64ToBytes(original.bytes);
-          const { width, height } = await validatedPhoto(bytes);
+          const { width, height } = await validatedMedia(bytes, original.mime);
           const photoExpiresAt = preservedPhotoDeadline(
             oldEnvelope.context.expiresAt,
             expiresAt,
           );
-          const item = { ...photo, width, height, id: crypto.randomUUID() };
+          const item = { ...photo, width, height, posterExpiresAt: photoExpiresAt, id: crypto.randomUUID() };
           const envelope = await vault.seal(
             { ...item, bytes: original.bytes },
             {

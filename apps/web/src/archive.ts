@@ -99,7 +99,7 @@ export function packArchive(
     ...photos,
     "archive.json": strToU8(JSON.stringify(archive, null, 2)),
     "index.html": strToU8(
-      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your Porchday archive</title><style>body{font:18px/1.6 system-ui;max-width:760px;margin:60px auto;padding:20px;color:#244e43;background:#f6f3ea}article{padding:25px 0;border-bottom:1px solid #bbb}img{max-width:100%}small{font-size:14px}p{white-space:pre-wrap}</style><h1>Your Porchday archive</h1><p>@${htmlEscape(archive.handle)} · ${htmlEscape(archive.generated_at)}</p><p>${archive.archive_set ? `Part ${archive.archive_set.index}${archive.archive_set.total ? " of " + archive.archive_set.total : ""}. Keep all files in this archive set. Extract all parts into one folder to view photos referenced by other parts.` : ""}</p><p>Your contributions only. Other members’ private content is not included. Saved copies are outside the service’s deletion control.</p>${[...archive.posts, ...archive.comments, ...archive.reactions].map((p) => `<article><small>${htmlEscape(p.created_at)} · ${htmlEscape(p.audience)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small><p>${htmlEscape(p.payload.text || "")}${p.payload.emoji ? archiveReactionHtml(p.payload) : ""}</p>${(p.payload.media || []).map((m: Json) => `<figure><img src="photos/${htmlEscape(m.id)}.jpg" alt="${htmlEscape(m.alt)}"><figcaption>${htmlEscape(m.alt)}</figcaption></figure>`).join("")}</article>`).join("")}${archive.emojiLibrary ? `<section><h2>My images</h2>${archive.emojiLibrary.customEmojis.map((item) => `<p>${archiveReactionHtml(item)}</p>`).join("")}</section>` : ""}<p>See archive.json for profile, saved emoji images, connection/group references, reactions, and provenance. Reference IDs do not reveal unavailable private context.</p></html>`,
+      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your Porchday archive</title><style>body{font:18px/1.6 system-ui;max-width:760px;margin:60px auto;padding:20px;color:#244e43;background:#f6f3ea}article{padding:25px 0;border-bottom:1px solid #bbb}img,video{max-width:100%}small{font-size:14px}p{white-space:pre-wrap}</style><h1>Your Porchday archive</h1><p>@${htmlEscape(archive.handle)} · ${htmlEscape(archive.generated_at)}</p><p>${archive.archive_set ? `Part ${archive.archive_set.index}${archive.archive_set.total ? " of " + archive.archive_set.total : ""}. Keep all files in this archive set. Extract all parts into one folder to view photos referenced by other parts.` : ""}</p><p>Your contributions only. Other members’ private content is not included. Saved copies are outside the service’s deletion control.</p>${[...archive.posts, ...archive.comments, ...archive.reactions].map((p) => `<article><small>${htmlEscape(p.created_at)} · ${htmlEscape(p.audience)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small><p>${htmlEscape(p.payload.text || "")}${p.payload.emoji ? archiveReactionHtml(p.payload) : ""}</p>${(p.payload.media || []).map((m: Json) => archiveMediaHtml(m)).join("")}</article>`).join("")}${archive.emojiLibrary ? `<section><h2>My images</h2>${archive.emojiLibrary.customEmojis.map((item) => `<p>${archiveReactionHtml(item)}</p>`).join("")}</section>` : ""}<p>See archive.json for profile, saved emoji images, connection/group references, reactions, and provenance. Reference IDs do not reveal unavailable private context.</p></html>`,
     ),
   };
   if (archive.archive_set) {
@@ -193,8 +193,7 @@ export function unpackArchive(bytes: Uint8Array): {
   for (const media of archive.media) {
     if (
       typeof media.id !== "string" ||
-      !/^photos\/[A-Za-z0-9_-]+\.jpg$/.test(media.path) ||
-      media.mime !== "image/jpeg" ||
+      !validMediaPath(media.path, media.mime) ||
       !files[media.path] ||
       typeof media.sha256 !== "string" ||
       !/^[a-f0-9]{64}$/.test(media.sha256) ||
@@ -297,4 +296,16 @@ export async function prepareValidatedExport<T>(
   await validate();
   ensureContinue();
   return prepared;
+}
+
+export function validMediaPath(path: unknown, mime: unknown) {
+  const extension = mime === "image/jpeg" ? "jpg" : mime === "video/mp4" ? "mp4" : mime === "video/quicktime" ? "mov" : mime === "video/webm" ? "webm" : null;
+  return !!extension && typeof path === "string" && new RegExp("^photos/[A-Za-z0-9_-]+\\." + extension + "$").test(path);
+}
+
+export function archiveMediaHtml(media: Json) {
+  const ext = media.mime === "video/mp4" ? "mp4" : media.mime === "video/quicktime" ? "mov" : media.mime === "video/webm" ? "webm" : media.mime === "image/jpeg" ? "jpg" : null;
+  if (!ext || typeof media.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(media.id)) return "";
+  const src = `photos/${media.id}.${ext}`, alt = htmlEscape(media.alt || "");
+  return `<figure>${ext === "jpg" ? `<img src="${src}" alt="${alt}">` : `<video src="${src}" controls preload="metadata" aria-label="${alt || "Video"}"></video>`}<figcaption>${alt}</figcaption></figure>`;
 }

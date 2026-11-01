@@ -10,7 +10,7 @@ const self = "00000000-0000-4000-8000-000000000001",
   child = "00000000-0000-4000-8000-000000000003";
 const bundle = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer} from './apps/web/src/Social';import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';createRoot(document.getElementById('root')).render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';const root=createRoot(document.getElementById('root'));root.render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>);`,
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -48,6 +48,7 @@ const jpeg = JSON.parse(
 const css = await readFile("apps/web/src/styles.css");
 let calls = [];
 let highlights = [];
+const uploadedMedia = new Map();
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, "http://localhost");
   const send = (data, mime = "application/json") => {
@@ -70,6 +71,14 @@ const server = createServer(async (req, res) => {
     method: req.method,
     body: body ? JSON.parse(body) : null,
   });
+  if (url.pathname === "/api/v1/media" && req.method === "POST") {
+    const data = JSON.parse(body);
+    uploadedMedia.set(data.id, data.envelope);
+    return send({ upload_url: `/api/v1/media/${data.id}/bytes` });
+  }
+  if (url.pathname.endsWith("/bytes") && req.method === "PUT") return send({ ok: true });
+  if (url.pathname.endsWith("/bytes") && uploadedMedia.has(url.pathname.split("/").at(-2)))
+    return send(uploadedMedia.get(url.pathname.split("/").at(-2)));
   if (url.pathname.endsWith("/bytes"))
     return send({
       context: { id: "00000000-0000-4000-8000-000000000006", expiresAt: null },
@@ -115,6 +124,7 @@ const server = createServer(async (req, res) => {
     ).toISOString();
     return send({
       items: [
+        ...[...uploadedMedia.values()].slice(0,1).map(({payload:{bytes,...media}}) => ({id:'00000000-0000-4000-8000-000000000007',author_id:self,author_handle:'parent',created_at:new Date(start.getFullYear(),start.getMonth(),13,12).toISOString(),expires_at:null,envelope:{payload:{text:'Video day',media:[media]}}})),
         {
           id: "00000000-0000-4000-8000-000000000004",
           author_id: self,
@@ -162,8 +172,20 @@ try {
   const origin = "http://127.0.0.1:" + server.address().port;
   await page.goto(origin);
   await page
-    .getByRole("img", { name: "Synthetic photo", exact: true })
+    .getByRole("img", { name: "Synthetic photo", exact: true }).first()
     .waitFor();
+  const firstMonth = await page.locator('[data-calendar-month]').first().getAttribute('data-calendar-month');
+  const beforeMonths = await page.locator('[data-calendar-month]').count();
+  await page.locator('.calendar-earlier').scrollIntoViewIfNeeded();
+  await page.waitForFunction(before => document.querySelectorAll('[data-calendar-month]').length > before, beforeMonths);
+  const monthKeys = await page.locator('[data-calendar-month]').evaluateAll(elements => elements.map(e => e.dataset.calendarMonth));
+  assert.equal(monthKeys[0], firstMonth);
+  assert.equal(new Set(monthKeys).size, monthKeys.length);
+  for(let i=1;i<monthKeys.length;i++) assert(monthKeys[i] < monthKeys[i-1]);
+  const beforeManual = await page.locator('[data-calendar-month]').count();
+  await page.getByRole('button',{name:'Load earlier month'}).click();
+  assert(await page.locator('[data-calendar-month]').count()>beforeManual);
+  await page.getByRole('heading',{name:'Photos',exact:true}).scrollIntoViewIfNeeded();
   if (process.env.CALENDAR_SCREENSHOT)
     await page.screenshot({ path: process.env.CALENDAR_SCREENSHOT });
   await page.getByLabel("Tagged person").selectOption("child:" + child);
@@ -173,7 +195,7 @@ try {
     0,
   );
   await page.getByRole("button", { name: "Clear filters" }).click();
-  await page.getByRole("button", { name: /12: 2 posts/ }).click();
+  await page.getByRole("button", { name: /12: 2 posts/ }).first().click();
   await page
     .getByRole("button", { name: "Feature this post", exact: true })
     .first()
@@ -187,6 +209,28 @@ try {
         c.body.post_id.endsWith("004"),
     ),
   );
+  const dayTitle = await page.getByRole("dialog").getByRole("heading").textContent();
+  async function swipe(dx, dy = 0, target = ".calendar-day-content") {
+    await page.locator(target).evaluate((el, {dx, dy}) => {
+      const touch = (x,y) => new Touch({identifier:1,target:el,clientX:x,clientY:y});
+      el.dispatchEvent(new TouchEvent("touchstart",{bubbles:true,touches:[touch(150,200)]}));
+      el.dispatchEvent(new TouchEvent("touchend",{bubbles:true,touches:[],changedTouches:[touch(150+dx,200+dy)]}));
+    }, {dx,dy});
+  }
+  await swipe(-100);
+  await page.getByText("No matching posts for this day.").waitFor();
+  assert.notEqual(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  await swipe(100);
+  await page.getByRole("dialog").getByText("Picnic in the park", {exact:true}).waitFor();
+  assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  await swipe(100,150);
+  assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  await swipe(-100,0,'[aria-label="Day navigation"] button:first-child');
+  assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
+  for(let i=0;i<12;i++) await page.getByRole("button",{name:"Previous day",exact:true}).click();
+  await page.getByText("No matching posts for this day.").waitFor();
+  assert(calls.filter(c=>c.path==='/api/v1/calendar').length>=2);
+  await page.getByRole("button",{name:"Next day",exact:true}).click();
   await page.keyboard.press("Escape");
   assert.equal(
     await page.evaluate(
@@ -212,6 +256,65 @@ try {
     ),
   );
   assert(calls.some(c=>c.path==='/api/v1/posts'&&c.body.on_behalf_of===child&&c.body.envelope.payload.tags.some(t=>t.id===child)));
+  for (const [extension,mime] of [['mp4','video/mp4'],['mov','video/quicktime']]) {
+    const bytes=await readFile(`apps/web/test/fixtures/synthetic-video.${extension}`);
+    const result=await page.evaluate(async encoded=>{
+      const bytes=Uint8Array.from(atob(encoded),c=>c.charCodeAt(0));
+      const media=await window.validateVideo(bytes);
+      return {mime:media.mime,width:media.width,height:media.height,poster:!!media.poster};
+    },bytes.toString('base64'));
+    assert.deepEqual(result,{mime,width:160,height:120,poster:true});
+  }
+  // Real browser-generated video; no member data or external media source.
+  const encoded = await page.evaluate(async () => {
+    const canvas = document.createElement('canvas'); canvas.width=160; canvas.height=120;
+    const ctx=canvas.getContext('2d'); ctx.fillStyle='orange'; ctx.fillRect(0,0,160,120);
+    const stream=canvas.captureStream(10), recorder=new MediaRecorder(stream,{mimeType:'video/webm;codecs=vp8'}), chunks=[];
+    const done=new Promise(resolve=>{recorder.ondataavailable=e=>chunks.push(e.data);recorder.onstop=resolve;});
+    recorder.start();
+    await new Promise(resolve=>setTimeout(resolve,250)); ctx.fillStyle='blue';ctx.fillRect(10,10,50,50);
+    await new Promise(resolve=>setTimeout(resolve,250)); recorder.stop();await done;stream.getTracks().forEach(t=>t.stop());
+    const bytes=new Uint8Array(await new Blob(chunks).arrayBuffer());
+    const decoded=await window.validateVideo(bytes);
+    if(decoded.width!==160||decoded.height!==120||!decoded.poster)throw Error('Video validation failed');
+    return btoa(String.fromCharCode(...bytes));
+  });
+  await page.locator('input[type=file]').setInputFiles({name:'memory.webm',mimeType:'video/webm',buffer:Buffer.from(encoded,'base64')});
+  await page.getByLabel('Video preview').waitFor();
+  await page.getByLabel('Photo or video description').fill('Synthetic video');
+  await page.getByRole('button',{name:/Share/}).click();
+  await page.waitForFunction(()=>!document.querySelector('[aria-label="Video preview"]'));
+  const saved=calls.filter(c=>c.path==='/api/v1/posts').at(-1).body.envelope.payload.media[0];
+  assert.equal(saved.mime,'video/webm');assert(saved.poster);assert.equal(saved.posterExpiresAt,null);
+  assert.equal(uploadedMedia.get(saved.id).payload.bytes,encoded);
+  await page.goto(origin);
+  await page.getByRole('button',{name:/13: 1 post/}).first().click();
+  await page.getByRole('button',{name:'Feature this video'}).click();
+  await page.getByText('Your daily highlight was saved.').waitFor();
+  assert(calls.some(c=>c.method==='PUT' && c.path.includes('/calendar/highlights/') && c.body.media_id===saved.id));
+  await page.keyboard.press('Escape');
+  const videoCell=page.getByRole('button',{name:/13: 1 post/}).first();
+  await videoCell.locator('img').waitFor();
+  assert(await videoCell.locator('.calendar-video-indicator').evaluate(el=>{const box=el.getBoundingClientRect(),cell=el.closest('button').getBoundingClientRect();return box.left>=cell.left && box.right<=cell.right && box.top>=cell.top && box.bottom<=cell.bottom;}));
+  await page.goto(origin + '/video');
+  const readsBefore=calls.filter(c=>c.path.endsWith('/bytes')).length;
+  await page.evaluate(media=>window.showMedia(media),saved);
+  await page.getByRole('button',{name:'Load video'}).waitFor();
+  assert.equal(calls.filter(c=>c.path.endsWith('/bytes')).length,readsBefore);
+  await page.getByRole('button',{name:'Load video'}).click();
+  await page.getByLabel('Synthetic video').waitFor();
+  await page.locator('video').evaluate(async video=>{await video.play();});
+  assert.equal(await page.locator('video').evaluate(v=>v.videoWidth),160);
+  uploadedMedia.get(saved.id).context.expiresAt='2020-01-01T00:00:00.000Z';
+  await page.goto(origin + '/video');
+  await page.evaluate(media=>window.showMedia({...media,posterExpiresAt:'2020-01-01T00:00:00.000Z'}),saved);
+  await page.getByRole('button',{name:'Load video'}).waitFor();
+  assert.equal(await page.locator('figure img').count(),0);
+  await page.getByRole('button',{name:'Load video'}).click();
+  await page.getByText('This attachment expired.').waitFor();
+  assert.equal(await page.locator('video').count(),0);
+  // Actual decoder rejects a signature-only fake clip.
+  assert.equal(await page.evaluate(async()=>{try{await window.validateVideo(new Uint8Array([0,0,0,20,102,116,121,112,105,115,111,109,0,0,0,0,105,115,111,109]));return false;}catch{return true;}}),true);
   await page.goto(origin + "/children");
   await page.getByRole("button", { name: "Add child" }).click();
   await page.getByLabel("Child’s name").fill("Another synthetic child");
@@ -227,8 +330,8 @@ try {
   assert.equal(save.body.private_envelope.context.audience, "only_me");
   assert.equal(save.body.envelope.payload.birthday, undefined);
   await page.goto(origin + "/app/photos");
-  await page.getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
-  const thumbnail=page.getByRole('img',{name:'Synthetic photo',exact:true});
+  await page.getByRole('img',{name:'Synthetic photo',exact:true}).first().waitFor();
+  const thumbnail=page.getByRole('img',{name:'Synthetic photo',exact:true}).first();
   await thumbnail.evaluate(async i=>{await i.decode();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
   assert(await thumbnail.evaluate(i=>{const image=i.getBoundingClientRect(),cell=i.closest('button').getBoundingClientRect();return i.naturalWidth===32&&image.width>0&&image.left>=cell.left&&image.right<=cell.right&&image.top>=cell.top&&image.bottom<=cell.bottom;}));
   if(process.env.CALENDAR_SCREENSHOT)await page.screenshot({path:process.env.CALENDAR_SCREENSHOT});
@@ -263,7 +366,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "Chromium mobile calendar, author/tag filters, personal highlight, encrypted tag payload and child settings passed.",
+    "Chromium calendar swipes/month boundaries, filters/highlights, video validation/upload/click-to-load playback, encrypted tag payload and child settings passed.",
   );
 } finally {
   await browser?.close();

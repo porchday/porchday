@@ -1,3 +1,4 @@
+import { validatedMedia, isVideo } from "./video";
 import React, { useEffect, useRef, useState } from "react";
 import {
   encryptArchive,
@@ -32,7 +33,6 @@ import {
   PART_MAX,
   type PortableArchive,
 } from "./archive";
-import { jpegDimensions, validatedPhoto } from "./photo-safety";
 import {
   validateReactionPayload,
   reactionDisplay,
@@ -296,21 +296,23 @@ export function DataTransfer() {
                 const envelope = (await response.json()) as EncryptedEnvelope;
                 const payload = await vault.open({ envelope, id: row.id });
                 if (
-                  payload.mime !== "image/jpeg" ||
+                  (!isVideo(payload.mime) && payload.mime !== "image/jpeg") ||
                   typeof payload.bytes !== "string"
                 )
                   throw new Error(
                     "An exported photo has an unsupported format.",
                   );
                 const bytes = base64ToBytes(payload.bytes);
-                const dimensions = jpegDimensions(bytes);
+                const validated = await validatedMedia(bytes, payload.mime);
+                const dimensions = { width: validated.width, height: validated.height };
                 await room(bytes.length + 4096);
-                const path = `photos/${row.id}.jpg`;
+                const extension = payload.mime === "video/mp4" ? "mp4" : payload.mime === "video/quicktime" ? "mov" : payload.mime === "video/webm" ? "webm" : "jpg";
+                const path = `photos/${row.id}.${extension}`;
                 files[path] = bytes;
                 archive.media.push({
                   id: row.id,
                   path,
-                  mime: "image/jpeg",
+                  mime: payload.mime,
                   alt: String(payload.alt || ""),
                   name: String(payload.name || ""),
                   ...dimensions,
@@ -418,7 +420,7 @@ export function DataTransfer() {
         const { archive, files } = await unpackFile(file);
         for (const photo of archive.media) {
           if (!photo.expires_at || Date.parse(photo.expires_at) > Date.now())
-            jpegDimensions(files[photo.path]);
+            await validatedMedia(files[photo.path], photo.mime);
           if ((await checksum(files[photo.path])) !== photo.sha256)
             throw new Error(
               "A photo checksum did not match. The archive may be incomplete or modified.",
@@ -501,7 +503,7 @@ export function DataTransfer() {
                   id: record.id,
                   alt: record.alt || "",
                   name: record.name || "photo.jpg",
-                  mime: "image/jpeg",
+                  mime: record.mime,
                   width: record.width,
                   height: record.height,
                 },
@@ -584,8 +586,8 @@ export function DataTransfer() {
         const bytes = cachedFiles[found.record.path];
         if (!bytes || (await checksum(bytes)) !== found.record.sha256)
           throw new Error("A photo changed after the import preview.");
-        const { width, height } = await validatedPhoto(bytes);
-        return { bytes, record: { ...found.record, width, height } as Json };
+        const { width, height, ...validated } = await validatedMedia(bytes, found.record.mime);
+        return { bytes, record: { ...found.record, width, height, ...("poster" in validated ? { poster: validated.poster } : {}) } as Json };
       }
       async function uploadPhoto(
         old: Json,
@@ -604,7 +606,8 @@ export function DataTransfer() {
           id: mediaId,
           alt: String(old.alt || record.alt || ""),
           name: String(old.name || record.name || "photo.jpg"),
-          mime: "image/jpeg",
+          mime: record.mime,
+          ...(record.poster ? { poster: record.poster, posterExpiresAt: photoExpiresAt } : {}),
           width: record.width,
           height: record.height,
         };
@@ -706,6 +709,7 @@ export function DataTransfer() {
         const attachments: { id: string; slot: string }[] = [];
         for (const slot of ["avatar", "cover", "background"])
           if (profile[slot]) {
+            if (plan.media.get(profile[slot].id)?.record.mime !== "image/jpeg") throw Error("Profile pictures must be photos.");
             const meta = await uploadPhoto(
               profile[slot],
               vault.member.id,

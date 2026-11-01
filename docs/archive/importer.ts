@@ -29,7 +29,7 @@ export interface AuthoredEntryV1 {
 export interface PhotoV1 {
   id: UUID;
   path: string;
-  mime: "image/jpeg";
+  mime: "image/jpeg" | "video/mp4" | "video/quicktime" | "video/webm";
   alt: string;
   name?: string;
   width: number;

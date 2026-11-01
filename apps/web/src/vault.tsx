@@ -1,3 +1,4 @@
+import { validatedMedia } from "./video";
 import React, {
   createContext,
   useContext,
@@ -44,7 +45,6 @@ import { PreviousDomainUnlockHint } from "./DomainMigration";
 import { startInitialProfileSetup,type InitialProfileState } from "./initial-profile-lifecycle";
 import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
 import { preparePostAudienceRefresh, startPostAudienceRefresh, type AudienceRefreshState, type RefreshPost } from "./post-audience-refresh";
-import { validatedPhoto } from "./photo-safety";
 import { markOnce, traced } from "./tracing";
 type BackupDevice = {
   id: string;
@@ -781,9 +781,9 @@ function PostAudienceSharing() {
         },
         readMedia: (id, signal) => request<EncryptedEnvelope>(`/media/${id}/bytes`, { signal }),
         validatePhoto: async payload => {
-          if (payload.mime !== "image/jpeg" || typeof payload.bytes !== "string")
+          if (typeof payload.mime !== "string" || typeof payload.bytes !== "string")
             throw Error("An earlier photo has an unsupported format.");
-          await validatedPhoto(base64ToBytes(payload.bytes));
+          await validatedMedia(base64ToBytes(payload.bytes), payload.mime);
         },
         upload: async (id, envelope, revision) => {
           if (!current()) throw new DOMException("Sharing stopped.", "AbortError");

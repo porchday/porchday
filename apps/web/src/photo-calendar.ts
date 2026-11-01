@@ -48,3 +48,13 @@ export function featuredEntry(
       entry.content.media?.[0],
   };
 }
+
+export function adjacentDay(day: string, offset: number) {
+  const date = new Date(day + "T12:00:00");
+  date.setDate(date.getDate() + offset);
+  return localDay(date);
+}
+export function swipeDay(dx: number, dy: number, elapsed: number) {
+  return elapsed <= 1000 && Math.abs(dx) >= 60 && Math.abs(dx) > Math.abs(dy) * 1.5
+    ? (dx < 0 ? 1 : -1) : 0;
+}
