@@ -45,7 +45,7 @@ try {for(const engine of [chromium,webkit]){
   for(const fail of [true,false]){
    failWrite=fail;pendingWrite=undefined;
    const card=page.locator('article').first();await card.getByRole('button',{name:'Post options',exact:true}).click();
-   await card.getByRole('button',{name:'Edit text',exact:true}).click();await card.getByRole('textbox',{name:'Edit your post'}).fill('Changed immediately');
+   await card.getByRole('button',{name:'Edit text',exact:true}).click();await card.getByRole('textbox',{name:'Edit your post'}).fill('Changed immediately');await card.getByRole('textbox',{name:'Photo caption'}).fill('Changed caption');
    await card.getByRole('button',{name:'Save changes',exact:true}).click();
    await card.locator('.post-text').getByText('Changed immediately',{exact:true}).waitFor();await page.locator('.pending-save-status').waitFor();
    assert.equal(await page.evaluate(()=>!window.dispatchEvent(new Event('beforeunload',{cancelable:true}))),true,'protected during encryption');
@@ -53,8 +53,8 @@ try {for(const engine of [chromium,webkit]){
    await page.waitForFunction(()=>!!document.querySelector('.pending-save-status'));
    for(let i=0;i<100&&!pendingWrite;i++)await new Promise(r=>setTimeout(r,10));assert(pendingWrite);pendingWrite();
    await page.locator('.pending-save-status').waitFor({state:'hidden'});
-   if(fail){await card.getByText(/Save was not confirmed/).waitFor();assert.equal(await card.getByRole('textbox').inputValue(),'Changed immediately');await card.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await card.locator('.post-text').innerText(),'Synthetic post');}
-   else assert.equal(await card.locator('.post-text').innerText(),'Changed immediately');
+   if(fail){await card.getByText(/Save was not confirmed/).waitFor();assert.equal(await card.getByRole('textbox',{name:'Edit your post'}).inputValue(),'Changed immediately');await card.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await card.locator('.post-text').innerText(),'Synthetic post');assert.equal(await card.locator('figcaption').first().innerText(),'Fixture');}
+   else {assert.equal(await card.locator('.post-text').innerText(),'Changed immediately');assert.equal(await card.locator('figcaption').first().innerText(),'Changed caption');}
   }
   // Independent/nested requests keep the warning until every save settles.
   await page.evaluate(()=>{window.startSave();window.endFirst=window.endSave;window.startSave();});await page.evaluate(()=>window.endFirst());assert.equal(await page.locator('.pending-save-status').count(),1);await page.evaluate(()=>window.failSave(new Error('synthetic failure')));await page.locator('.pending-save-status').waitFor({state:'hidden'});
