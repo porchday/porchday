@@ -1,3 +1,4 @@
+import {registerCalendarRoutes} from './social-calendar.js';
 import {readMemberBootstrap} from './member-bootstrap';
 import {phaseTiming} from './request-timing';
 import { Hono, type Context } from 'hono';
@@ -150,6 +151,7 @@ export function createSocialRoutes() {
         if (!allowed)
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
+    registerCalendarRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerEmojiRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     app.get('/me', async c => c.json(await readMemberBootstrap(c.env,c.get('memberId'),c.req.query('bootstrap')==='1',phaseTiming(c))));
 
@@ -277,22 +279,24 @@ export function createSocialRoutes() {
     });
     app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.author_id=${id(c.req.param('id'))} and p.group_id is null ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.post('/posts', async (c) => {
-        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]) }));
+        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]), on_behalf_of: uuid.nullable().default(null) }));
         return c.json(await tx(c, async (db) => {
             const e = b.envelope.context;
             id(e.id);
-            const [existing] = await db `select id,envelope from app.posts where id=${e.id} and author_id=${c.get('memberId')}`;
+            const [existing] = await db `select id,envelope,on_behalf_of from app.posts where id=${e.id} and author_id=${c.get('memberId')}`;
             if (existing) {
-                if (canonicalJson(existing.envelope) !== canonicalJson(b.envelope))
+                if (canonicalJson(existing.envelope) !== canonicalJson(b.envelope) || existing.on_behalf_of !== b.on_behalf_of)
                     fail('CONFLICT', 409);
                 return { id: e.id };
             }
             if (e.parentId !== null)
                 fail('ENVELOPE_CONTEXT');
             await checkEnvelope(db, c.get('memberId'), b.envelope, 'post');
+            if(b.on_behalf_of){const [child]=await db`select owner_id,delegates from app.child_profiles where id=${b.on_behalf_of}`;if(!child || (child.owner_id!==c.get('memberId')&&!child.delegates.includes(c.get('memberId'))))fail('FORBIDDEN',403);}
             await db `insert into app.posts(id,author_id,group_id,audience,envelope,epoch,created_at,expires_at) values(${e.id},${c.get('memberId')},${e.groupId},${e.audience},${db.json(b.envelope)},${e.epoch},${e.createdAt},${e.expiresAt})`;
             for (const r of b.envelope.recipients)
                 await db `insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
+            if(b.on_behalf_of)await db`update app.posts set on_behalf_of=${b.on_behalf_of} where id=${e.id}`;
             await attachMedia(db, c.get('memberId'), e.id, b.media_ids);
             return { id: e.id };
         }), 201);

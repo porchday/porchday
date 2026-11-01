@@ -4769,3 +4769,28 @@ button.trace-row:focus-visible {
   font-weight: 600;
   cursor: pointer;
 }
+
+.people-tag-picker { display:grid; gap:.4rem; margin:.6rem 0; }
+.people-tag-picker label, .calendar-filters label { display:grid; gap:.3rem; }
+.people-tags { display:flex; flex-wrap:wrap; gap:.35rem; margin:.35rem 0; }
+.people-tags > * { border-radius:1rem; padding:.2rem .6rem; background:var(--surface-alt,#edf1eb); font-size:.85rem; }
+.calendar-month { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+.calendar-month h2 { font-size:1.2rem; }
+.calendar-filters { display:flex; flex-wrap:wrap; gap:.75rem; margin:1rem 0; }
+.calendar-filters select { max-width:100%; }
+.calendar-grid { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; }
+.calendar-weekday { text-align:center; font-size:.75rem; padding:.4rem 0; }
+.calendar-day { position:relative; aspect-ratio:1; overflow:hidden; padding:0; border:1px solid #d8ddd5; background:var(--surface-alt,#f1f2ee); border-radius:3px; text-align:left; min-width:0; }
+.calendar-day-number { position:absolute; top:3px; right:4px; z-index:2; border-radius:3px; padding:0 3px; background:#ffffffdb; color:#222; font-size:.8rem; }
+.calendar-day .encrypted-photo, .calendar-day figure { width:100%; height:100%; margin:0; }
+.calendar-day img { width:100%; height:100%; object-fit:cover; }
+.calendar-day figcaption,.calendar-day .people-tags { display:none; }
+.calendar-day-count { position:absolute; bottom:3px; right:3px; background:#fff; color:#222; border-radius:8px; padding:0 4px; font-size:.7rem; }
+.calendar-today { outline:2px solid var(--accent,#42614c); outline-offset:-2px; }
+.calendar-excerpt { display:block; font-size:.75rem; line-height:1.25; padding:1.5rem .3rem .3rem; overflow-wrap:anywhere; }
+.calendar-post { margin-bottom:1.5rem; border-bottom:1px solid #ddd; padding-bottom:1rem; }
+.calendar-post img { max-height:300px; object-fit:contain; }
+@media(max-width:600px) { .photo-calendar { padding:.65rem; } .calendar-filters { font-size:.85rem; } .calendar-excerpt { font-size:.65rem; } .mobile-nav { grid-template-columns:repeat(5,1fr); } }
+.calendar-thumbnail { height:100%; width:100%; }
+.calendar-thumbnail .photo-placeholder { min-height:0; height:100%; padding:.3rem; }
+.calendar-thumbnail .photo-placeholder span { display:none; }

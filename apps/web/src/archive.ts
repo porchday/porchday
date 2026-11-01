@@ -24,6 +24,7 @@ export interface PortableArchive extends Json {
   archive_set?: ArchiveSet;
   profile: Json | null;
   emojiLibrary?: EmojiLibrary | null;
+  children?: Json[];
   posts: Json[];
   comments: Json[];
   reactions: Json[];
