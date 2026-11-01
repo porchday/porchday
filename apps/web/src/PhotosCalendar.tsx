@@ -267,7 +267,7 @@ function CalendarMonth({month, author, tag, selected, setSelected, onLoaded}: {
                 <span className="calendar-day-number">
                   {Number(day.slice(-2))}
                 </span>
-                {choice?.media ? (
+                {choice?.media && (near || selected) ? (
                   <EncryptedPhoto media={choice.media} thumbnail />
                 ) : choice ? (
                   <span className="calendar-excerpt">
