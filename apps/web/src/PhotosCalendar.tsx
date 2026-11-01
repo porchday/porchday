@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { get, request, del, items, type Json, type SocialObject } from "./api";
 import { useVault } from "./vault";
 import { Alert, Button, Loading, Modal, useAction } from "./ui";
@@ -15,16 +15,78 @@ import {
   type CalendarEntry,
 } from "./photo-calendar";
 export function PhotosCalendar() {
-  const vault = useVault(),
-    action = useAction();
-  const [month, setMonth] = useState(
-    () => new Date(new Date().getFullYear(), new Date().getMonth(), 1),
-  );
+  const [anchor, setAnchor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [count, setCount] = useState(1);
+  const [author, setAuthor] = useState(""), [tag, setTag] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
+  const [directory, setDirectory] = useState<Record<string, { authors: [string, string][]; tags: [string, string][] }>>({});
+  const sentinel = useRef<HTMLDivElement>(null);
+  const loaded = useCallback((key: string, entries: CalendarEntry[]) => {
+    const authors: [string,string][] = entries.map(e => [e.row.author_id, e.row.author_handle || "Member"]);
+    const tags: [string,string][] = entries.flatMap(e => contentTags(e.content).map(t => [t.kind + ":" + t.id, t.label] as [string,string]));
+    setDirectory(old => ({ ...old, [key]: { authors, tags } }));
+  }, []);
+  const selectDay = useCallback((day: string | null) => {
+    if (day) {
+      const date = new Date(day + "T12:00:00");
+      const distance = (anchor.getFullYear() - date.getFullYear()) * 12 + anchor.getMonth() - date.getMonth();
+      if (distance < 0) { setAnchor(new Date(date.getFullYear(), date.getMonth(), 1)); setCount(old => old - distance); }
+      else setCount(old => Math.max(old, distance + 1));
+    }
+    setSelected(day);
+  }, [anchor.getTime()]);
+  useEffect(() => {
+    if (selected || !sentinel.current || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) { observer.disconnect(); setCount(old => old + 1); }
+    }, { rootMargin: "100px" });
+    observer.observe(sentinel.current);
+    return () => observer.disconnect();
+  }, [count, selected, anchor.getTime()]);
+  function jump(offset: number) {
+    setSelected(null); setCount(1); setDirectory({});
+    setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1));
+  }
+  const authors = new Map(Object.values(directory).flatMap(d => d.authors));
+  const tags = new Map(Object.values(directory).flatMap(d => d.tags));
+  return <>
+    <div className="page-heading"><h1>Photos</h1><p>Scroll down for earlier months of moments.</p></div>
+    <section className="panel calendar-controls">
+      <nav className="calendar-month" aria-label="Calendar navigation">
+        <Button aria-label="Previous month" onClick={() => jump(-1)}>←</Button>
+        <Button onClick={() => { setSelected(null); setCount(1); setDirectory({}); setAnchor(new Date(new Date().getFullYear(), new Date().getMonth(), 1)); }}>This month</Button>
+        <Button aria-label="Next month" onClick={() => jump(1)}>→</Button>
+      </nav>
+      <div className="calendar-filters">
+        <label>Posted by<select value={author} onChange={e => setAuthor(e.target.value)}><option value="">Everyone</option>{[...authors].map(([id,label]) => <option key={id} value={id}>@{label}</option>)}</select></label>
+        <label>Tagged person<select value={tag} onChange={e => setTag(e.target.value)}><option value="">Anyone</option>{[...tags].map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label>
+        <Button onClick={() => {setAuthor(""); setTag("");}}>Clear filters</Button>
+      </div>
+    </section>
+    {Array.from({length:count}, (_,i) => {
+      const month = new Date(anchor.getFullYear(), anchor.getMonth()-i, 1), key = localDay(month).slice(0,7);
+      return <CalendarMonth key={key} month={month} author={author} tag={tag} selected={selected?.startsWith(key + "-") ? selected : null} setSelected={selectDay} onLoaded={loaded}/>;
+    })}
+    <div ref={sentinel} className="calendar-earlier"><Button onClick={() => setCount(old => old+1)}>Load earlier month</Button></div>
+  </>;
+}
+function CalendarMonth({month, author, tag, selected, setSelected, onLoaded}: {
+  month: Date; author: string; tag: string; selected: string | null;
+  setSelected: (day: string | null) => void;
+  onLoaded: (key: string, entries: CalendarEntry[]) => void;
+}) {
+  const vault = useVault(), action = useAction();
+  const monthRef = useRef<HTMLElement>(null);
+  const [near, setNear] = useState(false);
+  useEffect(() => {
+    if (!monthRef.current) return;
+    if (typeof IntersectionObserver === "undefined") { setNear(true); return; }
+    const observer = new IntersectionObserver(entries => setNear(entries.some(e => e.isIntersecting)), {rootMargin:"500px"});
+    observer.observe(monthRef.current);
+    return () => observer.disconnect();
+  }, []);
   const [entries, setEntries] = useState<CalendarEntry[]>([]),
     [highlights, setHighlights] = useState<Json[]>([]),
-    [author, setAuthor] = useState(""),
-    [tag, setTag] = useState(""),
-    [selected, setSelected] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
     [loadError, setLoadError] = useState(""),
     [unreadable, setUnreadable] = useState(0),
@@ -35,13 +97,9 @@ export function PhotosCalendar() {
   function changeDay(offset: number) {
     if (!selected) return;
     const day = adjacentDay(selected, offset);
-    const date = new Date(day + "T12:00:00");
     setSelected(day);
-    if (date.getFullYear() !== month.getFullYear() || date.getMonth() !== month.getMonth()) {
-      setEntries([]); setHighlights([]); setNext(null); setLoading(true);
-      setMonth(new Date(date.getFullYear(), date.getMonth(), 1));
-    }
   }
+
   const generation = useRef(0),
     range = monthRange(month.getFullYear(), month.getMonth());
   async function load(more = false) {
@@ -113,24 +171,25 @@ export function PhotosCalendar() {
     }
   }
   useEffect(() => {
-    void load();
+    if (near || selected) void load();
     return () => {
       generation.current++;
     };
-  }, [month.getTime(), refresh, vault.member.id]);
+  }, [month.getTime(), refresh, vault.member.id, near || Boolean(selected)]);
   useEffect(() => {
-    const timer = setInterval(() => setClock(Date.now()), 1000);
+    setClock(Date.now());
+    const timer = near || selected ? setInterval(() => setClock(Date.now()), 1000) : undefined;
     const update = () => {
-      if (document.visibilityState === "visible") setRefresh((v) => v + 1);
+      if ((near || selected) && document.visibilityState === "visible") setRefresh((v) => v + 1);
     };
     window.addEventListener("focus", update);
     window.addEventListener("porchday:connections-changed", update);
     return () => {
-      clearInterval(timer);
+      if (timer) clearInterval(timer);
       window.removeEventListener("focus", update);
       window.removeEventListener("porchday:connections-changed", update);
     };
-  }, []);
+  }, [near, Boolean(selected)]);
   useEffect(() => {
     setEntries((old) =>
       old.some((e) => e.row.expires_at && Date.parse(e.row.expires_at) <= clock)
@@ -138,20 +197,13 @@ export function PhotosCalendar() {
         : old,
     );
   }, [clock]);
-  const available = filterEntries(entries, "", [], clock);
   const filtered = filterEntries(entries, author, tag ? [tag] : [], clock);
   const byDay = new Map<string, CalendarEntry[]>();
   for (const entry of filtered) {
     const day = localDay(new Date(entry.row.created_at));
     byDay.set(day, [...(byDay.get(day) || []), entry]);
   }
-  const tags = [
-    ...new Map(
-      available
-        .flatMap((e) => contentTags(e.content))
-        .map((t) => [t.kind + ":" + t.id, t]),
-    ).entries(),
-  ];
+  useEffect(() => { onLoaded(localDay(month).slice(0,7), entries); }, [entries, month.getTime(), onLoaded]);
   async function choose(day: string, post_id: string, media_id: string | null) {
     await action.runSave(async () => {
       await request("/calendar/highlights/" + day, {
@@ -166,79 +218,8 @@ export function PhotosCalendar() {
   }
   return (
     <>
-      <div className="page-heading">
-        <h1>Photos</h1>
-        <p>A month of moments from your connections.</p>
-      </div>
-      <section className="panel photo-calendar">
-        <div className="calendar-month">
-          <Button
-            type="button"
-            aria-label="Previous month"
-            onClick={() => {
-              setSelected(null);
-              setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1));
-            }}
-          >
-            ←
-          </Button>
-          <h2 aria-live="polite">
-            {month.toLocaleDateString(undefined, {
-              month: "long",
-              year: "numeric",
-            })}
-          </h2>
-          <Button
-            type="button"
-            aria-label="Next month"
-            onClick={() => {
-              setSelected(null);
-              setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1));
-            }}
-          >
-            →
-          </Button>
-        </div>
-        <div className="calendar-filters">
-          <label>
-            Posted by
-            <select value={author} onChange={(e) => setAuthor(e.target.value)}>
-              <option value="">Everyone</option>
-              {[
-                ...new Map(
-                  available.map((e) => [
-                    e.row.author_id,
-                    e.row.author_handle || "Member",
-                  ]),
-                ).entries(),
-              ].map(([id, label]) => (
-                <option key={id} value={id}>
-                  @{label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Tagged person
-            <select value={tag} onChange={(e) => setTag(e.target.value)}>
-              <option value="">Anyone</option>
-              {tags.map(([id, t]) => (
-                <option key={id} value={id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <Button
-            type="button"
-            onClick={() => {
-              setAuthor("");
-              setTag("");
-            }}
-          >
-            Clear filters
-          </Button>
-        </div>
+      <section ref={monthRef} className="panel photo-calendar" data-calendar-month={localDay(month).slice(0,7)}>
+        <h2>{month.toLocaleDateString(undefined, {month:"long", year:"numeric"})}</h2>
         <Alert>{loadError}</Alert>
         {loadError && (
           <Button onClick={() => setRefresh((v) => v + 1)}>Retry</Button>

@@ -4807,3 +4807,6 @@ button.trace-row:focus-visible {
 
 .calendar-thumbnail figure { position: relative; }
 .calendar-video-indicator { position: absolute; left: 3px; bottom: 3px; padding: 0 4px; border-radius: 4px; background: #ffffffdb; color: #222; }
+
+.photo-calendar { margin-bottom: 20px; }
+.calendar-earlier { display: flex; justify-content: center; padding: 20px; }

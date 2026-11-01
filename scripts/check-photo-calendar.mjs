@@ -172,8 +172,20 @@ try {
   const origin = "http://127.0.0.1:" + server.address().port;
   await page.goto(origin);
   await page
-    .getByRole("img", { name: "Synthetic photo", exact: true })
+    .getByRole("img", { name: "Synthetic photo", exact: true }).first()
     .waitFor();
+  const firstMonth = await page.locator('[data-calendar-month]').first().getAttribute('data-calendar-month');
+  const beforeMonths = await page.locator('[data-calendar-month]').count();
+  await page.locator('.calendar-earlier').scrollIntoViewIfNeeded();
+  await page.waitForFunction(before => document.querySelectorAll('[data-calendar-month]').length > before, beforeMonths);
+  const monthKeys = await page.locator('[data-calendar-month]').evaluateAll(elements => elements.map(e => e.dataset.calendarMonth));
+  assert.equal(monthKeys[0], firstMonth);
+  assert.equal(new Set(monthKeys).size, monthKeys.length);
+  for(let i=1;i<monthKeys.length;i++) assert(monthKeys[i] < monthKeys[i-1]);
+  const beforeManual = await page.locator('[data-calendar-month]').count();
+  await page.getByRole('button',{name:'Load earlier month'}).click();
+  assert(await page.locator('[data-calendar-month]').count()>beforeManual);
+  await page.getByRole('heading',{name:'Photos',exact:true}).scrollIntoViewIfNeeded();
   if (process.env.CALENDAR_SCREENSHOT)
     await page.screenshot({ path: process.env.CALENDAR_SCREENSHOT });
   await page.getByLabel("Tagged person").selectOption("child:" + child);
@@ -183,7 +195,7 @@ try {
     0,
   );
   await page.getByRole("button", { name: "Clear filters" }).click();
-  await page.getByRole("button", { name: /12: 2 posts/ }).click();
+  await page.getByRole("button", { name: /12: 2 posts/ }).first().click();
   await page
     .getByRole("button", { name: "Feature this post", exact: true })
     .first()
@@ -209,7 +221,7 @@ try {
   await page.getByText("No matching posts for this day.").waitFor();
   assert.notEqual(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
   await swipe(100);
-  await page.getByText("Picnic in the park", {exact:true}).waitFor();
+  await page.getByRole("dialog").getByText("Picnic in the park", {exact:true}).waitFor();
   assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
   await swipe(100,150);
   assert.equal(await page.getByRole("dialog").getByRole("heading").textContent(), dayTitle);
@@ -276,12 +288,12 @@ try {
   assert.equal(saved.mime,'video/webm');assert(saved.poster);assert.equal(saved.posterExpiresAt,null);
   assert.equal(uploadedMedia.get(saved.id).payload.bytes,encoded);
   await page.goto(origin);
-  await page.getByRole('button',{name:/13: 1 post/}).click();
+  await page.getByRole('button',{name:/13: 1 post/}).first().click();
   await page.getByRole('button',{name:'Feature this video'}).click();
   await page.getByText('Your daily highlight was saved.').waitFor();
   assert(calls.some(c=>c.method==='PUT' && c.path.includes('/calendar/highlights/') && c.body.media_id===saved.id));
   await page.keyboard.press('Escape');
-  const videoCell=page.getByRole('button',{name:/13: 1 post/});
+  const videoCell=page.getByRole('button',{name:/13: 1 post/}).first();
   await videoCell.locator('img').waitFor();
   assert(await videoCell.locator('.calendar-video-indicator').evaluate(el=>{const box=el.getBoundingClientRect(),cell=el.closest('button').getBoundingClientRect();return box.left>=cell.left && box.right<=cell.right && box.top>=cell.top && box.bottom<=cell.bottom;}));
   await page.goto(origin + '/video');
@@ -318,8 +330,8 @@ try {
   assert.equal(save.body.private_envelope.context.audience, "only_me");
   assert.equal(save.body.envelope.payload.birthday, undefined);
   await page.goto(origin + "/app/photos");
-  await page.getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
-  const thumbnail=page.getByRole('img',{name:'Synthetic photo',exact:true});
+  await page.getByRole('img',{name:'Synthetic photo',exact:true}).first().waitFor();
+  const thumbnail=page.getByRole('img',{name:'Synthetic photo',exact:true}).first();
   await thumbnail.evaluate(async i=>{await i.decode();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
   assert(await thumbnail.evaluate(i=>{const image=i.getBoundingClientRect(),cell=i.closest('button').getBoundingClientRect();return i.naturalWidth===32&&image.width>0&&image.left>=cell.left&&image.right<=cell.right&&image.top>=cell.top&&image.bottom<=cell.bottom;}));
   if(process.env.CALENDAR_SCREENSHOT)await page.screenshot({path:process.env.CALENDAR_SCREENSHOT});
