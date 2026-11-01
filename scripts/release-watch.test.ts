@@ -84,3 +84,13 @@ it('starts the standalone watcher without database or workspace dependencies',()
   expect(existsSync(join(state,'deployment-lock'))).toBe(false);
  }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+it('recognizes an audited activation cancellation without suppressing explicit failure evidence',async()=>{
+ const f=fixture();try{
+  const {verifyFailedActivation}=await import('./deployment-audit-reconciliation.ts'),plan=f.w.plan,hash=deploymentPlanHash(plan),journal=new FileRecoveryJournal(f.w.journalDirectory),prepared:RecoveryState={v:1,revision:1,planHash:hash,phase:'prepared'},state:RecoveryState={...prepared,revision:2,phase:'activation-intent'};await journal.write(null,prepared);await journal.write(prepared,state);
+  const account='c'.repeat(32),event={id:id(9),account:{id:account},action:{description:'Create Worker Deployment',type:'create',result:'failure',time:new Date(at.getTime()+1000).toISOString()},raw:{method:'POST',status_code:500,uri:'/accounts/'+account+'/workers/scripts/'+plan.worker+'/deployments'},resource:{id:plan.worker,type:'scripts.deployments',request:{strategy:'percentage',versions:[{version_id:plan.candidateVersion,percentage:100}],annotations:{'workers/message':'porchday-recovery:'+plan.operationId}}}};
+  const audit={success:true,result:[event]},history={success:true,result:{deployments:[{id:plan.baselineDeploymentId,versions:[{version_id:plan.baselineVersion,percentage:100}]}]}},disposition=verifyFailedActivation(plan,account,audit,history,history,at.toISOString(),at.getTime()+400000),archive=join(f.w.root,'deployment-recovery-cancelled-'+plan.operationId);mkdirSync(archive,{mode:0o700});writeFileSync(join(archive,'owner.json'),JSON.stringify({protocol:'porchday-deployment-recovery-sqlite-v1',operationId:plan.operationId,planHash:hash,source:plan.candidateSource,at:at.toISOString()}),{mode:0o600});const receipt=join(archive,'rejection-reconciliation.json');writeFileSync(receipt,JSON.stringify({disposition,evidence:{audit,before:history,after:history},journal:state}),{mode:0o600});
+  expect(await inspectReleaseWatch(f.w)).toEqual({status:'cancelled'});const original=readFileSync(receipt);writeFileSync(receipt,JSON.stringify({disposition:{...disposition,auditId:'tampered'},evidence:{audit,before:history,after:history},journal:state}));expect(await inspectReleaseWatch(f.w)).toMatchObject({status:'attention',event:{reason:'release-state-unreadable'}});writeFileSync(receipt,original);
+  const failure=queueReleaseAlert(f.w.proofDirectory,plan,'command-failed');expect(await inspectReleaseWatch(f.w)).toEqual({status:'attention',event:failure});expect(await journal.read()).toEqual(state);
+ }finally{f.close();}
+});

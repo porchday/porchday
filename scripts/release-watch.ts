@@ -1,3 +1,5 @@
+import {verifyFailedActivation} from './deployment-audit-reconciliation.ts';
+import {isDeepStrictEqual} from 'node:util';
 import {createContinuityGate} from './release-continuity-gate.ts';
 import {constants,openSync,closeSync,fsyncSync,fstatSync,readFileSync,writeFileSync,linkSync,unlinkSync,realpathSync,lstatSync,mkdirSync,readdirSync,existsSync} from 'node:fs';
 import {randomUUID} from 'node:crypto';
@@ -7,7 +9,7 @@ import {FileDeploymentLease} from './deployment-recovery-lease.ts';
 import {queueReleaseAlert,validateReleaseAlert,type ReleaseAlert} from './release-alerts.ts';
 export type ReleaseWatch={v:1;plan:DeploymentPlan;root:string;journalDirectory:string;proofDirectory:string;registeredAt:string};
 function directory(path:string){const s=lstatSync(path);if(!isAbsolute(path)||realpathSync(path)!==path||!s.isDirectory()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('RELEASE_WATCH_DIRECTORY_INVALID');}
-function read(path:string){const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{const s=fstatSync(fd);if(!s.isFile()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0||s.size>16384)throw Error('RELEASE_WATCH_FILE_INVALID');return JSON.parse(readFileSync(fd,'utf8'));}finally{closeSync(fd);}}
+function read(path:string,max=16384){const fd=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{const s=fstatSync(fd);if(!s.isFile()||s.uid!==process.getuid?.()||(s.mode&0o077)!==0||s.size>max)throw Error('RELEASE_WATCH_FILE_INVALID');return JSON.parse(readFileSync(fd,'utf8'));}finally{closeSync(fd);}}
 function persist(path:string,value:unknown){const fd=openSync(path,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);try{writeFileSync(fd,JSON.stringify(value)+'\n');fsyncSync(fd);}finally{closeSync(fd);}}
 function validate(w:ReleaseWatch){
  if(!w||Object.keys(w).sort().join(',')!=='journalDirectory,plan,proofDirectory,registeredAt,root,v'||w.v!==1||typeof w.registeredAt!=='string'||!Number.isFinite(Date.parse(w.registeredAt))||new Date(w.registeredAt).toISOString()!==w.registeredAt)throw Error('RELEASE_WATCH_INVALID');
@@ -54,7 +56,14 @@ async function inspectState(input:ReleaseWatch,now:Date):Promise<WatchObservatio
  const cancelled=join(w.root,'deployment-recovery-cancelled-'+w.plan.operationId);
  if(existsSync(cancelled)){
   directory(cancelled);const owner=read(join(cancelled,'owner.json'));
-  if(owner.protocol!=='porchday-deployment-recovery-sqlite-v1'||owner.operationId!==w.plan.operationId||owner.planHash!==hash||owner.source!==w.plan.candidateSource||state&&state.phase!=='prepared')throw Error('RELEASE_WATCH_CANCELLATION_INVALID');
+  if(owner.protocol!=='porchday-deployment-recovery-sqlite-v1'||owner.operationId!==w.plan.operationId||owner.planHash!==hash||owner.source!==w.plan.candidateSource)throw Error('RELEASE_WATCH_CANCELLATION_INVALID');
+  if(state&&state.phase!=='prepared'){
+   if(state.phase!=='activation-intent')throw Error('RELEASE_WATCH_CANCELLATION_INVALID');
+   const receipt=read(join(cancelled,'rejection-reconciliation.json'),2*1024*1024);
+   const evidence=receipt.evidence,account=evidence?.audit?.result?.[0]?.account?.id;
+   const proof=verifyFailedActivation(w.plan,account,evidence?.audit,evidence?.before,evidence?.after,owner.at,Date.parse(receipt.disposition?.observedAt));
+   if(!isDeepStrictEqual(proof,receipt.disposition)||!isDeepStrictEqual(state,receipt.journal))throw Error('RELEASE_WATCH_CANCELLATION_INVALID');
+  }
   return{status:'cancelled'};
  }
  if(queued)return{status:'attention',event:queued};
