@@ -11,6 +11,10 @@ export function deploymentWriteRecorder(directory:string,plan:DeploymentPlan,ass
   const candidate=event.operationId===plan.operationId&&event.version===plan.candidateVersion,rollback=event.operationId===rollbackOperationId(plan.operationId)&&event.version===plan.baselineVersion;
   if(!candidate&&!rollback)throw Error('DEPLOYMENT_RECEIPT_SCOPE_INVALID');
   const suffix=event.kind==='intent'?'intent':'result';
+  if(suffix==='intent'){
+   try{lstatSync(join(directory,'provider-write-'+event.operationId+'-result.json'));throw Error('DEPLOYMENT_RECEIPT_ALREADY_EXISTS');}
+   catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}
+  }
   if(suffix==='result'){
    const fd=openSync(join(directory,'provider-write-'+event.operationId+'-intent.json'),constants.O_RDONLY|constants.O_NOFOLLOW);try{const s=fstatSync(fd);if(!s.isFile()||s.size>16384||s.uid!==process.getuid?.()||(s.mode&0o077)!==0)throw Error('DEPLOYMENT_RECEIPT_INVALID');const intent=JSON.parse(readFileSync(fd,'utf8'));if(intent.planHash!==hash||intent.kind!=='intent'||intent.operationId!==event.operationId||intent.version!==event.version)throw Error('DEPLOYMENT_RECEIPT_SCOPE_INVALID');}finally{closeSync(fd);}
   }
