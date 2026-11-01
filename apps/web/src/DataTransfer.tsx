@@ -248,6 +248,13 @@ export function DataTransfer() {
               ensureContinue();
               setProgress(`Preparing your ${section.replaceAll("_", " ")}…`);
               if (section === "profile") {
+                for (const child of row.children || []) {
+                  const shared = await vault.open({id:child.id,author_id:vault.member.id,envelope:child.envelope});
+                  const privateDetails = child.private_envelope ? await vault.open({id:child.id,author_id:vault.member.id,envelope:child.private_envelope}) : {};
+                  const exported = {id:child.id,name:shared.name,birthday:privateDetails.birthday,posting_delegate_ids:child.delegates};
+                  await room(JSON.stringify(exported).length * 3 + 1024);
+                  (archive.children ||= []).push(exported);
+                }
                 if (row.envelope) {
                   const payload = await vault.open({
                     envelope: row.envelope,

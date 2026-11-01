@@ -1,3 +1,4 @@
+import {TagPicker, Tags, validTags, usePeopleDirectory, type PersonTag} from "./PeopleTags";
 import { useNearViewport } from "./near-viewport";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
@@ -228,6 +229,7 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
   };
 }
 type PendingPhoto = {
+  tags?: PersonTag[];
   id: string;
   name: string;
   alt: string;
@@ -245,6 +247,9 @@ export function Composer({
 }) {
   const vault = useVault();
   const [text, setText] = useState("");
+  const [tags,setTags]=useState<PersonTag[]>([]);
+  const [onBehalf,setOnBehalf]=useState("");
+  const directory=usePeopleDirectory();
   const [audience, setAudience] = useState<Audience>(
     groupId ? "group" : "connections",
   );
@@ -275,6 +280,10 @@ export function Composer({
     e.preventDefault();
     if (!text.trim() && !photos.length) return;
     await action.runSave(async () => {
+      const child = onBehalf ? directory.people.find(p => p.kind === "child" && p.id === onBehalf) : null;
+      if (onBehalf && !child) throw new Error("Reload the child directory before posting on their behalf.");
+      const postTags = child && !tags.some(t => t.kind === "child" && t.id === child.id) ? [...tags, child] : tags;
+      if (postTags.length > 30) throw new Error("Remove a tag to make room for the child you are posting for.");
       const id = crypto.randomUUID();
       const expiresAt = deadline(timer);
       const createdAt = new Date().toISOString();
@@ -283,6 +292,7 @@ export function Composer({
         const meta = {
           id: crypto.randomUUID(),
           alt: photo.alt,
+          tags: photo.tags || [],
           mime: "image/jpeg",
           name: photo.name,
           width: photo.width,
@@ -319,7 +329,7 @@ export function Composer({
         media.push(meta);
       }
       const envelope = await vault.seal(
-        { text: text.trim(), media, reactionSecret: createReactionSecret() },
+        { text: text.trim(), tags:postTags, media, reactionSecret: createReactionSecret() },
         {
           id,
           kind: "post",
@@ -329,8 +339,9 @@ export function Composer({
           expiresAt,
         },
       );
-      await post("/posts", { envelope, media_ids: media.map((p) => p.id) });
+      await post("/posts", { envelope, media_ids: media.map((p) => p.id), on_behalf_of: onBehalf || null });
       setText("");
+      setTags([]);setOnBehalf("");
       setPhotos([]);
       setTimer("");
       onPosted();
@@ -357,6 +368,10 @@ export function Composer({
           placeholder="Write a post…"
         />
       </div>
+      <TagPicker value={tags} onChange={setTags} disabled={action.busy}/>
+      <p className="muted">Tags do not change who can see this post.</p>
+      {<label>Posting on behalf of <select aria-label="Posting on behalf of" onFocus={directory.ensure} value={onBehalf} onChange={e=>{setOnBehalf(e.target.value);const child=directory.people.find(p=>p.kind==="child"&&p.id===e.target.value);if(child&&!tags.some(t=>t.id===child.id))setTags([...tags,child]);}}><option value="">Myself</option>{directory.children.filter(c=>c.can_post).map(c=><option key={c.id} value={c.id}>{c.name} · posted by @{vault.member.handle}</option>)}</select></label>}
+      {onBehalf && <p className="muted">The child will be tagged automatically. You remain the author.</p>}
       {photos.length > 0 && (
         <div className="photo-editor">
           {photos.map((photo) => (
@@ -375,6 +390,7 @@ export function Composer({
                 maxLength={1000}
                 placeholder="Describe this photo for everyone"
               />
+              <TagPicker label="People in this photo" value={photo.tags||[]} disabled={action.busy} onChange={tags=>setPhotos(photos.map(p=>p.id===photo.id?{...p,tags}:p))}/>
               <button
                 type="button"
                 className="icon-button"
@@ -629,6 +645,8 @@ export function PostCard({
   const [menu, setMenu] = useState(false);
   const [edit, setEdit] = useState(false);
   const [editText, setEditText] = useState("");
+  const [editTags,setEditTags]=useState<PersonTag[]>([]);
+  const [editMedia,setEditMedia]=useState<MediaPayload[]>([]);
   const [editTimer, setEditTimer] = useState("inherit");
   const { ref: cardRef, near: cardNear } = useNearViewport<HTMLElement>();
   // Reuse only the matching response that already authorized this post view.
@@ -650,7 +668,7 @@ export function PostCard({
       .then((c) => {
         if (alive) {
           setContent(c);
-          setEditText(String(c.text || ""));
+          setEditText(String(c.text || ""));setEditTags(validTags(c.tags));setEditMedia(c.media||[]);
         }
       })
       .catch((e) => {
@@ -724,11 +742,11 @@ export function PostCard({
   async function saveEdit() {
     await action.runSave(async () => {
       const previous = content;
-      setContent({ ...content, text: editText });
+      setContent({ ...content, text: editText, tags:editTags,media:editMedia });
       setEdit(false);
       try {
         const envelope = await vault.seal(
-          { ...content, text: editText },
+          { ...content, text: editText, tags:editTags,media:editMedia },
           {
             ...row.envelope.context,
             authorDeviceId: vault.device.id,
@@ -811,6 +829,8 @@ export function PostCard({
                 <>
                   <button
                     onClick={() => {
+                      setEditTags(validTags(content?.tags));setEditMedia(content?.media||[]);
+                      setEditText(String(content?.text||""));
                       setEdit(true);
                       setMenu(false);
                     }}
@@ -879,6 +899,12 @@ export function PostCard({
               rows={5}
             />
           </label>
+          <TagPicker value={editTags} onChange={setEditTags} disabled={action.busy}/>
+          {editMedia.map(media=><div key={media.id} className="photo-draft">
+            <EncryptedPhoto media={media}/>
+            <Field label="Photo caption" value={media.alt} maxLength={1000} onChange={e=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,alt:e.target.value}:m))}/>
+            <TagPicker label="People in this photo" value={media.tags||[]} disabled={action.busy} onChange={tags=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,tags}:m))}/>
+          </div>)}
           <TimerSelect
             value={editTimer}
             onChange={setEditTimer}
@@ -905,6 +931,8 @@ export function PostCard({
         <>
           <ReshareProvenance content={content} />
           <p ref={readableRef} className="post-text">{content.text}</p>
+          <Tags value={content.tags}/>
+          {row.on_behalf_of && <p className="muted">Posted on behalf of {validTags(content.tags).find(t=>t.kind==="child"&&t.id===row.on_behalf_of)?.label||"a child"} by @{row.author_handle||"the author"}.</p>}
           {content.media && (
             <div
               className={`post-photos photos-${Math.min(content.media.length, 3)}`}
@@ -966,7 +994,7 @@ export function PostCard({
     </article>
   );
 }
-export function EncryptedPhoto({ media }: { media: MediaPayload }) {
+export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload; thumbnail?:boolean }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1038,7 +1066,7 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
       () => element.getAttribute("src") === url && (opened.expiresAt === null || opened.expiresAt > Date.now()),
       () => markOnce("first-visible-photo"));
   }, [url, opened]);
-  return <div ref={photoRef}>{url ? (
+  return <div ref={photoRef} className={thumbnail ? "calendar-thumbnail" : undefined}>{url ? (
     <figure>
       <img
         ref={imageRef}
@@ -1049,7 +1077,8 @@ export function EncryptedPhoto({ media }: { media: MediaPayload }) {
         width={media.width}
         height={media.height}
       />
-      {media.alt && <figcaption>{media.alt}</figcaption>}
+      {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
+      {!thumbnail && <Tags value={media.tags}/>}
     </figure>
   ) : (
     <div className="photo-placeholder">
@@ -1349,13 +1378,14 @@ function Comment({
   const [report, setReport] = useState(false);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState("");
+  const [tags,setTags]=useState<PersonTag[]>([]);
   const [timer, setTimer] = useState("inherit");
   const action = useAction();
   useEffect(() => {
     vault
       .open(row)
       .then((c) => {
-        setContent(c);
+        setContent(c);setTags(validTags(c.tags));
         setText(c.text || "");
       })
       .catch((e) => setError(e.message));
@@ -1368,7 +1398,7 @@ function Comment({
         row.effective_expires_at || row.expires_at,
       );
       const envelope = await vault.seal(
-        { ...content, text },
+        { ...content, text, tags },
         {
           ...row.envelope.context,
           authorDeviceId: vault.device.id,
@@ -1410,6 +1440,7 @@ function Comment({
                 required
               />
             </label>
+            <TagPicker value={tags} onChange={setTags} disabled={action.busy}/>
             <ExpiryWarning
               expiry={row.effective_expires_at || row.expires_at}
               reply={!!row.parent_id}
@@ -1448,6 +1479,7 @@ function Comment({
               </time>
             </div>
             <p>{error || content?.text || "Opening encrypted comment…"}</p>
+            {!error && <Tags value={content?.tags}/>}
             {(row.effective_expires_at || row.expires_at) && (
               <small>
                 <Icon name="clock" size={11} />
@@ -1475,7 +1507,7 @@ function Comment({
           </button>
           {row.author_id === vault.member.id &&
             vault.member.status !== "restricted" && (
-              <button className="text-button" onClick={() => setEditing(true)}>
+              <button className="text-button" onClick={() => {setTags(validTags(content?.tags));setText(String(content?.text||""));setEditing(true);}}>
                 Edit
               </button>
             )}
@@ -1521,6 +1553,7 @@ function CommentComposer({
 }) {
   const vault = useVault();
   const [text, setText] = useState("");
+  const [tags,setTags]=useState<PersonTag[]>([]);
   const [timer, setTimer] = useState("inherit");
   const [ack, setAck] = useState(
     parent.effective_expires_at || parent.expires_at || postRow.expires_at,
@@ -1540,7 +1573,7 @@ function CommentComposer({
       try {
         const expiresAt = deadline(timer === "inherit" ? "" : timer, ack);
         const envelope = await vault.seal(
-          { text: text.trim(), reactionSecret: createReactionSecret() },
+          { text: text.trim(), tags, reactionSecret: createReactionSecret() },
           {
             kind: "comment",
             audience: postRow.envelope.context.audience,
@@ -1554,7 +1587,7 @@ function CommentComposer({
           envelope,
           parent_expires_at: ack,
         });
-        setText("");
+        setText("");setTags([]);
         setTimer("inherit");
         await onPosted();
       } catch (e: any) {
@@ -1600,6 +1633,7 @@ function CommentComposer({
           required
         />
       </div>
+      <TagPicker value={tags} onChange={setTags} disabled={action.busy}/>
       <Alert>{action.error}</Alert>
       <div className="comment-compose-footer">
         <TimerSelect value={timer} onChange={setTimer} parent={ack} />

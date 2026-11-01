@@ -1,0 +1,50 @@
+import type { Content, SocialObject } from "./api";
+import { contentTags } from "./PeopleTags";
+export type CalendarEntry = { row: SocialObject; content: Content };
+export function localDay(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+export function monthRange(year: number, month: number) {
+  return {
+    start: new Date(year, month, 1).toISOString(),
+    end: new Date(year, month + 1, 1).toISOString(),
+  };
+}
+export function monthCells(year: number, month: number) {
+  const offset = new Date(year, month, 1).getDay(),
+    days = new Date(year, month + 1, 0).getDate();
+  return Array.from({ length: Math.ceil((offset + days) / 7) * 7 }, (_, i) =>
+    i < offset || i >= offset + days
+      ? null
+      : localDay(new Date(year, month, i - offset + 1)),
+  );
+}
+export function filterEntries(
+  entries: CalendarEntry[],
+  author: string,
+  tags: string[],
+  now = Date.now(),
+) {
+  return entries.filter(
+    ({ row, content }) =>
+      (!row.expires_at || Date.parse(row.expires_at) > now) &&
+      (!author || row.author_id === author) &&
+      (!tags.length ||
+        contentTags(content).some((t) => tags.includes(t.kind + ":" + t.id))),
+  );
+}
+export function featuredEntry(
+  entries: CalendarEntry[],
+  choice?: { post_id: string; media_id: string | null },
+) {
+  const chosen = entries.find((e) => e.row.id === choice?.post_id);
+  const entry =
+    chosen || entries.find((e) => e.content.media?.length) || entries[0];
+  if (!entry) return null;
+  return {
+    entry,
+    media:
+      entry.content.media?.find((m) => chosen && m.id === choice?.media_id) ||
+      entry.content.media?.[0],
+  };
+}
