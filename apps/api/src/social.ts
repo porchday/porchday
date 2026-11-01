@@ -292,7 +292,7 @@ export function createSocialRoutes() {
             if (e.parentId !== null)
                 fail('ENVELOPE_CONTEXT');
             await checkEnvelope(db, c.get('memberId'), b.envelope, 'post');
-            if(b.on_behalf_of){const [child]=await db`select owner_id,delegates from app.child_profiles where id=${b.on_behalf_of}`;if(!child || (child.owner_id!==c.get('memberId')&&!child.delegates.includes(c.get('memberId'))))fail('FORBIDDEN',403);}
+            if(b.on_behalf_of){const [child]=await db`select owner_id,to_jsonb(delegates) as delegates from app.child_profiles where id=${b.on_behalf_of}`;if(!child || (child.owner_id!==c.get('memberId')&&!child.delegates.includes(c.get('memberId'))))fail('FORBIDDEN',403);}
             await db `insert into app.posts(id,author_id,group_id,audience,envelope,epoch,created_at,expires_at) values(${e.id},${c.get('memberId')},${e.groupId},${e.audience},${db.json(b.envelope)},${e.epoch},${e.createdAt},${e.expiresAt})`;
             for (const r of b.envelope.recipients)
                 await db `insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;

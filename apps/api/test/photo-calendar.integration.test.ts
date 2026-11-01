@@ -157,6 +157,7 @@ suite("Encrypted calendar and child permissions", () => {
     expect((await call(a.id, "/children/" + c.id, "PUT", c.body)).status).toBe(
       200,
     );
+    expect((await call(a.id,"/children")).data.items.find((r:any)=>r.id===c.id).delegates).toEqual([b.id]);
     const exported = await call(a.id, "/exports", "POST");
     expect(exported.status).toBe(201);
     const page = await call(

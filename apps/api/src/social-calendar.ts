@@ -39,9 +39,9 @@ export function registerCalendarRoutes(
           ? uuid.parse(c.req.query("after"))
           : null;
         const own =
-          await db`select c.*,d.envelope as private_envelope from app.child_profiles c left join app.child_private_details d on d.child_id=c.id where c.owner_id=${c.get("memberId")} order by c.id limit 20`;
+          await db`select c.*,to_jsonb(c.delegates) as delegates,d.envelope as private_envelope from app.child_profiles c left join app.child_private_details d on d.child_id=c.id where c.owner_id=${c.get("memberId")} order by c.id limit 20`;
         const others =
-          await db`select c.*,null::jsonb as private_envelope from app.child_profiles c where c.owner_id<>${c.get("memberId")} ${after ? db`and c.id>${after}::uuid` : db``} order by c.id limit 21`;
+          await db`select c.*,to_jsonb(c.delegates) as delegates,null::jsonb as private_envelope from app.child_profiles c where c.owner_id<>${c.get("memberId")} ${after ? db`and c.id>${after}::uuid` : db``} order by c.id limit 21`;
         const rows = [...own, ...others.slice(0, 20)];
         return {
           next_id: others.length > 20 ? others[19].id : null,
