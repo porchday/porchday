@@ -22,6 +22,7 @@ export type Member = {
   startup_devices?: Device[];
 };
 export type SocialObject = {
+  on_behalf_of?:string|null;
   id: string;
   author_id: string;
   author_device_id?: string;
@@ -56,6 +57,7 @@ export type Content = {
   [key: string]: unknown;
 };
 export type MediaPayload = {
+  tags?: import("./PeopleTags").PersonTag[];
   id: string;
   alt: string;
   mime: string;

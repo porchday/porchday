@@ -1,3 +1,5 @@
+import {PhotosCalendar} from "./PhotosCalendar";
+import {PeopleDirectory} from "./PeopleTags";
 import { FeatureAdditions } from "./FeatureAdditions";
 import { hasPendingSaves } from "./pending-saves";
 import { MemberAvatar, MemberAvatarProvider } from "./MemberAvatar";
@@ -387,6 +389,8 @@ function AppShell({
         <Feed />
       </>
     );
+  else if (path === "/app/photos") content = <PhotosCalendar />;
+  else if (path === "/app/menu") content = <section className="panel form-stack"><h1>More</h1><a href="/app/wall">My wall</a>{builderChat && <a href="/app/builder-chat">Builder chat</a>}<a href="/app/settings/profile">Settings</a></section>;
   else if (path.startsWith("/app/post/"))
     content = <Feed singleId={path.split("/")[3]} />;
   else if (path.startsWith("/app/wall"))
@@ -420,18 +424,13 @@ function AppShell({
       </Empty>
     );
   return (
-    <MemberAvatarProvider>
+    <MemberAvatarProvider><PeopleDirectory>
     <div className="app-layout">
       <header className="app-mobile-header">
         <Logo small href="/app" />
         <button className="icon-button" onClick={logout} aria-label="Sign out">
           <Icon name="logout" />
         </button>
-        {builderChat && (
-          <a href="/app/builder-chat" className="icon-button" aria-label="Builder chat">
-            <Icon name="comment" />
-          </a>
-        )}
         <a
           href="/app/notifications"
           className="icon-button"
@@ -439,18 +438,11 @@ function AppShell({
         >
           <Icon name="bell" />
         </a>
-        <a
-          href="/app/settings/profile"
-          className="icon-button"
-          aria-label="Settings"
-        >
-          <Icon name="settings" />
-        </a>
       </header>
       <aside className="sidebar">
         <Logo href="/app" />
         <nav aria-label="Your Porchday">
-          {sidebarLinks.map(
+          {[...sidebarLinks, ...(vault.member.status === "suspended" ? [] : [["/app/photos", "photo", "Photos"]])].map(
             ([href, icon, name]) => {
               const active =
                 href === "/app"
@@ -532,7 +524,7 @@ function AppShell({
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {(vault.member.status === "suspended"
           ? [links[5]]
-          : [links[0], links[2], links[3], links[1]]
+          : [links[0], links[2], links[3], ["/app/photos", "photo", "Photos"], ["/app/menu", "more", "More"]]
         ).map(([href, icon, name]) => (
           <a
             key={href}
@@ -550,7 +542,7 @@ function AppShell({
         ))}
       </nav>
     </div>
-    </MemberAvatarProvider>
+    </PeopleDirectory></MemberAvatarProvider>
   );
 }
 installTracing();

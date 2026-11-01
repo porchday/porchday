@@ -1,3 +1,4 @@
+import { ChildrenSettings } from "./ChildrenSettings";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import { base64ToBytes, type EncryptedEnvelope } from "@porchday/crypto";
@@ -57,6 +58,7 @@ export function Settings({
       <nav className="settings-tabs" aria-label="Settings">
         {[
           ["profile", "My profile"],
+          ["children", "Children"],
           ["privacy", "Privacy & safety"],
           ["security", "Account & keys"],
           ["data", "My data"],
@@ -73,6 +75,8 @@ export function Settings({
       </nav>
       {tab === "profile" ? (
         <ProfileSettings />
+      ) : tab === "children" ? (
+        <ChildrenSettings />
       ) : tab === "privacy" ? (
         <PrivacySettings />
       ) : tab === "security" ? (
