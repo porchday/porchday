@@ -445,3 +445,24 @@ retirement 850 ms. Nested R2 write time totals 1,653 ms; it overlaps those
 phases and must not be added to them. The sample cannot be attributed to an
 individual synthetic account. More production evidence is needed to explain
 the slow tail.
+
+### Failed activation with provider audit evidence
+
+`node scripts/reconcile-failed-activation.ts <original-manifest>` is an explicit
+read-only provider reconciliation command. It cannot activate or retry a version.
+Use it only for an original `activation-intent` whose transport outcome was lost.
+It holds that operation's existing `FileDeploymentLease`, reads deployment history
+before and after the complete recent provider audit window, and requires exactly
+one failed Create Worker Deployment event matching the account, worker, operation,
+and candidate. The failure must be at least five minutes old and less than a day
+old. Both histories must still have the exact original baseline deployment newest,
+with no candidate or operation entry. Missing, duplicate, successful, changed,
+paginated-incomplete or too-recent evidence leaves the marker untouched.
+
+A failed audit event or a 500 response alone is insufficient. On verified
+reconciliation the command durably records the proof, preserves the original
+journal and canonical record, and archives the original marker as cancelled.
+The old operation cannot recur. A crash after recording proof requires fresh
+provider evidence before finishing the archive. This is not successful release
+acceptance: any subsequent release requires a newly reviewed plan and the full
+continuity/browser gates, with the failed attempt retained as history.

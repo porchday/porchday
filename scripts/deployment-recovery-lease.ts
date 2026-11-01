@@ -5,6 +5,7 @@ import {isAbsolute,join} from 'node:path';
 import {createHash,randomUUID} from 'node:crypto';
 import {deploymentPlanHash,recoveryTarget,rollbackOperationId,RecoveryError,validateRecoveryState,type DeploymentObservation,type DeploymentPlan,type RecoveryJournal,type DeploymentPorts,type RecoveryState} from './deployment-recovery.ts';
 import {publicAssetManifestHash,validatePublicAssetReport,type PublicAssetManifest} from './release-assets-verify.ts';
+import {verifyFailedActivation} from './deployment-audit-reconciliation.ts';
 const protocol='porchday-deployment-recovery-sqlite-v1';
 const assetProofLimit=32*1024*1024;
 const digest=(text:string)=>createHash('sha256').update(text).digest('hex');
@@ -168,6 +169,28 @@ export class FileDeploymentLease{
   this.assert(this.plan);const directory=join(this.root,'deployment-lock');
   if(JSON.stringify(readdirSync(directory).sort())!==JSON.stringify(['owner.json']))throw new RecoveryError('DEPLOYMENT_CANCELLATION_UNSAFE');
   const archive=join(this.root,'deployment-recovery-cancelled-'+this.plan.operationId);if(existsSync(archive))throw new RecoveryError('DEPLOYMENT_ALREADY_CANCELLED');
+  renameSync(directory,archive);syncDirectory(this.root);this.close();
+ }
+ /** Resolve only this operation's failed provider request with fresh audit and
+  * unchanged deployment history. Archive evidence and marker without rewriting
+  * the activation journal or canonical record. Never grants a replay. */
+ async reconcileFailedActivation(journal:RecoveryJournal,accountId:string,readEvidence:()=>Promise<{audit:unknown;before:unknown;after:unknown}>):Promise<void>{
+  this.assert(this.plan);const state=await journal.read();
+  if(!state||state.phase!=='activation-intent'||state.planHash!==this.owner.planHash)throw new RecoveryError('DEPLOYMENT_CANCELLATION_UNSAFE');
+  const directory=join(this.root,'deployment-lock');
+  const entries=readdirSync(directory).sort();
+  if(entries.some(n=>!['owner.json','rejection-reconciliation.json'].includes(n)))throw new RecoveryError('DEPLOYMENT_CANCELLATION_UNSAFE');
+  const evidence=await readEvidence();this.assert(this.plan);
+  const disposition=verifyFailedActivation(this.plan,accountId,evidence.audit,evidence.before,evidence.after,this.owner.at);
+  if(JSON.stringify(await journal.read())!==JSON.stringify(state))throw new RecoveryError('DEPLOYMENT_JOURNAL_CHANGED');
+  const receipt=join(directory,'rejection-reconciliation.json');
+  if(existsSync(receipt)){
+   const old=JSON.parse(privateText(receipt));
+   if(old.disposition?.operationId!==disposition.operationId||old.disposition?.auditId!==disposition.auditId||old.disposition?.planHash!==disposition.planHash)throw new RecoveryError('DEPLOYMENT_RECONCILIATION_CHANGED');
+  }else{atomicText(receipt,JSON.stringify({disposition,evidence,journal:state})+'\n',this.root);syncDirectory(directory);}
+  this.assert(this.plan);
+  const archive=join(this.root,'deployment-recovery-cancelled-'+this.plan.operationId);
+  if(existsSync(archive))throw new RecoveryError('DEPLOYMENT_ALREADY_CANCELLED');
   renameSync(directory,archive);syncDirectory(this.root);this.close();
  }
  /** Finish an already durable finalization receipt without re-running provider or user writes.
