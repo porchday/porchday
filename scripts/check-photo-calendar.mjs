@@ -124,6 +124,7 @@ const server = createServer(async (req, res) => {
     ).toISOString();
     return send({
       items: [
+        ...[...uploadedMedia.values()].slice(0,1).map(({payload:{bytes,...media}}) => ({id:'00000000-0000-4000-8000-000000000007',author_id:self,author_handle:'parent',created_at:new Date(start.getFullYear(),start.getMonth(),13,12).toISOString(),expires_at:null,envelope:{payload:{text:'Video day',media:[media]}}})),
         {
           id: "00000000-0000-4000-8000-000000000004",
           author_id: self,
@@ -265,6 +266,15 @@ try {
   const saved=calls.filter(c=>c.path==='/api/v1/posts').at(-1).body.envelope.payload.media[0];
   assert.equal(saved.mime,'video/webm');assert(saved.poster);assert.equal(saved.posterExpiresAt,null);
   assert.equal(uploadedMedia.get(saved.id).payload.bytes,encoded);
+  await page.goto(origin);
+  await page.getByRole('button',{name:/13: 1 post/}).click();
+  await page.getByRole('button',{name:'Feature this video'}).click();
+  await page.getByText('Your daily highlight was saved.').waitFor();
+  assert(calls.some(c=>c.method==='PUT' && c.path.includes('/calendar/highlights/') && c.body.media_id===saved.id));
+  await page.keyboard.press('Escape');
+  const videoCell=page.getByRole('button',{name:/13: 1 post/});
+  await videoCell.locator('img').waitFor();
+  assert(await videoCell.locator('.calendar-video-indicator').evaluate(el=>{const box=el.getBoundingClientRect(),cell=el.closest('button').getBoundingClientRect();return box.left>=cell.left && box.right<=cell.right && box.top>=cell.top && box.bottom<=cell.bottom;}));
   await page.goto(origin + '/video');
   const readsBefore=calls.filter(c=>c.path.endsWith('/bytes')).length;
   await page.evaluate(media=>window.showMedia(media),saved);

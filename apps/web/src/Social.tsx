@@ -1118,7 +1118,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
   ) : video && requested !== media.id ? (
     <figure>
       {poster?.id === media.id && <img src={poster.url} alt={media.alt || "Video preview"} />}
-      {thumbnail ? <span aria-label="Video">▶ Video</span> : <Button onClick={() => setRequested(media.id)}>Load video</Button>}
+      {thumbnail ? <span className="calendar-video-indicator" aria-label="Video">▶</span> : <Button onClick={() => setRequested(media.id)}>Load video</Button>}
       {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
       {!thumbnail && <Tags value={media.tags} />}
     </figure>

@@ -4804,3 +4804,6 @@ button.trace-row:focus-visible {
 }
 .calendar-day-content { min-height: 160px; }
 .calendar-day-content nav { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+
+.calendar-thumbnail figure { position: relative; }
+.calendar-video-indicator { position: absolute; left: 3px; bottom: 3px; padding: 0 4px; border-radius: 4px; background: #ffffffdb; color: #222; }
