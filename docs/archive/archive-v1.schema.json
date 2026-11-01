@@ -248,7 +248,12 @@
           "type": "string"
         },
         "mime": {
-          "const": "image/jpeg"
+          "enum": [
+            "image/jpeg",
+            "video/mp4",
+            "video/quicktime",
+            "video/webm"
+          ]
         },
         "name": {
           "type": "string"
@@ -256,15 +261,41 @@
         "width": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         },
         "height": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mime": {
+                "const": "image/jpeg"
+              }
+            },
+            "required": [
+              "mime"
+            ]
+          },
+          "then": {
+            "properties": {
+              "width": {
+                "maximum": 2400,
+                "type": "integer"
+              },
+              "height": {
+                "maximum": 2400,
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
     },
     "profile": {
       "type": "object",
@@ -424,10 +455,15 @@
         },
         "path": {
           "type": "string",
-          "pattern": "^photos/[a-fA-F0-9-]{36}\\.jpg$"
+          "pattern": "^photos/[a-fA-F0-9-]{36}\\.(jpg|mp4|mov|webm)$"
         },
         "mime": {
-          "const": "image/jpeg"
+          "enum": [
+            "image/jpeg",
+            "video/mp4",
+            "video/quicktime",
+            "video/webm"
+          ]
         },
         "alt": {
           "type": "string"
@@ -439,12 +475,12 @@
         "width": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         },
         "height": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         },
         "sha256": {
           "type": "string",
@@ -475,7 +511,33 @@
           "$ref": "#/$defs/deadline"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mime": {
+                "const": "image/jpeg"
+              }
+            },
+            "required": [
+              "mime"
+            ]
+          },
+          "then": {
+            "properties": {
+              "width": {
+                "maximum": 2400,
+                "type": "integer"
+              },
+              "height": {
+                "maximum": 2400,
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
     },
     "connection": {
       "type": "object",

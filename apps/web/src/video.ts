@@ -45,7 +45,7 @@ export async function validatedVideo(bytes: Uint8Array) {
       video.src = url;
     });
     const width = video.videoWidth, height = video.videoHeight;
-    if (!width || !height || width * height > 3840 * 2160 || Number.isNaN(video.duration) || video.duration <= 0)
+    if (!width || !height || width > 3840 || height > 3840 || width * height > 3840 * 2160 || Number.isNaN(video.duration) || video.duration <= 0)
       throw Error("Choose a playable video up to 4K resolution.");
     const canvas = document.createElement("canvas");
     const scale = Math.min(1, 320 / Math.max(width, height));

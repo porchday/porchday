@@ -10,7 +10,7 @@ const self = "00000000-0000-4000-8000-000000000001",
   child = "00000000-0000-4000-8000-000000000003";
 const bundle = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>createRoot(document.getElementById('root')).render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';createRoot(document.getElementById('root')).render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';const root=createRoot(document.getElementById('root'));root.render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>);`,
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -274,6 +274,14 @@ try {
   await page.getByLabel('Synthetic video').waitFor();
   await page.locator('video').evaluate(async video=>{await video.play();});
   assert.equal(await page.locator('video').evaluate(v=>v.videoWidth),160);
+  uploadedMedia.get(saved.id).context.expiresAt='2020-01-01T00:00:00.000Z';
+  await page.goto(origin + '/video');
+  await page.evaluate(media=>window.showMedia({...media,posterExpiresAt:'2020-01-01T00:00:00.000Z'}),saved);
+  await page.getByRole('button',{name:'Load video'}).waitFor();
+  assert.equal(await page.locator('figure img').count(),0);
+  await page.getByRole('button',{name:'Load video'}).click();
+  await page.getByText('This attachment expired.').waitFor();
+  assert.equal(await page.locator('video').count(),0);
   // Actual decoder rejects a signature-only fake clip.
   assert.equal(await page.evaluate(async()=>{try{await window.validateVideo(new Uint8Array([0,0,0,20,102,116,121,112,105,115,111,109,0,0,0,0,105,115,111,109]));return false;}catch{return true;}}),true);
   await page.goto(origin + "/children");
