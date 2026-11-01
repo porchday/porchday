@@ -10,6 +10,8 @@
   },
   "files": [
     "deployment-recovery.ts",
+    "placement-trial-collector.ts",
+    "placement-trial-telemetry.ts",
     "deployment-recovery-journal.ts",
     "cloudflare-deployment-client.ts",
     "deployment-recovery-lease.ts",

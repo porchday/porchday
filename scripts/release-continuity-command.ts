@@ -31,10 +31,10 @@ function commandFailureCode(error:unknown):string{
 export async function runCommandWithContinuity(options:ProbeOptions & {
  runCommand:(signal:AbortSignal)=>Promise<ContinuityCommandStatus>;
  retain:(event:ContinuityCommandEvent)=>Promise<void>;
- intervalMs?:number;maxSamples?:number;
+ intervalMs?:number;maxSamples?:number;placementTrial?:true;
 },signal:AbortSignal){
  const interval=options.intervalMs??2000,limit=options.maxSamples??120;
- if(!Number.isSafeInteger(interval)||interval<1000||interval>5000||!Number.isSafeInteger(limit)||limit<3||limit>120)throw Error('CONTINUITY_COMMAND_SCOPE');
+ if(!Number.isSafeInteger(interval)||interval<1000||interval>5000||!Number.isSafeInteger(limit)||limit<3||limit>(options.placementTrial?4500:120)||options.placementTrial!==undefined&&options.placementTrial!==true||options.placementTrial&&limit*interval<65*60*1000)throw Error('CONTINUITY_COMMAND_SCOPE');
  const controller=new AbortController(),combined=AbortSignal.any([signal,controller.signal]);
  let command:Promise<void>|undefined,terminal=false;
  const outcome:{status:ContinuityCommandStatus|'failed';failureCode?:string}={status:'failed'};

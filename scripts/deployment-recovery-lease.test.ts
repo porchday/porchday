@@ -10,6 +10,62 @@ const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-0000-0000-000000000
 const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
 function fixture(){const root=mkdtempSync(join(tmpdir(),'porchday-lease-')),canonical=JSON.stringify({stagingVersion:plan.baselineVersion,stagingRuntimeSource:'c'.repeat(40),compatibleRollbackVersions:{staging:plan.baselineVersion}});writeFileSync(join(root,'latest-verified-deployment.json'),canonical,{mode:0o600});return{root,canonical};}
 const journal=(phase:'prepared'|'complete'):RecoveryJournal=>({read:async()=>({v:1,revision:phase==='complete'?4:1,planHash:deploymentPlanHash(plan),phase,...(phase==='complete'?{candidateDeploymentId:uuid(5)}:{})}),write:async()=>{throw Error('unused');}});
+describe('initial edge routing lease',()=>{
+ it.each(['complete','rolled-back'] as const)('ties API placement and domains to one %s outcome',async phase=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  const before={hostname:'staging.porchday.com',service:'porchday-staging',environment:'production',zoneId:'a'.repeat(32)},after={...before,service:'porchday-staging-edge'};
+  const p:DeploymentPlan={...plan,routingFrontendVersion:uuid(20),routing:{operationId:plan.operationId,moves:[{before,after}]}};
+  const canonical={...JSON.parse(f.canonical),edgeRouting:{stagingEnabled:false,stagingFrontendVersion:uuid(20),stagingFrontendSource:'d'.repeat(40),stagingFrontendAssetsSource:'e'.repeat(40)}};
+  const state:RecoveryState={v:1,revision:5,planHash:deploymentPlanHash(p),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})},log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('unused');}};
+  try{
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(canonical));
+   expect(()=>FileDeploymentLease.preflight(f.root,{...p,routingFrontendVersion:uuid(99)})).toThrow('ROUTING_FRONTEND_CHANGED');
+   lease=FileDeploymentLease.acquire(f.root,p);
+   const version=phase==='complete'?p.candidateVersion:p.baselineVersion,target=phase==='complete'?after:before,path=join(f.root,'snapshot.json');
+   const observed={workers:{staging:{active:version,resources:{script:phase==='complete'?{placement:{mode:'targeted',target:[{region:'aws:us-west-2'}]}}:{}}},'staging-edge':{active:uuid(99)}},domains:[{hostname:target.hostname,service:target.service,zone_id:target.zoneId,environment:'production',enabled:true,previews_enabled:false}]};
+   writeFileSync(path,JSON.stringify(observed),{mode:0o600});await expect(lease.finalize(log,path)).rejects.toThrow('ROUTING_FRONTEND_CHANGED');
+   observed.workers['staging-edge'].active=uuid(20);writeFileSync(path,JSON.stringify(observed));
+   await lease.finalize(log,path);await lease.release(log);
+   const record=JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'));
+   expect(record.stagingVersion).toBe(version);expect(record.edgeRouting.stagingEnabled).toBe(phase==='complete');
+   expect(record.edgeRouting.stagingFrontendVersion).toBe(uuid(20));expect(record.edgeRouting.stagingDomainsOwnedBy).toBe(target.service);
+   expect(record.edgeRouting.stagingPlacement).toBe(phase==='complete'?'targeted':'off');
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it('prepares an unrouted edge version without changing public topology or asset provenance',async()=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  const p:DeploymentPlan={...plan,worker:'porchday-staging-edge',backendVersion:uuid(20),backendReaderFloor:uuid(21),unroutedFrontend:true};
+  const canonical={stagingVersion:uuid(20),stagingRuntimeSource:'d'.repeat(40),stagingAssetsSource:'e'.repeat(40),compatibleRollbackVersions:{staging:uuid(21)},edgeRouting:{stagingEnabled:false,stagingFrontendVersion:plan.baselineVersion,stagingFrontendSource:'c'.repeat(40)}};
+  const log:RecoveryJournal={read:async()=>({v:1,revision:4,planHash:deploymentPlanHash(p),phase:'complete',candidateDeploymentId:uuid(5)}),write:async()=>{throw Error('unused');}};
+  try{
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(canonical));lease=FileDeploymentLease.acquire(f.root,p);
+   const path=join(f.root,'snapshot.json');writeFileSync(path,JSON.stringify({workers:{'staging-edge':{active:p.candidateVersion},staging:{active:uuid(20)}}}),{mode:0o600});
+   await lease.finalize(log,path);await lease.release(log);
+   const record=JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'));
+   expect(record.stagingAssetsSource).toBe(canonical.stagingAssetsSource);expect(record.stagingVersion).toBe(uuid(20));
+   expect(record.edgeRouting.stagingEnabled).toBe(false);expect(record.edgeRouting.stagingFrontendVersion).toBe(p.candidateVersion);
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+ it.each(['complete','rolled-back'] as const)('requires exact domain ownership before finalizing %s',async phase=>{
+  const f=fixture();let lease:FileDeploymentLease|undefined;
+  const before={hostname:'staging.porchday.com',service:'porchday-staging',environment:'production',zoneId:'a'.repeat(32)};
+  const after={...before,service:'porchday-staging-edge'};
+  const p:DeploymentPlan={...plan,worker:'porchday-staging-edge',backendVersion:uuid(20),backendReaderFloor:uuid(21),routing:{operationId:plan.operationId,moves:[{before,after}]}};
+  const canonical={stagingVersion:uuid(20),stagingRuntimeSource:'d'.repeat(40),compatibleRollbackVersions:{staging:uuid(21)},edgeRouting:{stagingEnabled:false,stagingFrontendVersion:plan.baselineVersion,stagingFrontendSource:'c'.repeat(40)}};
+  const state:RecoveryState={v:1,revision:5,planHash:deploymentPlanHash(p),phase,candidateDeploymentId:uuid(5),...(phase==='rolled-back'?{rollbackDeploymentId:uuid(6)}:{})};
+  const log:RecoveryJournal={read:async()=>state,write:async()=>{throw Error('unused');}};
+  try{
+   writeFileSync(join(f.root,'latest-verified-deployment.json'),JSON.stringify(canonical));lease=FileDeploymentLease.acquire(f.root,p);
+   await expect(lease.finalize(log)).rejects.toThrow('ROUTING_SNAPSHOT_REQUIRED');
+   const snapshot=join(f.root,'snapshot.json'),version=phase==='complete'?p.candidateVersion:p.baselineVersion;
+   const data={workers:{'staging-edge':{active:version},staging:{active:p.backendVersion}},domains:[] as unknown[]};
+   writeFileSync(snapshot,JSON.stringify(data),{mode:0o600});await expect(lease.finalize(log,snapshot)).rejects.toThrow('ROUTING_PROOF_INVALID');
+   const target=phase==='complete'?after:before;data.domains=[{hostname:target.hostname,service:target.service,zone_id:target.zoneId,environment:'production',enabled:true,previews_enabled:false}];
+   writeFileSync(snapshot,JSON.stringify(data));await lease.finalize(log,snapshot);await lease.release(log);
+   const record=JSON.parse(readFileSync(join(f.root,'latest-verified-deployment.json'),'utf8'));expect(record.edgeRouting.stagingEnabled).toBe(phase==='complete');expect(record.stagingVersion).toBe(uuid(20));
+  }finally{lease?.close();rmSync(f.root,{recursive:true,force:true});}
+ });
+});
 describe('frontend deployment target',()=>{
  it.each(['complete','rolled-back'] as const)('finalizes %s without overwriting backend or asset provenance',async phase=>{
   const f=fixture(),frontend:DeploymentPlan={...plan,worker:'porchday-staging-edge',backendVersion:uuid(20),backendReaderFloor:uuid(21)};let lease:FileDeploymentLease|undefined;

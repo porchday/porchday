@@ -2,6 +2,13 @@ import {expect,test,vi} from 'vitest';
 import {runCommandWithContinuity,type ContinuityCommandEvent} from './release-continuity-command';
 const target={environment:'staging' as const,memberId:'00000000-0000-4000-8000-000000000001',cookie:'session=allowed-private',deniedCookie:'session=denied-private',healthToken:'private-health-token'};
 const signal=()=>new AbortController().signal;
+test('admits long observation only for an explicit trial with enough recovery coverage',async()=>{
+ const {options,fetch}=fixture(),controller=new AbortController();controller.abort(Error('TEST_CANCELLED'));
+ await expect(runCommandWithContinuity({...options,maxSamples:2100,intervalMs:2000},controller.signal)).rejects.toThrow('CONTINUITY_COMMAND_SCOPE');
+ await expect(runCommandWithContinuity({...options,maxSamples:120,placementTrial:true},controller.signal)).rejects.toThrow('CONTINUITY_COMMAND_SCOPE');
+ await expect(runCommandWithContinuity({...options,maxSamples:2100,intervalMs:2000,placementTrial:true},controller.signal)).rejects.toThrow('TEST_CANCELLED');
+ expect(fetch).not.toHaveBeenCalled();
+});
 function fixture(){
  const events:ContinuityCommandEvent[]=[];
  const fetch=vi.fn(async(input:any,init:any)=>{

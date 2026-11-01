@@ -1,7 +1,8 @@
 /** Provider-neutral rollout control. No network, credentials, or writes on import. */
 import {createHash} from 'node:crypto';
+import {routingPlanHash,type RoutingPlan} from './domain-routing-recovery.ts';
 export type ReaderFloorPromotion=Readonly<{protocol:'privacy-commit-v1';previousVersion:string}>;
-export type DeploymentPlan={readerFloorPromotion?:ReaderFloorPromotion;operationId:string;worker:string;candidateVersion:string;candidateSource:string;baselineVersion:string;baselineDeploymentId:string;compatibleRollbackVersions:readonly string[];evidenceDigest:string;backendVersion?:string;backendReaderFloor?:string;assetManifests?:Readonly<{candidate:string;baseline:string}>};
+export type DeploymentPlan={placementTrial?:true;unroutedFrontend?:true;routingFrontendVersion?:string;routing?:RoutingPlan;readerFloorPromotion?:ReaderFloorPromotion;operationId:string;worker:string;candidateVersion:string;candidateSource:string;baselineVersion:string;baselineDeploymentId:string;compatibleRollbackVersions:readonly string[];evidenceDigest:string;backendVersion?:string;backendReaderFloor?:string;assetManifests?:Readonly<{candidate:string;baseline:string}>};
 export type DeploymentObservation={version:string;deploymentId:string;operationId:string|null};
 export type Phase='prepared'|'activation-intent'|'candidate-observed'|'rollback-intent'|'complete'|'rolled-back';
 export type RecoveryState={v:1;revision:number;planHash:string;phase:Phase;candidateDeploymentId?:string;rollbackDeploymentId?:string};
@@ -19,6 +20,8 @@ export interface DeploymentPorts{
  deploy(version:string,operationId:string,signal:AbortSignal):Promise<void>;
  /** Required user journeys and artifact checks, not merely /health. Never replay an ambiguous user write. */
  verify(version:string,signal:AbortSignal):Promise<'healthy'|'unhealthy'|'unknown'>;
+ /** Approved full-hour trial, with durable per-minute decisions under this lease. */
+ trial?(signal:AbortSignal):Promise<'healthy'|'unhealthy'|'unknown'>;
 }
 export class RetryableObservationError extends Error{constructor(){super('DEPLOYMENT_OBSERVATION_RETRYABLE');}}
 export class RecoveryError extends Error{constructor(code:string){super(code);}}
@@ -37,12 +40,21 @@ export function recoveryTarget(worker:string){
 }
 export function deploymentPlanHash(plan:DeploymentPlan):string{
  const target=recoveryTarget(plan.worker);
+ if(plan.routing){
+  routingPlanHash(plan.routing);
+  const names=target.environment==='production'?['porchday.com','porchday.org','www.porchday.com','www.porchday.org']:['staging.porchday.com'];
+  if(target.monitor||plan.routing.operationId!==plan.operationId||JSON.stringify(plan.routing.moves.map(m=>m.before.hostname).sort())!==JSON.stringify(names)||plan.routing.moves.some(m=>m.before.service!=='porchday-'+target.environment||m.after.service!=='porchday-'+target.environment+'-edge'))throw new RecoveryError('DEPLOYMENT_ROUTING_SCOPE_INVALID');
+ }
+ if(plan.placementTrial!==undefined&&(plan.placementTrial!==true||target.monitor||target.frontend||!plan.routing||!plan.routingFrontendVersion))throw new RecoveryError('DEPLOYMENT_TRIAL_SCOPE_INVALID');
+ if(plan.unroutedFrontend!==undefined&&(plan.unroutedFrontend!==true||!target.frontend||plan.routing||plan.assetManifests))throw new RecoveryError('DEPLOYMENT_UNROUTED_FRONTEND_SCOPE_INVALID');
+ if(plan.routing&&!target.frontend){if(!id.test(plan.routingFrontendVersion??''))throw new RecoveryError('DEPLOYMENT_ROUTING_FRONTEND_REQUIRED');if(target.environment==='production'&&!plan.placementTrial)throw new RecoveryError('DEPLOYMENT_PLACEMENT_TRIAL_REQUIRED');}
+ else if(plan.routingFrontendVersion!==undefined)throw new RecoveryError('DEPLOYMENT_ROUTING_FRONTEND_FORBIDDEN');
  if(plan.readerFloorPromotion!==undefined){const floor=plan.readerFloorPromotion;if(target.frontend||target.monitor||!floor||Object.keys(floor).sort().join(',')!=='previousVersion,protocol'||floor.protocol!=='privacy-commit-v1'||!id.test(floor.previousVersion)||floor.previousVersion===plan.candidateVersion||!Array.isArray(plan.compatibleRollbackVersions)||!plan.compatibleRollbackVersions.includes(floor.previousVersion))throw new RecoveryError('DEPLOYMENT_READER_FLOOR_PROMOTION_INVALID');}
  if(target.monitor&&plan.assetManifests!==undefined)throw new RecoveryError('DEPLOYMENT_MONITOR_ASSETS_FORBIDDEN');
  if(plan.assetManifests!==undefined&&(!plan.assetManifests||Object.keys(plan.assetManifests).sort().join(',')!=='baseline,candidate'||![plan.assetManifests.candidate,plan.assetManifests.baseline].every(value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value))))throw new RecoveryError('DEPLOYMENT_ASSET_PLAN_INVALID');
  if(!id.test(plan.operationId)||![plan.candidateVersion,plan.baselineVersion,plan.baselineDeploymentId].every(x=>id.test(x))||plan.candidateVersion===plan.baselineVersion||! /^[a-f0-9]{40}$/.test(plan.candidateSource)||! /^[a-f0-9]{64}$/.test(plan.evidenceDigest)||!Array.isArray(plan.compatibleRollbackVersions)||!plan.compatibleRollbackVersions.every(x=>id.test(x))||!plan.compatibleRollbackVersions.includes(plan.baselineVersion)
   ||(target.frontend?typeof plan.backendVersion!=='string'||!id.test(plan.backendVersion)||typeof plan.backendReaderFloor!=='string'||!id.test(plan.backendReaderFloor):plan.backendVersion!==undefined||plan.backendReaderFloor!==undefined))throw new RecoveryError('DEPLOYMENT_PLAN_OR_ROLLBACK_FLOOR_INVALID');
- return createHash('sha256').update(JSON.stringify({operationId:plan.operationId,worker:plan.worker,candidateVersion:plan.candidateVersion,candidateSource:plan.candidateSource,baselineVersion:plan.baselineVersion,baselineDeploymentId:plan.baselineDeploymentId,compatibleRollbackVersions:[...new Set(plan.compatibleRollbackVersions)].sort(),evidenceDigest:plan.evidenceDigest,...(plan.readerFloorPromotion?{readerFloorPromotion:{protocol:plan.readerFloorPromotion.protocol,previousVersion:plan.readerFloorPromotion.previousVersion}}:{}),...(target.frontend?{backendVersion:plan.backendVersion,backendReaderFloor:plan.backendReaderFloor}:{}),...(plan.assetManifests?{assetManifests:{candidate:plan.assetManifests.candidate,baseline:plan.assetManifests.baseline}}:{})})).digest('hex');
+ return createHash('sha256').update(JSON.stringify({...(plan.placementTrial?{placementTrial:true}:{}),...(plan.unroutedFrontend?{unroutedFrontend:true}:{}),...(plan.routingFrontendVersion?{routingFrontendVersion:plan.routingFrontendVersion}:{}),...(plan.routing?{routingHash:routingPlanHash(plan.routing)}:{}),operationId:plan.operationId,worker:plan.worker,candidateVersion:plan.candidateVersion,candidateSource:plan.candidateSource,baselineVersion:plan.baselineVersion,baselineDeploymentId:plan.baselineDeploymentId,compatibleRollbackVersions:[...new Set(plan.compatibleRollbackVersions)].sort(),evidenceDigest:plan.evidenceDigest,...(plan.readerFloorPromotion?{readerFloorPromotion:{protocol:plan.readerFloorPromotion.protocol,previousVersion:plan.readerFloorPromotion.previousVersion}}:{}),...(target.frontend?{backendVersion:plan.backendVersion,backendReaderFloor:plan.backendReaderFloor}:{}),...(plan.assetManifests?{assetManifests:{candidate:plan.assetManifests.candidate,baseline:plan.assetManifests.baseline}}:{})})).digest('hex');
 }
 export const phaseTransitions:Record<Phase,readonly Phase[]>={prepared:['activation-intent'],'activation-intent':['candidate-observed'],'candidate-observed':['complete','rollback-intent'],'rollback-intent':['rolled-back'],complete:[],'rolled-back':[]};
 export function validateRecoveryState(value:unknown):asserts value is RecoveryState{
@@ -89,7 +101,10 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  const monitorRecoveryObservation=options.monitorRecoveryObservation===true;
  const promotionAllowed=options.promotionAllowed??(()=>true);
  const assertPromotion=()=>{if(!promotionAllowed())throw new RecoveryError('DEPLOYMENT_CONTINUITY_FAILED');};
- const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,...(plan.readerFloorPromotion?{readerFloorPromotion:Object.freeze({...plan.readerFloorPromotion})}:{}),...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
+ const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,...(plan.routing?{routing:structuredClone(plan.routing)}:{}),...(plan.readerFloorPromotion?{readerFloorPromotion:Object.freeze({...plan.readerFloorPromotion})}:{}),...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
+ // Each reviewed domain requires inventory, preview, one write and reconciliation.
+ // Keep ordinary Worker deadlines unchanged; routing remains bounded per domain.
+ const routingAllowance=(plan.routing?.moves.length??0)*60000;
  const rollbackId=rollbackOperationId(plan.operationId);
  let state=await journal.read();if(state){validateRecoveryState(state);if(state.planHash!==hash)throw new RecoveryError('DEPLOYMENT_PLAN_CHANGED');}
  const advance=async(phase:Phase,fields:Partial<RecoveryState>={})=>{const next:RecoveryState={...state,...fields,v:1,revision:(state?.revision??0)+1,planHash:hash,phase};validateRecoveryTransition(state,next);await journal.write(state,next);state=next;};
@@ -112,13 +127,16 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  }
  if(state!.phase==='candidate-observed'){
   const observed=await observe();if(!observed)return 'observation-unavailable';if(!candidate(observed)||observed.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
-  let health:'healthy'|'unhealthy'|'unknown';try{health=promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
+  let health:'healthy'|'unhealthy'|'unknown';try{health=promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000+routingAllowance,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
+  if(health==='healthy'&&plan.placementTrial){
+   try{health=ports.trial?await bounded(65*60*1000,s=>ports.trial!(s)):'unknown';if(!promotionAllowed())health='unhealthy';}catch{health=promotionAllowed()?'unknown':'unhealthy';}
+  }
   if(health!=='healthy'&&health!=='unhealthy')return 'verification-unavailable';
   if(health==='healthy'){
    const after=await observe();if(!after)return 'observation-unavailable';if(!candidate(after)||after.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
    if(promotionAllowed()){await advance('complete');return 'complete';}
   }
-  await bounded(10000,signal=>ports.authorize(plan,'rollback',signal));const before=await observe();if(!before)return 'observation-unavailable';if(!candidate(before)||before.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
+  await bounded(10000+routingAllowance,signal=>ports.authorize(plan,'rollback',signal));const before=await observe();if(!before)return 'observation-unavailable';if(!candidate(before)||before.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
   await advance('rollback-intent');
   try{await bounded(10000,signal=>ports.deploy(plan.baselineVersion,rollbackId,signal));}catch{/* Never replay an uncertain rollback POST. */}
  }

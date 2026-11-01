@@ -15,7 +15,7 @@ type Checks={tooling:typeof verifyUploadTooling;ci:typeof verifyReleaseCi;schema
  * The enclosing activation evidence must bind `evidence` into plan.evidenceDigest.
  * CI checks honor the caller's deadline; a timeout never grants authorization.
  */
-type StateOptions={workspace:string;plan:DeploymentPlan;manifest:UploadManifest;proofPath:string;evidence:ActivationStateEvidence;lease:Pick<FileDeploymentLease,'assert'>;reader:Pick<CloudflareReleaseReader,'snapshot'>;database:{connection:string;branchId:string};checks?:Checks};
+type StateOptions={routingProgress?:()=>Promise<number>;workspace:string;plan:DeploymentPlan;manifest:UploadManifest;proofPath:string;evidence:ActivationStateEvidence;lease:Pick<FileDeploymentLease,'assert'>;reader:Pick<CloudflareReleaseReader,'snapshot'>;database:{connection:string;branchId:string};checks?:Checks};
 export function createActivationStateVerifier(options:StateOptions){
  const plan=structuredClone(options.plan),planHash=deploymentPlanHash(plan),manifest=structuredClone(options.manifest),evidence=structuredClone(options.evidence),database={...options.database};
  const {workspace,proofPath,lease,reader}=options,checks=options.checks??{tooling:verifyUploadTooling,ci:verifyReleaseCi,schema:captureReleaseSchema};
@@ -35,8 +35,8 @@ export function createActivationStateVerifier(options:StateOptions){
   const actual=await checks.schema({...database,expectedMigrations:[...manifest.evidence.schema.migrations],signal});
   assertReleaseSchema(actual,manifest.evidence.schema);assert(plan,signal);return actual;
  };
- const inventory=async(version:string,signal:AbortSignal)=>{
-  const observed=await reader.snapshot(signal);assert(plan,signal);assertActivationInventory(upload,plan,version,observed);return observed;
+ const inventory=async(version:string,signal:AbortSignal,transition=false)=>{
+  const observed=await reader.snapshot(signal);assert(plan,signal);assertActivationInventory(upload,plan,version,observed,transition&&plan.routing&&options.routingProgress?await options.routingProgress():undefined);return observed;
  };
  /** Use before activation (baseline active) or before rollback (candidate active).
   * Fresh CI is required for both retained runtime sources and the current tooling.
@@ -50,12 +50,12 @@ export function createActivationStateVerifier(options:StateOptions){
    checks.ci({workspace,source:evidence.tooling.source,pins:structuredClone(evidence.tooling.ci),signal}),
    checks.ci({workspace,source:manifest.evidence.source,pins:structuredClone(manifest.evidence.ci),signal}),
    checks.ci({workspace,source:evidence.baseline.source,pins:structuredClone(evidence.baseline.ci),signal}),
-   schema(signal),inventory(direction==='activate'?plan.baselineVersion:plan.candidateVersion,signal),
+   schema(signal),inventory(direction==='activate'?plan.baselineVersion:plan.candidateVersion,signal,direction==='rollback'),
   ]);
   for(const result of results)if(result.status==='rejected')throw result.reason;
   assert(input,signal);await checks.tooling(workspace,evidence.tooling.source,signal);assert(input,signal);
   // Recheck resources/schema after CI: don't authorize using an earlier snapshot.
-  const final=await Promise.allSettled([schema(signal),inventory(direction==='activate'?plan.baselineVersion:plan.candidateVersion,signal)]);
+  const final=await Promise.allSettled([schema(signal),inventory(direction==='activate'?plan.baselineVersion:plan.candidateVersion,signal,direction==='rollback')]);
   for(const result of final)if(result.status==='rejected')throw result.reason;
   assert(input,signal);
  };
