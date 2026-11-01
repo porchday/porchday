@@ -29,6 +29,7 @@ export function resharePayload(
 ): Content {
   return {
     text: text.trim(),
+    tags: Array.isArray(content.tags) ? content.tags : [],
     media,
     reactionSecret: createReactionSecret(),
     provenance: {
