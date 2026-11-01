@@ -15,6 +15,10 @@ part of this tooling audit. The verified application release remains in place.
 | Migration composition can overwrite environment-specific functions. | Initial migration 059 replaced the staging 057 restore-reader behavior; composition CI caught it before hosted writes. | Already corrected in PR #104 with guarded transformations of the installed function and tests against both environments. Keep this as a required composition gate, not a reason to skip staging-only tests. |
 | Different tests prove different things. | Old-tab/fresh-tab asset checks were separate from authenticated API continuity and the later signed-in calendar test. Photo/caption interaction was tested locally with synthetic transport. | Preserve those distinctions in release acceptance. A green health response or asset test alone is not feature acceptance, physical-device acceptance, installed-service-worker acceptance, or a monthly availability result. |
 
+The local focused gate is `scripts/check-release-tooling.sh`. It stops on the
+first failed step; a later passing typecheck cannot mask a failed test command.
+Hosted exact-commit CI remains mandatory.
+
 ## Verification and operating rules
 
 The regression tests cover a retained HTTP 500, malformed/oversized bodies,
