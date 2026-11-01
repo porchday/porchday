@@ -1,6 +1,6 @@
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {lstatSync,readFileSync} from 'node:fs';
+import {constants,openSync,writeFileSync,fsyncSync,closeSync,lstatSync,readFileSync} from 'node:fs';
 import {dirname,isAbsolute} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {verifyReleaseWrangler,type ReleaseWranglerReceipt} from './release-wrangler.ts';
@@ -12,8 +12,8 @@ const sha=(bytes:Buffer)=>createHash('sha256').update(bytes).digest('hex');
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 function privatePath(path:string,isDirectory=false){const s=lstatSync(path);if(!isAbsolute(path)||s.isSymbolicLink()||(isDirectory?!s.isDirectory():!s.isFile())||s.uid!==process.getuid?.()||(s.mode&0o077)!==0||!isDirectory&&s.size>2*1024*1024)throw Error('UPLOAD_PROCESS_PERMISSIONS');}
 /** Low-level subprocess runner. It does not grant release authorization or perform retries. */
-export async function runReleaseProcess(options:{args:string[];cwd:string;env:NodeJS.ProcessEnv;signal:AbortSignal;timeoutMs?:number}):Promise<{versionHint:string|null}>{
- options.signal.throwIfAborted();const timeout=options.timeoutMs??240000;if(!Number.isSafeInteger(timeout)||timeout<1||timeout>240000)throw Error('UPLOAD_PROCESS_TIMEOUT_INVALID');
+export async function runReleaseProcess(options:{args:string[];cwd:string;env:NodeJS.ProcessEnv;signal:AbortSignal;timeoutMs?:number;diagnosticPath?:string;redact?:readonly string[]}):Promise<{versionHint:string|null}>{
+ options.signal.throwIfAborted();if(options.diagnosticPath)privatePath(dirname(options.diagnosticPath),true);const timeout=options.timeoutMs??240000;if(!Number.isSafeInteger(timeout)||timeout<1||timeout>240000)throw Error('UPLOAD_PROCESS_TIMEOUT_INVALID');
  if(sha(readFileSync(guard))!==GUARD_SHA256)throw Error('UPLOAD_PROCESS_GUARD_CHANGED');
  return new Promise((resolve,reject)=>{
   const child=spawn(process.execPath,['--import',guard,...options.args],{cwd:options.cwd,env:options.env,stdio:['ignore','pipe','pipe','pipe','ipc'],shell:false});
@@ -26,6 +26,14 @@ export async function runReleaseProcess(options:{args:string[];cwd:string;env:No
   child.on('error',()=>{reason??='UPLOAD_PROCESS_START_FAILED';});
   child.once('close',(code,exitSignal)=>{
    clearTimeout(timer);if(killTimer)clearTimeout(killTimer);options.signal.removeEventListener('abort',abort);
+   if(options.diagnosticPath){
+    try{
+     let retained=output;for(const secret of options.redact??[])if(secret)retained=retained.split(secret).join('[REDACTED]');
+     const fd=openSync(options.diagnosticPath,constants.O_WRONLY|constants.O_CREAT|constants.O_EXCL|constants.O_NOFOLLOW,0o600);
+     try{writeFileSync(fd,JSON.stringify({version:1,at:new Date().toISOString(),exitCode:code,signal:exitSignal,reason:reason??null,output:retained})+'\n');fsyncSync(fd);}finally{closeSync(fd);}
+     const parent=openSync(dirname(options.diagnosticPath),constants.O_RDONLY);try{fsyncSync(parent);}finally{closeSync(parent);}
+    }catch{reject(Error('UPLOAD_PROCESS_RECEIPT_FAILED'));return;}
+   }
    if(reason||code!==0||exitSignal){reject(Error(reason??'UPLOAD_PROCESS_OUTCOME_UNKNOWN'));return;}
    const ids=[...output.matchAll(/Worker Version ID:\s*([a-f0-9-]{36})/g)].map(match=>match[1]);
    resolve({versionHint:ids.length===1&&uuid.test(ids[0])?ids[0]:null});
@@ -49,7 +57,7 @@ export function createWranglerUploadProcess(options:WranglerUploadProcessOptions
   const cli=verifyReleaseWrangler(pinned.workspace,pinned.receipt);
   const env:NodeJS.ProcessEnv={CI:'true',NO_COLOR:'1',WRANGLER_SEND_METRICS:'false',WRANGLER_LOG_SANITIZE:'true',WRANGLER_LOG_PATH:pinned.privateLogDirectory,CLOUDFLARE_API_TOKEN:pinned.apiToken,CLOUDFLARE_ACCOUNT_ID:pinned.accountId};
   for(const key of ['PATH','HOME','TMPDIR'])if(process.env[key])env[key]=process.env[key];
-  await runReleaseProcess({args:[cli,'versions','upload','--config',pinned.configPath,'--message','porchday-upload:'+operationId],cwd:pinned.workspace,env,signal});
+  await runReleaseProcess({args:[cli,'versions','upload','--config',pinned.configPath,'--message','porchday-upload:'+operationId],cwd:pinned.workspace,env,signal,diagnosticPath:pinned.privateLogDirectory+'/process-'+operationId+'.json',redact:[pinned.apiToken]});
  };
 }
 

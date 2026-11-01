@@ -58,3 +58,16 @@ describe('bounded upload subprocess',()=>{
   }finally{if(controller?.exitCode===null&&controller.signalCode===null)controller.kill('SIGKILL');rmSync(root,{recursive:true,force:true});}
  });
 });
+
+describe('private process receipts',()=>{
+ it('retains rejected output privately, redacts supplied credentials, and never overwrites evidence',async()=>{
+  const root=mkdtempSync(join(tmpdir(),'porchday-process-receipt-')),diagnosticPath=join(root,'receipt.json');
+  try{
+   await expect(runReleaseProcess({...base,diagnosticPath,redact:['synthetic-token'],args:['-e',"console.error('400 validation error synthetic-token');process.exit(2)"]})).rejects.toThrow('UPLOAD_PROCESS_OUTCOME_UNKNOWN');
+   const receipt=JSON.parse(readFileSync(diagnosticPath,'utf8'));
+   expect(receipt.exitCode).toBe(2);expect(receipt.output).toContain('400 validation error [REDACTED]');expect(receipt.output).not.toContain('synthetic-token');
+   const before=readFileSync(diagnosticPath,'utf8');
+   await expect(runReleaseProcess({...base,diagnosticPath,args:['-e','process.exit(0)']})).rejects.toThrow('UPLOAD_PROCESS_RECEIPT_FAILED');expect(readFileSync(diagnosticPath,'utf8')).toBe(before);
+  }finally{rmSync(root,{recursive:true,force:true});}
+ });
+});

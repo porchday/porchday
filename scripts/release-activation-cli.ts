@@ -1,3 +1,4 @@
+import {deploymentWriteRecorder} from './deployment-write-receipts.ts';
 import {withBrowserAcceptance,type BrowserAcceptance} from './release-browser-gate.ts';
 import {createContinuityGate} from './release-continuity-gate.ts';
 import {waitForMonitorRecovery} from './release-monitor-recovery-wait.ts';
@@ -103,8 +104,9 @@ async function executeScopedActivationManifest(input:ActivationManifest,env:Node
  verifyActivationReview(plan,upload,e.proofPath,review);
  const accountId=env.CLOUDFLARE_ACCOUNT_ID??'',apiToken=env.CLOUDFLARE_API_TOKEN??'',connection=env[target.environment==='staging'?'PORCHDAY_STAGING_DATABASE_MIGRATION_URL':'PORCHDAY_PRODUCTION_DATABASE_MIGRATION_URL']??'';
  const database={connection,branchId:upload.evidence.databaseBranchId};validateReleaseDatabaseTarget(connection,database.branchId);
- const reader=new CloudflareReleaseReader({accountId,apiToken,queues:upload.queues}),client=new CloudflareDeploymentClient({accountId,apiToken,worker:plan.worker});
+ const reader=new CloudflareReleaseReader({accountId,apiToken,queues:upload.queues});
  const lease=FileDeploymentLease.acquire(e.root,plan);
+ const client=new CloudflareDeploymentClient({accountId,apiToken,worker:plan.worker,retain:deploymentWriteRecorder(e.proofDirectory,plan,()=>lease.assert(plan))});
  try{
   if(await lease.resumeFinalization(journal)){if((await journal.read())?.phase==='complete')gate.assertPromotion();return{status:'resumed-historical-finalization' as const,historical:true,operationId:plan.operationId};}
   const common={workspace:e.workspace,plan,manifest:upload,proofPath:e.proofPath,review,lease,journal,reader,database};

@@ -33,6 +33,7 @@ export class FileUploadLease{
   try{db=new DatabaseSync(database);try{db.exec('PRAGMA busy_timeout=0; BEGIN IMMEDIATE');}catch(error){db.close();throw error;}}catch{throw Error('UPLOAD_LEASE_BUSY');}
   try{
    if(existsSync(join(root,'release-upload-completed-'+plan.operationId)))throw Error('UPLOAD_ALREADY_COMPLETED');
+   if(existsSync(join(root,'release-upload-rejected-absent-'+plan.operationId)))throw Error('UPLOAD_ALREADY_REJECTED');
    if(existsSync(join(root,'release-upload-rejected-'+plan.operationId)))throw Error('UPLOAD_ALREADY_REJECTED');
    if(existsSync(join(root,'release-upload-cancelled-'+plan.operationId)))throw Error('UPLOAD_ALREADY_CANCELLED');
    if(sha(text(join(root,'latest-verified-deployment.json')))!==plan.canonicalSha256)throw Error('UPLOAD_CANONICAL_CHANGED');
@@ -82,6 +83,25 @@ export class FileUploadLease{
    if(existsSync(archive))throw Error('UPLOAD_ALREADY_REJECTED');
    if(!existing)exclusive(join(parent,'upload-rejected.json'),record,parent);
    this.assert(signal);renameSync(parent,archive);sync(this.root);return record;
+  }finally{this.inFlight=false;if(!existsSync(join(this.root,'deployment-lock')))this.close();}
+ }
+ /** Resolve an explicitly rejected POST with no created version. The caller must
+  * retain rejection evidence and bracket a complete version-catalogue absence check
+  * with unchanged provider inventory. Missing responses, timeouts and ambiguous
+  * catalogues are not rejection evidence. This never authorizes replay. */
+ async rejectAbsent(verify:(plan:Readonly<UploadPlan>,signal:AbortSignal)=>Promise<({httpStatus:400|401|403|413|422}|{providerErrorCode:10305})&{operationId:string;rejectionEvidenceSha256:string;beforeInventorySha256:string;afterInventorySha256:string;catalogueComplete:true;candidateAbsent:true;evidenceDigest:string}>,signal:AbortSignal):Promise<void>{
+  this.assert(signal);if(this.inFlight)throw Error('UPLOAD_IN_PROGRESS');if(!this.intent())throw Error('UPLOAD_INTENT_REQUIRED');if(this.verified()||this.rejected())throw Error('UPLOAD_ALREADY_RESOLVED');this.inFlight=true;
+  try{
+   const result=await verify(this.plan,signal);this.assert(signal);
+   const rejectionKey=result&&'httpStatus' in result?'httpStatus':'providerErrorCode';
+   const explicitRejection=result&&('httpStatus' in result?[400,401,403,413,422].includes(result.httpStatus):result.providerErrorCode===10305);
+   if(!result||Object.keys(result).sort().join(',')!==['afterInventorySha256','beforeInventorySha256','candidateAbsent','catalogueComplete','evidenceDigest',rejectionKey,'operationId','rejectionEvidenceSha256'].sort().join(',')||result.operationId!==this.plan.operationId||!explicitRejection||result.candidateAbsent!==true||result.catalogueComplete!==true||![result.rejectionEvidenceSha256,result.beforeInventorySha256,result.afterInventorySha256,result.evidenceDigest].every(x=>typeof x==='string'&&/^[a-f0-9]{64}$/.test(x))||result.beforeInventorySha256!==result.afterInventorySha256)throw Error('UPLOAD_ABSENT_REJECTION_INVALID');
+   const parent=join(this.root,'deployment-lock'),archive=join(this.root,'release-upload-rejected-absent-'+this.plan.operationId),path=join(parent,'upload-rejected-absent.json');
+   const record={v:1,planHash:this.owner.planHash,...result},existing=existsSync(path);
+   if(readdirSync(parent).sort().join(',')!==(existing?'owner.json,upload-intent.json,upload-rejected-absent.json':'owner.json,upload-intent.json'))throw Error('UPLOAD_DIRECTORY_CHANGED');
+   if(existing&&text(path)!==JSON.stringify(record)+'\n')throw Error('UPLOAD_REJECTION_CHANGED');
+   if(existsSync(archive))throw Error('UPLOAD_ALREADY_REJECTED');
+   if(!existing)exclusive(path,record,parent);this.assert(signal);renameSync(parent,archive);sync(this.root);
   }finally{this.inFlight=false;if(!existsSync(join(this.root,'deployment-lock')))this.close();}
  }
  /** Read historical completion after a crash at archive; never permits a new send. */
