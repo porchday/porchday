@@ -87,66 +87,28 @@ REVOKE ALL ON FUNCTION app.journal_child_profile(),app.check_child_post_author()
 
 -- Keep the existing restore actions; stale child data and revoked delegates
 -- must not reappear when replaying an older backup.
-CREATE OR REPLACE FUNCTION app.replay_safety_batch(events jsonb) RETURNS integer LANGUAGE plpgsql SET search_path=pg_catalog,app,public AS $$
-DECLARE event jsonb;d jsonb;n integer:=0;kind text;object uuid;
+-- Extend the installed reader instead of replacing it with an older copy.
+-- Staging may include the privacy-operation marker branch from migration 057.
+DO $migration$
+DECLARE definition text; old_fragment text; new_fragment text; replacements text[][];
 BEGIN
- IF NOT has_schema_privilege(session_user,'app','CREATE') OR NOT EXISTS(SELECT FROM app.safety_journal_state WHERE id AND restore_quarantined) THEN RAISE EXCEPTION 'RESTORE_QUARANTINE_REQUIRED'; END IF;
- IF jsonb_typeof(events)<>'array' OR jsonb_array_length(events)>500 THEN RAISE EXCEPTION 'INVALID_JOURNAL'; END IF;
- PERFORM set_config('app.restore_replay','on',true);
- FOR event IN SELECT value FROM jsonb_array_elements(events) LOOP
-  d:=event->'decision';kind:=d->>'kind';
-  CASE d->>'action'
-  WHEN 'delete' THEN
-   object:=(d->>'id')::uuid;
-   IF kind='members' THEN
-    -- A replayed member deletion must not leave a restored owned group behind.
-    DELETE FROM app.groups WHERE owner_id=object;DELETE FROM app.members WHERE id=object;
-    DELETE FROM public.auth_user WHERE id=object::text;
-   ELSIF kind IN('posts','comments','groups','media_assets','child_profiles') THEN EXECUTE format('DELETE FROM app.%I WHERE id=$1',kind) USING object;
-   ELSE RAISE EXCEPTION 'INVALID_JOURNAL_KIND'; END IF;
-   INSERT INTO app.deletion_ledger(kind,object_id) VALUES(kind,object) ON CONFLICT DO NOTHING;
-  WHEN 'deadline' THEN
-   IF kind NOT IN('posts','comments') THEN RAISE EXCEPTION 'INVALID_JOURNAL_KIND'; END IF;
-   EXECUTE format('UPDATE app.%I SET expires_at=least(expires_at,$1) WHERE id=$2 AND(expires_at IS NULL OR expires_at>$1)',kind) USING(d->>'expires_at')::timestamptz,(d->>'id')::uuid;
-  WHEN 'revision' THEN
-   IF(d->>'revision')::integer<1 THEN RAISE EXCEPTION 'INVALID_JOURNAL_REVISION'; END IF;
-   IF kind IN('posts','comments') THEN
-    EXECUTE format('DELETE FROM app.%I WHERE id=$1 AND coalesce((envelope->''context''->>''revision'')::integer,0)<$2',kind) USING(d->>'id')::uuid,(d->>'revision')::integer;
-   ELSIF kind='child_profiles' THEN DELETE FROM app.child_profiles WHERE id=(d->>'id')::uuid AND revision<(d->>'revision')::integer;
-   ELSIF kind='emoji_libraries' THEN
-    INSERT INTO app.emoji_libraries(member_id,envelope,revision) SELECT (d->>'id')::uuid,NULL,(d->>'revision')::integer WHERE EXISTS(SELECT FROM app.members WHERE id=(d->>'id')::uuid)
-    ON CONFLICT(member_id) DO UPDATE SET envelope=NULL,revision=excluded.revision WHERE emoji_libraries.revision<excluded.revision;
-   ELSIF kind='profiles' THEN UPDATE app.profiles SET envelope=NULL WHERE member_id=(d->>'id')::uuid AND coalesce((envelope->'context'->>'revision')::integer,0)<(d->>'revision')::integer;
-   ELSIF kind='groups' THEN UPDATE app.groups SET envelope='{}' WHERE id=(d->>'id')::uuid AND coalesce((envelope->'context'->>'revision')::integer,0)<(d->>'revision')::integer;
-   ELSE RAISE EXCEPTION 'INVALID_JOURNAL_KIND'; END IF;
-  WHEN 'media_object' THEN
-   IF d->>'key' !~ '^media/' OR length(d->>'key')>1024 THEN RAISE EXCEPTION 'INVALID_JOURNAL_KEY'; END IF;
-   INSERT INTO app.deletion_outbox(object_key,reason) VALUES(d->>'key','restore_reconciliation') ON CONFLICT(object_key) DO UPDATE SET completed_at=NULL,next_retry=now();
-  WHEN 'reaction' THEN
-   IF kind NOT IN('post_reactions','comment_reactions') THEN RAISE EXCEPTION 'INVALID_JOURNAL_KIND'; END IF;
-   EXECUTE format('DELETE FROM app.%I WHERE %I=$1 AND member_id=$2 AND reaction_tag=$3',kind,CASE WHEN kind='post_reactions' THEN 'post_id' ELSE 'comment_id' END) USING(d->>'target')::uuid,(d->>'member')::uuid,d->>'tag';
-  WHEN 'child_delegate' THEN UPDATE app.child_profiles SET delegates=array_remove(delegates,(d->>'member')::uuid) WHERE id=(d->>'id')::uuid;
-  WHEN 'connection' THEN DELETE FROM app.connections WHERE member_a=(d->>'a')::uuid AND member_b=(d->>'b')::uuid;
-  WHEN 'membership' THEN DELETE FROM app.group_memberships WHERE group_id=(d->>'group')::uuid AND member_id=(d->>'member')::uuid;
-  WHEN 'group_owner' THEN
-   IF EXISTS(SELECT FROM app.groups WHERE id=(d->>'id')::uuid) AND NOT EXISTS(SELECT FROM app.members WHERE id=(d->>'owner')::uuid) THEN RAISE EXCEPTION 'RESTORE_OWNER_MISSING'; END IF;
-   UPDATE app.groups SET owner_id=(d->>'owner')::uuid WHERE id=(d->>'id')::uuid;
-  WHEN 'group_role' THEN UPDATE app.group_memberships SET role=d->>'role' WHERE group_id=(d->>'group')::uuid AND member_id=(d->>'member')::uuid;
-  WHEN 'recipient' THEN DELETE FROM app.post_recipients WHERE post_id=(d->>'post')::uuid AND device_id=(d->>'device')::uuid;
-  WHEN 'block' THEN
-   IF EXISTS(SELECT FROM app.members WHERE id=(d->>'actor')::uuid) AND EXISTS(SELECT FROM app.members WHERE id=(d->>'target')::uuid) THEN INSERT INTO app.blocks(actor,target) VALUES((d->>'actor')::uuid,(d->>'target')::uuid) ON CONFLICT DO NOTHING; END IF;
-  WHEN 'device' THEN UPDATE app.device_keys SET revoked_at=coalesce(revoked_at,now()) WHERE id=(d->>'id')::uuid;
-  WHEN 'status' THEN UPDATE app.members SET status=d->>'status' WHERE id=(d->>'id')::uuid;
-  WHEN 'security_hold' THEN PERFORM app.set_security_hold((d->>'id')::uuid);
-  WHEN 'identity' THEN DELETE FROM public.auth_user WHERE id=d->>'id';
-  WHEN 'key_backup' THEN DELETE FROM app.encrypted_key_backups WHERE member_id=(d->>'id')::uuid;
-  ELSE RAISE EXCEPTION 'INVALID_JOURNAL_ACTION';
-  END CASE;
-  INSERT INTO app.safety_journal(sequence,id,occurred_at,decision) VALUES((event->>'sequence')::bigint,(event->>'id')::uuid,(event->>'occurred_at')::timestamptz,d) ON CONFLICT(sequence) DO UPDATE SET id=excluded.id,occurred_at=excluded.occurred_at,decision=excluded.decision;
-  n:=n+1;
+ SELECT pg_get_functiondef('app.replay_safety_batch(jsonb)'::regprocedure) INTO definition;
+ replacements:=ARRAY[
+  ARRAY[$old$kind IN('posts','comments','groups','media_assets')$old$,$new$kind IN('posts','comments','groups','media_assets','child_profiles')$new$],
+  ARRAY[$old$ELSIF kind='emoji_libraries' THEN$old$,$new$ELSIF kind='child_profiles' THEN DELETE FROM app.child_profiles WHERE id=(d->>'id')::uuid AND revision<(d->>'revision')::integer;
+   ELSIF kind='emoji_libraries' THEN$new$],
+  ARRAY[$old$WHEN 'connection' THEN$old$,$new$WHEN 'child_delegate' THEN UPDATE app.child_profiles SET delegates=array_remove(delegates,(d->>'member')::uuid) WHERE id=(d->>'id')::uuid;
+  WHEN 'connection' THEN$new$]
+ ];
+ FOR i IN 1..array_length(replacements,1) LOOP
+  old_fragment:=replacements[i][1]; new_fragment:=replacements[i][2];
+  IF (length(definition)-length(replace(definition,old_fragment,'')))/length(old_fragment)<>1 THEN
+   RAISE EXCEPTION 'UNRECOGNIZED_RESTORE_READER';
+  END IF;
+  definition:=replace(definition,old_fragment,new_fragment);
  END LOOP;
- RETURN n;
-END $$;
+ EXECUTE definition;
+END $migration$;
 
 -- Include the owner's encrypted child records in the existing bounded profile export.
 CREATE OR REPLACE FUNCTION app.export_window(section text,snapshot_at timestamptz,after_id text,take_count integer,exact_id text) RETURNS TABLE(export_id text,item jsonb) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,app AS $$
