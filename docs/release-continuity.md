@@ -466,3 +466,19 @@ The old operation cannot recur. A crash after recording proof requires fresh
 provider evidence before finishing the archive. This is not successful release
 acceptance: any subsequent release requires a newly reviewed plan and the full
 continuity/browser gates, with the failed attempt retained as history.
+
+### Provider write receipts
+
+New activations through the maintained CLI retain private
+`provider-write-<operation>-intent.json` and `-result.json` files in the operation's
+proof directory. Intent persistence is exclusive and fsynced before dispatch.
+Results include bounded/redacted provider diagnostics or transport ambiguity;
+errors printed to the caller remain generic. The same recorder covers rollback.
+An existing intent cannot be overwritten to retry a POST. A missing result after
+interruption remains unknown; reconcile the original operation using its journal
+and provider identity rather than repeating the mutation. Historical operations
+are not rewritten to invent receipts they never captured.
+
+See [the November 1 process audit](evidence/release-process-audit-2026-11-01.md)
+for the failure that motivated this change and the distinction between transport,
+continuity, browser and feature acceptance evidence.
