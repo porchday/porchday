@@ -38,7 +38,7 @@ async function photo(owner:string) {
 async function grant(owner:string,p:string,readers:string[],album:string|null=null,audience=album?"album":"connections") {
   const id=randomUUID(), media=randomUUID();
   const recipients=[...new Set([owner,...readers])].sort().map(memberId=>({memberId,deviceId:devices.get(memberId)}));
-  const context={id,kind:"photo",authorId:owner,authorDeviceId:devices.get(owner),parentId:p,groupId:album,audience,expiresAt:null,revision:1};
+  const context={id,kind:"photo",photoDate:"2026-10-31",authorId:owner,authorDeviceId:devices.get(owner),parentId:p,groupId:album,audience,expiresAt:null,revision:1};
   const envelope={context,recipients,ciphertext:"SQL fixture only"};
   const mediaEnvelope={context:{...context,id:media,kind:"media"},recipients};
   await db`insert into app.media_assets(id,owner_id,object_key,envelope,byte_size,state) values(${media},${owner},${"synthetic/"+media},${db.json(mediaEnvelope)},100,'ready')`;
