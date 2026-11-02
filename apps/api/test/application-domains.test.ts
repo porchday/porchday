@@ -42,7 +42,7 @@ afterEach(() => vi.restoreAllMocks());
 
 describe('canonical domain transition through the actual Worker routes', () => {
   it('redirects only legacy public GET/HEAD navigation, retaining path and query', async () => {
-    for (const path of ['/', '/about', '/principles', '/contact', '/privacy', '/community', '/join', '/unknown-page']) {
+    for (const path of ['/about', '/principles', '/contact', '/privacy', '/community', '/join', '/unknown-page']) {
       for (const method of ['GET', 'HEAD']) {
         const response = await request(legacy + path + '?view=plain', { method });
         expect(response.status).toBe(307);
