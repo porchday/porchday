@@ -1,12 +1,21 @@
 import SwiftUI
 
 enum PhotoCalendar {
-    static func day(_ date: Date, calendar: Calendar = .current) -> String {
-        let c = calendar.dateComponents([.year, .month, .day], from: date)
+    // API day keys are Gregorian ISO dates even when the device displays a
+    // different calendar (for example Buddhist years). Keep its local timezone.
+    static var calendar: Calendar {
+        var value = Calendar(identifier: .gregorian)
+        value.timeZone = .current
+        value.firstWeekday = Calendar.current.firstWeekday
+        return value
+    }
+    static func day(_ date: Date, calendar: Calendar = PhotoCalendar.calendar) -> String {
+        var iso = Calendar(identifier: .gregorian); iso.timeZone = calendar.timeZone
+        let c = iso.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", c.year!, c.month!, c.day!)
     }
-    static func month(_ date: Date, calendar: Calendar = .current) -> Date { calendar.date(from: calendar.dateComponents([.year, .month], from: date))! }
-    static func cells(_ month: Date, calendar: Calendar = .current) -> [Date?] {
+    static func month(_ date: Date, calendar: Calendar = PhotoCalendar.calendar) -> Date { calendar.date(from: calendar.dateComponents([.year, .month], from: date))! }
+    static func cells(_ month: Date, calendar: Calendar = PhotoCalendar.calendar) -> [Date?] {
         let first = self.month(month, calendar: calendar)
         let offset = (calendar.component(.weekday, from: first) - calendar.firstWeekday + 7) % 7
         let days = calendar.range(of: .day, in: .month, for: first)!.count
@@ -38,7 +47,7 @@ enum PhotoCalendar {
         busy.insert(key); errors[key] = nil
         defer { busy.remove(key) }
         do {
-            let end = Calendar.current.date(byAdding: .month, value: 1, to: month)!
+            let end = PhotoCalendar.calendar.date(byAdding: .month, value: 1, to: month)!
             var query = URLComponents(); query.queryItems = [URLQueryItem(name: "start", value: PorchDate.string(month)), URLQueryItem(name: "end", value: PorchDate.string(end))]
             if more, let cursor = next[key] { query.queryItems! += [URLQueryItem(name: "after_at", value: cursor["at"].string), URLQueryItem(name: "after_id", value: cursor["id"].string)] }
             let result = try await model.api.social("/calendar?" + query.percentEncodedQuery!)
@@ -87,7 +96,7 @@ struct PhotosCalendarView: View {
                     LazyVStack(spacing: 24) {
                         Button("Load earlier month") { earlier(reader) }.onAppear { if initialized { earlier(reader) } }
                         ForEach(Array((0..<months).reversed()), id: \.self) { offset in
-                            let month = Calendar.current.date(byAdding: .month, value: -offset, to: current)!
+                            let month = PhotoCalendar.calendar.date(byAdding: .month, value: -offset, to: current)!
                             CalendarMonthView(month: month, store: store, author: author, tag: tag) { selected = $0 }.id(PhotoCalendar.day(month))
                         }
                     }.padding()
@@ -100,7 +109,7 @@ struct PhotosCalendarView: View {
         }
     }
     private func earlier(_ reader: ScrollViewProxy) {
-        let anchor = PhotoCalendar.day(Calendar.current.date(byAdding: .month, value: -(months - 1), to: current)!)
+        let anchor = PhotoCalendar.day(PhotoCalendar.calendar.date(byAdding: .month, value: -(months - 1), to: current)!)
         months += 1
         DispatchQueue.main.async { reader.scrollTo(anchor, anchor: .top) }
     }
@@ -130,7 +139,7 @@ struct CalendarMonthView: View {
                                         if chosen.1 != .null { EncryptedMediaView(media: chosen.1, thumbnail: true) }
                                         else { Text(chosen.0.text).font(.caption2).lineLimit(4).padding(.top, 20) }
                                     }
-                                    Text("\(Calendar.current.component(.day, from: date))").font(.caption.bold()).padding(3).background(.regularMaterial)
+                                    Text("\(PhotoCalendar.calendar.component(.day, from: date))").font(.caption.bold()).padding(3).background(.regularMaterial)
                                 }.frame(height: 86).clipped()
                             }.buttonStyle(.plain).accessibilityLabel(date.formatted(date: .complete, time: .omitted) + ", \(rows.count) posts")
                         } else { Color.clear.frame(height: 86) }
@@ -178,5 +187,5 @@ struct CalendarDayView: View {
         }.navigationTitle("Day").toolbar { Button("Done") { dismiss() } }
         .task(id: monthKey) { if store.entries[monthKey] == nil { await store.load(current, model: model) } }
     }
-    private func move(_ offset: Int) { date = Calendar.current.date(byAdding: .day, value: offset, to: current) }
+    private func move(_ offset: Int) { date = PhotoCalendar.calendar.date(byAdding: .day, value: offset, to: current) }
 }

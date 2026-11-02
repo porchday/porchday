@@ -10,6 +10,12 @@ final class AppleParityTests: XCTestCase {
         XCTAssertEqual(PhotoCalendar.day(cells.last!, calendar: calendar), "2026-11-30")
         XCTAssertEqual(Set(cells.map { PhotoCalendar.day($0, calendar: calendar) }).count, 30)
     }
+    func testCalendarAPIKeysStayGregorianWithBuddhistDisplayCalendar() throws {
+        var calendar = Calendar(identifier: .buddhist)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let date = try XCTUnwrap(calendar.date(from: DateComponents(year: 2569, month: 11, day: 1)))
+        XCTAssertEqual(PhotoCalendar.day(date, calendar: calendar), "2026-11-01")
+    }
     func testTagsRejectInvalidIdentitiesAndKeepMemberChildDistinct() {
         let id = UUID().uuidString.lowercased()
         XCTAssertNil(PersonTag(.object(["id": .string("bad"), "kind": .string("member"), "label": .string("someone")])))
