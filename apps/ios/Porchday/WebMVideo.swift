@@ -7,6 +7,9 @@ import WebKit
     let view: WKWebView
     private var ready: CheckedContinuation<Void, Error>?
     private var deadline: Task<Void, Never>?
+    private struct Frame: Sendable { let width: Int; let height: Int; let poster: String }
+    private var decoding: CheckedContinuation<Frame, Error>?
+    private var decodeDeadline: Task<Void, Never>?
     #if os(macOS)
     private var preparationHost: NSWindow?
     #else
@@ -67,7 +70,15 @@ import WebKit
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finish() }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { finish(error) }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finish(error) }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { finish(PorchError.message("Video decoder stopped.")) }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        let error = PorchError.message("Video decoder stopped.")
+        finish(error); finishDecode(.failure(error))
+    }
+    private func finishDecode(_ result: Result<Frame, Error>) {
+        decodeDeadline?.cancel(); decodeDeadline = nil
+        let continuation = decoding; decoding = nil
+        continuation?.resume(with: result)
+    }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         let url = navigationAction.request.url
         let local = url?.absoluteString == "about:blank" || (ready != nil && url == Self.origin)
@@ -91,17 +102,21 @@ import WebKit
         try await navigationLoaded()
         try Task.checkCancellation()
         // Arguments are structured values, never interpolated into JavaScript/HTML.
-        let result = try await view.callAsyncJavaScript("""
+        let frame: Frame = try await withCheckedThrowingContinuation { continuation in
+            decoding = continuation
+            decodeDeadline = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(20))
+                guard !Task.isCancelled else { return }
+                self?.finishDecode(.failure(PorchError.message("Video decoding timed out. Try an MP4 with H.264 video.")))
+            }
+            view.callAsyncJavaScript("""
         const v = document.querySelector('video');
         return await new Promise((resolve, reject) => {
           const timer = setTimeout(() => reject(new Error('Video decoding timed out: ready=' + v.readyState + ', network=' + v.networkState + ', paused=' + v.paused + ', supported=' + v.canPlayType('video/webm') + ', visibility=' + document.visibilityState)), 15000);
-          const fail = () => { clearTimeout(timer); reject(new Error('This device cannot decode this WebM video')); };
-          v.onerror = fail;
-          v.onloadedmetadata = () => {
-            if (!(v.videoWidth > 0 && v.videoHeight > 0 && v.videoWidth <= 3840 && v.videoHeight <= 3840 && v.videoWidth*v.videoHeight <= 3840*2160 && !Number.isNaN(v.duration) && v.duration > 0)) {
-              v.pause(); v.removeAttribute('src'); v.load(); fail();
-            }
-          };
+          const fail = (reason) => { clearTimeout(timer); reject(new Error('WebM decoding failed: ' + reason + '; ready=' + v.readyState + ', code=' + (v.error?.code || 0) + ', width=' + v.videoWidth + ', height=' + v.videoHeight + ', duration=' + v.duration)); };
+          v.onerror = () => fail('media');
+          // Duration may be unknown at metadata time. Validate with the first
+          // decoded frame, like the web client, rather than rejecting it early.
           // WebKit's frame callback guarantees canvas sees a decoded frame.
           // https://bugs.webkit.org/show_bug.cgi?id=236604
           let captured = false;
@@ -109,7 +124,7 @@ import WebKit
             if (captured || v.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
             try {
               const w = v.videoWidth, h = v.videoHeight;
-              if (!(w > 0 && h > 0 && w <= 3840 && h <= 3840 && w*h <= 3840*2160 && !Number.isNaN(v.duration) && v.duration > 0)) return fail();
+              if (!(w > 0 && h > 0 && w <= 3840 && h <= 3840 && w*h <= 3840*2160 && !Number.isNaN(v.duration) && v.duration > 0)) return fail('invalid decoded dimensions or duration');
               const c = document.createElement('canvas'); const scale = Math.min(1, 320 / Math.max(w,h));
               c.width = Math.max(1, Math.round(w*scale)); c.height = Math.max(1, Math.round(h*scale));
               c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
@@ -117,7 +132,7 @@ import WebKit
               clearTimeout(timer); v.onerror = null; v.onloadedmetadata = null; v.onloadeddata = null;
               v.pause(); v.currentTime = 0; v.muted = false;
               resolve({width:w, height:h, poster:c.toDataURL('image/jpeg', 0.8).split(',')[1]});
-            } catch (_) { fail(); }
+            } catch (_) { fail('thumbnail'); }
           };
           v.requestVideoFrameCallback(capture);
           // Match the web client's decoded-data contract as well: native
@@ -131,18 +146,29 @@ import WebKit
           v.load();
           // WebKit can defer offscreen preload. Explicit muted decoding obtains
           // the first frame, then the handler pauses before presenting controls.
-          v.play().catch(fail);
+          v.play().catch(() => { /* Preload may still decode without autoplay. */ });
         });
-        """, arguments: ["encoded": bytes.base64EncodedString()], in: nil, contentWorld: .page)
+        """, arguments: ["encoded": bytes.base64EncodedString()], in: nil, contentWorld: .page) { [weak self] result in
+                switch result {
+                case .failure(let error): self?.finishDecode(.failure(error))
+                case .success(let value):
+                    guard let metadata = value as? [String: Any], let width = metadata["width"] as? Int,
+                          let height = metadata["height"] as? Int, let poster = metadata["poster"] as? String else {
+                        self?.finishDecode(.failure(PorchError.message("Invalid decoded video metadata."))); return
+                    }
+                    self?.finishDecode(.success(Frame(width: width, height: height, poster: poster)))
+                }
+            }
+        }
         try Task.checkCancellation()
-        guard let metadata = result as? [String: Any], let width = metadata["width"] as? Int, let height = metadata["height"] as? Int,
-              let poster = metadata["poster"] as? String, let image = Data(base64Encoded: poster), image.count <= 200_000 else { throw PorchError.message("Invalid decoded video metadata.") }
+        guard let image = Data(base64Encoded: frame.poster), image.count <= 200_000 else { throw PorchError.message("Invalid decoded video thumbnail.") }
         _ = try PhotoPipeline.safelyDecode(image)
-        return PreparedPhoto(bytes: bytes, width: width, height: height, mime: "video/webm", poster: poster)
+        return PreparedPhoto(bytes: bytes, width: frame.width, height: frame.height, mime: "video/webm", poster: frame.poster)
     }
     func stop() {
         releasePreparationHost()
         finish(CancellationError())
+        finishDecode(.failure(CancellationError()))
         view.stopLoading()
         view.evaluateJavaScript("const v=document.querySelector('video'); if(v){v.pause();v.removeAttribute('src');v.load();if(v.dataset.mediaURL)URL.revokeObjectURL(v.dataset.mediaURL);}")
         view.loadHTMLString("", baseURL: nil)
