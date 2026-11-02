@@ -60,7 +60,7 @@ final class PrivateMediaFile {
         let asset = AVURLAsset(url: file.url)
         guard try await asset.load(.isPlayable), let track = try await asset.loadTracks(withMediaType: .video).first else { throw PorchError.message("This Apple device cannot play this codec. Choose an H.264 MP4 video.") }
         let size = try await track.load(.naturalSize), duration = try await asset.load(.duration).seconds
-        guard size.width > 0, size.height > 0, size.width <= 3840, size.height <= 3840, size.width * size.height <= 3840 * 2160, duration.isFinite, duration > 0 else { throw PorchError.message("Choose a playable video up to 4K resolution.") }
+        guard size.width > 0, size.height > 0, size.width <= 3840, size.height <= 3840, size.width * size.height <= 3840 * 2160, !duration.isNaN, duration > 0 else { throw PorchError.message("Choose a playable video up to 4K resolution.") }
         let generator = AVAssetImageGenerator(asset: asset); generator.appliesPreferredTrackTransform = true; generator.maximumSize = CGSize(width: 320, height: 320)
         let (frame, _) = try await generator.image(at: .zero)
         let poster = try AppleImageEncoder.encode(AppleImageEncoder.opaque(frame), jpeg: true)
