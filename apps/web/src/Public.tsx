@@ -175,7 +175,7 @@ export function AuthPage({
                     ? "Verify your email"
                     : "Log in"}
           </h1>
-          <p>
+          {(join || forgot || reset || verify) && <p>
             {join
               ? "An invitation is required. You must be 18 or older to join. If your invitation email names a Friend or Family connection, accepting and verifying your email creates that connection automatically. You will share future posts for that audience; you can change your label or disconnect later."
               : forgot
@@ -184,8 +184,8 @@ export function AuthPage({
                   ? "Resetting your password won’t unlock your encrypted history or restore lost encryption keys."
                   : verify
                     ? "Open the verification link in your email to continue."
-                    : "Enter your email and password."}
-          </p>
+                    : null}
+          </p>}
           {done ? (
             <div className="form-success">
               <Icon name="mail" size={35} />
