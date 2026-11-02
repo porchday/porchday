@@ -14,7 +14,7 @@ import WebKit
     #endif
     static let html = """
     <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src blob:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
     <style>html,body{margin:0;background:#000;height:100%}video{width:100%;height:100%;object-fit:contain}</style>
     <video controls playsinline preload="auto"></video>
     """
@@ -89,7 +89,7 @@ import WebKit
         let result = try await view.callAsyncJavaScript("""
         const v = document.querySelector('video');
         return await new Promise((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error('Video decoding timed out')), 15000);
+          const timer = setTimeout(() => reject(new Error('Video decoding timed out: ready=' + v.readyState + ', network=' + v.networkState + ', paused=' + v.paused + ', supported=' + v.canPlayType('video/webm') + ', visibility=' + document.visibilityState)), 15000);
           const fail = () => { clearTimeout(timer); reject(new Error('This device cannot decode this WebM video')); };
           v.onerror = fail;
           v.onloadeddata = () => {
@@ -105,7 +105,9 @@ import WebKit
             } catch (_) { fail(); }
           };
           v.muted = true;
-          v.src = 'data:video/webm;base64,' + encoded;
+          const raw = atob(encoded); const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
+          const url = URL.createObjectURL(new Blob([bytes], {type:'video/webm'}));
+          v.dataset.mediaURL = url; v.src = url;
           v.load();
           // WebKit can defer offscreen preload. Explicit muted decoding obtains
           // the first frame, then the handler pauses before presenting controls.
@@ -122,7 +124,7 @@ import WebKit
         releasePreparationHost()
         finish(CancellationError())
         view.stopLoading()
-        view.evaluateJavaScript("const v=document.querySelector('video'); if(v){v.pause();v.removeAttribute('src');v.load();}")
+        view.evaluateJavaScript("const v=document.querySelector('video'); if(v){v.pause();v.removeAttribute('src');v.load();if(v.dataset.mediaURL)URL.revokeObjectURL(v.dataset.mediaURL);}")
         view.loadHTMLString("", baseURL: nil)
     }
 }
