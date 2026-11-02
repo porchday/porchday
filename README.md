@@ -21,16 +21,15 @@ Google/GitHub sign-in, Datadog and technical proof of humanity are deferred. The
 
 The [federation proposal](design/federation-proposal.md) explores participation through independently operated servers while keeping the hosted experience simple. It is a discussion draft for future work; federation is not implemented.
 
-## Install the macOS preview
+## Native Apple apps
 
-The standalone Mac app requires **macOS 13 or later**, supports **Apple silicon and Intel**, and uses Apple WebKit without Chrome.
-
-1. [Download Porchday for macOS](https://github.com/porchday/porchday/releases/download/macos-v0.1.0-preview.1/Porchday-0.1.0-macOS-universal.zip).
-2. Unzip the download and drag **Porchday.app** into **Applications**.
-3. Open Porchday. This preview is ad-hoc signed, **not Apple-notarized**. If macOS blocks it, attempt to open it, then use **System Settings → Privacy & Security → Open Anyway** for this app.
-4. Sign in with your Porchday account. Chrome's login and encryption keys do not transfer; have your **encryption recovery secret** ready to restore existing content. Keep your working browser installation until you confirm your history opens.
-
-The app requires an internet connection. It provides native file and save dialogs, but compatibility with the macOS Photos library still needs device verification; this preview is not a confirmed fix for Chrome's photo-picker error. See the [installation and build guide](apps/macos/README.md) for checksums, source-build commands and limitations, or the [release page](https://github.com/porchday/porchday/releases/tag/macos-v0.1.0-preview.1) for release assets.
+The iOS and macOS apps share native SwiftUI screens and encryption code under
+`org.porchday.app`. The Mac WebKit preview is retired; native release verification
+and TestFlight distribution are tracked in [#49](https://github.com/porchday/porchday/issues/49)
+and [#114](https://github.com/porchday/porchday/issues/114).
+See the [Apple build guide](apps/ios/README.md) and [Mac target](apps/macos/README.md).
+Do not remove an installed preview's local data until native sign-in and recovery
+of encrypted history have been verified. Browser keys do not migrate automatically.
 
 ## Start developing
 
@@ -58,7 +57,7 @@ For native builds and interoperability tests, see the [iOS instructions](apps/io
 | `apps/web` | React/TypeScript public site and PWA, built with Vite. |
 | `apps/api` | Cloudflare Worker, PostgreSQL migrations and API tests. |
 | `apps/ios` | SwiftUI client and simulator tests. |
-| `apps/macos` | Standalone AppKit/WebKit Mac app, universal build and packaging. |
+| `apps/macos` | Native macOS entry point for the shared SwiftUI Apple app. |
 | `packages/crypto` | Shared OpenPGP protocol, Unicode metadata, JavaScript and Go interoperability fixtures. |
 | `scripts` | Development, verification and operator tools. Hosted scripts require explicit operator preparation. |
 | `design`, `docs` | Product requirements, protocols, verification records and runbooks. |

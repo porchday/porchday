@@ -1,6 +1,11 @@
 name: Verify native iOS
 on:
   workflow_dispatch:
+    inputs:
+      prepare_testflight:
+        description: 'Build a signed iOS archive after native tests; does not upload'
+        type: boolean
+        default: false
   push:
     paths:
       - "apps/ios/**"
@@ -8,7 +13,7 @@ on:
       - ".github/workflows/ios.yml"
 concurrency:
   group: native-ios-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -17,6 +22,11 @@ jobs:
     timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
+      - name: Select supported App Store Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -36,26 +46,51 @@ jobs:
           python3 - <<'PY'
           import json, os, subprocess
           devices=json.loads(subprocess.check_output(["xcrun","simctl","list","devices","available","--json"]))["devices"]
-          choices=[d for runtime,rows in devices.items() if ".iOS-" in runtime for d in rows if d["name"].startswith("iPhone")]
-          if not choices: raise SystemExit("No installed iPhone simulator runtime")
+          choices=[d for runtime,rows in sorted(devices.items(), reverse=True) if ".iOS-26-" in runtime for d in rows if d["name"].startswith("iPhone")]
+          if not choices: raise SystemExit("No installed iOS 26 iPhone simulator runtime")
           with open(os.environ["GITHUB_ENV"],"a") as f: f.write("PORCHDAY_SIMULATOR="+choices[0]["udid"]+"\n")
           PY
+      - name: Boot simulator with a bounded readiness check
+        run: |
+          python3 - <<'PYTHON'
+          import os, subprocess
+          device=os.environ["PORCHDAY_SIMULATOR"]
+          subprocess.run(["xcrun","simctl","boot",device],check=True,timeout=60)
+          subprocess.run(["xcrun","simctl","bootstatus",device,"-b"],check=True,timeout=300)
+          PYTHON
       - name: Build and run native tests in simulator
+        timeout-minutes: 15
         run: |
           xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday \
             -destination "platform=iOS Simulator,id=$PORCHDAY_SIMULATOR" \
             -derivedDataPath apps/ios/build/DerivedData \
             -resultBundlePath apps/ios/build/PorchdayTests.xcresult \
-            test
+            -parallel-testing-enabled NO test
       - name: Launch app and capture simulator evidence
         run: |
           xcrun simctl boot "$PORCHDAY_SIMULATOR" || true
           xcrun simctl bootstatus "$PORCHDAY_SIMULATOR" -b
           xcrun simctl install "$PORCHDAY_SIMULATOR" apps/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Porchday.app
-          xcrun simctl launch "$PORCHDAY_SIMULATOR" com.porchday.app --ui-testing
+          xcrun simctl launch "$PORCHDAY_SIMULATOR" org.porchday.app --ui-testing
           sleep 5
           xcrun simctl io "$PORCHDAY_SIMULATOR" screenshot apps/ios/build/Porchday-simulator.png
           ditto -c -k --sequesterRsrc --keepParent apps/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Porchday.app apps/ios/build/Porchday-simulator-app.zip
+      - name: Prepare signed TestFlight archive
+        if: github.event_name == 'workflow_dispatch' && inputs.prepare_testflight
+        env:
+          APPLE_DISTRIBUTION_P12: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_P12 }}
+          APPLE_DISTRIBUTION_PASSWORD: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_PASSWORD }}
+          APPLE_IOS_PROFILE: ${{ secrets.PORCHDAY_APPLE_IOS_PROFILE }}
+          PORCHDAY_BUILD_NUMBER: ${{ github.run_number }}
+        run: apps/ios/archive-testflight.sh
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.prepare_testflight && success()
+        with:
+          name: native-testflight-candidate
+          path: |
+            apps/ios/build/TestFlight/*.ipa
+            apps/ios/build/TestFlight/evidence.json
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:

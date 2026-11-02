@@ -159,9 +159,9 @@ import Combine
                             uploadPhoto: { path, bytes in try check(); _ = try await self.api.bytes(path, method: "PUT", body: bytes) },
                             publish: { id, body in try check(); return try await self.api.social("/posts/" + id + "/audience-refresh", method: "POST", body: body) },
                             validatePhoto: { payload in
-                                guard payload["mime"].string == "image/jpeg", let encoded = payload["bytes"].string,
+                                guard let encoded = payload["bytes"].string,
                                       let bytes = Data(base64Encoded: encoded) else { throw PorchError.message("A photo could not be opened.") }
-                                _ = try PhotoPipeline.safelyDecode(bytes)
+                                if payload["mime"].string == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(bytes) } else { guard try VideoContainer.mime(bytes) == payload["mime"].string else { throw PorchError.message("Video metadata mismatch.") } }
                             }, check: { try check() }))
                         try check(); count += 1; self.historySharingVersion += 1
                     }
