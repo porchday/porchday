@@ -51,6 +51,27 @@ targets:
       - package: ZIPFoundation
       - framework: ../../packages/crypto/native/build/Porchcrypto.xcframework
         embed: true
+  PorchdayMac:
+    type: application
+    platform: macOS
+    deploymentTarget: '14.0'
+    sources:
+      - Porchday
+      - path: ../../packages/crypto/data/emoji-17.0.json
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app
+        PRODUCT_NAME: Porchday
+        MACOSX_DEPLOYMENT_TARGET: '14.0'
+        CODE_SIGN_ENTITLEMENTS: Porchday/Porchday-Mac.entitlements
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
+    dependencies:
+      - package: ZIPFoundation
+      - framework: ../../packages/crypto/native/build/Porchcrypto.xcframework
+        embed: true
   PorchdayTests:
     type: bundle.unit-test
     platform: iOS
@@ -79,3 +100,7 @@ schemes:
         PorchdayUITests: [test]
     test:
       targets: [PorchdayTests, PorchdayUITests]
+  PorchdayMac:
+    build:
+      targets:
+        PorchdayMac: all

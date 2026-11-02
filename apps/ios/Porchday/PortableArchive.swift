@@ -114,7 +114,7 @@ struct PortableArchive {
             let packed=try PortableArchive(manifest:.object(manifest),files:files).zip(),output=try secret.map { try CryptoVault.archive(packed,secret:$0) } ?? packed
             for offset in stride(from:0,to:refs.count,by:1000) { _ = try await api.social("/exports/"+jobID+"/validate",method:"POST",body:.object(["items":.array(Array(refs[offset..<min(offset+1000,refs.count)]))])) }
             if refs.isEmpty { _ = try await api.social("/exports/"+jobID+"/validate",method:"POST",body:.object(["items":.array([])])) }
-            let target=directory.appendingPathComponent(String(format:"porchday-%03d.zip",partNumber)+(secret==nil ? "":".pgp"));try output.write(to:target,options:[.atomic,.completeFileProtection]);urls.append(target)
+            let target=directory.appendingPathComponent(String(format:"porchday-%03d.zip",partNumber)+(secret==nil ? "":".pgp"));try output.write(to:target,options:SecureTemporaryFiles.writeOptions);urls.append(target)
             partNumber += 1;manifest=base;files=[:];refs=[];size=0
         }
         func append(_ value:JSON,section:String,reference:JSON?=nil,photo:(String,Data)?=nil) async throws {

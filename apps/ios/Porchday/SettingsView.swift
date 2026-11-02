@@ -49,8 +49,8 @@ struct SettingsView: View {
             if socialSettingsAvailable {
             Section("Custom emoji") { NavigationLink("Manage my custom emoji") { ReactionPicker() } }
             Section("Password and sessions") {
-                SecureField("Current password", text: $currentPassword).textContentType(.password)
-                SecureField("New password", text: $newPassword).textContentType(.newPassword)
+                SecureField("Current password", text: $currentPassword).porchContentType(.password)
+                SecureField("New password", text: $newPassword).porchContentType(.newPassword)
                 Button("Change password and sign out other sessions") { Task { await model.perform { _ = try await model.api.auth("change-password", body: .object(["currentPassword":.string(currentPassword),"newPassword":.string(newPassword),"revokeOtherSessions":.bool(true)])); currentPassword = ""; newPassword = ""; await refresh() } } }.disabled(newPassword.count < 12 || currentPassword.isEmpty)
                 ForEach(Array(sessions.enumerated()), id: \.offset) { _, session in HStack { VStack(alignment:.leading) { Text(session["userAgent"].string ?? "Signed-in session").lineLimit(2); Text(session["createdAt"].string ?? "").font(.caption) }; Spacer(); Button("Sign out", role:.destructive) { Task { await model.perform { _ = try await model.api.auth("revoke-session", body:.object(["token":session["token"]])); await model.restore(); await refresh() } } } } }
                 Button("Sign out other sessions") { Task { await model.perform { _ = try await model.api.auth("revoke-other-sessions", body:.object([:])); await refresh() } } }
@@ -107,7 +107,7 @@ struct SettingsView: View {
                 NavigationStack {
                     Form {
                         Text("This revokes sessions and integration grants when accepted. Encrypted data and identity cleanup run in the background; encrypted backups age out within seven days. Saved copies cannot be recalled. Transfer or delete groups you own first. A recent sign-in is required.")
-                        TextField("Type DELETE", text: $confirm).textInputAutocapitalization(.characters)
+                        TextField("Type DELETE", text: $confirm).porchCapitalization(.characters)
                         if model.deletionPhase == .submitting { ProgressView("Submitting your deletion request…") }
                         if model.deletionPhase == .unconfirmed { Text(AccountDeletionResponse.unconfirmed).accessibilityAddTraits(.isStaticText) }
                         Button("Permanently delete my account", role: .destructive) {
@@ -141,8 +141,13 @@ struct SettingsView: View {
     private func remove(_ path:String,_ item:JSON) async { await model.perform { _ = try await model.api.social(path+(item["target"].string ?? ""),method:"DELETE"); await refresh() } }
     private func export() async { busy = true; defer { busy = false }; await model.perform { progress = "Preparing encrypted records…"; let result = try await model.exportOwned(plaintext:plaintext) { progress = $0 }; files = result.urls; archiveKey = result.secret ?? ""; progress = "\(files.count) archive parts are ready. Save every part and keep the secret separately." } }
 }
+#if os(iOS)
 struct ShareArchiveFiles: UIViewControllerRepresentable {
     let urls:[URL]
     func makeUIViewController(context:Context)->UIActivityViewController { UIActivityViewController(activityItems:urls,applicationActivities:nil) }
     func updateUIViewController(_ controller:UIActivityViewController,context:Context) {}
 }
+
+#else
+struct ShareArchiveFiles: View { let urls: [URL]; var body: some View { VStack { Text("Export archive").font(.title); ForEach(urls, id: \.self) { url in ShareLink(item: url) { Label(url.lastPathComponent, systemImage: "square.and.arrow.up") } } }.padding() } }
+#endif

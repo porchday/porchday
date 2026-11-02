@@ -112,7 +112,7 @@ struct PostDetailView: View {
                     Section { Button("Report a concern") { report = post } }
                 } else { ContentUnavailableView("Post unavailable", systemImage: "clock", description: Text("It may have expired, been removed, or no longer be shared with you.")) }
             }
-        }.navigationTitle("Post").navigationBarTitleDisplayMode(.inline).task(id: id) { await refresh() }.refreshable { await refresh() }
+        }.navigationTitle("Post").porchInlineTitle().task(id: id) { await refresh() }.refreshable { await refresh() }
             .confirmationDialog("Delete this content and its replies?",isPresented:Binding(get:{removing != nil},set:{if !$0 { removing=nil }}),titleVisibility:.visible) {
                 Button("Delete permanently",role:.destructive) { guard let item=removing else{return};Task { await model.perform { _ = try await model.api.social("/"+(item.isComment ? "comments/":"posts/")+item.id,method:"DELETE");if item.isComment { await refresh() } else { deleted=true };removing=nil } } }
                 Button("Cancel",role:.cancel) { removing=nil }
@@ -161,7 +161,7 @@ struct ComposerView: View {
     var body: some View { Form {
         if let member = model.member { HStack { MemberAvatarView(memberID: member.id, name: member.handle); Text("@" + member.handle) } }
         Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("\(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) }
-        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .images) { Label("Add photos", systemImage: "photo") }; if UIImagePickerController.isSourceTypeAvailable(.camera) { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = UIImage(data: photo.bytes) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Photo description (alt text)", text: $photo.alt) } } } }
+        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .images) { Label("Add photos", systemImage: "photo") }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Photo description (alt text)", text: $photo.alt) } } } }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
@@ -191,10 +191,12 @@ struct ComposerView: View {
                 }
             }
         }
-    }.disabled(!model.canWriteSocial).navigationTitle(post == nil ? "New post" : "Leave a comment").navigationBarTitleDisplayMode(.inline).toolbar { Button("Cancel") { dismiss() } }
+    }.disabled(!model.canWriteSocial).navigationTitle(post == nil ? "New post" : "Leave a comment").porchInlineTitle().toolbar { Button("Cancel") { dismiss() } }
         .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
         .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { selected.append(try PhotoPipeline.prepare(bytes)) } }; photos = selected } } }
+        #if os(iOS)
         .sheet(isPresented: $camera) { CameraView { image in Task { await model.perform { guard let data = image.jpegData(compressionQuality: 0.9) else { return }; photos.append(try PhotoPipeline.prepare(data)) } }; camera = false } }
+        #endif
     }
     private func submit() async { busy = true; defer { busy = false }; await model.perform {
         guard let member = model.member else { return }

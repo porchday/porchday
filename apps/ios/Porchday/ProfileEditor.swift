@@ -38,7 +38,7 @@ struct ProfileEditor: View {
                     if let asset=assets[key] {
                         VStack(alignment:.leading) {
                             Text(key.capitalized).font(.headline)
-                            if let image=UIImage(data:asset.bytes) { Image(uiImage:image).resizable().scaledToFit().frame(maxHeight:130) }
+                            if let image=PlatformImage(data:asset.bytes) { Image(platformImage:image).resizable().scaledToFit().frame(maxHeight:130) }
                             TextField("Photo description",text:Binding(get:{assets[key]?.alt ?? ""},set:{value in assets[key]?.alt=value}))
                             Button("Cancel selected photo") { assets.removeValue(forKey:key) }
                         }

@@ -1,4 +1,8 @@
+#if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 import ImageIO
 
 @MainActor enum EmojiImage {
@@ -11,10 +15,7 @@ import ImageIO
         for maximum in [128,96,64,48] {
             let options: [CFString:Any] = [kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceCreateThumbnailWithTransform:true,kCGImageSourceThumbnailMaxPixelSize:maximum,kCGImageSourceShouldCacheImmediately:true]
             guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source,0,options as CFDictionary) else { throw PorchError.message("The image could not be opened.") }
-            let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = false; format.preferredRange = .standard
-            let size = CGSize(width:CGFloat(thumbnail.width),height:CGFloat(thumbnail.height))
-            let image = UIGraphicsImageRenderer(size:size,format:format).image { _ in UIImage(cgImage:thumbnail).draw(in:CGRect(origin:.zero,size:size)) }
-            guard let encoded = image.pngData() else { throw PorchError.message("The image could not be prepared.") }
+            let encoded = try AppleImageEncoder.encode(thumbnail, jpeg: false)
             let clean = try stripMetadata(encoded)
             if clean.count <= ReactionPNG.maximumBytes { _ = try ReactionPNG.decode(clean); return clean }
         }

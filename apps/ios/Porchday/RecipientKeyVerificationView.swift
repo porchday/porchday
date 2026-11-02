@@ -36,7 +36,7 @@ struct RecipientKeyVerificationView: View {
             }
         }
         .navigationTitle("Verify @\(recipient.handle)")
-        .navigationBarTitleDisplayMode(.inline)
+        .porchInlineTitle()
         .toolbar { Button("Done") { dismiss() } }
         .task(id: "\(model.member?.id ?? ""):\(recipient.id)") { await load() }
         .onDisappear { verification.cancel() }

@@ -1,51 +1,34 @@
-name: macOS app
+name: Verify native macOS
 on:
   pull_request:
-    paths: ['apps/macos/**', 'apps/web/public/icon-1024.png', '.github/workflows/macos.yml']
-  push:
-    tags: ['macos-v*']
+    paths: ['apps/ios/**', 'apps/macos/**', 'packages/crypto/**', '.github/workflows/macos.yml']
   workflow_dispatch:
 permissions:
   contents: read
 jobs:
   build:
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - name: Navigation policy tests
-        run: apps/macos/test.sh
-      - name: Build universal preview
-        run: apps/macos/build.sh
+      - run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/crypto/native/go.mod
+          cache-dependency-path: packages/crypto/native/go.sum
+      - run: brew install xcodegen
+      - run: apps/ios/build-native.sh
+        env:
+          PORCHDAY_APPLE_TARGETS: macos
+      - name: Compile shared native Mac app
+        run: |
+          xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac \
+            -destination 'generic/platform=macOS' -derivedDataPath apps/ios/build/Mac \
+            build CODE_SIGNING_ALLOWED=NO
+      - name: Package verification artifact
+        run: ditto -c -k --sequesterRsrc --keepParent apps/ios/build/Mac/Build/Products/Debug/Porchday.app apps/ios/build/Porchday-native-Mac.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: Porchday-macOS-preview
-          path: |
-            apps/macos/build/*.zip
-            apps/macos/build/SHA256SUMS.txt
-  release:
-    if: startsWith(github.ref, 'refs/tags/macos-v')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: Porchday-macOS-preview
-          path: release
-      - name: Publish preview
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
-        run: |
-          cat > notes.md <<'NOTES'
-          Standalone AppKit/WebKit macOS preview, macOS 13+, Apple silicon and Intel.
-          Download the ZIP, unzip, and drag Porchday.app into Applications.
-          This preview is ad-hoc signed, not Apple-notarized. macOS may require System Settings → Privacy & Security → Open Anyway after the first launch attempt.
-          Your Chrome sign-in and encryption keys do not transfer. Have your Porchday recovery secret ready, and keep your existing app until your history opens here.
-          Native Photos-library selection, sign-in/history restoration, exports and Intel hardware still require owner verification. This does not establish a fix for the Chrome Photos-picker issue.
-          See apps/macos/README.md at this tag for build instructions and limitations. SHA256SUMS.txt contains archive checksums.
-          NOTES
-          gh release create "$RELEASE_TAG" release/* --verify-tag --prerelease --title "Porchday for macOS — $RELEASE_TAG preview" --notes-file notes.md
+          name: native-macos-verification
+          path: apps/ios/build/Porchday-native-Mac.zip
+          retention-days: 7
