@@ -148,7 +148,7 @@ import WebKit
           // the first frame, then the handler pauses before presenting controls.
           v.play().catch(() => { /* Preload may still decode without autoplay. */ });
         });
-        """, arguments: ["encoded": bytes.base64EncodedString()], in: nil, contentWorld: .page) { [weak self] result in
+        """, arguments: ["encoded": bytes.base64EncodedString()], in: nil, in: .page) { [weak self] result in
                 switch result {
                 case .failure(let error): self?.finishDecode(.failure(error))
                 case .success(let value):
