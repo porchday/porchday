@@ -19,6 +19,10 @@ Google/GitHub sign-in, Datadog and technical proof of humanity are deferred. The
 
 The [federation proposal](design/federation-proposal.md) explores participation through independently operated servers while keeping the hosted experience simple. It is a discussion draft for future work; federation is not implemented.
 
+## Install the macOS preview
+
+A standalone Mac app is available from [GitHub Releases](https://github.com/porchday/porchday/releases). Download the universal ZIP, unzip it, and drag Porchday.app into Applications. It uses Apple WebKit and does not require Chrome. The preview is ad-hoc signed, not Apple-notarized; see the [installation and build guide](apps/macos/README.md) for first-launch approval, separate encryption-key setup, and known limitations.
+
 ## Start developing
 
 Use **Node 24**, npm, and Python 3:
@@ -45,6 +49,7 @@ For native builds and interoperability tests, see the [iOS instructions](apps/io
 | `apps/web` | React/TypeScript public site and PWA, built with Vite. |
 | `apps/api` | Cloudflare Worker, PostgreSQL migrations and API tests. |
 | `apps/ios` | SwiftUI client and simulator tests. |
+| `apps/macos` | Standalone AppKit/WebKit Mac app, universal build and packaging. |
 | `packages/crypto` | Shared OpenPGP protocol, Unicode metadata, JavaScript and Go interoperability fixtures. |
 | `scripts` | Development, verification and operator tools. Hosted scripts require explicit operator preparation. |
 | `design`, `docs` | Product requirements, protocols, verification records and runbooks. |
