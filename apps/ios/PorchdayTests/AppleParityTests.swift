@@ -35,6 +35,16 @@ final class AppleParityTests: XCTestCase {
         var header = Data([0, 0, 0, 20]); header.append(Data("ftypisom".utf8)); header.append(Data([0, 0, 0, 0])); header.append(Data("mp42".utf8))
         do { _ = try await VideoPipeline.prepare(header); XCTFail("A container header is not a playable video") } catch { }
     }
+    @MainActor func testLocalWebMDecodesSyntheticClipWithoutPersistentStorage() async throws {
+        // ffmpeg lavfi solid blue, 16x16, 0.4 seconds, VP9; no member media.
+        let bytes = try XCTUnwrap(Data(base64Encoded: "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAILEU2bdLpNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHYTbuMU6uEElTDZ1OsggElTbuMU6uEHFO7a1OsggH17AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsirXsYMPQkBNgI1MYXZmNjIuMTIuMTAwV0GNTGF2ZjYyLjEyLjEwMESJiEB5AAAAAAAAFlSua8iuAQAAAAAAAD/XgQFzxYg2p8PcJT6AWpyBACK1nIN1bmSIgQCGhVZfVlA5g4EBI+ODhAvrwgDgkLCBELqBEJqBAlWwhFW5gQESVMNnQIBzc6BjwIBnyJpFo4dFTkNPREVSRIeNTGF2ZjYyLjEyLjEwMHNz2mPAi2PFiDanw9wlPoBaZ8ilRaOHRU5DT0RFUkSHmExhdmM2Mi4yOC4xMDAgbGlidnB4LXZwOWfIoUWjiERVUkFUSU9ORIeTMDA6MDA6MDAuNDAwMDAwMDAwAB9DtnXF54EAo6uBAACAgkmDQgAA8AD2ADgkHBhKAAAwYAAAEL///BCx/////yKs///+f8AAo5OBAMgAhgBAkpwAUAAAAyAAAEJAHFO7a5G7j7OBALeK94EB8YIBq/CBAw=="))
+        let decoder = LocalWebM(); defer { decoder.stop() }
+        XCTAssertFalse(decoder.view.configuration.websiteDataStore.isPersistent)
+        let clip = try await decoder.open(bytes)
+        XCTAssertEqual(clip.mime, "video/webm")
+        XCTAssertEqual(clip.width, 16); XCTAssertEqual(clip.height, 16)
+        XCTAssertFalse(clip.poster.isEmpty)
+    }
     func testPrivatePlaybackFileIsRemovedAndNotWorldReadable() throws {
         var file: PrivateMediaFile? = try PrivateMediaFile(Data([1, 2, 3]), ext: "mp4")
         let url = try XCTUnwrap(file?.url)

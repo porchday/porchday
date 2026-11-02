@@ -35,3 +35,10 @@ never started before cancellation. That incomplete evidence is not a pass. The
 workflow now preboots the newest installed iOS 26 runtime with a five-minute
 readiness bound and disables cloned parallel test runners. Owner requested
 expanded scope supersedes that old distribution candidate; no upload occurred.
+
+Latest audit found AVFoundation-only WebM playback was not sufficient. A local,
+ephemeral WebKit codec surface now handles WebM under a deny-network CSP without
+any hosted app UI or native message bridge. Native AVKit handles MP4/MOV.
+A generated solid-color VP9 fixture tests actual decoding, dimensions and poster
+extraction on both platform test targets. iOS minimum is 17.4. Day views now
+re-evaluate expiry each second, including selectable featured attachments.

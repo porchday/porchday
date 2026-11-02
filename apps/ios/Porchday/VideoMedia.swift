@@ -51,7 +51,12 @@ final class PrivateMediaFile {
 }
 @MainActor enum VideoPipeline {
     static func prepare(_ bytes: Data) async throws -> PreparedPhoto {
-        let mime = try VideoContainer.mime(bytes), file = try PrivateMediaFile(bytes, ext: VideoContainer.fileExtension(mime))
+        let mime = try VideoContainer.mime(bytes)
+        if mime == "video/webm" {
+            let decoder = LocalWebM(); defer { decoder.stop() }
+            return try await decoder.open(bytes)
+        }
+        let file = try PrivateMediaFile(bytes, ext: VideoContainer.fileExtension(mime))
         let asset = AVURLAsset(url: file.url)
         guard try await asset.load(.isPlayable), let track = try await asset.loadTracks(withMediaType: .video).first else { throw PorchError.message("This Apple device cannot play this codec. Choose an H.264 MP4 video.") }
         let size = try await track.load(.naturalSize), duration = try await asset.load(.duration).seconds
@@ -69,6 +74,7 @@ struct EncryptedMediaView: View {
     @EnvironmentObject var vault: CryptoVault
     @Environment(\.scenePhase) private var phase
     @State private var player: AVPlayer?
+    @State private var webM: LocalWebM?
     @State private var file: PrivateMediaFile?
     @State private var expiry: Date?
     @State private var error = ""
@@ -81,6 +87,7 @@ struct EncryptedMediaView: View {
                 let expired = expiry.map { $0 <= clock.date } ?? false
                 VStack {
                     if expired { Text("This video has expired.") }
+                    else if let webM { LocalWebMPlayer(decoder: webM).frame(minHeight: 200) }
                     else if let player { VideoPlayer(player: player).frame(minHeight: 200) }
                     else {
                         if let data = media["poster"].string.flatMap({ Data(base64Encoded: $0) }), data.count <= 200_000,
@@ -97,7 +104,7 @@ struct EncryptedMediaView: View {
             .onChange(of: phase) { _, value in if value != .active { clear() } }
         }
     }
-    private func clear() { player?.pause(); player?.replaceCurrentItem(with: nil); player = nil; file = nil }
+    private func clear() { webM?.stop(); webM = nil; player?.pause(); player?.replaceCurrentItem(with: nil); player = nil; file = nil }
     private func open() async {
         busy = true; error = ""; defer { busy = false }
         let generation = model.authenticationGeneration
@@ -110,6 +117,14 @@ struct EncryptedMediaView: View {
                   try VideoContainer.mime(data) == content["mime"].string, content["mime"] == media["mime"] else { throw PorchError.message("Video metadata does not match its encrypted content.") }
             expiry = envelope["context"]["expiresAt"].string.flatMap(PorchDate.parse)
             guard expiry.map({ $0 > Date() }) ?? true else { throw PorchError.message("This video has expired.") }
+            if content["mime"].string == "video/webm" {
+                let decoder = LocalWebM()
+                do { _ = try await decoder.open(data) } catch { decoder.stop(); throw error }
+                guard generation == model.authenticationGeneration, vault.unlocked, !Task.isCancelled, phase == .active,
+                      expiry.map({ $0 > Date() }) ?? true else { decoder.stop(); return }
+                webM = decoder
+                return
+            }
             _ = try await VideoPipeline.prepare(data)
             guard generation == model.authenticationGeneration, vault.unlocked, !Task.isCancelled, phase == .active else { return }
             let owned = try PrivateMediaFile(data, ext: VideoContainer.fileExtension(content["mime"].string!))

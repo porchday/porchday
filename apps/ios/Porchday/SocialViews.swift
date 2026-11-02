@@ -152,6 +152,7 @@ struct ComposerView: View {
     @State private var tags: [PersonTag] = []
     @State private var onBehalf = ""
     @State private var camera = false
+    @State private var videoFilePicker = false
     @State private var observedExpiry: Date?
     @State private var observedPostExpiry: Date?
     @State private var customExpiry = Date().addingTimeInterval(900)
@@ -166,7 +167,7 @@ struct ComposerView: View {
         Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("Use @handle to mention a connection. \(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) }
         Section { PeopleTagPicker(tags: $tags, directory: people) }
         if post == nil { Section { Picker("Posting on behalf of", selection: $onBehalf) { Text("Myself").tag(""); ForEach(people.children.filter { $0.raw["can_post"].boolean }) { Text($0.name).tag($0.id) } }; Text("You remain the author. Posting on a child’s behalf tags them without expanding the audience.").font(.caption) } }
-        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .any(of: [.images, .videos])) { Label("Add photos or videos", systemImage: "photo.on.rectangle") }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Description (alt text)", text: $photo.alt); TextField("Caption", text: $photo.caption); PeopleTagPicker(tags: $photo.tags, directory: people) } } } }
+        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .any(of: [.images, .videos])) { Label("Add photos or videos", systemImage: "photo.on.rectangle") }; Button("Add video from Files") { videoFilePicker = true }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Description (alt text)", text: $photo.alt); TextField("Caption", text: $photo.caption); PeopleTagPicker(tags: $photo.tags, directory: people) } } } }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
@@ -197,6 +198,19 @@ struct ComposerView: View {
             }
         }
     }.disabled(!model.canWriteSocial || busy).navigationTitle(post == nil ? "New post" : "Leave a comment").porchInlineTitle().toolbar { Button("Cancel") { dismiss() } }
+        .fileImporter(isPresented: $videoFilePicker, allowedContentTypes: [.movie, UTType(filenameExtension: "webm") ?? .data]) { result in
+            Task { await model.perform {
+                let url = try result.get()
+                let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }
+                guard photos.count < 10 else { throw PorchError.message("Choose up to ten attachments.") }
+                let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
+                let bytes = try handle.read(upToCount: VideoContainer.maximumBytes + 1) ?? Data()
+                let generation = model.authenticationGeneration
+                let clip = try await VideoPipeline.prepare(bytes)
+                guard generation == model.authenticationGeneration, vault.unlocked, !Task.isCancelled else { return }
+                photos.append(clip)
+            } }
+        }
         .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
         .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) { selected.append(try await VideoPipeline.prepare(bytes)) } else { selected.append(try PhotoPipeline.prepare(bytes)) } } }; photos = selected } } }
         #if os(iOS)

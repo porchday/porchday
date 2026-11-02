@@ -153,8 +153,9 @@ struct CalendarDayView: View {
     var body: some View {
         VStack {
             HStack { Button("Previous day", systemImage: "chevron.left") { move(-1) }; Spacer(); Text(current.formatted(date: .abbreviated, time: .omitted)); Spacer(); Button("Next day", systemImage: "chevron.right") { move(1) } }.padding()
+            TimelineView(.periodic(from: .now, by: 1)) { clock in
             List {
-                let rows = PhotoCalendar.filtered(store.entries[monthKey] ?? [], author: author, tag: tag).filter { $0.created.map { PhotoCalendar.day($0) } == PhotoCalendar.day(current) }
+                let rows = PhotoCalendar.filtered(store.entries[monthKey] ?? [], author: author, tag: tag, now: clock.date).filter { $0.created.map { PhotoCalendar.day($0) } == PhotoCalendar.day(current) }
                 ForEach(rows) { item in
                     NavigationLink { PostDetailView(id: item.id) } label: { MomentCard(item: item) }
                     Button("Feature this post") { Task { await store.choose(current, item: item, model: model) } }
@@ -169,6 +170,7 @@ struct CalendarDayView: View {
             }.simultaneousGesture(DragGesture(minimumDistance: 60).onEnded { value in
                 if abs(value.translation.width) > abs(value.translation.height) * 1.5 { move(value.translation.width < 0 ? 1 : -1) }
             })
+            }
         }.navigationTitle("Day").toolbar { Button("Done") { dismiss() } }
         .task(id: monthKey) { if store.entries[monthKey] == nil { await store.load(current, model: model) } }
     }

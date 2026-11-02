@@ -172,3 +172,11 @@ The Mac has a navigation sidebar and native file/Photos selection; iOS has tabs.
 See [the parity matrix](../../docs/native-apple-parity.md) for implementation versus
 verification. Current compilation does not prove signed devices, notifications,
 all codecs, hosted cross-client round trips or TestFlight acceptance.
+
+WebM uses an isolated, ephemeral local WebKit media surface because AVFoundation
+cannot decode the web app's WebM contract. This is not a hosted app wrapper:
+all screens/authentication/crypto remain native, the media page has no network,
+no application bridge and no persistent website storage. Other clips use AVKit.
+The shared iOS minimum is 17.4 for WebM support; macOS remains 14.0. Files import
+supports WebM outside the photo library. Synthetic VP9 decoding runs in both
+platform test targets; hardware/other-codec acceptance still needs verification.
