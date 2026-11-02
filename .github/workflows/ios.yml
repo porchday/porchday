@@ -67,7 +67,7 @@ jobs:
           APPLE_DISTRIBUTION_P12: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_P12 }}
           APPLE_DISTRIBUTION_PASSWORD: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_PASSWORD }}
           APPLE_IOS_PROFILE: ${{ secrets.PORCHDAY_APPLE_IOS_PROFILE }}
-          PORCHDAY_BUILD_NUMBER: ${{ github.run_id }}
+          PORCHDAY_BUILD_NUMBER: ${{ github.run_number }}
         run: apps/ios/archive-testflight.sh
       - uses: actions/upload-artifact@v4
         if: github.event_name == 'workflow_dispatch' && inputs.prepare_testflight && success()

@@ -143,7 +143,7 @@ before archiving/exporting a signed iOS candidate. It never uploads or invites
 testers. Only dispatch reviewed source with passing applicable CI. Its ephemeral
 keychain uses encrypted repository secrets `PORCHDAY_APPLE_DISTRIBUTION_P12`,
 `PORCHDAY_APPLE_DISTRIBUTION_PASSWORD` and `PORCHDAY_APPLE_IOS_PROFILE`.
-The workflow run ID is the build number; evidence records exact source and IPA hash.
+The workflow run number is the build number; evidence records exact source and IPA hash.
 Push stays disabled until actual provider/device verification. The app manifest
 declares app-local UserDefaults access (CA92.1); archive/dependency privacy report,
 export compliance and Apple validation remain separate distribution checks.
