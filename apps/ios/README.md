@@ -67,7 +67,7 @@ The editor previews and changes the stored choice. Export/import and unrelated e
 
 Simulator verification does not establish physical-device, APNs or Universal Links behavior. A physical build needs a real signing identity and provisioning selected in Xcode. App Store/TestFlight distribution and notification/domain capabilities require separate Apple setup and operator approval.
 
-The checked-in entitlements declare both `applinks:porchday.org` and `applinks:porchday.com`, plus an APNs environment variable. Simulator CI uses its own app-local Keychain entitlement and `PORCHDAY_PUSH_ENABLED=NO`. For a physical build, configure the real development team, Push Notifications and Associated Domains for `com.porchday.app`, enable signing, set `PORCHDAY_PUSH_ENABLED=YES`, and select the matching `PORCHDAY_APNS_ENVIRONMENT`. An APNs provider private key belongs only in the operator's backend secret storage, never the app or repository.
+The checked-in entitlements declare both `applinks:porchday.org` and `applinks:porchday.com`, plus an APNs environment variable. Simulator CI uses its own app-local Keychain entitlement and `PORCHDAY_PUSH_ENABLED=NO`. For a physical build, configure the real development team, Push Notifications and Associated Domains for `org.porchday.app`, enable signing, set `PORCHDAY_PUSH_ENABLED=YES`, and select the matching `PORCHDAY_APNS_ENVIRONMENT`. An APNs provider private key belongs only in the operator's backend secret storage, never the app or repository.
 
 The permission button appears only when the build flag and `/api/v1/native-push/config` both enable delivery. Only pressing **Enable** requests authorization. Opted-in launches register the current token through the authenticated API; token bytes are not cached on disk. Opt-out and sign-out remove the subscription and unregister locally. Notifications contain generic text and open the authorized inbox; no extension decrypts private content.
 
@@ -111,3 +111,27 @@ ordinary signed-out restore; account holds and transport failures remain visible
 This reduces network dependencies but does not establish physical launch latency.
 Simulator tests and a California iPhone trial with saved credentials and keys are
 still required before claiming the cold/warm p99 launch targets.
+
+## Shared native Apple identity
+
+The native iPhone/iPad app and planned native Mac app use `org.porchday.app`,
+registered as a universal Apple App ID with Push Notifications and Associated
+Domains. The existing AppKit/WebKit Mac preview remains `org.porchday.macos`;
+it is not the shared SwiftUI Mac implementation and its TestFlight rollout is on hold.
+
+The existing `com.porchday.app.keys` Keychain service strings are deliberately
+retained: they are storage labels, not bundle identifiers or push topics. Changing
+them is not required for this registration and could strand existing development
+keys. A newly signed app ID still has its own entitlement/access-group boundary;
+this does not promise migration from a differently signed installed build.
+
+Production APNs topic must match `org.porchday.app` when native delivery is enabled.
+Publish the actual signing team's application identifier in the domain association
+response and verify on device before claiming Universal Links work. Registration
+alone does not configure backend credentials or activate push. No hosted config
+is changed by this project update.
+
+The public App Store Connect API cannot create the initial app record. Create it
+on the website with this bundle ID, then manage supported release operations
+through the API. iOS ships first; native macOS implementation and validation remain
+separate work, not completed by a shared identifier.

@@ -52,7 +52,7 @@ jobs:
           xcrun simctl boot "$PORCHDAY_SIMULATOR" || true
           xcrun simctl bootstatus "$PORCHDAY_SIMULATOR" -b
           xcrun simctl install "$PORCHDAY_SIMULATOR" apps/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Porchday.app
-          xcrun simctl launch "$PORCHDAY_SIMULATOR" com.porchday.app --ui-testing
+          xcrun simctl launch "$PORCHDAY_SIMULATOR" org.porchday.app --ui-testing
           sleep 5
           xcrun simctl io "$PORCHDAY_SIMULATOR" screenshot apps/ios/build/Porchday-simulator.png
           ditto -c -k --sequesterRsrc --keepParent apps/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Porchday.app apps/ios/build/Porchday-simulator-app.zip

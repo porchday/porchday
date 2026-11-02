@@ -1,6 +1,6 @@
 name: Porchday
 options:
-  bundleIdPrefix: com.porchday
+  bundleIdPrefix: org.porchday
   deploymentTarget:
     iOS: '17.0'
 settings:
@@ -43,7 +43,7 @@ targets:
         buildPhase: resources
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.porchday.app
+        PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app
         CODE_SIGN_ENTITLEMENTS: Porchday/Porchday.entitlements
         'CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]': Porchday/Porchday-Simulator.entitlements
     dependencies:
