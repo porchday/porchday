@@ -18,7 +18,7 @@ import {
   useAction,
   PendingSaveStatus,
 } from "./ui";
-import { AuthPage, Landing, Policy, StolenAccount } from "./Public";
+import { AuthPage, Landing, Policy, StolenAccount, InvitedPolicyPage } from "./Public";
 import { VaultProvider, useVault } from "./vault";
 import { Feed } from "./Social";
 import {
@@ -81,7 +81,9 @@ function App() {
   const navigationEpoch = useRef(0);
   const route = useRoute(navigationEpoch);
   const navigationAtRender = navigationEpoch.current;
-  const path = route.split("?")[0];
+  const rawPath = route.split("?")[0];
+  const path = rawPath === "/" ? "/app" : rawPath;
+  const informationPage = ["/about", "/mission", "/principles", "/privacy", "/community", "/accessibility", "/help", "/contact"].includes(path);
   const [member, setMember] = useState<Member | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -116,7 +118,7 @@ function App() {
   }
   useEffect(() => {
     if (
-      (path.startsWith("/app") || path === "/staff/moderation") &&
+      (path.startsWith("/app") || path === "/staff/moderation" || informationPage) &&
       !member &&
       !loading &&
       !restricted
@@ -215,13 +217,17 @@ function App() {
   else if (!online && ((!member && path.startsWith("/app")) || path === "/staff" || path === "/staff/" || path === "/staff/moderation"))
     page = <OfflineScreen onRetry={retryConnection} />;
   else if (path === "/account-deletion") page = <AccountDeletionReceipt receipt={deletionReceipt} onClose={() => { setDeletionReceipt(null); navigate("/"); }} />;
-  else if (path === "/") page = <Landing />;
+
   else if (path === "/stolen-account") page = <StolenAccount />;
   else if (path === "/recovery") page = <Recovery />;
   else if (path === "/appeals") page = <Appeals onLogout={signOut} />;
   else if (path === "/staff" || path === "/staff/") page = <StaffEntry />;
   else if (["/login", "/join", "/forgot", "/reset", "/verify"].includes(path))
     page = <AuthPage key={route} mode={path.slice(1)} onSignedIn={session} />;
+  else if (informationPage) {
+    page = member ? (path === "/about" ? <Landing /> : <Policy page={path === "/mission" ? "about" : path.slice(1)} />)
+      : <InvitedPolicyPage path={path} loading={loading} onSignedIn={session} />;
+  }
   else if (path.startsWith("/app") || path === "/staff/moderation") {
     page = loading ? (
       <main className="narrow-page">
@@ -254,7 +260,7 @@ function App() {
         </div>
       </>
     );
-  } else page = <Policy page={path.slice(1)} />;
+  } else page = <AuthPage mode="login" onSignedIn={session} />;
   return (
     <>
       <a className="skip-link" href="#main-content">
