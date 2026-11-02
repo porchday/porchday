@@ -94,6 +94,13 @@ enum AppleImageEncoder {
 }
 
 enum SecureTemporaryFiles {
+    static func protect(_ url: URL, directory: Bool = false) throws {
+        var attributes: [FileAttributeKey: Any] = [.posixPermissions: directory ? 0o700 : 0o600]
+        #if os(iOS)
+        attributes[.protectionKey] = FileProtectionType.complete
+        #endif
+        try FileManager.default.setAttributes(attributes, ofItemAtPath: url.path)
+    }
     static var writeOptions: Data.WritingOptions {
         #if os(iOS)
         [.atomic, .completeFileProtection]
