@@ -19,8 +19,8 @@ import WebKit
         #if os(iOS)
         configuration.allowsInlineMediaPlayback = true
         #endif
-        configuration.mediaTypesRequiringUserActionForPlayback = .all
-        view = WKWebView(frame: .zero, configuration: configuration)
+        configuration.mediaTypesRequiringUserActionForPlayback = []
+        view = WKWebView(frame: CGRect(x: 0, y: 0, width: 320, height: 240), configuration: configuration)
         super.init()
         view.navigationDelegate = self
         view.allowsBackForwardNavigationGestures = false
@@ -67,11 +67,16 @@ import WebKit
               c.width = Math.max(1, Math.round(w*scale)); c.height = Math.max(1, Math.round(h*scale));
               c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
               clearTimeout(timer); v.onerror = null; v.onloadeddata = null;
+              v.pause(); v.currentTime = 0; v.muted = false;
               resolve({width:w, height:h, poster:c.toDataURL('image/jpeg', 0.8).split(',')[1]});
             } catch (_) { fail(); }
           };
+          v.muted = true;
           v.src = 'data:video/webm;base64,' + encoded;
           v.load();
+          // WebKit can defer offscreen preload. Explicit muted decoding obtains
+          // the first frame, then the handler pauses before presenting controls.
+          v.play().catch(fail);
         });
         """, arguments: ["encoded": bytes.base64EncodedString()], in: nil, contentWorld: .defaultClient)
         try Task.checkCancellation()
