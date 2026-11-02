@@ -42,3 +42,28 @@ any hosted app UI or native message bridge. Native AVKit handles MP4/MOV.
 A generated solid-color VP9 fixture tests actual decoding, dimensions and poster
 extraction on both platform test targets. iOS minimum is 17.4. Day views now
 re-evaluate expiry each second, including selectable featured attachments.
+
+
+## Video acceptance boundary
+
+CI observed iOS 26 simulator VP9 reaching metadata (`readyState=1`) without a
+frame. This is not evidence of working iPhone playback. Upstream WebKit's
+[TestOptions.cpp](https://github.com/WebKit/WebKit/blob/ee10f6908b65c932143827e6e5dc5992733bfb2c/Tools/WebKitTestRunner/TestOptions.cpp)
+sets `VP9DecoderEnabled=false` under `PLATFORM(IOS_FAMILY_SIMULATOR)`.
+The two actual VP9 pixel tests therefore explicitly skip only the simulator;
+they remain mandatory on macOS and a physical iPhone. A simulator skip must
+never be reported as video acceptance or full parity. No decoder setting is
+overridden in the product.
+
+Before claiming video parity, run both embedded blue fixtures on a physical
+iPhone, then verify encrypted web-to-native and native-to-web MP4/MOV/WebM
+upload/playback, caption/tags, archive round trips, and clearing playback on
+lock/sign-out/expiry. Unknown-duration WebM remains a separate acceptance case.
+Retain the exact source/build, OS/device and results in #49; any failed or
+unsupported case remains an explicit compatibility gap. TestFlight is a way
+to conduct that device acceptance, not proof that it already passed.
+
+The local codec preparation now has an independent native 20-second decode
+watchdog in addition to WebKit's 15-second timer. Duration validation occurs
+at decoded-frame readiness, matching the web client's timing. Tests assert
+actual blue poster pixels rather than accepting a nonempty JPEG.

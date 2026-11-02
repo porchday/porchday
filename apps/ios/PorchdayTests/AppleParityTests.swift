@@ -51,6 +51,12 @@ final class AppleParityTests: XCTestCase {
         try await assertBlueWebM("GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwH/////////EU2bdKtNu4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHNTbuMU6uEElTDZ1OsggEa7AEAAAAAAABoAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmpyrXsYMPQkBNgI1MYXZmNjIuMTIuMTAwV0GNTGF2ZjYyLjEyLjEwMBZUrmvIrgEAAAAAAAA/14EBc8WIBDHx1sEN5V+cgQAitZyDdW5kiIEAhoVWX1ZQOYOBASPjg4QL68IA4JCwgRC6gRCagQJVsIRVuYEBElTDZ9xzc6BjwIBnyJpFo4dFTkNPREVSRIeNTGF2ZjYyLjEyLjEwMHNztmPAi2PFiAQx8dbBDeVfZ8ilRaOHRU5DT0RFUkSHmExhdmM2Mi4yOC4xMDAgbGlidnB4LXZwOR9DtnXF54EAo6uBAACAgkmDQgAA8AD2ADgkHBhKAAAwYAAAEL///BCx/////yKs///+f8AAo5OBAMgAhgBAkpwAUAAAAyAAAEJA")
     }
     @MainActor private func assertBlueWebM(_ encoded: String) async throws {
+        #if targetEnvironment(simulator)
+        // Upstream WebKit disables VP9DecoderEnabled in its iOS simulator
+        // test runner. Hardware acceptance remains required; never count this
+        // skip as successful iPhone playback. See docs/native-apple-parity.md.
+        throw XCTSkip("VP9 requires the physical iPhone acceptance run; WebKit disables this decoder in its simulator test runner")
+        #else
         let bytes = try XCTUnwrap(Data(base64Encoded: encoded))
         let decoder = LocalWebM(); defer { decoder.stop() }
         XCTAssertFalse(decoder.view.configuration.websiteDataStore.isPersistent)
@@ -67,6 +73,7 @@ final class AppleParityTests: XCTestCase {
         }
         XCTAssertGreaterThan(pixel[2], 150, "The thumbnail must contain the decoded blue frame, not a blank canvas")
         XCTAssertLessThan(pixel[0], 50); XCTAssertLessThan(pixel[1], 50)
+        #endif
     }
     func testPrivatePlaybackFileIsRemovedAndNotWorldReadable() throws {
         var file: PrivateMediaFile? = try PrivateMediaFile(Data([1, 2, 3]), ext: "mp4")
