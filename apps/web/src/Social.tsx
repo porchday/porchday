@@ -1,3 +1,4 @@
+import { publishPhoto, localPhotoDate } from "./photo-publish";
 import { matchesAuthor, matchesContent, type AuthorFilter, type FeedContent } from "./feed-filters";
 import { isVideo, VIDEO_ACCEPT, prepareVideo, validatedMedia } from "./video";
 import {TagPicker, Tags, validTags, usePeopleDirectory, type PersonTag} from "./PeopleTags";
@@ -42,6 +43,7 @@ import {
   Loading,
   Modal,
   useAction,
+  navigate,
 } from "./ui";
 import { useVault } from "./vault";
 import { reshareDeadline, resharePayload } from "./reshare";
@@ -228,6 +230,7 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
   };
 }
 type PendingPhoto = {
+  photoDate?: string;
   mime?: string;
   poster?: string;
   tags?: PersonTag[];
@@ -242,17 +245,26 @@ type PendingPhoto = {
 export function Composer({
   onPosted,
   groupId,
+  shareTabs = false,
+  initialAlbum,
 }: {
+  shareTabs?: boolean;
+  initialAlbum?: string;
   onPosted: () => void;
   groupId?: string;
 }) {
   const vault = useVault();
+  const [mode,setMode]=useState<"post"|"photos">(initialAlbum?"photos":"post");
+  const [album,setAlbum]=useState(initialAlbum||"");
+  const [albums,setAlbums]=useState<{id:string;name:string;role:string}[]>([]);
+  const [albumsLoaded,setAlbumsLoaded]=useState(false);
+  const [photosShared,setPhotosShared]=useState(0);
   const [text, setText] = useState("");
   const [tags,setTags]=useState<PersonTag[]>([]);
   const [onBehalf,setOnBehalf]=useState("");
   const directory=usePeopleDirectory();
   const [audience, setAudience] = useState<Audience>(
-    groupId ? "group" : "connections",
+    groupId ? "group" : initialAlbum ? "only_me" : "connections",
   );
   const [timer, setTimer] = useState("");
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
@@ -265,11 +277,22 @@ export function Composer({
   useEffect(() => () => { for (const url of draftUrls.current) URL.revokeObjectURL(url); }, []);
   const input = useRef<HTMLInputElement>(null);
   const action = useAction();
+  useEffect(()=>{
+    if(!shareTabs)return;let alive=true;
+    void action.run(async()=>{
+      const found=[];let after:string|null=null;
+      do{const response:Json=await get("/albums"+(after?"?after="+encodeURIComponent(after):""));
+        for(const row of items<any>(response))if(row.role!=="read"){try{const content=await vault.open(row);found.push({id:row.id,name:String(content.name||"Album"),role:row.role});}catch{/* Albums without available keys cannot receive encrypted uploads. */}}
+        after=response.next||null;
+      }while(after&&alive);
+      if(alive){setAlbums(found);setAlbumsLoaded(true);}
+    });return()=>{alive=false;};
+  },[shareTabs,vault.member.id]);
   async function selectPhotos(files: FileList | null) {
     if (!files) return;
     await action.run(async () => {
       if (files.length + photos.length > 10)
-        throw new Error("You can share up to 10 photos or videos in a post.");
+        throw new Error("You can share up to 10 photos or videos at a time.");
       const next: PendingPhoto[] = [];
       try { for (const file of Array.from(files)) {
         const prepared = file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name)
@@ -278,6 +301,7 @@ export function Composer({
           id: crypto.randomUUID(),
           name: file.name,
           alt: "",
+          photoDate: localPhotoDate(),
           ...prepared,
         });
       }
@@ -288,6 +312,17 @@ export function Composer({
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if(mode==="photos"&&shareTabs){
+      if(!photos.length)return;
+      await action.runSave(async()=>{
+        if(album&&(!albumsLoaded||!albums.some(a=>a.id===album)))throw Error("Select an album where you have Add or Album-admin permission and working encryption keys.");
+        const expiresAt=deadline(timer);setPhotosShared(0);
+        for(const photo of photos){await publishPhoto(vault,photo,audience,expiresAt,album||null);setPhotos(current=>current.filter(p=>p.id!==photo.id));setPhotosShared(count=>count+1);}
+        setTimer("");onPosted();
+        if(album&&!text.trim())navigate("/app/albums/"+album);
+      },"Photos shared. Your post draft is preserved.");
+      return;
+    }
     if (!text.trim() && !photos.length) return;
     await action.runSave(async () => {
       const child = onBehalf ? directory.people.find(p => p.kind === "child" && p.id === onBehalf) : null;
@@ -366,6 +401,9 @@ export function Composer({
       data-unsaved-draft={Boolean(text.trim() || photos.length) || undefined}
       onSubmit={submit}
     >
+      <fieldset disabled={action.busy} className="composer-fields">
+      {shareTabs&&<div className="feed-view-controls" aria-label="What to share"><Button disabled={action.busy} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</Button><Button disabled={action.busy} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos Only</Button></div>}
+      {mode==="post"&&<>
       <div className="composer-start">
         <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
         <label className="sr-only" htmlFor="post-text">
@@ -384,12 +422,20 @@ export function Composer({
       <p className="muted">Tags do not change who can see this post.</p>
       {<label>Posting on behalf of <select aria-label="Posting on behalf of" onFocus={directory.ensure} value={onBehalf} onChange={e=>{setOnBehalf(e.target.value);const child=directory.people.find(p=>p.kind==="child"&&p.id===e.target.value);if(child&&!tags.some(t=>t.id===child.id))setTags([...tags,child]);}}><option value="">Myself</option>{directory.children.filter(c=>c.can_post).map(c=><option key={c.id} value={c.id}>{c.name} · posted by @{vault.member.handle}</option>)}</select></label>}
       {onBehalf && <p className="muted">The child will be tagged automatically. You remain the author.</p>}
-      <h2 className="composer-photo-heading">Add Photos to this Post</h2>
+      </>}
+      {mode==="post"?<><h2 className="composer-photo-heading">Add Photos to this Post</h2>{shareTabs&&<Button variant="quiet" disabled={action.busy} onClick={()=>setMode("photos")}>Skip the post and add photos directly</Button>}</>:<>
+        <h2 className="composer-photo-heading">Add photos</h2>
+        <p>Each photo has its own date, caption and audience. No post is created.</p>
+        <label>Album<select value={album} disabled={action.busy||!albumsLoaded} onChange={e=>setAlbum(e.target.value)}><option value="">No album</option>{initialAlbum&&!albums.some(a=>a.id===initialAlbum)&&<option value={initialAlbum}>Selected album (checking access…)</option>}{albums.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+        {album&&<p>Everyone in {albums.find(a=>a.id===album)?.name||"this album"} can view these photos, in addition to the audience selected below. Future album members may receive album history.</p>}
+        {text.trim()&&<p className="muted">Your post text is saved in the Post tab for this visit.</p>}
+      </>}
       {photos.length > 0 && (
         <div className="photo-editor">
           {photos.map((photo) => (
             <div className="photo-draft" key={photo.id}>
               {isVideo(photo.mime) ? <video src={photo.preview} controls playsInline preload="metadata" aria-label="Video preview" /> : <img src={photo.preview} alt="Photo preview" />}
+              {shareTabs&&mode==="photos"&&<Field type="date" label="Photo date" required value={photo.photoDate||localPhotoDate()} disabled={action.busy} onChange={e=>setPhotos(current=>current.map(p=>p.id===photo.id?{...p,photoDate:e.target.value}:p))}/>}
               <Field
                 label="Photo or video description"
                 value={photo.alt}
@@ -418,6 +464,7 @@ export function Composer({
           ))}
         </div>
       )}
+      {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} photo{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos are still selected.":""}</p>}
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
       <div className="composer-controls">
@@ -446,7 +493,7 @@ export function Composer({
           variant="primary compact"
           type="submit"
           busy={action.busy}
-          disabled={!text.trim() && !photos.length}
+          disabled={mode==="photos"?!photos.length:!text.trim()&&!photos.length}
         >
           Share <Icon name="arrow" size={16} />
         </Button>
@@ -473,8 +520,9 @@ export function Composer({
         )}
         {audience === "friends" && <span>Excludes family connections</span>}
         {timer && <span>· disappears {localDate(deadline(timer)!)}</span>}
-        <span className="character-count">{text.length}/5,000</span>
+        {mode==="post"&&<span className="character-count">{text.length}/5,000</span>}
       </div>
+      </fieldset>
     </form>
   );
 }

@@ -1,3 +1,4 @@
+import { PhotoCollection } from "./PhotoCollection";
 import { Albums, AlbumDetail } from "./Albums";
 import {PeopleDirectory} from "./PeopleTags";
 import { FeatureAdditions } from "./FeatureAdditions";
@@ -396,9 +397,9 @@ function AppShell({
       </>
     );
   else if (path === "/app/albums") content = <Albums />;
-  else if (path.startsWith("/app/albums/")) content = <AlbumDetail key={path.split("/")[3]} id={path.split("/")[3]} />;
+  else if (path.startsWith("/app/albums/")) content = <AlbumDetail key={path.split("/")[3]} id={path.split("/")[3]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
   else if (path === "/app/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
-  else if (path === "/app/share") content = <><div className="page-heading"><h1>Share</h1></div><Composer onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
+  else if (path === "/app/share") content = <><div className="page-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
   else if (path === "/app/menu") content = <section className="panel form-stack"><h1>More</h1><a href="/app/wall">My wall</a><a href="/app/groups">Groups</a><a href="/app/notifications">Notifications</a><a href="/app/features">Feature additions</a>{builderChat && <a href="/app/builder-chat">Builder chat</a>}<a href="/app/settings/profile">Settings</a></section>;
   else if (path.startsWith("/app/post/"))
     content = <Feed singleId={path.split("/")[3]} />;

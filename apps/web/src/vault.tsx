@@ -87,6 +87,7 @@ type VaultValue = {
     groupId?: string | null,
     postId?: string,
   ) => Promise<{ epoch: number; devices: Device[] }>;
+  sealPhotoUpdate: (payload: unknown, context: ContentContext) => Promise<EncryptedEnvelope>;
   sealAlbum: (payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) => Promise<EncryptedEnvelope>;
   clear: () => Promise<void>;
 };
@@ -593,7 +594,7 @@ export function VaultProvider({
         ? { post_id: postId }
         : { audience, ...(groupId ? { group_id: groupId } : {}) },
     );
-    const r = await request(`/audiences?${qs}`, {signal});
+    const r = await request(audience === "album" ? `/albums/${groupId}/audience` : `/audiences?${qs}`, {signal});
     const list = items<Device>(r);
     if (
       (Array.isArray(r.pending_members) && r.pending_members.length) ||
@@ -643,6 +644,13 @@ export function VaultProvider({
         publicKey: d.public_key,
       })),
     });
+  }
+  async function sealPhotoUpdate(payload:unknown,context:ContentContext) {
+    requireSealingAuthor(member.status,"photo",active!.device);
+    const snapshot=await get(`/photos/${context.parentId}/grants/${context.id}/audience`);
+    if(snapshot.pending_members?.length)throw Error("Someone who can see this photo has not set up encryption yet.");
+    const devices=snapshot.devices as Device[];for(const device of devices)await checkDevice(device);
+    return encryptObject({payload,context:{...context,authorId:member.id,authorDeviceId:active!.device.id,epoch:snapshot.epoch},signingKey:active!.key,recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
   }
   async function sealAlbum(payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) {
     requireSealingAuthor(member.status, "album", active!.device);
@@ -727,6 +735,7 @@ export function VaultProvider({
         open,
         seal,
         sealAlbum,
+        sealPhotoUpdate,
         audience,
         clear: async () => {
           await forgetAllDevices();
