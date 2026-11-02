@@ -33,7 +33,13 @@ export function registerAlbumRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
   app.get("/albums",async c=>c.json(await tx(c,async db=>{
     const after=c.req.query("after")?id(c.req.query("after")):null;
     const rows=await db`select *,app.album_role(id) as role from app.albums ${after?db`where id>${after}::uuid`:db``} order by id limit 31`;
-    return {items:rows.slice(0,30),next:rows.length>30?rows[29].id:null};
+    const selected=rows.slice(0,30);
+    const covers=selected.length?await db`with ranked as (
+      select g.album_id,to_jsonb(p)||jsonb_build_object('photo_date',p.photo_date::text,'grants',jsonb_build_array(to_jsonb(g))) as photo,
+      count(*) over(partition by g.album_id) as photo_count,row_number() over(partition by g.album_id order by p.photo_date desc,p.id desc) as n
+      from app.photo_grants g join app.photos p on p.id=g.photo_id where g.album_id in ${db(selected.map(row=>row.id))}
+    ) select album_id,photo,photo_count from ranked where n=1`:[];
+    return {items:selected.map(row=>{const cover=covers.find(c=>c.album_id===row.id);return {...row,photo_count:Number(cover?.photo_count||0),cover:cover?.photo||null};}),next:rows.length>30?rows[29].id:null};
   })));
   app.post("/albums",async c=>{
     const b=await body(c,z.object({envelope:envelopeSchema}).strict(),600000),album=id(b.envelope.context.id);

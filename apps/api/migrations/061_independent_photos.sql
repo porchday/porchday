@@ -229,3 +229,15 @@ BEGIN
 END $migration$;
 REVOKE ALL ON FUNCTION app.photo_grant_audience_members(uuid),app.photo_grant_audience_devices(uuid),app.edit_photo(uuid,date,integer,jsonb) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.photo_grant_audience_members(uuid),app.photo_grant_audience_devices(uuid),app.edit_photo(uuid,date,integer,jsonb) TO porchday_social;
+
+-- An album reader need not be a direct connection of the photo's owner. Allow
+-- signature-key lookup only through a currently readable photo/byte resource.
+-- The media path also retains verification after a metadata edit uses a newer
+-- signing device, while the original encrypted image keeps its original signer.
+DO $migration$
+DECLARE definition text;needle text:='OR EXISTS(SELECT FROM app.posts p WHERE';
+BEGIN
+ SELECT pg_get_functiondef('app.author_key(uuid)'::regprocedure) INTO definition;
+ IF (length(definition)-length(replace(definition,needle,'')))/length(needle)<>1 THEN RAISE EXCEPTION 'UNRECOGNIZED_AUTHOR_KEY_READER';END IF;
+ EXECUTE replace(definition,needle,'OR EXISTS(SELECT FROM app.photo_grants pg WHERE pg.envelope->''context''->>''authorDeviceId''=d::text AND app.can_photo_grant(pg.id)) OR EXISTS(SELECT FROM app.media_assets ma WHERE ma.envelope->''context''->>''authorDeviceId''=d::text AND app.can_media(ma.id)) '||needle);
+END $migration$;

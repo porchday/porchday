@@ -1,10 +1,12 @@
+import { AlbumCover } from "./AlbumCover";
+import type { PhotoRow } from "./photo-record";
 import React, { useEffect, useRef, useState } from "react";
 import type { Content, Device, EncryptedEnvelope, Json } from "./api";
 import { get, post, request, del, items, message } from "./api";
 import { useVault } from "./vault";
 import { Alert, Button, Empty, Field, Icon, Loading, Modal, navigate, useAction } from "./ui";
 export type AlbumRole = "read" | "add" | "admin";
-export type AlbumRow = {id:string;owner_id:string;envelope:EncryptedEnvelope;author_key:Device;revision:number;role:AlbumRole};
+export type AlbumRow = {photo_count?:number;cover?:PhotoRow|null;id:string;owner_id:string;envelope:EncryptedEnvelope;author_key:Device;revision:number;role:AlbumRole};
 const roleLabels:Record<AlbumRole,string>={read:"Read-only",add:"Add",admin:"Album-admin"};
 type DecodedAlbum = {row:AlbumRow;content:Content|null;error?:string};
 export function Albums() {
@@ -35,7 +37,7 @@ export function Albums() {
   return <>
     <div className="page-heading album-heading"><h1>Albums</h1>{vault.member.status==="active"&&<Button variant="primary" onClick={()=>setCreating(true)}><Icon name="plus"/>Create album</Button>}</div>
     <Alert>{action.error}</Alert>
-    {!loaded&&action.busy?<Loading/>:<div className="album-grid">{albums.map(({row,content,error})=><a className="album-card panel" href={"/app/albums/"+row.id} key={row.id}><Icon name="album" size={40}/><h2>{content?.name||"Encrypted album"}</h2><p>{roleLabels[row.role]}</p>{error&&<p>{error}</p>}</a>)}</div>}
+    {!loaded&&action.busy?<Loading/>:<div className="album-grid">{albums.map(({row,content,error})=><a className="album-card panel" href={"/app/albums/"+row.id} key={row.id}><AlbumCover photo={row.cover}/><h2>{content?.name||"Encrypted album"}</h2><p>{row.photo_count||0} {(row.photo_count||0)===1?"photo":"photos"} · {roleLabels[row.role]}</p>{error&&<p>{error}</p>}</a>)}</div>}
     {loaded&&!albums.length&&<Empty icon="album" title="Make an album together">Create an album, add people and choose whether they can view, add photos or administer it.</Empty>}
     {next&&<Button busy={action.busy} onClick={()=>load(next)}>Load more albums</Button>}
     {creating&&<Modal title="Create album" onClose={()=>setCreating(false)}><form className="form-stack" onSubmit={create}><Field label="Album name" value={name} onChange={e=>setName(e.target.value)} maxLength={100} required/><p>You’ll be the album-admin. Add people after creating it.</p><Alert>{action.error}</Alert><Button type="submit" variant="primary" busy={action.busy} disabled={!name.trim()}>Create album</Button></form></Modal>}
