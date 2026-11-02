@@ -12,6 +12,9 @@ import WebKit
     #else
     private var preparationHost: UIWindow?
     #endif
+    // Inline HTML only: this reserved, non-routable origin gives Blob/canvas
+    // a consistent origin. It is never fetched; CSP disallows network resources.
+    static let origin = URL(string: "https://porchday-media.invalid/")!
     static let html = """
     <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src blob:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
@@ -53,7 +56,7 @@ import WebKit
                 guard !Task.isCancelled else { return }
                 self?.finish(PorchError.message("Video decoder did not start. Try opening the clip again."))
             }
-            view.loadHTMLString(Self.html, baseURL: nil)
+            view.loadHTMLString(Self.html, baseURL: Self.origin)
         }
     }
     private func finish(_ error: Error? = nil) {
@@ -66,7 +69,9 @@ import WebKit
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { finish(error) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { finish(PorchError.message("Video decoder stopped.")) }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        decisionHandler(navigationAction.request.url?.absoluteString == "about:blank" && navigationAction.navigationType == .other ? .allow : .cancel)
+        let url = navigationAction.request.url
+        let local = url?.absoluteString == "about:blank" || (ready != nil && url == Self.origin)
+        decisionHandler(local && navigationAction.navigationType == .other ? .allow : .cancel)
     }
     private func releasePreparationHost() {
         guard preparationHost != nil else { return }
@@ -120,7 +125,7 @@ import WebKit
           // the first frame, then the handler pauses before presenting controls.
           v.play().catch(fail);
         });
-        """, arguments: ["encoded": bytes.base64EncodedString()], in: nil, contentWorld: .defaultClient)
+        """, arguments: ["encoded": bytes.base64EncodedString()], in: nil, contentWorld: .page)
         try Task.checkCancellation()
         guard let metadata = result as? [String: Any], let width = metadata["width"] as? Int, let height = metadata["height"] as? Int,
               let poster = metadata["poster"] as? String, let image = Data(base64Encoded: poster), image.count <= 200_000 else { throw PorchError.message("Invalid decoded video metadata.") }
