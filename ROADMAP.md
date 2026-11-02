@@ -22,7 +22,7 @@ Ranks continue across the sections below. This is an order for selecting work, n
 
 ### Owner top product priorities
 
-Implementation is in progress on `codex/social-albums-experience`; no part of that branch is yet verified live. The branch separates Feed and Share, adds reading controls, and implements encrypted album metadata, member roles and ownership with database/HTTP tests. Standalone photos, additive album photo grants, export/import, end-to-end acceptance and production promotion remain required; album screens are not a completed photo workflow yet.
+Implementation is in progress on `codex/social-albums-experience`; no part of that branch is yet verified live. The branch separates Feed and Share, adds reading controls, and implements encrypted album metadata, member roles and ownership with database/HTTP tests. The independent-photo SQL foundation now tests direct/multiple-album grant unions and revocation. Encrypted photo API/UI integration, date editing, key redistribution, export/import, end-to-end acceptance and production promotion remain required; album screens are not a completed photo workflow yet.
 
 The [Feed, Share, Photos and social albums design](design/feed-share-photos.md) records the latest proposed UI, audience defaults, album roles and unresolved permission details.
 

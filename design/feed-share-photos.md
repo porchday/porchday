@@ -153,3 +153,13 @@ Album roles are represented as `read`, `add`, and `admin`. The creator is initia
 Membership and metadata changes are serialized with the directory epoch and an expected album revision. Metadata must be encrypted for the proposed audience before a membership update commits. Encrypted HTTP tests now cover exact recipients, stale snapshots/revisions, unauthorized role changes, and signature verification after author deletion. Photo-grant verification and deployment evidence remain required.
 
 Deleting an account deletes albums still owned by that account; transfer ownership first to keep an album. Transferred albums keep the public signature-verification key for their encrypted metadata even after its author deletes their account. Album deletion removes its access path, not contributed photo originals. Export/import coverage for albums and independent photos remains a release requirement.
+
+### Independent photo storage foundation
+
+Migration 061 introduces one logical photo ID, a date-only calendar value and separate sharing grants. Each grant points to its own encrypted media version; adding an album does not replace the direct grant or another album's grant. Removed grants delete only their corresponding media version through the existing deletion outbox. Photo deletion removes all of its grants. Existing post attachments retain their existing authorization code and are not rewritten by this migration. Their integration into the new photo abstraction remains required.
+
+Photo dates use Gregorian `YYYY-MM-DD` with no timezone conversion. The upload form will default to the user's local current date when no date is chosen; an imported capture date may be offered for review, never silently used to backdate a post. Date editing must update authenticated photo metadata without changing post chronology or sharing paths; its API/UI remains to be connected.
+
+The initial add-to-album operation requires photo ownership and the album's Add or Album-admin role. A member's ability to read another person's photo does not authorize sharing it into another album. Album-admins can remove a grant from their album without deleting the original photo. Relationship removal and blocks permanently remove the corresponding recipient entries; reconnecting or unblocking alone cannot revive them. Restrictive recovery decisions cover those recipient removals and photo/grant deletions.
+
+These are SQL-level foundations, not completed encrypted upload, date editing, export/import or hosted acceptance. New album-member key redistribution and its source-signature verification still need implementation and testing.
