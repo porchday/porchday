@@ -26,6 +26,11 @@ final class AppleParityTests: XCTestCase {
         mp4[0] = 0xff
         XCTAssertThrowsError(try VideoContainer.mime(mp4))
     }
+    func testMentionsDoNotResolveEmailOrUnknownHandleOrDuplicate() {
+        let person = PersonTag(.object(["id": .string(UUID().uuidString), "kind": .string("member"), "label": .string("nick")]))!
+        XCTAssertTrue(NativeMentions.resolve("email@nick and @unknown", directory: [person], existing: []).isEmpty)
+        XCTAssertEqual(NativeMentions.resolve("Hi @Nick, and @nick!", directory: [person], existing: []), [person])
+    }
     func testArchiveMediaExtensionsAreClosedSet() throws {
         XCTAssertEqual(try PortableArchive.mediaExtension("video/quicktime"), "mov")
         XCTAssertThrowsError(try PortableArchive.mediaExtension("text/html"))
