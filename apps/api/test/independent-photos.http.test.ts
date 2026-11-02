@@ -222,6 +222,52 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(owner.id,`/photos/${id}`,"DELETE")).status).toBe(200);
     expect((await call(friend.id,`/photos/${id}`)).status).toBe(404);
   });
+  it("lets an existing admin share album history without replacing direct access or the owner identity",async()=>{
+    const owner=await person(),admin=await person(),reader=await person(),friend=await person();await connect(owner,admin);await connect(owner,reader);await connect(owner,friend);
+    const album=randomUUID();const first=await seal(owner,{name:"History"},1,{id:album,kind:"album"});
+    expect((await call(owner.id,"/albums","POST",{envelope:first})).status).toBe(201);
+    async function memberChange(who:Person,role:string,revision:number){
+      const envelope=await seal(owner,{name:"History"},revision+1,{...first.context,revision:revision+1,audience:"album",groupId:album},{memberId:who.id,role});
+      const result=await call(owner.id,`/albums/${album}/members/${who.id}`,"PUT",{envelope,role,expected_revision:revision});expect(result.status,JSON.stringify(result.data)).toBe(200);
+    }
+    await memberChange(admin,"admin",1);
+    const p=await publish(owner,"connections"),albumGrant=await uploadGrant(owner,p.id,"album",album),gid=albumGrant.envelope.context.id;
+    expect((await call(owner.id,`/photos/${p.id}/grants`,"POST",{envelope:albumGrant.envelope,media_id:albumGrant.media_id})).status).toBe(201);
+    await memberChange(reader,"read",2);
+    // Reader can still see its direct path, but not the older album path.
+    expect((await call(reader.id,`/photos/${p.id}`)).data.photo.grants.map((g:any)=>g.id)).not.toContain(gid);
+    const path=`/photos/${p.id}/grants/${gid}`;
+    expect((await call(reader.id,path+"/refresh-audience")).status).toBe(404);
+    const snapshot=await call(admin.id,path+"/refresh-audience");expect(snapshot.status).toBe(200);
+    async function sealRefresh(payload:unknown,context:ContentContext){return encryptObject({payload,context:{...context,authorId:admin.id,authorDeviceId:admin.deviceId,epoch:snapshot.data.epoch},signingKey:admin.key,recipients:snapshot.data.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});}
+    const media=randomUUID();const {photoDate:_,...base}=albumGrant.envelope.context;
+    const encrypted=await sealRefresh({bytes:"aGVsbG8=",mime:"image/jpeg"},{...base,id:media,kind:"media"});
+    const bytes=new TextEncoder().encode(JSON.stringify(encrypted));
+    const reserve=await call(admin.id,"/media","POST",{id:media,envelope:encrypted,byte_size:bytes.length,photo_refresh_id:gid});expect(reserve.status,JSON.stringify(reserve.data)).toBe(201);
+    expect((await app.request(`https://local.test/media/${media}/bytes`,{method:"PUT",headers:{"x-member":admin.id,"content-type":"application/octet-stream"},body:bytes},env)).status).toBe(200);
+    const envelope=await sealRefresh({media:[{id:media,mime:"image/jpeg",alt:"Original caption"}]},albumGrant.envelope.context);
+    const body={envelope,media_id:media,expected_media_id:albumGrant.media_id,expected_revision:1};
+    expect((await call(admin.id,path+"/refresh","POST",{...body,expected_revision:2})).status).toBe(409);
+    // A membership/key epoch change between upload and attach fails closed.
+    await db`update app.directory_epoch set epoch=epoch+1 where id`;
+    expect((await call(admin.id,path+"/refresh","POST",body)).data.error.code).toBe("AUDIENCE_CHANGED");
+    expect(await db`select media_id from app.photo_grants where id=${gid}`).toMatchObject([{media_id:albumGrant.media_id}]);
+    // Restore only this synthetic fixture's epoch to exercise the valid attach.
+    await db`update app.directory_epoch set epoch=epoch-1 where id`;
+    const refreshed=await call(admin.id,path+"/refresh","POST",body);expect(refreshed.status,JSON.stringify(refreshed.data)).toBe(200);
+    expect((await call(admin.id,path+"/refresh","POST",body)).status).toBe(409);
+    const photo=(await call(reader.id,`/photos/${p.id}`)).data.photo,grant=photo.grants.find((g:any)=>g.id===gid);
+    expect(photo.owner_key.member_id).toBe(owner.id);expect(grant.author_key.member_id).toBe(admin.id);
+    expect((await decryptObject<any>({envelope:grant.envelope,expectedContext:envelope.context,privateKey:reader.key,authorPublicKey:admin.keys.publicKey})).media[0].id).toBe(media);
+    expect((await call(friend.id,`/photos/${p.id}`)).data.photo.grants[0].media_id).toBe(p.grant.media_id);
+    expect(await db`select id from app.media_assets where id=${albumGrant.media_id}`).toHaveLength(0);
+    expect(await db`select owner_id from app.media_assets where id=${media}`).toMatchObject([{owner_id:owner.id}]);
+    // Retained public signing keys survive the admin leaving/deleting their account.
+    await db`delete from app.members where id=${admin.id}`;
+    expect((await call(reader.id,`/devices/${admin.deviceId}`)).data.public_key).toBe(admin.keys.publicKey);
+    expect((await app.request(`https://local.test/media/${media}/bytes`,{headers:{"x-member":reader.id}},env)).status).toBe(200);
+    expect((await call(reader.id,`/photos/${p.id}`)).data.photo.owner_id).toBe(owner.id);
+  });
   it("combines attachments and independent photos in the viewer's calendar without exposing private or muted photos",async()=>{
     const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
     const independent=await publish(owner,"connections"),postId=randomUUID(),attachment=await uploadGrant(owner,postId,"connections");

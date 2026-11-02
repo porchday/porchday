@@ -280,3 +280,68 @@ BEGIN
  LIMIT 1$new$);
 END $migration$;
 REVOKE ALL ON FUNCTION app.bind_photo_grant_author(),app.bind_media_author() FROM PUBLIC;
+
+-- An admin can refresh an existing album path, never create a new path for
+-- someone else's photo. Keep the owner's access and exclude owner blocks.
+CREATE FUNCTION app.photo_refresh_members(g uuid) RETURNS TABLE(member_id uuid) LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+DECLARE grant_row app.photo_grants;photo app.photos;
+BEGIN
+ SELECT * INTO grant_row FROM app.photo_grants WHERE id=g;
+ SELECT * INTO photo FROM app.photos WHERE id=grant_row.photo_id;
+ IF NOT app.may_write() OR grant_row.album_id IS NULL OR app.album_role(grant_row.album_id) IS DISTINCT FROM 'admin' OR NOT app.can_photo_grant(g) THEN RAISE EXCEPTION 'FORBIDDEN';END IF;
+ RETURN QUERY SELECT m.id FROM app.members m WHERE m.status IN('active','restricted') AND NOT app.blocked(photo.owner_id,m.id)
+ AND(m.id=photo.owner_id OR EXISTS(SELECT FROM app.album_members am JOIN app.albums a ON a.id=am.album_id WHERE am.album_id=grant_row.album_id AND am.member_id=m.id AND NOT app.blocked(a.owner_id,m.id)));
+END $$;
+CREATE FUNCTION app.photo_refresh_devices(g uuid) RETURNS TABLE(id uuid,member_id uuid,public_key text,fingerprint text) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+ SELECT d.id,d.member_id,d.public_key,d.fingerprint FROM app.device_keys d JOIN app.photo_refresh_members(g) m ON m.member_id=d.member_id WHERE d.revoked_at IS NULL ORDER BY d.id
+$$;
+CREATE FUNCTION app.refresh_photo_grant(g uuid,expected_media uuid,expected_revision integer,e jsonb,media uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+DECLARE grant_row app.photo_grants;photo app.photos;m app.media_assets;
+BEGIN
+ IF NOT app.may_write() THEN RAISE EXCEPTION 'FORBIDDEN';END IF;
+ PERFORM app.lock_epoch();
+ SELECT * INTO grant_row FROM app.photo_grants WHERE id=g;
+ SELECT * INTO photo FROM app.photos WHERE id=grant_row.photo_id FOR UPDATE;
+ SELECT * INTO grant_row FROM app.photo_grants WHERE id=g FOR UPDATE;
+ IF photo.id IS NULL OR grant_row.album_id IS NULL OR app.album_role(grant_row.album_id) IS DISTINCT FROM 'admin' OR NOT app.can_photo_grant(g) THEN RAISE EXCEPTION 'FORBIDDEN';END IF;
+ IF grant_row.media_id<>expected_media OR photo.revision<>expected_revision THEN RAISE EXCEPTION 'REVISION_CHANGED';END IF;
+ IF e->'context'->>'id' IS DISTINCT FROM g::text OR e->'context'->>'parentId' IS DISTINCT FROM photo.id::text
+ OR e->'context'->>'kind' IS DISTINCT FROM 'photo' OR e->'context'->>'authorId' IS DISTINCT FROM app.actor()::text
+ OR e->'context'->>'audience' IS DISTINCT FROM 'album' OR e->'context'->>'groupId' IS DISTINCT FROM grant_row.album_id::text
+ OR e->'context'->>'photoDate' IS DISTINCT FROM photo.photo_date::text OR (e->'context'->>'revision')::integer IS DISTINCT FROM photo.revision
+ OR(e->'context'->>'expiresAt')::timestamptz IS DISTINCT FROM photo.expires_at THEN RAISE EXCEPTION 'ENVELOPE_CONTEXT';END IF;
+ SELECT * INTO m FROM app.media_assets WHERE id=media FOR UPDATE;
+ IF m.id IS NULL OR m.owner_id<>app.actor() OR m.state<>'ready' OR num_nonnulls(m.post_id,m.profile_member_id,m.group_id)>0 THEN RAISE EXCEPTION 'MEDIA_NOT_READY';END IF;
+ IF m.envelope->'context'->>'parentId' IS DISTINCT FROM photo.id::text OR m.envelope->'context'->>'groupId' IS DISTINCT FROM grant_row.album_id::text
+ OR m.envelope->'context'->>'audience' IS DISTINCT FROM 'album' OR m.envelope->'recipients' IS DISTINCT FROM e->'recipients'
+ OR(m.envelope->'context'->>'expiresAt')::timestamptz IS DISTINCT FROM photo.expires_at THEN RAISE EXCEPTION 'MEDIA_AUDIENCE_MISMATCH';END IF;
+ -- Serialize with the ordinary owner quota reservation lock. Replacement bytes
+ -- belong to the photo, so deleting an administering account cannot erase it.
+ PERFORM 1 FROM app.profiles WHERE member_id=photo.owner_id FOR UPDATE;
+ IF (SELECT coalesce(sum(byte_size),0) FROM app.media_assets WHERE owner_id=photo.owner_id AND id NOT IN(expected_media,media))+m.byte_size>1073741824 THEN RAISE EXCEPTION 'MEDIA_QUOTA';END IF;
+ UPDATE app.media_assets SET state='attached',owner_id=photo.owner_id WHERE id=media;
+ UPDATE app.photo_grants SET envelope=e,media_id=media WHERE id=g;
+ -- Only removals are journaled; keep retained recipients in place.
+ DELETE FROM app.photo_grant_recipients r WHERE r.grant_id=g AND NOT EXISTS(SELECT FROM jsonb_array_elements(e->'recipients') x WHERE (x->>'memberId')::uuid=r.member_id);
+ INSERT INTO app.photo_grant_recipients(grant_id,member_id) SELECT DISTINCT g,(x->>'memberId')::uuid FROM jsonb_array_elements(e->'recipients') x ON CONFLICT DO NOTHING;
+ DELETE FROM app.media_assets WHERE id=expected_media;
+END $$;
+REVOKE ALL ON FUNCTION app.photo_refresh_members(uuid),app.photo_refresh_devices(uuid),app.refresh_photo_grant(uuid,uuid,integer,jsonb,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.photo_refresh_members(uuid),app.photo_refresh_devices(uuid),app.refresh_photo_grant(uuid,uuid,integer,jsonb,uuid) TO porchday_social;
+
+CREATE FUNCTION app.revoke_album_photo_recipient() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+BEGIN
+ DELETE FROM app.photo_grant_recipients r USING app.photo_grants g,app.photos p
+ WHERE r.grant_id=g.id AND p.id=g.photo_id AND g.album_id=OLD.album_id AND r.member_id=OLD.member_id AND p.owner_id<>OLD.member_id;
+ RETURN NULL;
+END $$;
+CREATE TRIGGER revoke_album_photo_recipient AFTER DELETE ON app.album_members FOR EACH ROW EXECUTE FUNCTION app.revoke_album_photo_recipient();
+CREATE FUNCTION app.revoke_album_photo_block() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+BEGIN
+ DELETE FROM app.photo_grant_recipients r USING app.photo_grants g,app.albums a,app.photos p
+ WHERE r.grant_id=g.id AND a.id=g.album_id AND p.id=g.photo_id AND p.owner_id<>r.member_id
+ AND((a.owner_id=NEW.actor AND r.member_id=NEW.target) OR(a.owner_id=NEW.target AND r.member_id=NEW.actor));
+ RETURN NULL;
+END $$;
+CREATE TRIGGER revoke_album_photo_block AFTER INSERT ON app.blocks FOR EACH ROW EXECUTE FUNCTION app.revoke_album_photo_block();
+REVOKE ALL ON FUNCTION app.revoke_album_photo_recipient(),app.revoke_album_photo_block() FROM PUBLIC;

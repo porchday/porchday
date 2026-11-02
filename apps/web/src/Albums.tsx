@@ -1,3 +1,4 @@
+import {shareAlbumHistory} from "./photo-album";
 import { AlbumCover } from "./AlbumCover";
 import type { PhotoRow } from "./photo-record";
 import React, { useEffect, useRef, useState } from "react";
@@ -47,6 +48,7 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
   const vault=useVault(),action=useAction();
   const [data,setData]=useState<{album:AlbumRow;members:Json[]}|null>(null),[content,setContent]=useState<Content|null>(null);
   const [name,setName]=useState(""),[people,setPeople]=useState(false),[choices,setChoices]=useState<Json[]>([]),[target,setTarget]=useState(""),[role,setRole]=useState<AlbumRole>("read");
+  const [history,setHistory]=useState<string>("");
   const [confirm,setConfirm]=useState<"leave"|"delete"|string|null>(null);
   async function load(){const result=await get("/albums/"+id);const decoded=await vault.open(result.album);setData(result as typeof data);setContent(decoded);setName(String(decoded.name||""));}
   useEffect(()=>{let alive=true;void action.run(async()=>{const result=await get("/albums/"+id);const decoded=await vault.open(result.album);if(alive){setData(result as typeof data);setContent(decoded);setName(String(decoded.name||""));}});return()=>{alive=false;};},[id,vault.member.id]);
@@ -54,8 +56,15 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
   async function changeMember(memberId:string,nextRole:AlbumRole|null){if(!data||!content)return;await action.runSave(async()=>{
     const envelope=await vault.sealAlbum(content,{...data.album.envelope.context,revision:data.album.revision+1},{memberId,role:nextRole});
     await request(`/albums/${id}/members/${memberId}`,{method:"PUT",body:JSON.stringify({envelope,role:nextRole,expected_revision:data.album.revision})});
-    setTarget("");await load();
+    const added=nextRole!==null&&!data.members.some(m=>m.member_id===memberId);
+    setTarget("");await load();if(added){try{await refreshHistory();}catch{setHistory("Album permissions were saved, but sharing existing photos stopped. Use Share existing photos to retry.");}}
   },"Album permissions updated.");}
+  async function refreshHistory(){
+    setHistory("Sharing existing photos…");
+    const result=await shareAlbumHistory(vault,id,(done,failed)=>setHistory(`${done} photos shared${failed?`; ${failed} need a retry`:""}…`));
+    setHistory(`${result.done} photos shared with current eligible members. ${result.failed?`${result.failed} could not be shared; restore your photo keys or retry after membership changes settle.`:""} Only photos you can decrypt were included. An admin with the original photo keys may need to share older photos you cannot see.`);
+  }
+  async function shareHistory(){await action.runSave(refreshHistory);}
   async function rename(){if(!data||!content||!name.trim())return;await action.runSave(async()=>{
     const envelope=await vault.sealAlbum({...content,name:name.trim()},{...data.album.envelope.context,revision:data.album.revision+1});
     await request("/albums/"+id,{method:"PUT",body:JSON.stringify({envelope,expected_revision:data.album.revision})});await load();
@@ -72,6 +81,8 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
           {admin&&canWrite&&m.member_id!==data.album.owner_id&&m.member_id!==vault.member.id?<><select aria-label={"Role for @"+m.handle} value={m.role} disabled={action.busy} onChange={e=>changeMember(m.member_id,e.target.value as AlbumRole)}>{Object.entries(roleLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><Button variant="outline compact" disabled={action.busy} onClick={()=>changeMember(m.member_id,null)}>Remove</Button></>:<span>{roleLabels[m.role as AlbumRole]}</span>}
         </div>)}
         {admin&&canWrite&&<><label>Add a connection<select value={target} onChange={e=>setTarget(e.target.value)}><option value="">Choose a person</option>{choices.filter(c=>!data.members.some(m=>m.member_id===c.id)).map(c=><option key={c.id} value={c.id}>@{c.handle}</option>)}</select></label><label>Role<select value={role} onChange={e=>setRole(e.target.value as AlbumRole)}>{Object.entries(roleLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label><Button disabled={!target} busy={action.busy} onClick={()=>changeMember(target,role)}>Add person</Button>
+          <p>Adding a person also shares earlier photos you can decrypt. Use Share existing photos to retry or share history after restoring your keys. A photo's other audiences are unchanged; blocked people remain excluded.</p>
+          <Button busy={action.busy} onClick={shareHistory}>Share existing photos</Button><p role="status">{history}</p>
           <Field label="Album name" value={name} maxLength={100} onChange={e=>setName(e.target.value)}/><Button disabled={!name.trim()||name===content.name} busy={action.busy} onClick={rename}>Save name</Button></>}
         {owner&&canWrite?<><Button variant="outline" onClick={()=>setConfirm("delete")}>Delete album</Button>{data.members.filter(m=>m.member_id!==vault.member.id&&m.role==="admin").map(m=><Button key={m.member_id} onClick={()=>setConfirm(m.member_id)}>Transfer ownership to @{m.handle}</Button>)}</>:canWrite&&<Button variant="outline" onClick={()=>setConfirm("leave")}>Leave album</Button>}
       </section>}

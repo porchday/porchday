@@ -88,6 +88,7 @@ type VaultValue = {
     postId?: string,
   ) => Promise<{ epoch: number; devices: Device[] }>;
   verifyDevice: (device:Device) => Promise<void>;
+  sealPhotoRefresh: (payload: unknown, context: ContentContext, grantId: string) => Promise<EncryptedEnvelope>;
   sealPhotoUpdate: (payload: unknown, context: ContentContext) => Promise<EncryptedEnvelope>;
   sealAlbum: (payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) => Promise<EncryptedEnvelope>;
   clear: () => Promise<void>;
@@ -646,6 +647,13 @@ export function VaultProvider({
       })),
     });
   }
+  async function sealPhotoRefresh(payload:unknown,context:ContentContext,grantId:string) {
+    requireSealingAuthor(member.status,context.kind,active!.device);
+    const snapshot=await get(`/photos/${context.parentId}/grants/${grantId}/refresh-audience`);
+    if(snapshot.pending_members?.length)throw Error("Someone who can see this photo has not set up encryption yet. Set up their keys and retry sharing album history.");
+    const devices=snapshot.devices as Device[];for(const device of devices)await checkDevice(device);
+    return encryptObject({payload,context:{...context,authorId:member.id,authorDeviceId:active!.device.id,epoch:snapshot.epoch},signingKey:active!.key,recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+  }
   async function sealPhotoUpdate(payload:unknown,context:ContentContext) {
     requireSealingAuthor(member.status,"photo",active!.device);
     const snapshot=await get(`/photos/${context.parentId}/grants/${context.id}/audience`);
@@ -737,6 +745,7 @@ export function VaultProvider({
         seal,
         sealAlbum,
         sealPhotoUpdate,
+        sealPhotoRefresh,
         verifyDevice: checkDevice,
         audience,
         clear: async () => {

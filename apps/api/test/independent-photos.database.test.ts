@@ -133,6 +133,37 @@ suite("Independent photo sharing paths",()=>{
     await db`update app.safety_journal_state set restore_quarantined=false where id`;
     expect(await actor(reader,sql=>sql`select id from app.media_assets where id=${inAlbum.media}`)).toHaveLength(0);
   });
+  it("limits album history recipients to eligible members and keeps owner access after leaving",async()=>{
+    const albumOwner=await member(),contributor=await member(),reader=await member(),unkeyed=await member();
+    await connect(albumOwner,contributor);await connect(albumOwner,reader);await connect(albumOwner,unkeyed);
+    const a=await create(albumOwner);await change(albumOwner,a,contributor,"add",1);await change(albumOwner,a,reader,"read",2);
+    const p=await photo(contributor),g=await grant(contributor,p,[albumOwner,reader],a);
+    await change(albumOwner,a,unkeyed,"read",3);
+    await db`update app.device_keys set revoked_at=now() where member_id=${unkeyed}`;
+    expect(await actor(albumOwner,sql=>sql`select * from app.photo_refresh_members(${g.id})`)).toHaveLength(4);
+    expect(await actor(albumOwner,sql=>sql`select * from app.photo_refresh_devices(${g.id})`)).toHaveLength(3);
+    await expect(actor(reader,sql=>sql`select * from app.photo_refresh_members(${g.id})`)).rejects.toThrow(/FORBIDDEN/);
+    await actor(contributor,sql=>sql`select app.leave_album(${a})`);
+    const members=await actor(albumOwner,sql=>sql`select * from app.photo_refresh_members(${g.id})`) as any;
+    expect(members.map((m:any)=>m.member_id)).toContain(contributor);
+    await db`insert into app.blocks(actor,target) values(${contributor},${reader})`;
+    const narrowed=await actor(albumOwner,sql=>sql`select * from app.photo_refresh_members(${g.id})`) as any;
+    expect(narrowed.map((m:any)=>m.member_id)).not.toContain(reader);
+    expect(narrowed.map((m:any)=>m.member_id)).toContain(contributor);
+  });
+  it("does not revive an album photo path merely by rejoining or unblocking the album owner",async()=>{
+    const owner=await member(),contributor=await member(),reader=await member();await connect(owner,contributor);await connect(owner,reader);
+    const a=await create(owner);await change(owner,a,contributor,"add",1);await change(owner,a,reader,"read",2);
+    const p=await photo(contributor),g=await grant(contributor,p,[owner,reader],a);
+    await change(owner,a,reader,null,3);await change(owner,a,reader,"read",4);
+    expect(await actor(reader,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(0);
+    // Simulate explicit re-sharing, then exercise album-owner block revocation.
+    await db`insert into app.photo_grant_recipients(grant_id,member_id) values(${g.id},${reader})`;
+    await db`insert into app.blocks(actor,target) values(${owner},${reader})`;
+    await db`delete from app.blocks where actor=${owner} and target=${reader}`;
+    expect(await actor(reader,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(0);
+    expect(await actor(contributor,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(1);
+  });
   it("stores date-only values and rejects invalid dates, direct table mutation and metadata/attachment swaps",async()=>{
     const owner=await member(),p=await photo(owner);
     expect(await actor(owner,sql=>sql`select photo_date::text as day from app.photos where id=${p}`)).toMatchObject([{day:"2026-10-31"}]);

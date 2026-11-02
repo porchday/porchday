@@ -8,7 +8,7 @@ import type { Env, Variables } from "./types";
 interface Dependencies extends RouteDependencies {
   body<T>(c:SocialContext,schema:z.ZodType<T>,maxBytes?:number):Promise<T>;
   writeAllowed(db:Db):Promise<void>;
-  checkEnvelope(db:Db,member:string,e:EncryptedEnvelope,kind:string,options?:{allowPast?:boolean;photoGrantId?:string}):Promise<unknown>;
+  checkEnvelope(db:Db,member:string,e:EncryptedEnvelope,kind:string,options?:{allowPast?:boolean;photoGrantId?:string;photoRefreshId?:string}):Promise<unknown>;
 }
 const day=z.string().date().refine(d=>d>="0001-01-01"&&d<="9999-12-31");
 const grantSchema=z.object({envelope:envelopeSchema,media_id:z.string().uuid()}).strict();
@@ -18,6 +18,13 @@ export async function photoGrantSnapshot(db:Db,grant:string) {
   const members=await db`select * from app.photo_grant_audience_members(${grant}::uuid)`;
   const keyed=new Set(devices.map(d=>d.member_id));
   return {epoch:Number(lock.epoch),devices,pending_members:members.filter(m=>!keyed.has(m.member_id)).map(m=>m.member_id)};
+}
+export async function photoRefreshSnapshot(db:Db,grant:string) {
+ const [lock]=await db`select app.lock_epoch() as epoch`;
+ const devices=await db`select * from app.photo_refresh_devices(${grant}::uuid)`;
+ const members=await db`select * from app.photo_refresh_members(${grant}::uuid)`;
+ const keyed=new Set(devices.map(d=>d.member_id));
+ return {epoch:Number(lock.epoch),devices,pending_members:members.filter(m=>!keyed.has(m.member_id)).map(m=>m.member_id)};
 }
 export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>,{tx,body,fail,id,writeAllowed,checkEnvelope}:Dependencies) {
   async function requirePhoto(db:Db,photo:string) {
@@ -98,6 +105,23 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     const [row]=await db`select id from app.photo_grants where id=${grant} and photo_id=${photo.id}`;if(!row)fail("NOT_FOUND",404);
     return photoGrantSnapshot(db,grant);
   })));
+  app.get("/photos/:id/grants/:grant/refresh-audience",async c=>c.json(await tx(c,async db=>{
+    const photo=await requirePhoto(db,id(c.req.param("id"))),grant=id(c.req.param("grant"));
+    const [row]=await db`select id from app.photo_grants where id=${grant} and photo_id=${photo.id}`;if(!row)fail("NOT_FOUND",404);
+    return photoRefreshSnapshot(db,grant);
+  })));
+  app.post("/photos/:id/grants/:grant/refresh",async c=>{
+    const photoId=id(c.req.param("id")),grant=id(c.req.param("grant"));
+    const b=await body(c,grantSchema.extend({expected_media_id:z.string().uuid(),expected_revision:z.number().int().positive()}),600000);
+    return c.json(await tx(c,async db=>{
+      await writeAllowed(db);await db`select app.lock_epoch()`;
+      const photo=await requirePhoto(db,photoId);context(b.envelope,photo as any);
+      if(b.envelope.context.id!==grant)fail("ENVELOPE_CONTEXT");
+      await checkEnvelope(db,c.get("memberId"),b.envelope,"photo",{allowPast:true,photoRefreshId:grant});
+      await db`select app.refresh_photo_grant(${grant},${b.expected_media_id},${b.expected_revision},${db.json(b.envelope)},${b.media_id})`;
+      return {ok:true};
+    }));
+  });
   app.put("/photos/:id",async c=>{
     const photoId=id(c.req.param("id")),b=await body(c,z.object({photo_date:day,expected_revision:z.number().int().positive(),envelopes:z.array(envelopeSchema).min(1).max(100)}).strict(),12*1024*1024);
     return c.json(await tx(c,async db=>{

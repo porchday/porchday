@@ -1,4 +1,4 @@
-import { registerPhotoRoutes, photoGrantSnapshot } from "./social-photos";
+import { registerPhotoRoutes, photoGrantSnapshot, photoRefreshSnapshot } from "./social-photos";
 import { registerAlbumRoutes, albumSnapshot } from "./social-albums";
 import {registerCalendarRoutes} from './social-calendar.js';
 import {readMemberBootstrap} from './member-bootstrap';
@@ -73,6 +73,7 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
     historyPostId?: string;
     historySourceRevision?: number;
     photoGrantId?: string;
+    photoRefreshId?: string;
     albumChange?: { memberId: string; role: "read" | "add" | "admin" | null };
 } = {}) {
     const e = envelope.context;
@@ -98,7 +99,11 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
         if (options.historySourceRevision !== undefined && source.envelope.context.revision !== options.historySourceRevision) fail('REVISION_CHANGED',409);
     }
     if (e.photoDate !== undefined && kind !== "photo") fail("ENVELOPE_CONTEXT");
-    const s = options.photoGrantId ? await photoGrantSnapshot(db, options.photoGrantId) : e.audience === "album"
+    if(options.photoRefreshId){
+      const [grant]=await db`select * from app.photo_grants where id=${options.photoRefreshId}`;
+      if(!grant||e.audience!=="album"||e.groupId!==grant.album_id||e.parentId!==grant.photo_id||!["photo","media"].includes(kind)||(kind==="photo"&&e.id!==grant.id))fail("ENVELOPE_CONTEXT");
+    }
+    const s = options.photoRefreshId ? await photoRefreshSnapshot(db,options.photoRefreshId) : options.photoGrantId ? await photoGrantSnapshot(db, options.photoGrantId) : e.audience === "album"
       ? await albumSnapshot(db, e.groupId!, options.albumChange)
       : await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
     if (s.pending_members.length)
@@ -142,7 +147,7 @@ export function createSocialRoutes() {
         const code = (err as {
             code?: string;
         }).code;
-        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED','REACTION_LIMIT','REACTION_STORAGE_LIMIT','PHOTO_GRANT_LIMIT','ALBUM_OWNER_REQUIRED','ALBUM_ADMIN_REQUIRED','ALBUM_MEMBER_LIMIT','ALBUM_AUDIENCE_BLOCKED','ACCOUNT_UNAVAILABLE'];
+        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED','REACTION_LIMIT','REACTION_STORAGE_LIMIT','MEDIA_QUOTA','PHOTO_GRANT_LIMIT','ALBUM_OWNER_REQUIRED','ALBUM_ADMIN_REQUIRED','ALBUM_MEMBER_LIMIT','ALBUM_AUDIENCE_BLOCKED','ACCOUNT_UNAVAILABLE'];
         if (known.includes(err.message))
             return c.json({ error: { code: err.message, message: err.message.toLowerCase().replaceAll('_', ' ') } }, 409);
         if (code === '23505')
