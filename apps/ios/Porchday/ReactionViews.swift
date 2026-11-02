@@ -3,15 +3,15 @@ import PhotosUI
 
 struct ReactionGlyph: View {
     let reaction: ReactionValue
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
     var body: some View {
         Group {
             if let unicode = reaction.unicode { Text(unicode).font(.title2) }
-            else if let image { Image(uiImage:image).resizable().scaledToFit().frame(width:28,height:28) }
+            else if let image { Image(platformImage:image).resizable().scaledToFit().frame(width:28,height:28) }
             else { Image(systemName:"face.smiling").frame(width:28,height:28) }
         }.accessibilityLabel(reaction.label).task(id:reaction.id) {
             image = nil
-            if let data = reaction.png, let decoded = try? ReactionPNG.decode(data), !Task.isCancelled { image = UIImage(cgImage:decoded) }
+            if let data = reaction.png, let decoded = try? ReactionPNG.decode(data), !Task.isCancelled { image = PlatformImage(cgImage:decoded) }
         }
     }
 }
@@ -148,7 +148,7 @@ struct ReactionPicker: View {
             if !message.isEmpty { Section { Text(message).foregroundStyle(.secondary) } }
             if selected != nil {
                 Section("Emoji") {
-                    TextField("Type or paste one emoji",text:$input).autocorrectionDisabled().textInputAutocapitalization(.never)
+                    TextField("Type or paste one emoji",text:$input).autocorrectionDisabled().porchCapitalization(.never)
                     Button("Use emoji") { Task { do { await choose(try ReactionValue.emoji(input)) } catch { message = error.localizedDescription } } }.disabled(busy || input.isEmpty)
                     TextField("Search emoji",text:$search).onChange(of:search) { _,_ in limit = 80 }
                     ForEach(Array(matches.prefix(limit))) { entry in
@@ -171,8 +171,8 @@ struct ReactionPicker: View {
             if model.canWriteSocial {
                 Section("Upload custom emoji") {
                     PhotosPicker(selection:$photo,matching:.images) { Label("Choose image",systemImage:"photo").frame(minHeight:44) }.disabled(busy)
-                    if let prepared, let image = try? ReactionPNG.decode(prepared) { Image(uiImage:UIImage(cgImage:image)).resizable().scaledToFit().frame(width:64,height:64) }
-                    TextField("Name: lowercase letters, numbers, underscores",text:$name).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    if let prepared, let image = try? ReactionPNG.decode(prepared) { Image(platformImage:PlatformImage(cgImage:image)).resizable().scaledToFit().frame(width:64,height:64) }
+                    TextField("Name: lowercase letters, numbers, underscores",text:$name).porchCapitalization(.never).autocorrectionDisabled()
                     Text("A still image up to 128 × 128 pixels. Saved privately; people who can see a reaction can reuse its emoji.").font(.footnote)
                     Button("Save to collection") { Task { await savePrepared() } }.disabled(busy || prepared == nil || name.isEmpty)
                 }

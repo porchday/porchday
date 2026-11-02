@@ -19,8 +19,8 @@ struct PlatformInvitationSection: View {
     var body: some View {
         Section("Invite by email") {
             TextField("Email address", text: Binding(get: { email }, set: { email = $0; notice = nil; error = nil }))
-                .keyboardType(.emailAddress).textContentType(.emailAddress)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .porchKeyboard(.emailAddress).porchContentType(.emailAddress)
+                .porchCapitalization(.never).autocorrectionDisabled()
                 .accessibilityLabel("Invitation email address")
                 .disabled(sending || !model.canWriteSocial)
             Picker("Connect as", selection: $kind) { Text("Friend").tag("friend"); Text("Family").tag("family") }.disabled(sending)

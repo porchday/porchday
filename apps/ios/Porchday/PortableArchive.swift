@@ -37,7 +37,7 @@ struct PortableArchive {
         let archive = try Archive(data: data, accessMode: .read)
         var files: [String: Data] = [:], total = 0, count = 0
         for entry in archive {
-            count += 1; guard count <= 5000, entry.type == .file, entry.path == "archive.json" || entry.path == "index.html" || entry.path.range(of: #"^(archive-part-[0-9]+\.json|index-part-[0-9]+\.html)$"#,options:.regularExpression) != nil || entry.path.range(of: #"^photos/[a-fA-F0-9-]{36}\.jpg$"#, options: .regularExpression) != nil else { throw PorchError.message("Archive contains an unsupported path or file type.") }
+            count += 1; guard count <= 5000, entry.type == .file, entry.path == "archive.json" || entry.path == "index.html" || entry.path.range(of: #"^(archive-part-[0-9]+\.json|index-part-[0-9]+\.html)$"#,options:.regularExpression) != nil || entry.path.range(of: #"^photos/[a-fA-F0-9-]{36}\.(jpg|mp4|mov|webm)$"#, options: .regularExpression) != nil else { throw PorchError.message("Archive contains an unsupported path or file type.") }
             guard entry.uncompressedSize <= UInt64(limit), files[entry.path] == nil else { throw PorchError.message("Archive has oversized or duplicate entries.") }
             var bytes = Data(); let crc = try archive.extract(entry) { chunk in total += chunk.count; guard total <= limit else { throw PorchError.message("Expanded archive exceeds the safety limit.") }; bytes.append(chunk) }
             guard crc == entry.checksum else { throw PorchError.message("Archive checksum failed.") }; files[entry.path] = bytes
@@ -46,8 +46,11 @@ struct PortableArchive {
         let manifest = try JSONDecoder().decode(JSON.self, from: manifestBytes)
         guard manifest["format"].string == "porchday-archive", manifest["version"].integer == 1, let source = manifest["member_id"].string, UUID(uuidString: source) != nil else { throw PorchError.message("Unsupported archive schema.") }
         if manifest["emojiLibrary"] != .null { _ = try EmojiLibraryPayload.parse(manifest["emojiLibrary"]) }
-        for photo in manifest["media"].array { guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID).jpg", let bytes = files[path], photo["mime"].string == "image/jpeg", digest(bytes) == photo["sha256"].string, photo["expires_at"] == .null || photo["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("A photo is missing or failed its checksum.") } }
+        for photo in manifest["media"].array { guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID)." + (try mediaExtension(photo["mime"].string ?? "")), let bytes = files[path], digest(bytes) == photo["sha256"].string, photo["expires_at"] == .null || photo["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("A photo is missing or failed its checksum.") } }
         return PortableArchive(manifest: manifest, files: files)
+    }
+    static func mediaExtension(_ mime: String) throws -> String {
+        switch mime { case "image/jpeg": return "jpg"; case "video/mp4": return "mp4"; case "video/quicktime": return "mov"; case "video/webm": return "webm"; default: throw PorchError.message("Unsupported archive media format.") }
     }
     static func photoDeadline(_ metadata:JSON,parent:Date?) throws -> Date? {
         guard metadata["expires_at"] == .null || metadata["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("Invalid photo deadline.") }
@@ -71,7 +74,7 @@ struct PortableArchive {
     static func load(urls:[URL],secret:String) throws -> ArchiveSelection {
         guard !urls.isEmpty,urls.count<=1000 else { throw PorchError.message("Select all parts of one archive, up to 1000 files at a time.") }
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-import-"+UUID().uuidString,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
-        try FileManager.default.setAttributes([.protectionKey:FileProtectionType.complete],ofItemAtPath:directory.path)
+        try SecureTemporaryFiles.protect(directory, directory: true)
         var loaded=false;defer { if !loaded { try? FileManager.default.removeItem(at:directory) } }
         var staged:[(Int,URL)]=[],setID:String?,memberID:String?,total:Int?,completions=0,entryCount=0,profileCount=0,libraryCount=0,photoParts:[String:Int]=[:],recordIDs=Set<String>(),references=Set<String>()
         for url in urls {
@@ -83,7 +86,7 @@ struct PortableArchive {
             if set["complete"].boolean || currentSet=="legacy" { completions += 1;total=set["total"].integer ?? 1 }
             guard index>0,index<=1000,!staged.contains(where:{$0.0==index}) else { throw PorchError.message("Duplicate or invalid archive part number.") }
             let target=directory.appendingPathComponent("part-\(index)."+(url.pathExtension.lowercased()=="pgp" ? "pgp":"zip"));try FileManager.default.copyItem(at:url,to:target)
-            try FileManager.default.setAttributes([.protectionKey:FileProtectionType.complete],ofItemAtPath:target.path)
+            try SecureTemporaryFiles.protect(target)
             staged.append((index,target))
             for section in ["posts","comments","reactions"] { for row in archive.manifest[section].array { guard let id=row["id"].string,let created=row["created_at"].string.flatMap(PorchDate.parse),created<=Date(),row["expires_at"] == .null || row["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("Archive contains invalid record identity or timestamps.") };let unique=section+":"+id+":"+(row["parent_id"].string ?? "");guard recordIDs.insert(unique).inserted else { throw PorchError.message("Duplicate record across archive parts.") };entryCount += 1;for photo in row["payload"]["media"].array { if let id=photo["id"].string { references.insert(id) } } } }
             if archive.manifest["profile"] != .null {
@@ -106,7 +109,7 @@ struct PortableArchive {
         let secret=plaintext ? nil:try CryptoVault.randomSecret(),setID=UUID().uuidString.lowercased(),date=PorchDate.string()
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-export-"+setID,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         var urls:[URL]=[],partNumber=1,files:[String:Data]=[:],refs:[JSON]=[],allRefs:[JSON]=[],size=0
-        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"emojiLibrary":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([])]
+        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"emojiLibrary":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([]),"children":.array([])]
         var manifest=base
         func flush(final:Bool) async throws {
             if !final && size==0 { return }
@@ -114,7 +117,7 @@ struct PortableArchive {
             let packed=try PortableArchive(manifest:.object(manifest),files:files).zip(),output=try secret.map { try CryptoVault.archive(packed,secret:$0) } ?? packed
             for offset in stride(from:0,to:refs.count,by:1000) { _ = try await api.social("/exports/"+jobID+"/validate",method:"POST",body:.object(["items":.array(Array(refs[offset..<min(offset+1000,refs.count)]))])) }
             if refs.isEmpty { _ = try await api.social("/exports/"+jobID+"/validate",method:"POST",body:.object(["items":.array([])])) }
-            let target=directory.appendingPathComponent(String(format:"porchday-%03d.zip",partNumber)+(secret==nil ? "":".pgp"));try output.write(to:target,options:[.atomic,.completeFileProtection]);urls.append(target)
+            let target=directory.appendingPathComponent(String(format:"porchday-%03d.zip",partNumber)+(secret==nil ? "":".pgp"));try output.write(to:target,options:SecureTemporaryFiles.writeOptions);try SecureTemporaryFiles.protect(target);urls.append(target)
             partNumber += 1;manifest=base;files=[:];refs=[];size=0
         }
         func append(_ value:JSON,section:String,reference:JSON?=nil,photo:(String,Data)?=nil) async throws {
@@ -144,12 +147,21 @@ struct PortableArchive {
                                   row["envelope"]["recipients"].array.allSatisfy({$0["memberId"].string==member.id}) else { throw PorchError.message("Invalid private emoji collection.") }
                             let payload=try await vault.open(row);_ = try EmojiLibraryPayload.parse(payload);try await append(payload,section:"emojiLibrary",reference:reference);continue
                         }
-                        if section=="profile" { if row["envelope"] != .null { let payload=try await vault.open(row);try await append(payload,section:"profile",reference:reference) };continue }
+                        if section=="profile" {
+                            for child in row["children"].array {
+                                guard child["envelope"]["context"]["authorId"].string == member.id else { throw PorchError.message("Export contained another person's child profile.") }
+                                let shared = try await vault.open(.object(["id": child["id"], "author_id": .string(member.id), "envelope": child["envelope"]]))
+                                let details = child["private_envelope"] == .null ? JSON.null : try await vault.open(.object(["id": child["id"], "author_id": .string(member.id), "envelope": child["private_envelope"]]))
+                                let record: JSON = .object(["id": child["id"], "name": shared["name"], "birthday": details["birthday"], "posting_delegate_ids": child["delegates"]])
+                                try await append(record, section: "children")
+                            }
+                            if row["envelope"] != .null { let payload=try await vault.open(row);try await append(payload,section:"profile",reference:reference) };continue
+                        }
                         if section=="media" {
                             guard let id=row["id"].string else { throw PorchError.message("Invalid photo identifier.") }
                             let raw=try await api.bytes("/api/v1/exports/\(jobID)/media/\(id)/bytes"),envelope=try JSONDecoder().decode(JSON.self,from:raw),payload=try await vault.open(.object(["id":.string(id),"envelope":envelope]))
-                            guard let encoded=payload["bytes"].string,let image=Data(base64Encoded:encoded) else { throw PorchError.message("Invalid encrypted photo.") };_ = try PhotoPipeline.safelyDecode(image)
-                            let path="photos/\(id).jpg",meta:JSON = .object(["id":.string(id),"path":.string(path),"mime":.string("image/jpeg"),"alt":payload["alt"],"width":payload["width"],"height":payload["height"],"sha256":.string(PortableArchive.digest(image)),"post_id":row["post_id"],"profile_id":row["profile_member_id"],"group_id":row["group_id"],"slot":row["slot"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null]);try await append(meta,section:"media",reference:reference,photo:(path,image))
+                            guard let encoded=payload["bytes"].string,let image=Data(base64Encoded:encoded) else { throw PorchError.message("Invalid encrypted photo.") };let mime = payload["mime"].string ?? ""; if mime == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(image) } else { guard try VideoContainer.mime(image) == mime else { throw PorchError.message("Archive video format mismatch.") }; _ = try await VideoPipeline.prepare(image) }
+                            let path="photos/\(id)." + (try PortableArchive.mediaExtension(mime)),meta:JSON = .object(["id":.string(id),"path":.string(path),"mime":.string(mime),"caption":payload["caption"],"tags":payload["tags"],"poster":payload["poster"],"alt":payload["alt"],"width":payload["width"],"height":payload["height"],"sha256":.string(PortableArchive.digest(image)),"post_id":row["post_id"],"profile_id":row["profile_member_id"],"group_id":row["group_id"],"slot":row["slot"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null]);try await append(meta,section:"media",reference:reference,photo:(path,image))
                         } else {
                             let payload=try await vault.open(row),entry:JSON = .object(["id":context["id"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null,"audience":context["audience"],"parent_id":context["parentId"],"group_id":context["groupId"],"payload":payload]);try await append(entry,section:section.contains("reactions") ? "reactions":section,reference:reference)
                         }
@@ -163,8 +175,9 @@ struct PortableArchive {
         guard let member else { throw PorchError.message("Sign in first.") }
         let (metadata,bytes)=try selection.photo(id),deadline=try PortableArchive.photoDeadline(metadata,parent:expiry)
         guard deadline.map({$0>Date()}) ?? true else { throw PorchError.message("An imported photo expired before it could be saved.") }
-        let image=try PhotoPipeline.prepare(bytes)
-        let meta:JSON = .object(["id":.string(image.id),"alt":metadata["alt"],"mime":.string("image/jpeg"),"name":.string("photo.jpg"),"width":.number(Double(image.width)),"height":.number(Double(image.height))])
+        let image: PreparedPhoto
+        if metadata["mime"].string == "image/jpeg" { image = try PhotoPipeline.prepare(bytes) } else { guard try VideoContainer.mime(bytes) == metadata["mime"].string else { throw PorchError.message("Archive video format mismatch.") }; image = try await VideoPipeline.prepare(bytes) }
+        let meta:JSON = .object(["id":.string(image.id),"alt":metadata["alt"],"mime":.string(image.mime),"name":.string("media." + (try PortableArchive.mediaExtension(image.mime))),"caption":metadata["caption"],"tags":metadata["tags"],"poster":.string(image.poster),"width":.number(Double(image.width)),"height":.number(Double(image.height))])
         let envelope=try await vault.seal(meta.replacing("bytes",with:.string(image.bytes.base64EncodedString())),member:member,kind:"media",audience:"only_me",id:image.id,parent:parent,expiry:deadline)
         let packed=try JSONEncoder().encode(envelope),upload=try await api.social("/media",method:"POST",body:.object(["id":.string(image.id),"envelope":envelope,"byte_size":.number(Double(packed.count))]))
         guard let url=upload["upload_url"].string else { throw PorchError.message("Upload is unavailable.") };_ = try await api.bytes(url,method:"PUT",body:packed);return meta
