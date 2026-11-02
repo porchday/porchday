@@ -1,12 +1,12 @@
 # Feed Share Photos and social albums
 
-Status: proposed product design, November 1, 2026. This captures the owner's sketch and subsequent interactive mockup decisions. It defines the intended experience, not shipped behavior. [ROADMAP.md](../ROADMAP.md) remains the priority order; issues retain delivery and acceptance evidence.
+Status: proposed product design, updated November 2, 2026. This captures the owner's sketch and subsequent interactive mockup decisions. It defines the intended experience, not shipped behavior. [ROADMAP.md](../ROADMAP.md) remains the priority order; issues retain delivery and acceptance evidence.
 
 Porchday separates reading updates, sharing something new, and browsing photos. Photos become independent objects with editable dates. Albums are social spaces with per-person roles, and contribute access to photos without taking away access those photos already had.
 
 ## Navigation and visual language
 
-Bottom navigation is **Feed → Share → Photos → Connections → More**. Use Photos, not Photo Albums. More contains Groups, Builder chat, Notifications, Settings and Feature additions, subject to existing authorization. Settings uses a gear rather than the appearance sun icon. Move the post composer out of Feed and into Share.
+Bottom navigation is **Feed → Share → Albums → Connections → More**. Albums focuses exclusively on photo albums; individual photos are browsed through Feed. More contains Groups, Builder chat, Notifications, Settings and Feature additions, subject to existing authorization. Settings uses a gear rather than the appearance sun icon. Move the post composer out of Feed and into Share.
 
 Feed's icon is a tall post card with a small person inside and the beginning of the next card underneath. It should suggest substantial posts and a stream of content, not a house, generic landscape thumbnail or short list rows. Other navigation icons should have comparable apparent size and line thickness. The mockup uses approximately 40px overall icon height and 1.7px strokes; implementation must account for SVG scaling so enlarging an icon does not make its lines heavier. Preserve readable labels and comfortable touch targets.
 
@@ -18,7 +18,7 @@ Feed displays chronological posts without a composer. Its controls are:
 
 | Control | Choices and behavior |
 | --- | --- |
-| Content | Posts / Photos only. Photos only filters the readable feed to photo content; it does not change permissions. |
+| Content | **Posts / Photos** tabs, visually mirroring Share’s top tabs. Photos filters readable content to photos; it does not change permissions. Replace the earlier content dropdown. |
 | View | **Infinite scroll / Calendar**. Infinite scroll replaces the earlier Feed button label; the main navigation destination remains Feed. |
 | Author filter | “Show posts by” with independently selectable categories. |
 
@@ -32,7 +32,7 @@ Calendar months progress with **older months above and newer months below**. Loa
 
 ## Share
 
-Share has two top tabs: **Post / Photos Only**. The bottom navigation tab remains Share; the separate browsing destination remains Photos.
+Share has two top tabs: **Post / Photos Only**. The bottom navigation tab remains Share; the separate collection destination is Albums.
 
 ### Post
 
@@ -61,13 +61,15 @@ The dropdown order is:
 
 Only me is last. Friends appears before Family. The mockup starts with Friends & family, but whether that is a persistent product default or the member's remembered choice remains a product decision. The destination and effective audience must be apparent before publishing, especially for album uploads.
 
-## Photos
+## Albums and photo browsing
 
-Photos provides **Grid / Calendar / Albums** views. The tab is not named Photo Albums. Grid and Calendar have “Show photos by” filters with the same initial **Me, Friends & Family** selection and column ordering as Feed.
+The third navigation destination is **Albums**, focused entirely on social photo albums. Remove the former Grid / Calendar / Albums view switch from this destination. Show album covers, names, photo counts, membership/role information and Create album. Opening an album shows its photos and the relevant contribution and administration controls.
 
-Grid groups photos by date and supports opening an individual photo. Calendar uses the editable photo date and supports the same older-up/newer-down direction. A photo needs stable identity independent of its attachments or album memberships, so changing its date, adding it to an album or including it in multiple albums does not create duplicate media.
+Individual photo browsing lives in **Feed → Photos**, using the same Infinite scroll / Calendar controls and default Me, Friends & Family author selection as Feed → Posts. Feed's Posts / Photos tabs visually mirror Share's Post / Photos Only tabs; retain those distinct labels because browsing and composing are different actions.
 
-Albums has cover images, names, photo counts and useful membership/role information, plus Create album. The revised mockup opens Albums to demonstrate the new functionality; that is not a decision that Albums must be the product's default Photos view. Album discovery/filtering remains distinct from filtering photos by their authors.
+Photo calendar placement follows the editable photo date. Posts retain server-created chronology. Both calendar experiences preserve older months above and newer months below. A photo has stable identity independent of attachments and album memberships, so date edits and membership in multiple albums do not duplicate media.
+
+Album discovery is distinct from author filtering in Feed. The Feed author-filter defaults must not hide an authorized album merely because its contributors fall outside the selected categories.
 
 ## Social albums
 
@@ -109,7 +111,7 @@ Before generating grants or filtering categories, resolve whether these circles 
 - Album ownership: last-admin removal, transfer, creator account deletion, album deletion, and retention of contributed originals.
 - Contribution rights: adding existing photos owned by others, moving versus copying album membership, reordering, cover selection and who may edit captions/tags.
 - Membership changes: invitation/acceptance flow, whether new readers receive all existing album history, blocks within an album, and restricted-history compatibility.
-- Interaction: album search/filtering, default Photos view, album comments/reactions versus photo comments/reactions, and read-only contributor prompts.
+- Interaction: album search/filtering, album comments/reactions versus photo comments/reactions, and read-only contributor prompts.
 - Drafts and recovery: cross-tab attachment reuse, interrupted upload recovery, state persistence, export/import and old-client compatibility.
 
 These are unresolved choices, not authorization to invent broader access or silently change existing content.
@@ -121,7 +123,7 @@ Implement against the existing encrypted photo and history-sharing contracts usi
 Acceptance should cover:
 
 - Correct navigation order, labels, icon proportions, keyboard access, theme contrast and small-screen layouts.
-- Author defaults and column ordering on Feed and Photos; category changes narrow only authorized results.
+- Author defaults and column ordering on both Feed content tabs; category changes narrow only authorized results.
 - Infinite scroll and calendar transitions, chronological posts and stable scroll anchors when loading older months.
 - Post / Photos Only switching, intact drafts, direct uploads without placeholder posts, photo date edits and all entry points.
 - Album creation, each member role, permission changes, unauthorized direct requests and the preselected Share destination.
@@ -135,9 +137,11 @@ Acceptance should cover:
 | --- | --- |
 | Connection circles and audience definitions | [#122](https://github.com/porchday/porchday/issues/122) |
 | Photo identity, dates, direct uploads and social albums | [#123](https://github.com/porchday/porchday/issues/123) |
-| Navigation, Feed, Share and Photos presentation | [#124](https://github.com/porchday/porchday/issues/124) |
+| Navigation, Feed, Share and Albums presentation | [#124](https://github.com/porchday/porchday/issues/124) |
 | Calendar direction and media acceptance | [#108](https://github.com/porchday/porchday/issues/108) |
 | Typed mentions and notifications | [#125](https://github.com/porchday/porchday/issues/125), [#7](https://github.com/porchday/porchday/issues/7) |
 | Existing history-sharing consent | [#22](https://github.com/porchday/porchday/issues/22) |
 
 This proposal supersedes earlier mockup labels and defaults where they differ: Infinite scroll replaces the local Feed view button, Photos Only replaces Share's Photos subtab, Me joins Friends and Family in default browsing filters, and albums are collaborative rather than personal-only collections. Earlier public-homepage, invitation, deployment and standalone development-tool discussions are outside this design.
+
+November 2 refinement: Albums replaces the Photos navigation destination and has no general photo browser. Feed owns Posts / Photos browsing through top tabs instead of a dropdown. This supersedes the earlier Grid / Calendar / Albums proposal.
