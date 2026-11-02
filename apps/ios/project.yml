@@ -78,6 +78,10 @@ targets:
     deploymentTarget: '14.0'
     sources:
       - PorchdayTests/AppleParityTests.swift
+    settings:
+      base:
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Porchday.app/Contents/MacOS/Porchday"
+        BUNDLE_LOADER: "$(TEST_HOST)"
     dependencies:
       - target: PorchdayMac
   PorchdayTests:
