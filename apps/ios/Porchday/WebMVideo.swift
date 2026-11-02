@@ -29,19 +29,21 @@ import WebKit
         super.init()
         view.navigationDelegate = self
         view.allowsBackForwardNavigationGestures = false
-        // WebKit requires a window attachment to decode video, even for a
-        // non-visible first-frame probe. This host is never shown or made key.
+        // WebKit needs a window attachment. Mac can use an unshown host;
+        // iOS needs its foreground scene, beneath the native content.
         #if os(macOS)
         let host = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
         host.contentView = view
-        #else
-        let host: UIWindow
-        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
-            host = UIWindow(windowScene: scene); host.frame = view.frame
-        } else { host = UIWindow(frame: view.frame) }
-        host.addSubview(view)
-        #endif
         preparationHost = host
+        #else
+        if let host = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .filter({ $0.activationState == .foregroundActive }).flatMap({ $0.windows }).first(where: \.isKeyWindow) {
+            view.isUserInteractionEnabled = false
+            view.accessibilityElementsHidden = true
+            host.insertSubview(view, at: 0)
+            preparationHost = host
+        }
+        #endif
     }
     func navigationLoaded() async throws {
         try await withCheckedThrowingContinuation { continuation in
@@ -71,11 +73,15 @@ import WebKit
         view.removeFromSuperview()
         #if os(macOS)
         preparationHost?.contentView = nil
+        #else
+        view.isUserInteractionEnabled = true
+        view.accessibilityElementsHidden = false
         #endif
         preparationHost = nil
     }
     func open(_ bytes: Data) async throws -> PreparedPhoto {
         defer { releasePreparationHost() }
+        guard preparationHost != nil else { throw PorchError.message("Open the app before decoding a video.") }
         guard try VideoContainer.mime(bytes) == "video/webm" else { throw PorchError.message("Invalid WebM video.") }
         try await navigationLoaded()
         try Task.checkCancellation()
