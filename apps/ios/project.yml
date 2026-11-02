@@ -45,6 +45,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: 'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
         PROVISIONING_PROFILE_SPECIFIER: "$(PORCHDAY_PROFILE)"
         CODE_SIGN_ENTITLEMENTS: Porchday/Porchday.entitlements
         'CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]': Porchday/Porchday-Simulator.entitlements
