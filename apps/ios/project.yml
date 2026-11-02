@@ -72,6 +72,14 @@ targets:
       - package: ZIPFoundation
       - framework: ../../packages/crypto/native/build/Porchcrypto.xcframework
         embed: true
+  PorchdayMacTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: '14.0'
+    sources:
+      - PorchdayTests/AppleParityTests.swift
+    dependencies:
+      - target: PorchdayMac
   PorchdayTests:
     type: bundle.unit-test
     platform: iOS
@@ -104,3 +112,6 @@ schemes:
     build:
       targets:
         PorchdayMac: all
+        PorchdayMacTests: [test]
+    test:
+      targets: [PorchdayMacTests]

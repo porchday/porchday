@@ -25,6 +25,12 @@ jobs:
           xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac \
             -destination 'generic/platform=macOS' -derivedDataPath apps/ios/build/Mac \
             build CODE_SIGNING_ALLOWED=NO
+      - name: Run shared calendar, tag and media contract tests
+        run: |
+          xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac \
+            -destination 'platform=macOS' -derivedDataPath apps/ios/build/Mac \
+            -resultBundlePath apps/ios/build/MacTests.xcresult \
+            test CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual
       - name: Package verification artifact
         run: ditto -c -k --sequesterRsrc --keepParent apps/ios/build/Mac/Build/Products/Debug/Porchday.app apps/ios/build/Porchday-native-Mac.zip
       - uses: actions/upload-artifact@v4
