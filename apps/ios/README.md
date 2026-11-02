@@ -1,4 +1,4 @@
-# Porchday for iOS
+# Porchday native Apple app
 
 The native client uses SwiftUI and URLSession with the same authorized social API and signed encrypted envelope format as the web client. It is not a web-view wrapper. Photo processing, encryption, recovery, multipart export/import and Keychain storage run on the device.
 
@@ -114,10 +114,11 @@ still required before claiming the cold/warm p99 launch targets.
 
 ## Shared native Apple identity
 
-The native iPhone/iPad app and planned native Mac app use `org.porchday.app`,
+The native iPhone/iPad and macOS targets use `org.porchday.app`,
 registered as a universal Apple App ID with Push Notifications and Associated
-Domains. The existing AppKit/WebKit Mac preview remains `org.porchday.macos`;
-it is not the shared SwiftUI Mac implementation and its TestFlight rollout is on hold.
+Domains. The old `org.porchday.macos` WebKit preview is retired by owner request.
+Its source and packaging have been removed; the historical release is a draft.
+Installed preview data must remain until the member verifies native recovery.
 
 The existing `com.porchday.app.keys` Keychain service strings are deliberately
 retained: they are storage labels, not bundle identifiers or push topics. Changing
@@ -133,8 +134,8 @@ is changed by this project update.
 
 The public App Store Connect API cannot create the initial app record. Create it
 on the website with this bundle ID, then manage supported release operations
-through the API. iOS ships first; native macOS implementation and validation remain
-separate work, not completed by a shared identifier.
+through the API. The `PorchdayMac` target shares the implementation directly. Mac distribution
+signing and installed-device validation remain separate from compilation.
 
 ### Signed TestFlight candidate archive
 
@@ -147,3 +148,27 @@ The workflow run number is the build number; evidence records exact source and I
 Push stays disabled until actual provider/device verification. The app manifest
 declares app-local UserDefaults access (CA92.1); archive/dependency privacy report,
 export compliance and Apple validation remain separate distribution checks.
+
+## Current web compatibility work
+
+Both targets now include native calendar browsing, personal daily highlights,
+author/tag filters, earlier-month loading and adjacent-day navigation; member and
+child tags in posts/comments/captions; child profiles and delegated posting; and
+bounded encrypted video upload/playback. Typed @handles resolve only against the
+authorized directory and never expand the audience or imply push delivery.
+
+Calendar and social metadata use the existing web APIs and encrypted payloads.
+Video retains the web's 10 MiB and 4K limits; actual codec playback depends on the
+Apple OS. Unsupported codecs produce an explicit error, never a successful empty
+attachment. Temporary playback files are private, excluded from backup, removed
+when closed/backgrounded, and cleaned on the next launch after interruption.
+
+Account email/MFA, appeals, integration registration/consent, and allowlisted
+builder chat/feature voting use native screens. Builder disclosure version 2 is
+explicitly accepted; an unknown newer version blocks sending until updated.
+Browser authorization callbacks still open their registered external destination.
+
+The Mac has a navigation sidebar and native file/Photos selection; iOS has tabs.
+See [the parity matrix](../../docs/native-apple-parity.md) for implementation versus
+verification. Current compilation does not prove signed devices, notifications,
+all codecs, hosted cross-client round trips or TestFlight acceptance.
