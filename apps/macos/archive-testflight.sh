@@ -52,7 +52,14 @@ team="$(cat "$private/team")"; uuid="$(cat "$private/uuid")"
 profiles="$HOME/Library/MobileDevice/Provisioning Profiles"
 mkdir -p "$profiles"
 cp "$private/profile.provisionprofile" "$profiles/$uuid.provisionprofile"
+# Provisioning profiles contain public signing metadata, not private keys.
+# Installed app resources must be readable by an ordinary Mac user.
+chmod 644 "$profiles/$uuid.provisionprofile"
 security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
+# Keep signing credentials in the already-created private directory/keychain,
+# but build normal distributable files. A 077 build umask makes CodeResources
+# and the embedded profile root-only after installer ownership normalization.
+umask 022
 xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac -configuration Release \
  -destination 'generic/platform=macOS' -archivePath apps/ios/build/PorchdayMac.xcarchive \
  archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='3rd Party Mac Developer Application' \
@@ -61,7 +68,7 @@ xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac -configurati
 xcodebuild -exportArchive -archivePath apps/ios/build/PorchdayMac.xcarchive \
  -exportPath apps/ios/build/MacTestFlight -exportOptionsPlist "$private/export.plist"
 python3 - <<'PY'
-import pathlib,hashlib,json,subprocess,plistlib
+import pathlib,hashlib,json,subprocess,plistlib,os,stat
 p=pathlib.Path('apps/ios/build/MacTestFlight');pkg=list(p.glob('*.pkg'));assert len(pkg)==1
 app=pathlib.Path('apps/ios/build/PorchdayMac.xcarchive/Products/Applications/Porchday.app')
 info=plistlib.loads((app/'Contents/Info.plist').read_bytes());assert info['CFBundleIdentifier']=='org.porchday.app'
@@ -72,6 +79,14 @@ assert entitlements.get('com.apple.security.app-sandbox') is True
 assert not entitlements.get('com.apple.security.get-task-allow',False)
 assert not any(k.startswith('com.apple.security.temporary-exception') for k in entitlements)
 subprocess.run(['pkgutil','--check-signature',str(pkg[0])],check=True)
+expanded=pathlib.Path(os.environ['PORCHDAY_SIGNING_DIR'])/'package-review'
+subprocess.run(['pkgutil','--expand-full',str(pkg[0]),str(expanded)],check=True)
+exported=list(expanded.rglob('Porchday.app'));assert len(exported)==1
+for item in [exported[0],*exported[0].rglob('*')]:
+ if item.is_symlink(): continue
+ mode=stat.S_IMODE(item.stat().st_mode)
+ assert (mode & 0o005)==0o005 if item.is_dir() else (mode & 0o004)==0o004, 'Package contains a resource unreadable by ordinary users'
+subprocess.run(['codesign','--verify','--deep','--strict',str(exported[0])],check=True)
 architectures=subprocess.check_output(['lipo','-archs',str(app/'Contents/MacOS/Porchday')],text=True).split();assert set(architectures)=={'arm64','x86_64'}
 (p/'evidence.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'bundleId':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'pkgSha256':hashlib.sha256(pkg[0].read_bytes()).hexdigest(),'architectures':architectures,'uploaded':False},indent=2))
 PY
