@@ -402,7 +402,7 @@ export function Composer({
       onSubmit={submit}
     >
       <fieldset disabled={action.busy} className="composer-fields">
-      {shareTabs&&<div className="feed-view-controls" aria-label="What to share"><Button disabled={action.busy} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</Button><Button disabled={action.busy} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos Only</Button></div>}
+      {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos Only</button></div>}
       {mode==="post"&&<>
       <div className="composer-start">
         <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
@@ -495,7 +495,7 @@ export function Composer({
           busy={action.busy}
           disabled={mode==="photos"?!photos.length:!text.trim()&&!photos.length}
         >
-          Share <Icon name="arrow" size={16} />
+          {mode==="photos"?(album?"Add photos to album":"Add photos"):"Share post"} <Icon name="arrow" size={16} />
         </Button>
       </div>
       <p className="muted">Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience.</p>

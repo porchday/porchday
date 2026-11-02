@@ -1,3 +1,4 @@
+import { PhotoFeed, PhotoFeedCalendar } from "./PhotoFeed";
 import React, { useEffect, useMemo, useState } from "react";
 import { get, items, type Json } from "./api";
 import { useVault } from "./vault";
@@ -40,6 +41,6 @@ export function FeedExperience({ initialContent = "posts", initialView = "scroll
       <div className="feed-author-options">{authorCategories.map(category => <label key={category}><input type="checkbox" checked={selected.includes(category)} onChange={e => setSelected(old => e.target.checked ? [...old, category] : old.filter(c => c !== category))}/>{authorLabels[category]}</label>)}</div>
     </details>
     <Alert>{action.error}</Alert>
-    {view === "scroll" ? <Feed authorFilter={filter} contentFilter={content} infinite /> : <PhotosCalendar embedded authorFilter={filter} contentFilter={content} />}
+    {content === "photos" ? (view === "scroll" ? <PhotoFeed authorFilter={filter}/> : <PhotoFeedCalendar authorFilter={filter}/>) : (view === "scroll" ? <Feed authorFilter={filter} contentFilter="posts" infinite /> : <PhotosCalendar embedded authorFilter={filter} contentFilter="posts" />)}
   </>;
 }

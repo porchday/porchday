@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   localDay,
+  calendarDate,
   monthCells,
   monthRange,
   featuredEntry,
@@ -41,6 +42,12 @@ function entry(
   };
 }
 describe("personal photo calendar", () => {
+  it("keeps explicit early photo years instead of treating them as 1900-based years",()=>{
+    expect(localDay(calendarDate(1,0))).toBe("0001-01-01");
+    expect(monthCells(1,0).filter(Boolean)[0]).toBe("0001-01-01");
+    expect(monthCells(99,11).filter(Boolean).at(-1)).toBe("0099-12-31");
+    expect(monthCells(2000,1).filter(Boolean)).toHaveLength(29);
+  });
   it("uses local month boundaries including leap years and complete weeks", () => {
     expect(monthCells(2024, 1).filter(Boolean)).toHaveLength(29);
     expect(monthCells(2026, 1).filter(Boolean)).toHaveLength(28);

@@ -33,6 +33,29 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     id(c.id);
   }
   async function grants(db:Db,photo:string){return db`select * from app.photo_grants where photo_id=${photo} order by id`;}
+  app.get("/photo-feed",async c=>c.json(await tx(c,async db=>{
+    const timezone=c.req.query("timezone")||"UTC";
+    const [zone]=await db`select name from pg_timezone_names where name=${timezone}`;
+    if(!zone)fail("INVALID_TIMEZONE");
+    const month=c.req.query("month");if(month&&(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month.slice(0,4)<"0001"))fail("INVALID_MONTH");
+    let cursor:{day:string;id:string;kind:string}|null=null;
+    if(c.req.query("after")){try{cursor=z.object({day,id:z.string().uuid(),kind:z.enum(["photo","attachment"])}).strict().parse(JSON.parse(c.req.query("after")!));}catch{fail("INVALID_CURSOR");}}
+    const rows=await db`with candidates as (
+      select 'photo'::text as kind,p.id,p.photo_date as day,p.owner_id as author_id,to_jsonb(p)||jsonb_build_object('photo_date',p.photo_date::text) as photo,null::jsonb as post
+      from app.photos p
+      union all
+      select 'attachment'::text,m.id,(p.created_at at time zone ${timezone})::date,p.author_id,null::jsonb,to_jsonb(p)
+      from app.media_assets m join app.posts p on p.id=m.post_id
+      where p.group_id is null and m.state='attached' and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
+    ) select c.*,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
+    where not exists(select 1 from app.mutes where target=c.author_id)
+      ${cursor?db`and(c.day,c.id,c.kind)<(${cursor.day}::date,${cursor.id}::uuid,${cursor.kind})`:db``}
+      ${month?db`and c.day>=${month+"-01"}::date and c.day<(${month+"-01"}::date+interval '1 month')`:db``}
+    order by c.day desc,c.id desc,c.kind desc limit 31`;
+    const selected=rows.slice(0,30),ids=selected.filter(r=>r.kind==="photo").map(r=>r.id);
+    const visibleGrants=ids.length?await db`select * from app.photo_grants where photo_id in ${db(ids)} order by id`:[];
+    return {items:selected.map(row=>({...row,...(row.photo?{photo:{...row.photo,grants:visibleGrants.filter(g=>g.photo_id===row.id)}}:{})})),next:rows.length>30?JSON.stringify({day:selected[29].day,id:selected[29].id,kind:selected[29].kind}):null};
+  })));
   app.get("/photos",async c=>c.json(await tx(c,async db=>{
     const album=c.req.query("album")?id(c.req.query("album")):null;
     const after=c.req.query("after");let cursor:{day:string;id:string}|null=null;

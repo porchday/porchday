@@ -215,6 +215,34 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(owner.id,`/photos/${id}`,"DELETE")).status).toBe(200);
     expect((await call(friend.id,`/photos/${id}`)).status).toBe(404);
   });
+  it("combines attachments and independent photos in the viewer's calendar without exposing private or muted photos",async()=>{
+    const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
+    const independent=await publish(owner,"connections"),postId=randomUUID(),attachment=await uploadGrant(owner,postId,"connections");
+    const envelope=await seal(owner,{text:"An existing post",media:[{id:attachment.media_id,mime:"image/jpeg",alt:"Attached photo"}]},1,{id:postId,kind:"post",audience:"connections",createdAt:"2026-11-01T00:30:00.000Z"});
+    // Insert a historical signed fixture; production post timestamps stay immutable.
+    await db`insert into app.posts(id,author_id,audience,envelope,epoch,created_at) values(${postId},${owner.id},'connections',${db.json(envelope)},${envelope.context.epoch},${envelope.context.createdAt})`;
+    for(const recipient of envelope.recipients)await db`insert into app.post_recipients(post_id,device_id,member_id) values(${postId},${recipient.deviceId},${recipient.memberId})`;
+    await db`update app.media_assets set post_id=${postId},state='attached' where id=${attachment.media_id}`;
+    const local=await call(reader.id,"/photo-feed?month=2026-10&timezone=America%2FLos_Angeles");
+    expect(local.status,JSON.stringify(local.data)).toBe(200);
+    expect(local.data.items.map((e:any)=>e.kind).sort()).toEqual(["attachment","photo"]);
+    expect(local.data.items.every((e:any)=>e.day==="2026-10-31")).toBe(true);
+    expect(local.data.items.find((e:any)=>e.kind==="attachment").post.id).toBe(postId);
+    expect(local.data.items.find((e:any)=>e.kind==="photo").photo.id).toBe(independent.id);
+    const utc=await call(reader.id,"/photo-feed?month=2026-10&timezone=UTC");expect(utc.data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
+    expect((await call(outsider.id,"/photo-feed")).data.items).toHaveLength(0);
+    await db`insert into app.mutes(actor,target) values(${reader.id},${owner.id})`;
+    expect((await call(reader.id,"/photo-feed")).data.items).toHaveLength(0);
+    expect((await call(reader.id,"/photo-feed?timezone=not-a-zone")).status).toBe(400);
+    expect((await call(reader.id,"/photo-feed?after=invalid")).status).toBe(400);
+  });
+  it("paginates same-day photos without duplicates or missing records",async()=>{
+    const owner=await person(),ids=[];
+    for(let i=0;i<31;i++){if(i%10===0)await db`delete from app.social_rate_limits where member_id=${owner.id}`;ids.push((await publish(owner)).id);}
+    const first=await call(owner.id,"/photo-feed?timezone=UTC");expect(first.status).toBe(200);expect(first.data.items).toHaveLength(30);expect(first.data.next).toBeTruthy();
+    const second=await call(owner.id,"/photo-feed?timezone=UTC&after="+encodeURIComponent(first.data.next));expect(second.data.items).toHaveLength(1);expect(second.data.next).toBeNull();
+    const actual=[...first.data.items,...second.data.items].map((e:any)=>e.id);expect(new Set(actual).size).toBe(31);expect(actual.sort()).toEqual(ids.sort());
+  },15000);
   it("rolls back publication if an attachment does not belong to the photo",async()=>{
     const owner=await person(),id=randomUUID(),first=await uploadGrant(owner,id),wrong=await uploadGrant(owner,randomUUID());
     const result=await call(owner.id,"/photos","POST",{id,photo_date:"2026-10-31",expires_at:null,grants:[{envelope:first.envelope,media_id:wrong.media_id}]});
