@@ -49,6 +49,8 @@ enum PhotoCalendar {
             let old = more ? entries[key] ?? [] : []
             entries[key] = old + decoded.filter { item in !old.contains { $0.id == item.id } }
             next[key] = result["next"] == .null ? nil : result["next"]
+            let endKey = PhotoCalendar.day(end)
+            highlights = highlights.filter { $0.key < key || $0.key >= endKey }
             for row in choices["items"].array { if let day = row["day"].string { highlights[day] = row } }
             let unreadable = decoded.filter { $0.payload == nil }.count
             if unreadable > 0 { errors[key] = "\(unreadable) posts could not be decrypted on this device." }
@@ -89,9 +91,10 @@ struct PhotosCalendarView: View {
                             CalendarMonthView(month: month, store: store, author: author, tag: tag) { selected = $0 }.id(PhotoCalendar.day(month))
                         }
                     }.padding()
-                }.task { if !initialized { reader.scrollTo(PhotoCalendar.day(current), anchor: .top); initialized = true } }
+                }.refreshable { await store.load(current, model: model) }
+                .task { if !initialized { reader.scrollTo(PhotoCalendar.day(current), anchor: .top); initialized = true } }
             }
-        }.navigationTitle("Photos").task { await directory.load(model) }
+        }.navigationTitle("Photos").task { await directory.load(model); await store.load(current, model: model) }
         .sheet(isPresented: Binding(get: { selected != nil }, set: { if !$0 { selected = nil } })) {
             if let selected { NavigationStack { CalendarDayView(initial: selected, store: store, author: author, tag: tag) } }
         }
@@ -136,6 +139,7 @@ struct CalendarMonthView: View {
             }
             if store.busy.contains(key) { ProgressView("Opening month…") }
             if let error = store.errors[key] { Text(error).foregroundStyle(.red); Button("Retry month") { Task { await store.load(month, model: model) } } }
+            Button("Refresh month") { Task { await store.load(month, model: model) } }.disabled(store.busy.contains(key))
             if store.next[key] != nil { Button("Load more posts in this month") { Task { await store.load(month, model: model, more: true) } } }
         }.task { if store.entries[key] == nil { await store.load(month, model: model) } }
     }
