@@ -11,7 +11,11 @@ import SwiftUI
     init() { PrivateMediaFile.cleanAbandonedFiles() }
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(model).environmentObject(model.vault).tint(Color(red: 0.27, green: 0.39, blue: 0.29))
+            RootView().environmentObject(model).environmentObject(model.vault).formStyle(.grouped)
+                #if os(macOS)
+                .frame(minWidth: 800, minHeight: 650)
+                #endif
+                .tint(Color(red: 0.27, green: 0.39, blue: 0.29))
                 .task { model.setSceneActive(scenePhase == .active); await model.restore(); await model.refreshHistoricalPosts() }
                 .onOpenURL { model.handleURL($0) }
                 .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }
