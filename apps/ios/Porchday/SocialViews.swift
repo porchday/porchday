@@ -210,7 +210,7 @@ struct ComposerView: View {
         let reviewedParentExpiry = deadlineContext.inherited
         let id = UUID().uuidString.lowercased(), expiry = try deadlineContext.deadline(for: timerChoice, now: Date()), share = post?.context["audience"].string ?? (groupID == nil ? audience : "group"), group = groupID ?? post?.context["groupId"].string
         let generation = model.authenticationGeneration
-        func checkSession() throws { guard generation == model.authenticationGeneration, model.member?.id == member.id, vault.unlocked, !Task.isCancelled else { throw CancellationError() } }
+        @MainActor func checkSession() throws { guard generation == model.authenticationGeneration, model.member?.id == member.id, vault.unlocked, !Task.isCancelled else { throw CancellationError() } }
         var media: [JSON] = []
         for var photo in photos {
             try checkSession()
