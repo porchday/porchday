@@ -1,6 +1,11 @@
 name: Verify native iOS
 on:
   workflow_dispatch:
+    inputs:
+      prepare_testflight:
+        description: 'Build a signed iOS archive after native tests; does not upload'
+        type: boolean
+        default: false
   push:
     paths:
       - "apps/ios/**"
@@ -8,7 +13,7 @@ on:
       - ".github/workflows/ios.yml"
 concurrency:
   group: native-ios-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 permissions:
   contents: read
 jobs:
@@ -56,6 +61,22 @@ jobs:
           sleep 5
           xcrun simctl io "$PORCHDAY_SIMULATOR" screenshot apps/ios/build/Porchday-simulator.png
           ditto -c -k --sequesterRsrc --keepParent apps/ios/build/DerivedData/Build/Products/Debug-iphonesimulator/Porchday.app apps/ios/build/Porchday-simulator-app.zip
+      - name: Prepare signed TestFlight archive
+        if: github.event_name == 'workflow_dispatch' && inputs.prepare_testflight
+        env:
+          APPLE_DISTRIBUTION_P12: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_P12 }}
+          APPLE_DISTRIBUTION_PASSWORD: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_PASSWORD }}
+          APPLE_IOS_PROFILE: ${{ secrets.PORCHDAY_APPLE_IOS_PROFILE }}
+          PORCHDAY_BUILD_NUMBER: ${{ github.run_id }}
+        run: apps/ios/archive-testflight.sh
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.prepare_testflight && success()
+        with:
+          name: native-testflight-candidate
+          path: |
+            apps/ios/build/TestFlight/*.ipa
+            apps/ios/build/TestFlight/evidence.json
+          retention-days: 7
       - uses: actions/upload-artifact@v4
         if: always()
         with:

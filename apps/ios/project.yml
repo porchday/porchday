@@ -44,6 +44,7 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app
+        PROVISIONING_PROFILE_SPECIFIER: "$(PORCHDAY_PROFILE)"
         CODE_SIGN_ENTITLEMENTS: Porchday/Porchday.entitlements
         'CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]': Porchday/Porchday-Simulator.entitlements
     dependencies:
