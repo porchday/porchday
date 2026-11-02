@@ -158,6 +158,6 @@ export function registerMediaRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     return c.json(await tx(c,async db=>{await db`select app.attach_surface_media(${id(c.req.param('id'))},${b.kind},${b.target_id},${b.slot})`;return {ok:true};}));
   });
   app.delete('/media/:id',async c=>c.json(await tx(c,async db=>{
-    await db`delete from app.media_assets where id=${id(c.req.param('id'))} and owner_id=${c.get('memberId')} and post_id is null`;return {ok:true};
+    await db`delete from app.media_assets where id=${id(c.req.param('id'))} and owner_id=${c.get('memberId')} and post_id is null and not exists(select 1 from app.photo_grants g where g.media_id=app.media_assets.id)`;return {ok:true};
   })));
 }

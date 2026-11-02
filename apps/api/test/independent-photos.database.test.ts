@@ -164,6 +164,26 @@ suite("Independent photo sharing paths",()=>{
     expect(await actor(reader,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(0);
     expect(await actor(contributor,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(1);
   });
+  it("expires logical photos in bounded batches and retains old active attached images",async()=>{
+    const owner=await member(),active=await photo(owner),original=await grant(owner,active,[]);
+    await db`update app.media_assets set created_at=now()-interval '3 days' where id=${original.media}`;
+    const expired=[];
+    for(let i=0;i<3;i++){const p=await photo(owner),g=await grant(owner,p,[]);expired.push({p,g});await db`update app.photos set expires_at=now()-interval '1 day' where id=${p}`;}
+    const before=await db`select count(*)::int as n from app.photos where expires_at<=now()`;
+    const result=await db.begin(async sql=>{await sql`set local role porchday_jobs`;return (await sql`select app.expire_batch(2) as result`)[0];});
+    expect(result.result.photos).toBe(2);
+    expect((await db`select count(*)::int as n from app.photos where expires_at<=now()`)[0].n).toBe(before[0].n-2);
+    await db`select app.expire_batch(100)`;
+    for(const {p,g} of expired){
+      expect(await db`select id from app.photos where id=${p}`).toHaveLength(0);
+      expect(await db`select id from app.photo_grants where id=${g.id}`).toHaveLength(0);
+      expect(await db`select id from app.media_assets where id=${g.media}`).toHaveLength(0);
+      expect(await db`select object_id from app.deletion_ledger where kind='photos' and object_id=${p}`).toHaveLength(1);
+      expect(await db`select object_key from app.deletion_outbox where object_key=${'synthetic/'+g.media}`).toHaveLength(1);
+    }
+    expect(await db`select id from app.media_assets where id=${original.media}`).toHaveLength(1);
+    await expect(actor(owner,sql=>sql`select app.remove_photo_grant(${original.id})`)).rejects.toThrow(/FORBIDDEN/);
+  });
   it("stores date-only values and rejects invalid dates, direct table mutation and metadata/attachment swaps",async()=>{
     const owner=await member(),p=await photo(owner);
     expect(await actor(owner,sql=>sql`select photo_date::text as day from app.photos where id=${p}`)).toMatchObject([{day:"2026-10-31"}]);

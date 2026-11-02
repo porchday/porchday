@@ -44,7 +44,7 @@ export function PhotosCalendar({ embedded = false, authorFilter, contentFilter =
   }
   useLayoutEffect(() => {
     const anchor = scrollAnchor.current;
-    if (anchor?.element.isConnected) window.scrollBy(0, anchor.element.getBoundingClientRect().top - anchor.top);
+    if (anchor?.element.isConnected) window.scrollBy({top:anchor.element.getBoundingClientRect().top-anchor.top,behavior:"instant"});
     scrollAnchor.current = null;
   }, [count]);
   function jump(offset: number) {

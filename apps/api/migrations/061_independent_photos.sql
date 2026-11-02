@@ -94,7 +94,7 @@ BEGIN
  PERFORM app.lock_epoch();
  SELECT * INTO grant_row FROM app.photo_grants WHERE id=g;
  SELECT * INTO photo FROM app.photos WHERE id=grant_row.photo_id FOR UPDATE;
- IF photo.id IS NULL OR NOT(photo.owner_id=app.actor() OR(grant_row.album_id IS NOT NULL AND app.album_role(grant_row.album_id)='admin')) THEN RAISE EXCEPTION 'FORBIDDEN';END IF;
+ IF photo.id IS NULL OR grant_row.album_id IS NULL OR NOT(photo.owner_id=app.actor() OR app.album_role(grant_row.album_id)='admin') THEN RAISE EXCEPTION 'FORBIDDEN';END IF;
  DELETE FROM app.photo_grants WHERE id=g;
 END $$;
 CREATE FUNCTION app.delete_photo(p uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$

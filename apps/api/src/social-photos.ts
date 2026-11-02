@@ -93,6 +93,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     const b=await body(c,z.object({id:z.string().uuid(),photo_date:day,expires_at:z.string().datetime({offset:true}).nullable(),grants:z.array(grantSchema).min(1).max(20)}).strict(),12*1024*1024);
     return c.json(await tx(c,async db=>{
       await writeAllowed(db);await db`select app.lock_epoch()`;
+      if(b.grants.filter(g=>g.envelope.context.groupId===null).length!==1)fail("PHOTO_ORIGINAL_REQUIRED");
       for(const g of b.grants){context(g.envelope,{...b,revision:1});await checkEnvelope(db,c.get("memberId"),g.envelope,"photo");}
       await db`select app.create_photo(${b.id},${b.photo_date}::date,${b.expires_at}::timestamptz)`;
       for(const g of b.grants)await db`select app.add_photo_grant(${g.envelope.context.id},${b.id},${g.envelope.context.groupId},${db.json(g.envelope)},${g.media_id})`;

@@ -334,6 +334,18 @@ suite("Encrypted independent photo API",()=>{
     const second=await call(owner.id,"/photo-feed?timezone=UTC&after="+encodeURIComponent(first.data.next));expect(second.data.items).toHaveLength(1);expect(second.data.next).toBeNull();
     const actual=[...first.data.items,...second.data.items].map((e:any)=>e.id);expect(new Set(actual).size).toBe(31);expect(actual.sort()).toEqual(ids.sort());
   },15000);
+  it("keeps the original photo when removing an album or cleaning up an upload",async()=>{
+    const owner=await person(),p=await publish(owner);
+    expect((await call(owner.id,`/photos/${p.id}/grants/${p.grant.envelope.context.id}`,"DELETE")).status).toBe(403);
+    expect((await call(owner.id,`/media/${p.grant.media_id}`,"DELETE")).status).toBe(200);
+    expect((await call(owner.id,`/photos/${p.id}`)).data.photo.grants[0].media_id).toBe(p.grant.media_id);
+    const a=randomUUID(),envelope=await seal(owner,{name:"Album"},1,{id:a,kind:"album"});
+    expect((await call(owner.id,"/albums","POST",{envelope})).status).toBe(201);
+    const id=randomUUID(),g=await uploadGrant(owner,id,"album",a);
+    const rejected=await call(owner.id,"/photos","POST",{id,photo_date:"2026-10-31",expires_at:null,grants:[{envelope:g.envelope,media_id:g.media_id}]});
+    expect(rejected.data.error.code).toBe("PHOTO_ORIGINAL_REQUIRED");
+    expect(await db`select id from app.photos where id=${id}`).toHaveLength(0);
+  });
   it("rolls back publication if an attachment does not belong to the photo",async()=>{
     const owner=await person(),id=randomUUID(),first=await uploadGrant(owner,id),wrong=await uploadGrant(owner,randomUUID());
     const result=await call(owner.id,"/photos","POST",{id,photo_date:"2026-10-31",expires_at:null,grants:[{envelope:first.envelope,media_id:wrong.media_id}]});
