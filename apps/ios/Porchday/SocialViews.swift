@@ -221,7 +221,7 @@ struct ComposerView: View {
         var chosenTags = NativeMentions.resolve(text, directory: people.people, existing: tags)
         if !onBehalf.isEmpty {
             guard let child = people.people.first(where: { $0.kind == "child" && $0.personID == onBehalf }) else { throw PorchError.message("Reload the child directory before posting on their behalf.") }
-            if !chosenTags.contains(child) { chosenTags.append(child) }
+            if !chosenTags.contains(child) { guard chosenTags.count < 30 else { throw PorchError.message("Remove a tag before posting on behalf of a child.") }; chosenTags.append(child) }
         }
         let payload: JSON = .object(["tags": .array(chosenTags.map(\.json)), "text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines)), "reactionSecret": .string(try CryptoVault.randomSecret()), "media": .array(media)])
         let envelope = try await vault.seal(payload, member: member, kind: post == nil ? "post" : "comment", audience: share, id: id, group: group, parent: parent?.id, post: post?.id, expiry: expiry)

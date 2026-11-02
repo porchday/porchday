@@ -31,6 +31,19 @@ final class AppleParityTests: XCTestCase {
         XCTAssertTrue(NativeMentions.resolve("email@nick and @unknown", directory: [person], existing: []).isEmpty)
         XCTAssertEqual(NativeMentions.resolve("Hi @Nick, and @nick!", directory: [person], existing: []), [person])
     }
+    @MainActor func testVideoDecoderRejectsFakeContainer() async {
+        var header = Data([0, 0, 0, 20]); header.append(Data("ftypisom".utf8)); header.append(Data([0, 0, 0, 0])); header.append(Data("mp42".utf8))
+        do { _ = try await VideoPipeline.prepare(header); XCTFail("A container header is not a playable video") } catch { }
+    }
+    func testPrivatePlaybackFileIsRemovedAndNotWorldReadable() throws {
+        var file: PrivateMediaFile? = try PrivateMediaFile(Data([1, 2, 3]), ext: "mp4")
+        let url = try XCTUnwrap(file?.url)
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        XCTAssertEqual((attributes[.posixPermissions] as? NSNumber)?.intValue, 0o600)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        file = nil
+        XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    }
     func testArchiveMediaExtensionsAreClosedSet() throws {
         XCTAssertEqual(try PortableArchive.mediaExtension("video/quicktime"), "mov")
         XCTAssertThrowsError(try PortableArchive.mediaExtension("text/html"))
