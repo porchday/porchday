@@ -66,6 +66,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app
         PRODUCT_NAME: Porchday
+        PROVISIONING_PROFILE_SPECIFIER: "$(PORCHDAY_MAC_PROFILE)"
         MACOSX_DEPLOYMENT_TARGET: '14.0'
         CODE_SIGN_ENTITLEMENTS: Porchday/Porchday-Mac.entitlements
         ENABLE_APP_SANDBOX: YES
