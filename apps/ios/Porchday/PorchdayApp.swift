@@ -8,6 +8,7 @@ import SwiftUI
     #endif
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
+    init() { PrivateMediaFile.cleanAbandonedFiles() }
     var body: some Scene {
         WindowGroup {
             RootView().environmentObject(model).environmentObject(model.vault).tint(Color(red: 0.27, green: 0.39, blue: 0.29))
@@ -42,22 +43,54 @@ struct MainTabs: View {
     let member: Member
     @EnvironmentObject var model: AppModel
     @State private var builderAvailable = false
+    @State private var destination: String? = "feed"
     var body: some View {
-        TabView {
-            NavigationStack { FeedView(title: "Feed", endpoint: "/feed") }.tabItem { Label("Feed", systemImage: "house") }
-            NavigationStack { ComposerView { } }.tabItem { Label("Share", systemImage: "plus.square") }
-            NavigationStack { PhotosCalendarView() }.tabItem { Label("Photos", systemImage: "calendar") }
-            NavigationStack { ConnectionsView() }.tabItem { Label("Connections", systemImage: "person.2") }
-            NavigationStack { List {
-                NavigationLink("My wall") { ProfileView(memberID: member.id, handle: member.handle) }
-                NavigationLink("Groups") { GroupsView() }
-                if builderAvailable { NavigationLink("Builder chat") { BuilderChatView() }; NavigationLink("Feature additions") { BuilderChatView(features: true) } }
-                NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape") }
-            }.navigationTitle("Menu") }.tabItem { Label("Menu", systemImage: "ellipsis") }
+        Group {
+            #if os(macOS)
+            NavigationSplitView {
+                List(selection: $destination) {
+                    Label("Feed", systemImage: "house").tag("feed")
+                    Label("Share", systemImage: "plus.square").tag("share")
+                    Label("Photos", systemImage: "calendar").tag("photos")
+                    Label("Connections", systemImage: "person.2").tag("connections")
+                    Label("My wall", systemImage: "person.crop.rectangle").tag("wall")
+                    Label("Groups", systemImage: "person.3").tag("groups")
+                    if builderAvailable { Label("Builder chat", systemImage: "bubble.left.and.bubble.right").tag("builder"); Label("Feature additions", systemImage: "lightbulb").tag("features") }
+                    Label("Settings", systemImage: "gearshape").tag("settings")
+                }.navigationTitle("Porchday").navigationSplitViewColumnWidth(min: 180, ideal: 220)
+            } detail: { NavigationStack { screen(destination ?? "feed") } }
+                .frame(minWidth: 800, minHeight: 600)
+            #else
+            TabView(selection: $destination) {
+                NavigationStack { screen("feed") }.tabItem { Label("Feed", systemImage: "house") }.tag(Optional("feed"))
+                NavigationStack { screen("share") }.tabItem { Label("Share", systemImage: "plus.square") }.tag(Optional("share"))
+                NavigationStack { screen("photos") }.tabItem { Label("Photos", systemImage: "calendar") }.tag(Optional("photos"))
+                NavigationStack { screen("connections") }.tabItem { Label("Connections", systemImage: "person.2") }.tag(Optional("connections"))
+                NavigationStack { List {
+                    NavigationLink("My wall") { screen("wall") }
+                    NavigationLink("Groups") { screen("groups") }
+                    if builderAvailable { NavigationLink("Builder chat") { screen("builder") }; NavigationLink("Feature additions") { screen("features") } }
+                    NavigationLink { screen("settings") } label: { Label("Settings", systemImage: "gearshape") }
+                }.navigationTitle("Menu") }.tabItem { Label("Menu", systemImage: "ellipsis") }.tag(Optional("menu"))
+            }
+            #endif
         }
         .task(id: member.id) { builderAvailable = (try? await model.api.social("/builder-chat")) != nil; await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
+    }
+    @ViewBuilder private func screen(_ destination: String) -> some View {
+        switch destination {
+        case "share": ComposerView { self.destination = "feed" }
+        case "photos": PhotosCalendarView()
+        case "connections": ConnectionsView()
+        case "wall": ProfileView(memberID: member.id, handle: member.handle)
+        case "groups": GroupsView()
+        case "builder": BuilderChatView()
+        case "features": BuilderChatView(features: true)
+        case "settings": SettingsView()
+        default: FeedView(title: "Feed", endpoint: "/feed")
+        }
     }
 }
 struct LoginView: View {

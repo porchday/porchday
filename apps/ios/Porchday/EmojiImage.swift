@@ -15,7 +15,7 @@ import ImageIO
         for maximum in [128,96,64,48] {
             let options: [CFString:Any] = [kCGImageSourceCreateThumbnailFromImageAlways:true,kCGImageSourceCreateThumbnailWithTransform:true,kCGImageSourceThumbnailMaxPixelSize:maximum,kCGImageSourceShouldCacheImmediately:true]
             guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source,0,options as CFDictionary) else { throw PorchError.message("The image could not be opened.") }
-            let encoded = try AppleImageEncoder.encode(thumbnail, jpeg: false)
+            let encoded = try AppleImageEncoder.encode(AppleImageEncoder.rgba(thumbnail), jpeg: false)
             let clean = try stripMetadata(encoded)
             if clean.count <= ReactionPNG.maximumBytes { _ = try ReactionPNG.decode(clean); return clean }
         }

@@ -85,6 +85,11 @@ enum AppleImageEncoder {
         guard CGImageDestinationFinalize(destination) else { throw PorchError.message("Could not encode image.") }
         return output as Data
     }
+    static func rgba(_ image: CGImage) throws -> CGImage {
+        guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw PorchError.message("Could not prepare image.") }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        guard let result = context.makeImage() else { throw PorchError.message("Could not prepare image.") }; return result
+    }
     static func opaque(_ image: CGImage) throws -> CGImage {
         guard let context = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { throw PorchError.message("Could not prepare image.") }
         context.setFillColor(CGColor(gray: 1, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: image.width, height: image.height))

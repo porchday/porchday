@@ -196,7 +196,7 @@ struct ComposerView: View {
                 }
             }
         }
-    }.disabled(!model.canWriteSocial).navigationTitle(post == nil ? "New post" : "Leave a comment").porchInlineTitle().toolbar { Button("Cancel") { dismiss() } }
+    }.disabled(!model.canWriteSocial || busy).navigationTitle(post == nil ? "New post" : "Leave a comment").porchInlineTitle().toolbar { Button("Cancel") { dismiss() } }
         .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
         .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) { selected.append(try await VideoPipeline.prepare(bytes)) } else { selected.append(try PhotoPipeline.prepare(bytes)) } } }; photos = selected } } }
         #if os(iOS)
@@ -241,6 +241,7 @@ struct ComposerView: View {
             }
         }
         else { _ = try await model.api.social("/posts", method: "POST", body: .object(["envelope": envelope, "media_ids": .array(media.map { $0["id"] }), "on_behalf_of": onBehalf.isEmpty ? .null : .string(onBehalf)])) }
+        text = ""; photos = []; photoSelection = []; tags = []; onBehalf = ""
         submitted(); dismiss()
     } }
 }
@@ -260,5 +261,7 @@ struct EditContentView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var timer = 0
-    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle(item.isComment ? "Edit comment" : "Edit post").task { text = item.text }.toolbar { Button("Cancel") { dismiss() } } }
+    @State private var tags: [PersonTag] = []
+    @StateObject private var people = PeopleDirectory()
+    var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); PeopleTagPicker(tags: $tags, directory: people); if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; payload = payload.replacing("text", with: .string(text)).replacing("tags", with: .array(tags.map(\.json))); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle(item.isComment ? "Edit comment" : "Edit post").task { text = item.text; tags = PersonTag.parse(item.payload?["tags"] ?? .null) }.toolbar { Button("Cancel") { dismiss() } } }
 }

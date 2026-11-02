@@ -31,6 +31,10 @@ enum VideoContainer {
 /// Only a selected clip is written here, with private permissions and deterministic
 /// cleanup. These files are excluded from backups and never shared as export URLs.
 final class PrivateMediaFile {
+    static func cleanAbandonedFiles() {
+        let temporary = FileManager.default.temporaryDirectory
+        for url in (try? FileManager.default.contentsOfDirectory(at: temporary, includingPropertiesForKeys: nil)) ?? [] where url.lastPathComponent.hasPrefix("porchday-video-") { try? FileManager.default.removeItem(at: url) }
+    }
     let url: URL
     private let directory: URL
     init(_ data: Data, ext: String) throws {
