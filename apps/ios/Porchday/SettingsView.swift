@@ -83,6 +83,7 @@ struct SettingsView: View {
                 NavigationLink("Register or authorize a tool") { RegisterIntegrationView() }
             }
             }
+            Section("Display") { NavigationLink("Appearance and time zone") { DisplayPreferencesView() } }
             Section("About Porchday") { NavigationLink("Open source notices") { ThirdPartyNoticesView() }; Text("No ads. No influencers. No algorithm. An open source project under Apache 2.0, building toward philanthropy-funded service for the public good."); Link("Privacy and encryption limits",destination:ServerConfiguration.origin.appendingPathComponent("privacy")); Link("Community rules",destination:ServerConfiguration.origin.appendingPathComponent("community")) }
             Section("Groups you own") {
                 Text("Before deleting your account, delete the groups you own. Group content is permanently removed; saved copies cannot be recalled.").font(.footnote)

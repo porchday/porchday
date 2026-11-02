@@ -77,7 +77,7 @@ struct MomentCard: View {
     @EnvironmentObject var model: AppModel
     var body: some View { VStack(alignment: .leading, spacing: 10) {
         HStack(alignment: .top) { MemberAvatarView(memberID: item.authorID, name: item.authorHandle); VStack(alignment: .leading) { Text(item.authorID == model.member?.id ? "@\(model.member?.handle ?? "")" : item.authorHandle).font(.headline); if let date = item.created { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Image(systemName: "lock.fill").font(.caption).accessibilityLabel("End-to-end encrypted") }
-        if let expiry = item.expiry { Label("Disappears \(expiry.formatted(date: .abbreviated, time: .shortened))", systemImage: "timer").font(.caption).foregroundStyle(.secondary) }
+        if let expiry = item.expiry { Label("Disappears \(DisplayPreferences.date(expiry))", systemImage: "timer").font(.caption).foregroundStyle(.secondary) }
         if let error = item.error { Label(error, systemImage: "lock.trianglebadge.exclamationmark").font(.callout).foregroundStyle(.secondary) } else { Text(item.text).font(.body).textSelection(.enabled); PeopleTagsView(tags: PersonTag.parse(item.payload?["tags"] ?? .null)); if let payload = item.payload, payload["provenance"]["kind"].string == "reaction", let reaction = try? ReactionValue.parse(.object(payload.object.filter { ["emoji","unicode","custom"].contains($0.key) })) { ReactionGlyph(reaction:reaction) }; if let media = item.payload?["media"].array { ForEach(Array(media.enumerated()), id: \.offset) { _, photo in EncryptedMediaView(media: photo) } } }
     }.padding(.vertical, 10) }
 }

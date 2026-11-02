@@ -7,6 +7,8 @@ import SwiftUI
     @NSApplicationDelegateAdaptor(PorchdayAppDelegate.self) private var appDelegate
     #endif
     @StateObject private var model = AppModel()
+    @AppStorage("display-color-scheme") private var colorScheme = "system"
+    @AppStorage("display-time-zone") private var displayZone = ""
     @Environment(\.scenePhase) private var scenePhase
     init() { PrivateMediaFile.cleanAbandonedFiles() }
     var body: some Scene {
@@ -15,6 +17,8 @@ import SwiftUI
                 #if os(macOS)
                 .frame(minWidth: 800, minHeight: 650)
                 #endif
+                .preferredColorScheme(colorScheme == "dark" ? .dark : colorScheme == "light" ? .light : nil)
+                .environment(\.timeZone, DisplayPreferences.timeZone(displayZone))
                 .tint(Color(red: 0.27, green: 0.39, blue: 0.29))
                 .task { model.setSceneActive(scenePhase == .active); await model.restore(); await model.refreshHistoricalPosts() }
                 .onOpenURL { model.handleURL($0) }
