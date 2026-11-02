@@ -29,6 +29,7 @@ function reject(
   throw new AuthRejection(code, status);
 }
 const allowed = new Set([
+  "invitation-policy",
   "sign-in/email",
   "sign-up/email",
   "sign-out",
@@ -345,6 +346,16 @@ authRoutes.all("/*", async (c) => {
           incoming.code.length < 1)
       )
         reject("INVALID_CODE");
+    }
+    if (path === "invitation-policy") {
+      const token = incoming.inviteCode;
+      if (typeof token !== "string" || !/^[A-Za-z0-9_-]{24,128}$/.test(token)) reject("INVALID_INVITATION", 403);
+      const invitation = await physicalPool.query(
+        "SELECT 1 FROM public.pilot_invitations WHERE token_hash=$1 AND consumed_user IS NULL AND expires_at>now()",
+        [await hashToken(token)],
+      );
+      if (!invitation.rowCount) reject("INVALID_INVITATION", 403);
+      return c.json({ accepted: true });
     }
     const proof = sensitive(path)
       ? await measureJournalPhase(logoutTiming,'initial_authorization',()=>authorize(c, physicalPool, path, incoming))
