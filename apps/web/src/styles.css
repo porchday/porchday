@@ -4810,3 +4810,15 @@ button.trace-row:focus-visible {
 
 .photo-calendar { margin-bottom: 20px; }
 .calendar-earlier { display: flex; justify-content: center; padding: 20px; }
+
+/* Shared reading/composing navigation. Sized strokes do not grow with icons. */
+.feed-view-controls { display:flex; flex-wrap:wrap; gap:.5rem; margin:1rem 0; }
+.feed-view-controls [aria-pressed="true"] { text-decoration:underline; text-underline-offset:.3em; }
+.feed-author-controls { margin:1rem 0; }
+.feed-author-controls summary { cursor:pointer; }
+.feed-author-options { display:grid; grid-template-rows:repeat(3,auto); grid-auto-flow:column; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; padding:1rem 0; }
+.feed-author-options label { display:flex; align-items:center; gap:.5rem; }
+.feed-author-options input { width:auto; }
+.composer-photo-heading { font-size:1rem; margin:1rem 0 .5rem; }
+.mobile-nav > a > svg { width:34px; height:40px; flex-shrink:0; }
+.mobile-nav > a > svg * { vector-effect:non-scaling-stroke; stroke-width:1.7px; }

@@ -1,3 +1,4 @@
+import { matchesAuthor, matchesContent, type AuthorFilter, type FeedContent } from "./feed-filters";
 import { isVideo, VIDEO_ACCEPT, prepareVideo, validatedMedia } from "./video";
 import {TagPicker, Tags, validTags, usePeopleDirectory, type PersonTag} from "./PeopleTags";
 import { useNearViewport } from "./near-viewport";
@@ -383,6 +384,7 @@ export function Composer({
       <p className="muted">Tags do not change who can see this post.</p>
       {<label>Posting on behalf of <select aria-label="Posting on behalf of" onFocus={directory.ensure} value={onBehalf} onChange={e=>{setOnBehalf(e.target.value);const child=directory.people.find(p=>p.kind==="child"&&p.id===e.target.value);if(child&&!tags.some(t=>t.id===child.id))setTags([...tags,child]);}}><option value="">Myself</option>{directory.children.filter(c=>c.can_post).map(c=><option key={c.id} value={c.id}>{c.name} · posted by @{vault.member.handle}</option>)}</select></label>}
       {onBehalf && <p className="muted">The child will be tagged automatically. You remain the author.</p>}
+      <h2 className="composer-photo-heading">Add Photos to this Post</h2>
       {photos.length > 0 && (
         <div className="photo-editor">
           {photos.map((photo) => (
@@ -463,8 +465,8 @@ export function Composer({
               onChange={(e) => setAudience(e.target.value as Audience)}
             >
               <option value="connections">Friends & family</option>
-              <option value="friends">Friends only</option>
-              <option value="family">Family only</option>
+              <option value="friends">Friends</option>
+              <option value="family">Family</option>
               <option value="only_me">Only me</option>
             </select>
           </label>
@@ -481,12 +483,16 @@ export function Feed({
   groupId,
   singleId,
   canModerate = false,
+  authorFilter, contentFilter = "posts", infinite = false,
 }: {
+  authorFilter?: AuthorFilter; contentFilter?: FeedContent; infinite?: boolean;
   wallId?: string;
   groupId?: string;
   singleId?: string;
   canModerate?: boolean;
 }) {
+  const sentinel = useRef<HTMLDivElement>(null);
+  const loadingMore = useRef(false);
   const [rows, setRows] = useState<SocialObject[]>([]);
   const [singleDetails, setSingleDetails] = useState<Json | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -555,10 +561,21 @@ export function Feed({
       window.removeEventListener("porchday:posts-shared", visible);
     };
   }, [endpoint]);
+  useEffect(() => {
+    if (!infinite || !cursor || action.busy || action.error || !sentinel.current || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(e => e.isIntersecting) || loadingMore.current) return;
+      loadingMore.current = true;
+      observer.disconnect();
+      void load(true).finally(() => { loadingMore.current = false; });
+    }, {rootMargin: "300px"});
+    observer.observe(sentinel.current);
+    return () => observer.disconnect();
+  }, [infinite, cursor, action.busy, action.error]);
   const refresh = () => setVersion((v) => v + 1);
   return (
     <>
-      {!wallId && !singleId && (
+      {groupId && !wallId && !singleId && (
         <Composer onPosted={refresh} groupId={groupId} />
       )}
       <div className="feed-heading">
@@ -580,10 +597,12 @@ export function Feed({
       ) : (
         rows
           .filter(unexpired)
+          .filter(row => !authorFilter || matchesAuthor(row, authorFilter))
           .map((row) => (
             <PostCard
               key={row.id + ":" + row.envelope.context.revision}
               row={row}
+              contentFilter={contentFilter}
               onChange={refresh}
               expanded={!!singleId}
               initialDetails={singleId ? singleDetails : null}
@@ -614,6 +633,7 @@ export function Feed({
           </Empty>
         </div>
       )}
+      {cursor && <div ref={sentinel} aria-hidden="true" />}
       {cursor && (
         <Button
           variant="outline full"
@@ -640,7 +660,9 @@ export function PostCard({
   onChange,
   expanded = false,
   canModerate = false,
+  contentFilter = "posts",
 }: {
+  contentFilter?: FeedContent;
   row: SocialObject;
   initialDetails?: Json | null;
   onChange: () => void;
@@ -789,6 +811,7 @@ export function PostCard({
       onChange();
     });
   }
+  if (content && !matchesContent(content, contentFilter)) return null;
   if (unavailable)
     return (
       <div className="panel">

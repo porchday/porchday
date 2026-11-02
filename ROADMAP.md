@@ -22,6 +22,8 @@ Ranks continue across the sections below. This is an order for selecting work, n
 
 ### Owner top product priorities
 
+Implementation is in progress on `codex/social-albums-experience`; no part of that branch is yet verified live. The first slice separates Feed and Share and adds reading controls; standalone photos, album grants, end-to-end acceptance and production promotion remain required.
+
 The [Feed, Share, Photos and social albums design](design/feed-share-photos.md) records the latest proposed UI, audience defaults, album roles and unresolved permission details.
 
 These rows follow the owner’s list. The two composer/navigation requests and the gear icon are one UI workstream. “Share” is the second-tab label from the explicit ordered list; “Post” describes its composer. The supplied sketch adds More as tab five, Post / Photos Only tabs inside Share, and Feed content/view/author filters. Use its handwritten numbering for order and the explicit Photos and Community names from the owner’s text.
