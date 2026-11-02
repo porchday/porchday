@@ -1,3 +1,4 @@
+import {attachmentDateProof,setAttachmentDate} from "./attachment-photo-dates";
 import { registerPhotoRoutes, photoGrantSnapshot, photoRefreshSnapshot } from "./social-photos";
 import { registerAlbumRoutes, albumSnapshot } from "./social-albums";
 import {registerCalendarRoutes} from './social-calendar.js';
@@ -294,7 +295,7 @@ export function createSocialRoutes() {
     });
     app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.author_id=${id(c.req.param('id'))} and p.group_id is null ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.post('/posts', async (c) => {
-        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]), on_behalf_of: uuid.nullable().default(null) }));
+        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]), photo_dates:z.array(attachmentDateProof).max(10).default([]), on_behalf_of: uuid.nullable().default(null) }));
         return c.json(await tx(c, async (db) => {
             const e = b.envelope.context;
             id(e.id);
@@ -302,6 +303,7 @@ export function createSocialRoutes() {
             if (existing) {
                 if (canonicalJson(existing.envelope) !== canonicalJson(b.envelope) || existing.on_behalf_of !== b.on_behalf_of)
                     fail('CONFLICT', 409);
+                for(const proof of b.photo_dates){const [saved]=await db`select proof from app.attachment_photo_dates where media_id=${proof.statement.mediaId}`;if(canonicalJson(saved?.proof??null)!==canonicalJson(proof))fail('CONFLICT',409);}
                 return { id: e.id };
             }
             if (e.parentId !== null)
@@ -313,6 +315,8 @@ export function createSocialRoutes() {
                 await db `insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
             if(b.on_behalf_of)await db`update app.posts set on_behalf_of=${b.on_behalf_of} where id=${e.id}`;
             await attachMedia(db, c.get('memberId'), e.id, b.media_ids);
+            if(new Set(b.photo_dates.map(p=>p.statement.mediaId)).size!==b.photo_dates.length)fail('ENVELOPE_CONTEXT');
+            for(const proof of b.photo_dates){if(proof.statement.postId!==e.id||!b.media_ids.includes(proof.statement.mediaId))fail('ENVELOPE_CONTEXT');await setAttachmentDate(db,c.get('memberId'),proof,fail);}
             return { id: e.id };
         }), 201);
     });

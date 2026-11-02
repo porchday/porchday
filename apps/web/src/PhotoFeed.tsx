@@ -1,14 +1,15 @@
+import {verifyAttachmentDate,updateAttachmentDate,type AttachmentDate} from "./attachment-photo-date";
 import type {PhotoProof} from "@porchday/crypto/photos";
 import { useNearViewport } from "./near-viewport";
 import React,{useEffect,useLayoutEffect,useRef,useState} from "react";
 import {get,items,message,type MediaPayload,type SocialObject} from "./api";
 import {useVault} from "./vault";
-import {Alert,Button,Empty,Loading,Modal,useAction} from "./ui";
+import {Alert,Button,Empty,Field,Loading,Modal,useAction} from "./ui";
 import {EncryptedPhoto} from "./Social";
 import {PhotoCard,openPhoto,type PhotoRow} from "./PhotoCollection";
 import {matchesAuthor,type AuthorFilter} from "./feed-filters";
 import {localDay,monthCells,calendarDate} from "./photo-calendar";
-type Entry={id:string;kind:"photo"|"attachment";day:string;author_id:string;author_handle?:string;photo:PhotoRow|null;post:SocialObject|null;media?:MediaPayload;photoProof?:PhotoProof;error?:string};
+type Entry={attachment_date?:AttachmentDate|null;id:string;kind:"photo"|"attachment";day:string;author_id:string;author_handle?:string;photo:PhotoRow|null;post:SocialObject|null;media?:MediaPayload;photoProof?:PhotoProof;error?:string};
 function usePhotos(month?:string,enabled=true){
  const vault=useVault(),action=useAction(),generation=useRef(0),loading=useRef(false);
  const [entries,setEntries]=useState<Entry[]>([]),[next,setNext]=useState<string|null>(null),[loaded,setLoaded]=useState(false);
@@ -22,7 +23,7 @@ function usePhotos(month?:string,enabled=true){
     try{
      let media:MediaPayload|undefined,photoProof:PhotoProof|undefined;
      if(entry.photo){let last:unknown=Error("No encrypted photo is available.");for(const grant of entry.photo.grants){try{const content=await openPhoto(vault,entry.photo,grant);media=content.media![0];photoProof=content.photoProof as PhotoProof;break;}catch(error){last=error;}}if(!media)throw last;}
-     else if(entry.post){if(!posts.has(entry.post.id))posts.set(entry.post.id,vault.open(entry.post));media=(await posts.get(entry.post.id)!).media?.find(m=>m.id===entry.id);}
+     else if(entry.post){if(entry.attachment_date)await verifyAttachmentDate(vault,entry.attachment_date,entry.id,entry.post.id,entry.author_id,entry.day);if(!posts.has(entry.post.id))posts.set(entry.post.id,vault.open(entry.post));media=(await posts.get(entry.post.id)!).media?.find(m=>m.id===entry.id);}
      if(!media)throw Error("This attachment was not present in the signed post.");
      return {...entry,media,photoProof};
     }catch(error){return {...entry,error:message(error)};}
@@ -36,7 +37,10 @@ function usePhotos(month?:string,enabled=true){
  return {entries,next,loaded,busy:action.busy,error:action.error,load};
 }
 function EntryCard({entry,refresh}:{entry:Entry;refresh:()=>void}){
- return <div><p className="muted">{entry.author_handle?"@"+entry.author_handle:"Member"}</p>{entry.photo?<PhotoCard photo={entry.photo} onChanged={refresh}/>:<article className="panel independent-photo"><Alert>{entry.error}</Alert>{entry.media&&<EncryptedPhoto media={entry.media}/>}<p><time dateTime={entry.day}>{entry.day}</time> · <a href={"/app/post/"+entry.post!.id}>View post</a></p></article>}</div>;
+ const vault=useVault(),action=useAction(),[editing,setEditing]=useState(false),[date,setDate]=useState(entry.day);
+ return <div><p className="muted">{entry.author_handle?"@"+entry.author_handle:"Member"}</p>{entry.photo?<PhotoCard photo={entry.photo} onChanged={refresh}/>:<article className="panel independent-photo"><Alert>{entry.error||action.error}</Alert>{entry.media&&<EncryptedPhoto media={entry.media}/>}<p>{!entry.error&&<><time dateTime={entry.day}>{entry.day}</time> · </>}<a href={"/app/post/"+entry.post!.id}>View post</a></p>{entry.author_id===vault.member.id&&vault.member.status==="active"&&<Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo date</Button>}</article>}
+ {editing&&<Modal title="Edit photo date" onClose={()=>setEditing(false)}><form className="form-stack" onSubmit={e=>{e.preventDefault();void action.runSave(async()=>{await updateAttachmentDate(vault,entry.id,entry.post!.id,date);setEditing(false);refresh();});}}><Field label="Photo date" type="date" min="0001-01-01" max="9999-12-31" required value={date} disabled={action.busy} onChange={e=>setDate(e.target.value)}/><p>This changes where the photo appears in the photo calendar. The post date and audience stay the same.</p><Alert>{action.error}</Alert><Button type="submit" busy={action.busy}>Save date</Button></form></Modal>}
+ </div>;
 }
 export function PhotoFeed({authorFilter}:{authorFilter:AuthorFilter}){
  const data=usePhotos(),sentinel=useRef<HTMLDivElement>(null);

@@ -1,3 +1,5 @@
+import {AttachmentDateEditor} from "./AttachmentDateEditor";
+import {signAttachmentDate} from "./attachment-photo-date";
 import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
 import { publishPhoto, localPhotoDate } from "./photo-publish";
 import { matchesAuthor, matchesContent, type AuthorFilter, type FeedContent } from "./feed-filters";
@@ -334,6 +336,7 @@ export function Composer({
       const expiresAt = deadline(timer);
       const createdAt = new Date().toISOString();
       const media: MediaPayload[] = [];
+      const photoDates=[];
       for (const photo of photos) {
         const meta = {
           id: crypto.randomUUID(),
@@ -375,6 +378,7 @@ export function Composer({
           body: new Blob([bytes]),
         });
         media.push(meta);
+        photoDates.push(await signAttachmentDate(vault,meta.id,id,photo.photoDate||localPhotoDate(),1));
       }
       const envelope = await vault.seal(
         { text: text.trim(), tags:postTags, media, reactionSecret: createReactionSecret() },
@@ -387,7 +391,7 @@ export function Composer({
           expiresAt,
         },
       );
-      await post("/posts", { envelope, media_ids: media.map((p) => p.id), on_behalf_of: onBehalf || null });
+      await post("/posts", { envelope, photo_dates:photoDates, media_ids: media.map((p) => p.id), on_behalf_of: onBehalf || null });
       setText("");
       setTags([]);setOnBehalf("");
       setPhotos([]);
@@ -433,10 +437,10 @@ export function Composer({
       </>}
       {photos.length > 0 && (
         <div className="photo-editor">
-          {photos.map((photo) => (
+          {photos.map((photo,index) => (
             <div className="photo-draft" key={photo.id}>
               {isVideo(photo.mime) ? <video src={photo.preview} controls playsInline preload="metadata" aria-label="Video preview" /> : <img src={photo.preview} alt="Photo preview" />}
-              {shareTabs&&mode==="photos"&&<Field type="date" label="Photo date" required value={photo.photoDate||localPhotoDate()} disabled={action.busy} onChange={e=>setPhotos(current=>current.map(p=>p.id===photo.id?{...p,photoDate:e.target.value}:p))}/>}
+              <Field type="date" min="0001-01-01" max="9999-12-31" label="Photo date" required value={photo.photoDate||localPhotoDate()} disabled={action.busy} onChange={e=>setPhotos(current=>current.map(p=>p.id===photo.id?{...p,photoDate:e.target.value}:p))}/>
               <Field
                 label="Photo or video description"
                 value={photo.alt}
@@ -451,6 +455,7 @@ export function Composer({
                 placeholder="Describe this photo or video for everyone"
               />
               <TagPicker label="People in this photo or video" value={photo.tags||[]} disabled={action.busy} onChange={tags=>setPhotos(photos.map(p=>p.id===photo.id?{...p,tags}:p))}/>
+              {photos.length>1&&<div className="album-actions"><Button variant="quiet" disabled={index===0} aria-label={`Move ${photo.name} earlier`} onClick={()=>setPhotos(current=>{const next=[...current];[next[index-1],next[index]]=[next[index],next[index-1]];return next;})}>Move earlier</Button><Button variant="quiet" disabled={index===photos.length-1} aria-label={`Move ${photo.name} later`} onClick={()=>setPhotos(current=>{const next=[...current];[next[index],next[index+1]]=[next[index+1],next[index]];return next;})}>Move later</Button></div>}
               <button
                 type="button"
                 className="icon-button"
@@ -987,6 +992,7 @@ export function PostCard({
           <TagPicker value={editTags} onChange={setEditTags} disabled={action.busy}/>
           {editMedia.map(media=><div key={media.id} className="photo-draft">
             <EncryptedPhoto media={media}/>
+            <AttachmentDateEditor mediaId={media.id} postId={row.id} createdAt={row.created_at}/>
             <Field label={isVideo(media.mime) ? "Video caption" : "Photo caption"} value={media.alt} maxLength={1000} onChange={e=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,alt:e.target.value}:m))}/>
             <TagPicker label="People in this photo or video" value={media.tags||[]} disabled={action.busy} onChange={tags=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,tags}:m))}/>
           </div>)}

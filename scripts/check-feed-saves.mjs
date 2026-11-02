@@ -12,13 +12,14 @@ b.onResolve({filter:/^@porchday\/crypto$/},()=>({path:'crypto',namespace:'fixtur
 b.onResolve({filter:/^\.\/vault$/},()=>({path:'vault',namespace:'fixture'}));
 b.onResolve({filter:/^\.\/MemberAvatar$/},()=>({path:'avatar',namespace:'fixture'}));
 b.onResolve({filter:/^\.\/photo-safety$/},()=>({path:'photo',namespace:'fixture'}));
-b.onLoad({filter:/.*/,namespace:'fixture'},args=>({loader:'js',contents:args.path==='crypto'?`export const canonicalJson=JSON.stringify;export const signStatement=async()=>({}),bytesToBase64=()=>'',base64ToBytes=()=>new Uint8Array(),createReactionSecret=()=>'',reactionTag=()=>'';`:args.path==='vault'?`export const useVault=()=>({member:{id:'self',handle:'fixture',status:'active'},device:{id:'device'},seal:async(content,context)=>{await new Promise(r=>window.releaseSeal=r);return{context,ciphertext:'sealed'}},open:async row=>row.id.startsWith('post-')?{text:'Synthetic post',media:[{id:row.id.replace('post-','media-'),mime:'image/jpeg',alt:'Fixture',width:400,height:300}]}:{mime:'image/jpeg',bytes:'AA=='}});export const useOptionalVault=useVault;export const Fingerprint=()=>null;export const VaultProvider=({children})=>children;`:args.path==='avatar'?`export const MemberAvatar=()=>null;`:`export const validatedPhoto=async()=>({blob:new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="green"/></svg>'],{type:'image/svg+xml'})}); export const jpegDimensions=()=>({width:400,height:300}),jpegSource=()=>null,PHOTO_ACCEPT='',PHOTO_SOURCE_MAX_BYTES=50000000,photoSourceMime=()=>'',stripCanvasJpegMetadata=x=>x;` }));
+b.onLoad({filter:/.*/,namespace:'fixture'},args=>({loader:'js',contents:args.path==='crypto'?`export const canonicalJson=JSON.stringify;export const validateContext=()=>{},verifyStatement=async()=>{};export const signStatement=async statement=>({statement,signature:"synthetic"}),bytesToBase64=()=>'',base64ToBytes=()=>new Uint8Array(),createReactionSecret=()=>'',reactionTag=()=>'';`:args.path==='vault'?`export const useVault=()=>({member:{id:'self',handle:'fixture',status:'active'},device:{id:'device'},seal:async(content,context)=>{await new Promise(r=>window.releaseSeal=r);return{context,ciphertext:'sealed'}},open:async row=>row.id.startsWith('post-')?{text:'Synthetic post',media:[{id:row.id.replace('post-','media-'),mime:'image/jpeg',alt:'Fixture',width:400,height:300}]}:{mime:'image/jpeg',bytes:'AA=='}});export const useOptionalVault=useVault;export const Fingerprint=()=>null;export const VaultProvider=({children})=>children;`:args.path==='avatar'?`export const MemberAvatar=()=>null;`:`export const validatedPhoto=async()=>({blob:new Blob(['<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="green"/></svg>'],{type:'image/svg+xml'})}); export const jpegDimensions=()=>({width:400,height:300}),jpegSource=()=>null,PHOTO_ACCEPT='',PHOTO_SOURCE_MAX_BYTES=50000000,photoSourceMime=()=>'',stripCanvasJpegMetadata=x=>x;` }));
 }}],bundle:true,write:false,platform:'browser',format:'iife',define:{'process.env.NODE_ENV':'"production"','import.meta.env':'{}'}});
 let calls=[], pendingWrite, failWrite=false;
 const server=http.createServer(async(req,res)=>{
  if(req.url==='/bundle.js'){res.setHeader('Content-Type','text/javascript');return res.end(result.outputFiles[0].contents);}
  if(!req.url.startsWith('/api/')){res.setHeader('Content-Type','text/html');return res.end('<!doctype html><style>body{margin:0}#root{max-width:700px}figure{margin:0}img{width:400px;height:300px}.photo-placeholder{height:300px}</style><div id="root"></div><script src="/bundle.js"></script>');}
- calls.push({url:req.url,method:req.method});
+ const chunks=[];for await(const chunk of req)chunks.push(chunk);const body=chunks.length?JSON.parse(Buffer.concat(chunks).toString()):null;
+ calls.push({url:req.url,method:req.method,body});
  if(req.method==='PUT')await new Promise(resolve=>pendingWrite=resolve);
  res.setHeader('Content-Type','application/json');res.statusCode=req.method==='PUT'&&failWrite?500:200;
  res.end(req.url.includes('/media/')?JSON.stringify({context:{expiresAt:null}}):JSON.stringify({comments:[],reactions:[]}));
@@ -56,10 +57,19 @@ try {for(const engine of [chromium,webkit]){
    if(fail){await card.getByText(/Save was not confirmed/).waitFor();assert.equal(await card.getByRole('textbox',{name:'Edit your post'}).inputValue(),'Changed immediately');await card.getByRole('button',{name:'Cancel',exact:true}).click();assert.equal(await card.locator('.post-text').innerText(),'Synthetic post');assert.equal(await card.locator('figcaption').first().innerText(),'Fixture');}
    else {assert.equal(await card.locator('.post-text').innerText(),'Changed immediately');assert.equal(await card.locator('figcaption').first().innerText(),'Changed caption');}
   }
+  // Photo dates are a separate save; the post editor remains open and intact.
+  failWrite=false;pendingWrite=undefined;
+  const dateCard=page.locator('article').first();await dateCard.getByRole('button',{name:'Post options',exact:true}).click();await dateCard.getByRole('button',{name:'Edit text',exact:true}).click();
+  await dateCard.getByLabel('Photo date',{exact:true}).fill('2000-02-29');await dateCard.getByRole('button',{name:'Save photo date',exact:true}).click();
+  for(let i=0;i<100&&!pendingWrite;i++)await new Promise(r=>setTimeout(r,10));assert(pendingWrite);pendingWrite();
+  await dateCard.getByText('Photo date saved.',{exact:true}).waitFor();
+  assert.equal(await dateCard.getByRole('textbox',{name:'Edit your post'}).inputValue(),'Changed immediately');
+  assert.equal(calls.findLast(c=>c.url.endsWith('/photo-date')&&c.method==='PUT').body.statement.date,'2000-02-29');
+  await dateCard.getByRole('button',{name:'Cancel',exact:true}).click();
   // Independent/nested requests keep the warning until every save settles.
   await page.evaluate(()=>{window.startSave();window.endFirst=window.endSave;window.startSave();});await page.evaluate(()=>window.endFirst());assert.equal(await page.locator('.pending-save-status').count(),1);await page.evaluate(()=>window.failSave(new Error('synthetic failure')));await page.locator('.pending-save-status').waitFor({state:'hidden'});
   assert.deepEqual(errors,[]);await context.close();
   const fallback=await browser.newContext();await fallback.addInitScript(()=>{window.IntersectionObserver=undefined});const fallbackPage=await fallback.newPage();calls=[];await fallbackPage.goto(origin);await fallbackPage.locator('article').nth(29).locator('img').waitFor({state:'attached'});assert(calls.some(x=>x.url.includes('media-29')));await fallback.close();
-  console.log(engine.name()+': deferred photos, scroll, observer fallback, saving during encryption/request, navigation guard, concurrent saves, optimistic success and failure rollback passed');
+  console.log(engine.name()+': deferred photos, scroll, observer fallback, saving during encryption/request, navigation guard, concurrent saves, optimistic success/failure rollback and separate photo-date saves passed');
  }finally{await browser.close();}
 }}finally{server.close();}

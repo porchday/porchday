@@ -4,6 +4,7 @@ import postgres, { type Sql } from "postgres";
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import {
+  signStatement,
   generateDeviceKeys,
   unlockPrivateKey,
   encryptObject,
@@ -288,6 +289,43 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(reader.id,"/photo-feed")).data.items).toHaveLength(0);
     expect((await call(reader.id,"/photo-feed?timezone=not-a-zone")).status).toBe(400);
     expect((await call(reader.id,"/photo-feed?after=invalid")).status).toBe(400);
+  });
+  it("publishes and edits signed attachment dates without backdating posts or changing their recipients",async()=>{
+    const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
+    const postId=randomUUID(),attachment=await uploadGrant(owner,postId,"connections");
+    const envelope=await seal(owner,{text:"Now, with an older photo",media:[{id:attachment.media_id,mime:"image/jpeg",alt:"Caption"}]},1,{id:postId,kind:"post",audience:"connections"});
+    const statement={v:1,purpose:"porchday-attachment-date",mediaId:attachment.media_id,postId,ownerId:owner.id,deviceId:owner.deviceId,date:"2001-02-03",revision:1};
+    const proof=await signStatement(statement,owner.key),body={envelope,media_ids:[attachment.media_id],photo_dates:[proof]};
+    expect((await call(owner.id,"/posts","POST",body)).status).toBe(201);
+    expect((await call(owner.id,"/posts","POST",body)).status).toBe(201);
+    const original=(await db`select created_at,envelope from app.posts where id=${postId}`)[0];
+    const recipients=await db`select * from app.post_recipients where post_id=${postId} order by device_id`;
+    const path=`/media/${attachment.media_id}/photo-date`;
+    const record=(await call(reader.id,path)).data.date;expect(record.photo_date).toBe("2001-02-03");expect(record.author_key.public_key).toBe(owner.keys.publicKey);
+    const calendar=await call(reader.id,"/photo-feed?month=2001-02&timezone=UTC");expect(calendar.data.items[0].id).toBe(attachment.media_id);expect(calendar.data.items[0].day).toBe("2001-02-03");
+    expect((await call(outsider.id,path)).status).toBe(404);
+    const updated=await signStatement({...statement,date:"1999-12-31",revision:2},owner.key);
+    expect((await call(reader.id,path,"PUT",updated)).status).toBe(403);
+    expect((await call(owner.id,path,"PUT",{...updated,statement:{...updated.statement,date:"1999-12-30"}})).status).toBe(400);
+    expect((await call(owner.id,path,"PUT",updated)).status).toBe(200);
+    expect((await call(owner.id,path,"PUT",updated)).status).toBe(409);
+    expect((await call(reader.id,"/photo-feed?month=2001-02&timezone=UTC")).data.items).toHaveLength(0);
+    expect((await call(reader.id,"/photo-feed?month=1999-12&timezone=UTC")).data.items[0].day).toBe("1999-12-31");
+    expect((await db`select created_at,envelope from app.posts where id=${postId}`)[0]).toEqual(original);
+    expect(await db`select * from app.post_recipients where post_id=${postId} order by device_id`).toEqual(recipients);
+    // An older backup must not resurrect the previous signed date.
+    const decisions=await db`select sequence,id,occurred_at,decision from app.safety_journal where decision->>'action'='attachment_photo_date_revision' and decision->>'media'=${attachment.media_id} order by sequence`;
+    await db`update app.attachment_photo_dates set photo_date='2001-02-03',revision=1,proof=${db.json(proof)} where media_id=${attachment.media_id}`;
+    await db`update app.safety_journal_state set restore_quarantined=true where id`;
+    await db`select app.replay_safety_batch(${db.json(decisions as any)})`;
+    await db`update app.safety_journal_state set restore_quarantined=false where id`;
+    expect((await call(owner.id,path)).data.date).toMatchObject({photo_date:null,revision:2,proof:{}});
+    const restored=await signStatement({...statement,date:"1999-12-31",revision:3},owner.key);
+    expect((await call(owner.id,path,"PUT",restored)).status).toBe(200);
+    await db`insert into app.blocks(actor,target) values(${owner.id},${reader.id})`;
+    expect((await call(reader.id,path)).status).toBe(404);
+    await db`delete from app.posts where id=${postId}`;
+    expect(await db`select * from app.attachment_photo_dates where media_id=${attachment.media_id}`).toHaveLength(0);
   });
   it("paginates same-day photos without duplicates or missing records",async()=>{
     const owner=await person(),ids=[];

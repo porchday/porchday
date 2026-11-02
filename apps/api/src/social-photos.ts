@@ -1,3 +1,4 @@
+import {attachmentDateProof,setAttachmentDate} from "./attachment-photo-dates";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { EncryptedEnvelope } from "@porchday/crypto";
@@ -40,6 +41,15 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     id(c.id);
   }
   async function grants(db:Db,photo:string){return db`select * from app.photo_grants where photo_id=${photo} order by id`;}
+  app.get("/media/:id/photo-date",async c=>c.json(await tx(c,async db=>{
+    const media=id(c.req.param("id"));const [row]=await db`select id from app.media_assets where id=${media} and post_id is not null and state='attached'`;if(!row)fail("NOT_FOUND",404);
+    const [date]=await db`select *,photo_date::text as photo_date from app.attachment_photo_dates where media_id=${media}`;return {date:date||null};
+  })));
+  app.put("/media/:id/photo-date",async c=>{
+    const media=id(c.req.param("id")),proof=await body(c,attachmentDateProof,40000);
+    if(media!==proof.statement.mediaId)fail("ENVELOPE_CONTEXT");
+    return c.json(await tx(c,async db=>{await writeAllowed(db);await setAttachmentDate(db,c.get("memberId"),proof,fail);return {ok:true};}));
+  });
   app.get("/photo-feed",async c=>c.json(await tx(c,async db=>{
     const timezone=c.req.query("timezone")||"UTC";
     const [zone]=await db`select name from pg_timezone_names where name=${timezone}`;
@@ -48,11 +58,11 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     let cursor:{day:string;id:string;kind:string}|null=null;
     if(c.req.query("after")){try{cursor=z.object({day,id:z.string().uuid(),kind:z.enum(["photo","attachment"])}).strict().parse(JSON.parse(c.req.query("after")!));}catch{fail("INVALID_CURSOR");}}
     const rows=await db`with candidates as (
-      select 'photo'::text as kind,p.id,p.photo_date as day,p.owner_id as author_id,to_jsonb(p)||jsonb_build_object('photo_date',p.photo_date::text) as photo,null::jsonb as post
+      select 'photo'::text as kind,p.id,p.photo_date as day,p.owner_id as author_id,to_jsonb(p)||jsonb_build_object('photo_date',p.photo_date::text) as photo,null::jsonb as post,null::jsonb as attachment_date
       from app.photos p
       union all
-      select 'attachment'::text,m.id,(p.created_at at time zone ${timezone})::date,p.author_id,null::jsonb,to_jsonb(p)
-      from app.media_assets m join app.posts p on p.id=m.post_id
+      select 'attachment'::text,m.id,coalesce(d.photo_date,(p.created_at at time zone ${timezone})::date),p.author_id,null::jsonb,to_jsonb(p),to_jsonb(d)
+      from app.media_assets m join app.posts p on p.id=m.post_id left join app.attachment_photo_dates d on d.media_id=m.id
       where p.group_id is null and m.state='attached' and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
     ) select c.*,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
     where not exists(select 1 from app.mutes where target=c.author_id)
