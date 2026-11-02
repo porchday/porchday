@@ -17,6 +17,11 @@ jobs:
         run: apps/macos/test.sh
       - name: Build universal preview
         run: apps/macos/build.sh
+      - name: Compile TestFlight target (unsigned; no distribution claim)
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec apps/macos/project.yml
+          xcodebuild -project apps/macos/PorchdayMac.xcodeproj -scheme Porchday -configuration Release -destination "generic/platform=macOS" -derivedDataPath apps/macos/build/TestFlightDerived build CODE_SIGNING_ALLOWED=NO
       - uses: actions/upload-artifact@v4
         with:
           name: Porchday-macOS-preview

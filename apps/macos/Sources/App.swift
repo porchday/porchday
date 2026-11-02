@@ -71,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         add(windows, "Close", #selector(NSWindow.performClose(_:)), "w")
         NSApp.windowsMenu = windows
         let help = submenu("Help")
-        add(help, "Download App Updates", #selector(updates))
+        add(help, isTestFlight ? "Open TestFlight" : "Download App Updates", #selector(updates))
         add(help, "Porchday Help", #selector(helpPage))
         NSApp.mainMenu = menu
     }
@@ -80,7 +80,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     @objc func reload() { webView.reload() }
     @objc func back() { webView.goBack() }
     @objc func forward() { webView.goForward() }
-    @objc func updates() { NSWorkspace.shared.open(URL(string: "https://github.com/porchday/porchday/releases")!) }
+    var isTestFlight: Bool { Bundle.main.object(forInfoDictionaryKey: "PorchdayDistribution") as? String == "TestFlight" }
+    @objc func updates() {
+        let destination = isTestFlight ? "https://testflight.apple.com/" : "https://github.com/porchday/porchday/releases"
+        NSWorkspace.shared.open(URL(string: destination)!)
+    }
     @objc func helpPage() { webView.load(URLRequest(url: URL(string: "https://porchday.org/help")!)) }
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         window.makeKeyAndOrderFront(nil); return true

@@ -50,3 +50,42 @@ apps/macos/build/Porchday.app/Contents/MacOS/Porchday --smoke-test
 Run this in an interactive macOS login session. CI runs policy tests and compilation/packaging; it does not claim physical-device or signed-in testing. The [macOS workflow](../../.github/workflows/macos.yml) also uploads build artifacts. Tags `macos-v*` publish a clearly marked preview release after a successful build. Set `apps/macos/VERSION` before tagging a new version.
 
 Before stable distribution, add Developer ID signing and notarization through restricted CI secrets, validate installed/quarantined downloads on a clean Mac, and complete signed-in photo/export/relaunch tests on both architectures. No signing credentials belong in this repository.
+
+## TestFlight distribution
+
+The separate `project.yml` generates a sandboxed Mac App Store/TestFlight target
+for the existing Mac shell (not the SwiftUI iOS client). It retains bundle ID
+`org.porchday.macos`. Apple must register that identifier to the chosen team.
+Network client and user-selected read/write files are the only sandbox exceptions.
+There is no broad Photos-library, Downloads-folder, camera or microphone grant.
+The preview build remains separate and unchanged.
+
+1. Install full Xcode and XcodeGen, sign in to your paid Apple Developer team,
+   and select Xcode's developer directory. Run `apps/macos/prepare-testflight.sh`.
+2. Open `apps/macos/PorchdayMac.xcodeproj`. Select the team under Signing &
+   Capabilities and use automatic signing. Create the matching macOS app record
+   in App Store Connect. Keep the identifier consistent with its provisioning profile.
+3. Set the version and a new monotonically increasing build number in the source
+   `project.yml`, then regenerate. Complete the encryption/export classification
+   for the actual hosted encryption implementation; no exemption is assumed here.
+4. Run a signed sandboxed development build. Verify login/recovery using an owned
+   test account, persistent keys after relaunch, photo/video selection, export via
+   the save panel, and external-link handling. The sandbox has a different storage
+   location from the unsandboxed preview; do not promise automatic session/key
+   migration or delete the preview's data. Have the recovery secret available.
+5. Select Product → Archive, then Organizer → Distribute App → App Store Connect.
+   Validate the signature, provisioning profile and entitlements before uploading.
+   This requires Apple distribution signing; ad-hoc/Developer ID preview signatures
+   are not TestFlight distribution signatures.
+6. After processing, complete encryption and beta metadata in App Store Connect,
+   add an internal TestFlight group and install on a real Mac. For external testers,
+   supply review access and submit for TestFlight review. Do not mark distribution
+   complete until the processed build can actually be installed from TestFlight.
+
+TestFlight builds open TestFlight for updates rather than linking to preview ZIPs.
+Web content still follows the hosted service. Native push is not enabled by this
+configuration. Apple review acceptance and signed-in sandbox behavior remain
+unverified until tested; compilation alone is not distribution acceptance.
+
+References: [Apple distribution preparation](https://developer.apple.com/documentation/xcode/preparing-your-app-for-distribution),
+[TestFlight](https://developer.apple.com/help/app-store-connect/test-a-beta-version/testflight-overview/).

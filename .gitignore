@@ -33,3 +33,5 @@ apps/ios/Porchday.xcodeproj/
 packages/crypto/native/build/
 
 apps/macos/build/
+
+apps/macos/PorchdayMac.xcodeproj/
