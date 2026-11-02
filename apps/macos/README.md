@@ -4,12 +4,14 @@ A standalone Mac application using AppKit and Apple's WebKit engine. It opens th
 
 ## Install
 
-1. Open [GitHub Releases](https://github.com/porchday/porchday/releases) and choose the macOS preview.
+1. Open the [macOS preview release](https://github.com/porchday/porchday/releases/tag/macos-v0.1.0-preview.1), or [download the ZIP directly](https://github.com/porchday/porchday/releases/download/macos-v0.1.0-preview.1/Porchday-0.1.0-macOS-universal.zip).
 2. Download `Porchday-0.1.0-macOS-universal.zip`, unzip it, and drag **Porchday.app** into **Applications**.
 3. Open Porchday. This preview is ad-hoc signed, **not Developer ID signed or Apple-notarized**. If macOS blocks it, follow Apple's per-app **System Settings → Privacy & Security → Open Anyway** flow after attempting to open it. See [Apple's instructions](https://support.apple.com/en-us/102445). Do not disable Gatekeeper globally.
 4. Sign in. This app has its own browser storage: your Chrome login and encryption keys do **not** transfer. Have your Porchday encryption recovery secret available to restore access to existing encrypted content. Keep your existing working Chrome app until you confirm your history opens here.
 
 Requires macOS 13 Ventura or later. The same universal binary includes Apple silicon and Intel code. Intel is cross-compiled; physical Intel-device acceptance is not yet claimed. SHA256SUMS.txt accompanies the archive.
+
+To verify the download, save both the ZIP and `SHA256SUMS.txt` from that release in the same folder, open Terminal in that folder, and run `shasum -a 256 -c SHA256SUMS.txt`. The ZIP should report `OK`.
 
 ## What works and what needs verification
 

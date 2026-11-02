@@ -21,7 +21,14 @@ The [federation proposal](design/federation-proposal.md) explores participation 
 
 ## Install the macOS preview
 
-A standalone Mac app is available from [GitHub Releases](https://github.com/porchday/porchday/releases). Download the universal ZIP, unzip it, and drag Porchday.app into Applications. It uses Apple WebKit and does not require Chrome. The preview is ad-hoc signed, not Apple-notarized; see the [installation and build guide](apps/macos/README.md) for first-launch approval, separate encryption-key setup, and known limitations.
+The standalone Mac app requires **macOS 13 or later**, supports **Apple silicon and Intel**, and uses Apple WebKit without Chrome.
+
+1. [Download Porchday for macOS](https://github.com/porchday/porchday/releases/download/macos-v0.1.0-preview.1/Porchday-0.1.0-macOS-universal.zip).
+2. Unzip the download and drag **Porchday.app** into **Applications**.
+3. Open Porchday. This preview is ad-hoc signed, **not Apple-notarized**. If macOS blocks it, attempt to open it, then use **System Settings → Privacy & Security → Open Anyway** for this app.
+4. Sign in with your Porchday account. Chrome's login and encryption keys do not transfer; have your **encryption recovery secret** ready to restore existing content. Keep your working browser installation until you confirm your history opens.
+
+The app requires an internet connection. It provides native file and save dialogs, but compatibility with the macOS Photos library still needs device verification; this preview is not a confirmed fix for Chrome's photo-picker error. See the [installation and build guide](apps/macos/README.md) for checksums, source-build commands and limitations, or the [release page](https://github.com/porchday/porchday/releases/tag/macos-v0.1.0-preview.1) for release assets.
 
 ## Start developing
 
