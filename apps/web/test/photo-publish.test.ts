@@ -1,10 +1,12 @@
-import {beforeEach,describe,it,expect,vi} from "vitest";
+import {generateDeviceKeys,unlockPrivateKey} from "@porchday/crypto";
+import {beforeAll,beforeEach,describe,it,expect,vi} from "vitest";
 vi.mock("../src/api",async importOriginal=>({...await importOriginal<typeof import("../src/api")>(),get:vi.fn(),post:vi.fn(),request:vi.fn()}));
 import {ApiError,get,post,request} from "../src/api";
 import {publishPhoto,localPhotoDate,type PhotoDraft} from "../src/photo-publish";
 const draft:PhotoDraft={id:"photo-id",name:"day.jpg",alt:"A day outside",blob:new Blob(["synthetic image bytes"]),width:1,height:1,photoDate:"2026-10-31"};
-const vault={member:{id:"owner"},seal:vi.fn(async(payload,context)=>({context,payload})),open:vi.fn(async(row)=>row.envelope.payload)} as any;
+const vault={member:{id:"owner"},device:{id:"device"},seal:vi.fn(async(payload,context)=>({context,payload})),open:vi.fn(async(row)=>row.envelope.payload)} as any;
 function saved(audience="connections",album:string|null=null){return {photo:{owner_id:"owner",photo_date:draft.photoDate,expires_at:null,grants:[{id:"direct",album_id:null,audience,envelope:{payload:{media:[{alt:draft.alt,tags:[]}]}}},...(album?[{id:"album",album_id:album,audience:"album",envelope:{payload:{media:[{alt:draft.alt,tags:[]}]}}}]:[])]}};}
+beforeAll(async()=>{const keys=await generateDeviceKeys("owner","device");vault.privateKey=await unlockPrivateKey(keys.encryptedPrivateKey,keys.recoverySecret);});
 beforeEach(()=>{vi.clearAllMocks();vi.mocked(get).mockRejectedValue(new ApiError(404,{error:{code:"NOT_FOUND"}}));vi.mocked(post).mockImplementation(async(path)=>path==="/media"?{upload_url:"/media/upload"}:{id:draft.id});vi.mocked(request).mockResolvedValue({ok:true});});
 describe("independent photo publication",()=>{
  it("publishes one logical photo with distinct direct and album media grants and no post",async()=>{

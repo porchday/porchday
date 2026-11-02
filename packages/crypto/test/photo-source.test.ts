@@ -1,0 +1,20 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {generateDeviceKeys,unlockPrivateKey} from '../src/index.ts';
+import {createPhotoProof,verifyPhotoProof,verifyPhotoBytes,photoBytesHash,photoMetadata} from '../src/photos.ts';
+const owner='6d6f18e2-5ff0-4ef0-a429-c977cb3210fb',device='ce4a87b0-d17f-4fc6-a8c5-a71313d17a7e',photo='f57e9373-cdf2-4d72-9b46-e17156ef18cf';
+test('photo source proofs survive new media IDs but reject altered owner, caption, date, revision and bytes',async()=>{
+ const keys=await generateDeviceKeys(owner,device),key=await unlockPrivateKey(keys.encryptedPrivateKey,keys.recoverySecret);
+ const bytes=new TextEncoder().encode('synthetic original photo bytes');
+ const metadata=photoMetadata({id:'first-encrypted-version',mime:'image/jpeg',alt:'Original caption',width:1,height:1});
+ const expected={photoId:photo,ownerId:owner,deviceId:device,revision:1,date:'2026-10-31',expiresAt:null,metadata};
+ const proof=await createPhotoProof({...expected,sha256:await photoBytesHash(bytes)},key);
+ assert.equal((await verifyPhotoProof(proof,expected,keys.publicKey)).photoId,photo);
+ await verifyPhotoBytes(proof,bytes);
+ assert.deepEqual(photoMetadata({id:'another-encrypted-version',...metadata}),metadata);
+ for(const changed of [{...expected,date:'2020-01-01'},{...expected,revision:2},{...expected,ownerId:device},{...expected,metadata:{...metadata,alt:'Changed by album admin'}}])await assert.rejects(()=>verifyPhotoProof(proof,changed,keys.publicKey));
+ await assert.rejects(()=>verifyPhotoBytes(proof,new TextEncoder().encode('substituted bytes')));
+ const other=await generateDeviceKeys(device,photo),otherKey=await unlockPrivateKey(other.encryptedPrivateKey,other.recoverySecret);
+ const forgery=await createPhotoProof({...expected,sha256:proof.statement.sha256},otherKey);
+ await assert.rejects(()=>verifyPhotoProof(forgery,expected,keys.publicKey));
+});

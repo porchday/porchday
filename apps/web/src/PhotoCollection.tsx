@@ -1,3 +1,4 @@
+import {createPhotoProof,photoMetadata,type PhotoProof} from "@porchday/crypto/photos";
 import React,{useEffect,useRef,useState} from "react";
 import {get,request,del,items,message,type Content,type EncryptedEnvelope} from "./api";
 import {useVault} from "./vault";
@@ -29,12 +30,14 @@ export function PhotoCard({photo,onChanged,album}:{photo:PhotoRow;onChanged:()=>
   })();return()=>{alive=false;};},[photo,vault.member.id]);
   async function save(){await action.runSave(async()=>{
     const envelopes=[];
-    for(const grant of photo.grants){const decoded=await openPhoto(vault,photo,grant);envelopes.push(await vault.sealPhotoUpdate({...decoded,media:decoded.media!.map(m=>({...m,alt:caption,tags}))},{...grant.envelope.context,photoDate:date,revision:photo.revision+1}));}
+    for(const grant of photo.grants){const decoded=await openPhoto(vault,photo,grant),media=decoded.media!.map(m=>({...m,alt:caption,tags}));
+      const photoProof=await createPhotoProof({photoId:photo.id,ownerId:photo.owner_id,deviceId:vault.device.id,revision:photo.revision+1,date,expiresAt:photo.expires_at?new Date(photo.expires_at).toISOString():null,sha256:(decoded.photoProof as PhotoProof).statement.sha256,metadata:photoMetadata(media[0])},vault.privateKey);
+      envelopes.push(await vault.sealPhotoUpdate({...decoded,media,photoProof},{...grant.envelope.context,photoDate:date,revision:photo.revision+1}));}
     await request("/photos/"+photo.id,{method:"PUT",body:JSON.stringify({photo_date:date,expected_revision:photo.revision,envelopes})});setEditing(false);onChanged();
   },"Photo updated.");}
   const own=photo.owner_id===vault.member.id,write=vault.member.status==="active";
   return <article className="panel independent-photo"><Alert>{error||action.error}</Alert><Alert success>{action.notice}</Alert>
-    {content?<EncryptedPhoto media={content.media![0]}/>:!error&&<Loading/>}
+    {content?<EncryptedPhoto media={content.media![0]} photoProof={content.photoProof as PhotoProof}/>:!error&&<Loading/>}
     <p><time dateTime={photo.photo_date}>{photo.photo_date}</time></p>
     {own&&write&&content&&<><Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo</Button><Button variant="quiet" onClick={chooseAlbum}>Add to album</Button></>}
     {album&&write&&(own||album.role==="admin")&&<Button variant="quiet" onClick={()=>setConfirm("remove")}>Remove from album</Button>}

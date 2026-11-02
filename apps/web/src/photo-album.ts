@@ -1,3 +1,4 @@
+import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
 import {base64ToBytes,type EncryptedEnvelope} from "@porchday/crypto";
 import {get,post,request} from "./api";
 import type {useVault} from "./vault";
@@ -11,9 +12,10 @@ export async function readOwnedPhoto(vault:ReturnType<typeof useVault>,photo:Pho
    const content=await openPhoto(vault,photo,grant),media=content.media![0];
    const envelope=await get<EncryptedEnvelope>(`/media/${media.id}/bytes`);
    if(envelope.context.kind!=="media"||envelope.context.parentId!==photo.id)throw Error("Photo bytes do not belong to this photo.");
-   const payload=await vault.open({id:media.id,author_id:photo.owner_id,envelope});
+   const payload=await vault.open({id:media.id,envelope});
    if(payload.mime!==media.mime||typeof payload.bytes!=="string")throw Error("Photo bytes do not match the signed metadata.");
-   await validatedMedia(base64ToBytes(payload.bytes),media.mime);
+   const bytes=base64ToBytes(payload.bytes);await verifyPhotoBytes(content.photoProof as PhotoProof,bytes);
+   await validatedMedia(bytes,media.mime);
    return {content,payload};
   }catch(error){last=error;}
  }

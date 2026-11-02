@@ -1,3 +1,4 @@
+import {createPhotoProof,photoBytesHash,photoMetadata} from "@porchday/crypto/photos";
 import { bytesToBase64, canonicalJson, type Audience } from "@porchday/crypto";
 import { ApiError, get, post, request, type MediaPayload } from "./api";
 import type { PersonTag } from "./PeopleTags";
@@ -23,15 +24,18 @@ export async function publishPhoto(vault:ReturnType<typeof useVault>,photo:Photo
   if(await existing())return;
   const createdAt=new Date().toISOString();
   const destinations=[{audience,groupId:null as string|null},...(album?[{audience:"album" as Audience,groupId:album}]:[])];
+  const sourceBytes=new Uint8Array(await photo.blob.arrayBuffer());
+  const sha256=await photoBytesHash(sourceBytes);
   const grants=[];
   for(const destination of destinations){
     const media:MediaPayload={id:crypto.randomUUID(),name:photo.name,alt:photo.alt,width:photo.width,height:photo.height,mime:photo.mime||"image/jpeg",tags:photo.tags||[],...(photo.poster?{poster:photo.poster,posterExpiresAt:expiresAt}:{})};
-    const encrypted=await vault.seal({...media,bytes:bytesToBase64(new Uint8Array(await photo.blob.arrayBuffer()))},{id:media.id,kind:"media",parentId:photo.id,...destination,createdAt,expiresAt});
+    const encrypted=await vault.seal({...media,bytes:bytesToBase64(sourceBytes)},{id:media.id,kind:"media",parentId:photo.id,...destination,createdAt,expiresAt});
     const bytes=new TextEncoder().encode(JSON.stringify(encrypted));
     if(bytes.length>22_020_096)throw Error("This encrypted photo is too large for this audience. Choose a smaller file.");
     const upload=await post("/media",{id:media.id,envelope:encrypted,byte_size:bytes.length});
     await request(upload.upload_url,{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:new Blob([bytes])});
-    const envelope=await vault.seal({media:[media]},{id:crypto.randomUUID(),kind:"photo",parentId:photo.id,...destination,createdAt,expiresAt,photoDate});
+    const photoProof=await createPhotoProof({photoId:photo.id,ownerId:vault.member.id,deviceId:vault.device.id,revision:1,date:photoDate,expiresAt,sha256,metadata:photoMetadata(media)},vault.privateKey);
+    const envelope=await vault.seal({media:[media],photoProof},{id:crypto.randomUUID(),kind:"photo",parentId:photo.id,...destination,createdAt,expiresAt,photoDate});
     grants.push({envelope,media_id:media.id});
   }
   try{await post("/photos",{id:photo.id,photo_date:photoDate,expires_at:expiresAt,grants});}

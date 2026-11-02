@@ -241,3 +241,42 @@ BEGIN
  IF (length(definition)-length(replace(definition,needle,'')))/length(needle)<>1 THEN RAISE EXCEPTION 'UNRECOGNIZED_AUTHOR_KEY_READER';END IF;
  EXECUTE replace(definition,needle,'OR EXISTS(SELECT FROM app.photo_grants pg WHERE pg.envelope->''context''->>''authorDeviceId''=d::text AND app.can_photo_grant(pg.id)) OR EXISTS(SELECT FROM app.media_assets ma WHERE ma.envelope->''context''->>''authorDeviceId''=d::text AND app.can_media(ma.id)) '||needle);
 END $migration$;
+
+-- Retain separate signature identities for the photo owner and the writer of
+-- each encrypted grant/media version. Album redistribution must not impersonate
+-- the owner or lose verification when an administering member later leaves.
+ALTER TABLE app.photos ADD COLUMN owner_key jsonb;
+ALTER TABLE app.photo_grants ADD COLUMN author_key jsonb;
+ALTER TABLE app.media_assets ADD COLUMN author_key jsonb;
+CREATE FUNCTION app.bind_photo_grant_author() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+BEGIN
+ IF NEW.envelope='{}'::jsonb AND current_setting('app.restore_replay',true)='on' THEN RETURN NEW;END IF;
+ SELECT jsonb_build_object('id',d.id,'member_id',d.member_id,'public_key',d.public_key,'fingerprint',d.fingerprint) INTO NEW.author_key
+ FROM app.device_keys d WHERE d.id=(NEW.envelope->'context'->>'authorDeviceId')::uuid AND d.member_id=(NEW.envelope->'context'->>'authorId')::uuid AND d.revoked_at IS NULL;
+ IF NEW.author_key IS NULL THEN RAISE EXCEPTION 'PHOTO_AUTHOR_KEY_REQUIRED';END IF;
+ UPDATE app.photos SET owner_key=NEW.author_key WHERE id=NEW.photo_id AND owner_key IS NULL AND owner_id=(NEW.author_key->>'member_id')::uuid;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER bind_photo_grant_author BEFORE INSERT OR UPDATE OF envelope ON app.photo_grants FOR EACH ROW EXECUTE FUNCTION app.bind_photo_grant_author();
+CREATE FUNCTION app.bind_media_author() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+BEGIN
+ SELECT jsonb_build_object('id',d.id,'member_id',d.member_id,'public_key',d.public_key,'fingerprint',d.fingerprint) INTO NEW.author_key
+ FROM app.device_keys d WHERE d.id=(NEW.envelope->'context'->>'authorDeviceId')::uuid AND d.member_id=(NEW.envelope->'context'->>'authorId')::uuid AND d.revoked_at IS NULL;
+ RETURN NEW;
+END $$;
+CREATE TRIGGER bind_media_author BEFORE INSERT ON app.media_assets FOR EACH ROW EXECUTE FUNCTION app.bind_media_author();
+DO $migration$
+DECLARE definition text;needle text;
+BEGIN
+ SELECT pg_get_functiondef('app.edit_photo(uuid,date,integer,jsonb)'::regprocedure) INTO definition;
+ needle:='UPDATE app.photos SET photo_date=d,revision=expected+1 WHERE id=p;';
+ IF strpos(definition,needle)=0 THEN RAISE EXCEPTION 'UNRECOGNIZED_PHOTO_EDITOR';END IF;
+ EXECUTE replace(definition,needle,'UPDATE app.photos SET photo_date=d,revision=expected+1,owner_key=(SELECT author_key FROM app.photo_grants WHERE photo_id=p ORDER BY id LIMIT 1) WHERE id=p;');
+ SELECT pg_get_functiondef('app.author_key(uuid)'::regprocedure) INTO definition;
+ needle:='LIMIT 1';
+ IF (length(definition)-length(replace(definition,needle,'')))/length(needle)<>1 THEN RAISE EXCEPTION 'UNRECOGNIZED_AUTHOR_KEY_READER';END IF;
+ EXECUTE replace(definition,needle,$new$UNION ALL SELECT (m.author_key->>'id')::uuid,(m.author_key->>'member_id')::uuid,m.author_key->>'public_key',m.author_key->>'fingerprint',NULL::timestamptz FROM app.media_assets m WHERE m.author_key->>'id'=d::text AND app.can_media(m.id)
+ UNION ALL SELECT (g.author_key->>'id')::uuid,(g.author_key->>'member_id')::uuid,g.author_key->>'public_key',g.author_key->>'fingerprint',NULL::timestamptz FROM app.photo_grants g WHERE g.author_key->>'id'=d::text AND app.can_photo_grant(g.id)
+ LIMIT 1$new$);
+END $migration$;
+REVOKE ALL ON FUNCTION app.bind_photo_grant_author(),app.bind_media_author() FROM PUBLIC;

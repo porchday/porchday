@@ -87,6 +87,7 @@ type VaultValue = {
     groupId?: string | null,
     postId?: string,
   ) => Promise<{ epoch: number; devices: Device[] }>;
+  verifyDevice: (device:Device) => Promise<void>;
   sealPhotoUpdate: (payload: unknown, context: ContentContext) => Promise<EncryptedEnvelope>;
   sealAlbum: (payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) => Promise<EncryptedEnvelope>;
   clear: () => Promise<void>;
@@ -682,8 +683,8 @@ export function VaultProvider({
     if (row.author_id && row.author_id !== expected.authorId)
       throw new Error("Content author did not match.");
     const retained = "author_key" in row ? row.author_key : undefined;
-    if (retained && expected.kind === "album") {
-      if (retained.id !== expected.authorDeviceId || retained.member_id !== expected.authorId) throw new Error("Album signature identity did not match.");
+    if (retained && ["album","photo","media"].includes(expected.kind)) {
+      if (retained.id !== expected.authorDeviceId || retained.member_id !== expected.authorId) throw new Error("Signature identity did not match.");
       await checkDevice(retained);
       authorKeys.current.set(expected.authorDeviceId, Promise.resolve(retained));
     }
@@ -736,6 +737,7 @@ export function VaultProvider({
         seal,
         sealAlbum,
         sealPhotoUpdate,
+        verifyDevice: checkDevice,
         audience,
         clear: async () => {
           await forgetAllDevices();

@@ -161,7 +161,7 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         ]);
         expect((await request(viewer.id, '/groups/' + group.context.id + '/posts')).data.items).toEqual([]);
     }, 60000);
-    it('keeps labels private and directional across requests, acceptance, audiences and immediate changes', async()=>{
+    it('keeps raw labels directional while exposing the mutual-family summary across changes', async()=>{
         const a=await person(),b=await person(),outsider=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
         const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'family',history:'full'});
@@ -172,10 +172,10 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect(accepted.status).toBe(200);const edge=accepted.data.id;
         const own=async(p:Person)=>(await request(p.id,'/connections')).data.items.find((r:any)=>r.id===edge);
         const aEdge=await own(a),bEdge=await own(b);
-        expect(aEdge).toMatchObject({kind:'family',own_history:'full',peer_history:'future'});
-        expect(bEdge).toMatchObject({kind:'friend',own_history:'future',peer_history:'full'});
+        expect(aEdge).toMatchObject({kind:'family',mutual_family:false,own_history:'full',peer_history:'future'});
+        expect(bEdge).toMatchObject({kind:'friend',mutual_family:false,own_history:'future',peer_history:'full'});
         for(const row of [aEdge,bEdge]) {
-            expect(Object.keys(row).sort()).toEqual(['id','member_a','member_b','accepted_at','kind','own_history','peer_history'].sort());
+            expect(Object.keys(row).sort()).toEqual(['id','member_a','member_b','accepted_at','kind','mutual_family','own_history','peer_history'].sort());
         }
         expect((await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'family',history:'full'})).status).toBe(200);
         expect(await own(b)).toMatchObject({kind:'friend',own_history:'future'});
@@ -187,6 +187,7 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(a.id,'/posts/'+reverse.context.id)).status).toBe(200);
         const stale=await seal(b,{text:'Old friends snapshot'},{audience:'friends'});
         expect((await request(b.id,'/connections/'+edge+'/kind','PUT',{kind:'family'})).status).toBe(200);
+        expect((await own(a)).mutual_family).toBe(true);expect((await own(b)).mutual_family).toBe(true);
         expect((await request(b.id,'/posts','POST',{envelope:stale})).status).toBe(409);
         expect((await request(a.id,'/posts/'+reverse.context.id)).status).toBe(404);
         expect((await request(b.id,'/posts/'+family.context.id)).status).toBe(200);

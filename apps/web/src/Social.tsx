@@ -1,3 +1,4 @@
+import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
 import { publishPhoto, localPhotoDate } from "./photo-publish";
 import { matchesAuthor, matchesContent, type AuthorFilter, type FeedContent } from "./feed-filters";
 import { isVideo, VIDEO_ACCEPT, prepareVideo, validatedMedia } from "./video";
@@ -1078,7 +1079,7 @@ export function PostCard({
     </article>
   );
 }
-export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload; thumbnail?:boolean }) {
+export function EncryptedPhoto({ media, thumbnail=false, photoProof }: { media: MediaPayload; thumbnail?:boolean; photoProof?:PhotoProof }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1129,6 +1130,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
         if (payload.mime !== media.mime || typeof payload.bytes !== "string")
           throw new Error("Unsupported media format.");
         const bytes = base64ToBytes(payload.bytes);
+        if(photoProof)await verifyPhotoBytes(photoProof,bytes);
         const { blob } = await traced("media decode", () => validatedMedia(bytes, media.mime), { bytes: bytes.length });
         if (!alive) return;
         const expiry = envelope.context.expiresAt
@@ -1164,7 +1166,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
       if (expiryTimer) clearTimeout(expiryTimer);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [media.id, media.mime, near, requested, thumbnail, video]);
+  }, [media.id, media.mime, near, requested, thumbnail, video, photoProof]);
   useEffect(() => {
     const element = imageRef.current;
     if (!currentTraceId() || !element || !url || !opened) return;

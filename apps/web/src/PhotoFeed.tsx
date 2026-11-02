@@ -1,3 +1,4 @@
+import type {PhotoProof} from "@porchday/crypto/photos";
 import { useNearViewport } from "./near-viewport";
 import React,{useEffect,useLayoutEffect,useRef,useState} from "react";
 import {get,items,message,type MediaPayload,type SocialObject} from "./api";
@@ -7,7 +8,7 @@ import {EncryptedPhoto} from "./Social";
 import {PhotoCard,openPhoto,type PhotoRow} from "./PhotoCollection";
 import {matchesAuthor,type AuthorFilter} from "./feed-filters";
 import {localDay,monthCells,calendarDate} from "./photo-calendar";
-type Entry={id:string;kind:"photo"|"attachment";day:string;author_id:string;author_handle?:string;photo:PhotoRow|null;post:SocialObject|null;media?:MediaPayload;error?:string};
+type Entry={id:string;kind:"photo"|"attachment";day:string;author_id:string;author_handle?:string;photo:PhotoRow|null;post:SocialObject|null;media?:MediaPayload;photoProof?:PhotoProof;error?:string};
 function usePhotos(month?:string,enabled=true){
  const vault=useVault(),action=useAction(),generation=useRef(0),loading=useRef(false);
  const [entries,setEntries]=useState<Entry[]>([]),[next,setNext]=useState<string|null>(null),[loaded,setLoaded]=useState(false);
@@ -19,11 +20,11 @@ function usePhotos(month?:string,enabled=true){
    const posts=new Map<string,ReturnType<typeof vault.open>>();
    const decoded=await Promise.all(items<Entry>(result).map(async entry=>{
     try{
-     let media:MediaPayload|undefined;
-     if(entry.photo){let last:unknown=Error("No encrypted photo is available.");for(const grant of entry.photo.grants){try{media=(await openPhoto(vault,entry.photo,grant)).media![0];break;}catch(error){last=error;}}if(!media)throw last;}
+     let media:MediaPayload|undefined,photoProof:PhotoProof|undefined;
+     if(entry.photo){let last:unknown=Error("No encrypted photo is available.");for(const grant of entry.photo.grants){try{const content=await openPhoto(vault,entry.photo,grant);media=content.media![0];photoProof=content.photoProof as PhotoProof;break;}catch(error){last=error;}}if(!media)throw last;}
      else if(entry.post){if(!posts.has(entry.post.id))posts.set(entry.post.id,vault.open(entry.post));media=(await posts.get(entry.post.id)!).media?.find(m=>m.id===entry.id);}
      if(!media)throw Error("This attachment was not present in the signed post.");
-     return {...entry,media};
+     return {...entry,media,photoProof};
     }catch(error){return {...entry,error:message(error)};}
    }));
    if(current!==generation.current)return;
@@ -54,7 +55,7 @@ function PhotoMonth({month,authorFilter}:{month:Date;authorFilter:AuthorFilter})
  return <section ref={ref} className="panel photo-calendar"><h2>{label}</h2><Alert>{data.error}</Alert>
   <div className="calendar-grid" aria-label={label}>
    {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><div className="calendar-weekday" key={d}>{d}</div>)}
-   {monthCells(month.getFullYear(),month.getMonth()).map((day,i)=>{if(!day)return <div className="calendar-outside" key={i}/>;const rows=visible.filter(e=>e.day===day);return <button type="button" className={"calendar-day"+(day===localDay(new Date())?" calendar-today":"")} key={day} aria-label={`${day}: ${rows.length} photos${data.next?", more may be available":""}`} onClick={()=>setSelected(day)}><span className="calendar-day-number">{Number(day.slice(-2))}</span>{rows.find(e=>e.media)?.media&&<EncryptedPhoto media={rows.find(e=>e.media)!.media!} thumbnail/>}{rows.length>1&&<span className="calendar-day-count">{rows.length}</span>}</button>;})}
+   {monthCells(month.getFullYear(),month.getMonth()).map((day,i)=>{if(!day)return <div className="calendar-outside" key={i}/>;const rows=visible.filter(e=>e.day===day);return <button type="button" className={"calendar-day"+(day===localDay(new Date())?" calendar-today":"")} key={day} aria-label={`${day}: ${rows.length} photos${data.next?", more may be available":""}`} onClick={()=>setSelected(day)}><span className="calendar-day-number">{Number(day.slice(-2))}</span>{rows.find(e=>e.media)?.media&&<EncryptedPhoto media={rows.find(e=>e.media)!.media!} photoProof={rows.find(e=>e.media)!.photoProof} thumbnail/>}{rows.length>1&&<span className="calendar-day-count">{rows.length}</span>}</button>;})}
   </div>{data.busy&&<Loading/>}{data.next&&<Button busy={data.busy} onClick={()=>data.load(data.next!)}>Load more photos in {label}</Button>}
   {selected&&<Modal title={selected} onClose={()=>setSelected(null)}>{visible.filter(e=>e.day===selected).map(entry=><EntryCard key={entry.kind+entry.id} entry={entry} refresh={()=>data.load()}/>)}{!visible.some(e=>e.day===selected)&&<p>No photos loaded for this day.</p>}{data.next&&<Button busy={data.busy} onClick={()=>data.load(data.next!)}>Load more photos in this month</Button>}</Modal>}
  </section>;
