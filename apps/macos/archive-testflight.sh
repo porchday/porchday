@@ -29,9 +29,14 @@ for identity in app installer; do
  security import "$private/$identity.p12" -P "$APPLE_MAC_PASSWORD" -k "$keychain" -T /usr/bin/codesign -T /usr/bin/productbuild -T /usr/bin/security >/dev/null
 done
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
+# Pin actual identities rather than relying on Xcode's certificate-name aliases.
+for identity in app installer; do
+ openssl pkcs12 -in "$private/$identity.p12" -passin env:APPLE_MAC_PASSWORD -clcerts -nokeys 2>/dev/null | \
+  openssl x509 -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':\r\n' > "$private/$identity-sha1"
+done
 security cms -D -i "$private/profile.provisionprofile" > "$private/profile.plist"
 python3 - <<'PY'
-import os,pathlib,plistlib,datetime
+import os,pathlib,plistlib,datetime,re
 p=pathlib.Path(os.environ['PORCHDAY_SIGNING_DIR']);profile=plistlib.loads((p/'profile.plist').read_bytes());team=profile['TeamIdentifier'][0]
 assert profile['Platform']==['OSX']
 assert profile['Entitlements']['com.apple.application-identifier']==team+'.org.porchday.app'
@@ -39,7 +44,9 @@ assert not profile['Entitlements'].get('get-task-allow',False)
 assert not profile['Entitlements'].get('com.apple.security.get-task-allow',False)
 assert profile['ExpirationDate']>datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 (p/'team').write_text(team);(p/'uuid').write_text(profile['UUID'])
-(p/'export.plist').write_bytes(plistlib.dumps({'method':'app-store-connect','destination':'export','teamID':team,'signingStyle':'manual','signingCertificate':'Mac App Distribution','installerSigningCertificate':'Mac Installer Distribution','provisioningProfiles':{'org.porchday.app':profile['UUID']},'manageAppVersionAndBuildNumber':False,'uploadSymbols':True}))
+app_cert=(p/'app-sha1').read_text();installer_cert=(p/'installer-sha1').read_text()
+assert re.fullmatch(r'[0-9A-F]{40}',app_cert) and re.fullmatch(r'[0-9A-F]{40}',installer_cert)
+(p/'export.plist').write_bytes(plistlib.dumps({'method':'app-store-connect','destination':'export','teamID':team,'signingStyle':'manual','signingCertificate':app_cert,'installerSigningCertificate':installer_cert,'provisioningProfiles':{'org.porchday.app':profile['UUID']},'manageAppVersionAndBuildNumber':False,'uploadSymbols':True}))
 PY
 team="$(cat "$private/team")"; uuid="$(cat "$private/uuid")"
 profiles="$HOME/Library/MobileDevice/Provisioning Profiles"
