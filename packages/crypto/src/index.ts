@@ -7,7 +7,7 @@ import * as pgp from 'openpgp';
 export type UnlockedPrivateKey = pgp.PrivateKey;
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type ContentKind = 'post' | 'comment' | 'reaction' | 'profile' | 'group' | 'media' | 'report' | 'export' | 'album' | 'photo';
-export type Audience = 'connections' | 'friends' | 'family' | 'only_me' | 'group' | 'moderators' | 'album';
+export type Audience = 'connections' | 'friends' | 'family' | 'extended_family' | 'community' | 'only_me' | 'group' | 'moderators' | 'album';
 export interface ContentContext {
   id: string;
   kind: ContentKind;
@@ -106,7 +106,7 @@ function checkDate(value: string, label: string): number {
 export function validateContext(c: ContentContext, now = Date.now()): void {
   checkId(c.id, 'content ID'); checkId(c.authorId, 'author ID'); checkId(c.authorDeviceId, 'device ID');
   if (!['post', 'comment', 'reaction', 'profile', 'group', 'media', 'report', 'export', 'album', 'photo'].includes(c.kind)) throw new Error('Invalid content kind');
-  if (!['connections', 'friends', 'family', 'only_me', 'group', 'moderators', 'album'].includes(c.audience)) throw new Error('Invalid audience');
+  if (!['connections', 'friends', 'family', 'extended_family', 'community', 'only_me', 'group', 'moderators', 'album'].includes(c.audience)) throw new Error('Invalid audience');
   if (c.photoDate !== undefined && (c.kind !== 'photo' || !/^\d{4}-\d{2}-\d{2}$/.test(c.photoDate) || c.photoDate < '0001-01-01' || !Number.isFinite(Date.parse(c.photoDate + 'T00:00:00Z')) || new Date(c.photoDate + 'T00:00:00Z').toISOString().slice(0,10) !== c.photoDate)) throw new Error('Invalid photo date');
   if (c.kind === 'photo' && c.photoDate === undefined) throw new Error('Photo date required');
   if (c.parentId !== null) checkId(c.parentId, 'parent ID');

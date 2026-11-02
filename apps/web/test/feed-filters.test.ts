@@ -12,6 +12,12 @@ describe("Feed presentation filters", () => {
     expect(matchesAuthor({author_id:"cousin"}, {...filter, selected:["extended_family"]})).toBe(true);
     expect(matchesAuthor({author_id:"stranger"}, {...filter, selected:["community"]})).toBe(false);
   });
+  it("uses service-derived two-hop categories without treating them as direct friends",()=>{
+    const row={author_id:"remote",author_category:"community"};
+    expect(matchesAuthor(row,filter)).toBe(false);
+    expect(matchesAuthor(row,{...filter,selected:["community"]})).toBe(true);
+    expect(matchesAuthor({...row,author_category:"unknown"},{...filter,selected:["community"]})).toBe(false);
+  });
   it("excludes text-only decrypted posts from Photos and keeps them in Posts", () => {
     expect(matchesContent({text:"hello"}, "photos")).toBe(false);
     expect(matchesContent({text:"hello",media:[]}, "photos")).toBe(false);

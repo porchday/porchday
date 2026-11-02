@@ -520,10 +520,13 @@ export function Composer({
               <option value="connections">Friends & family</option>
               <option value="friends">Friends</option>
               <option value="family">Family</option>
+              <option value="extended_family">Extended family</option>
+              <option value="community">Community</option>
               <option value="only_me">Only me</option>
             </select>
           </label>
         )}
+        {(audience==="community"||audience==="extended_family")&&<span>Current circle only; new connections do not receive this history automatically.</span>}
         {audience === "friends" && <span>Excludes family connections</span>}
         {timer && <span>· disappears {localDate(deadline(timer)!)}</span>}
         {mode==="post"&&<span className="character-count">{text.length}/5,000</span>}
@@ -894,7 +897,7 @@ export function PostCard({
                 ? "Only me"
                 : row.group_id
                   ? "Group"
-                  : row.audience === "family"
+                  : row.audience === "community" ? "Community" : row.audience === "extended_family" ? "Extended family" : row.audience === "family"
                     ? "Family"
                     : row.audience === "friends"
                       ? "Friends only"
@@ -2098,7 +2101,9 @@ function ReshareDialog({
             <option value="connections">My current friends & family</option>
             <option value="friends">Friends only</option>
             <option value="family">My current family connections</option>
-            <option value="only_me">Only me</option>
+            <option value="extended_family">Extended family</option>
+              <option value="community">Community</option>
+              <option value="only_me">Only me</option>
             {source.group_id && (
               <option value="group">Current members of this group</option>
             )}

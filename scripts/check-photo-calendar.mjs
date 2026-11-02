@@ -256,6 +256,7 @@ try {
     false,
   );
   await page.goto(origin + "/compose");
+  assert.deepEqual(await page.getByRole("combobox",{name:"Post audience",exact:true}).locator("option").allTextContents(),["Friends & family","Friends","Family","Extended family","Community","Only me"]);
   await page.getByRole("button", { name: "Tag people", exact: true }).click();
   await page
     .getByLabel("Tag people", { exact: true })

@@ -184,6 +184,21 @@ suite("Independent photo sharing paths",()=>{
     expect(await db`select id from app.media_assets where id=${original.media}`).toHaveLength(1);
     await expect(actor(owner,sql=>sql`select app.remove_photo_grant(${original.id})`)).rejects.toThrow(/FORBIDDEN/);
   });
+  it("keeps alternate circle paths and permanently revokes the last path, including suspended bridges",async()=>{
+    const owner=await member(),one=await member(),two=await member(),reader=await member();
+    await connect(owner,one);await connect(one,reader);await connect(owner,two);await connect(two,reader);
+    const p=await photo(owner),g=await grant(owner,p,[one,two,reader],null,"community");
+    expect(await actor(reader,sql=>sql`select app.author_category(${owner}) as category`)).toMatchObject([{category:"community"}]);
+    await db`delete from app.connections where member_a=${[owner,one].sort()[0]} and member_b=${[owner,one].sort()[1]}`;
+    expect(await actor(reader,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(1);
+    await db`update app.members set status='suspended' where id=${two}`;
+    expect(await actor(reader,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(0);
+    await db`update app.members set status='active' where id=${two}`;
+    await connect(owner,one);
+    expect(await actor(reader,sql=>sql`select id from app.photos where id=${p}`)).toHaveLength(0);
+    expect(await db`select id from app.media_assets where id=${g.media}`).toHaveLength(1);
+    expect(await db`select decision from app.safety_journal where decision->>'action'='photo_recipient_remove' and decision->>'grant'=${g.id} and decision->>'member'=${reader}`).toHaveLength(1);
+  });
   it("stores date-only values and rejects invalid dates, direct table mutation and metadata/attachment swaps",async()=>{
     const owner=await member(),p=await photo(owner);
     expect(await actor(owner,sql=>sql`select photo_date::text as day from app.photos where id=${p}`)).toMatchObject([{day:"2026-10-31"}]);

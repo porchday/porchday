@@ -107,6 +107,7 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
     const s = options.photoRefreshId ? await photoRefreshSnapshot(db,options.photoRefreshId) : options.photoGrantId ? await photoGrantSnapshot(db, options.photoGrantId) : e.audience === "album"
       ? await albumSnapshot(db, e.groupId!, options.albumChange)
       : await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
+    if(s.devices.length>4000)fail("AUDIENCE_TOO_LARGE",413);
     if (s.pending_members.length)
         fail('KEY_SETUP_REQUIRED', 409, { pending_members: s.pending_members });
     if (!options.skipEpoch && e.epoch !== s.epoch)
@@ -187,7 +188,7 @@ export function createSocialRoutes() {
             return {ok: true};
         }));
     });
-    app.get('/audiences', async (c) => { return c.json(await tx(c, db => snapshot(db, z.enum(['only_me', 'connections', 'friends', 'family', 'group', 'moderators']).parse(c.req.query('audience') ?? 'connections'), c.req.query('group_id') ? id(c.req.query('group_id')) : null, c.req.query('post_id') ? id(c.req.query('post_id')) : null))); });
+    app.get('/audiences', async (c) => { return c.json(await tx(c, db => snapshot(db, z.enum(['only_me', 'connections', 'friends', 'family', 'extended_family', 'community', 'group', 'moderators']).parse(c.req.query('audience') ?? 'connections'), c.req.query('group_id') ? id(c.req.query('group_id')) : null, c.req.query('post_id') ? id(c.req.query('post_id')) : null))); });
     app.get('/devices', async (c) => c.json({ items: await tx(c, db => db `select id,member_id,public_key,fingerprint,created_at,revoked_at from app.device_keys order by created_at`) }));
     app.get('/devices/:id', async (c) => c.json(await tx(c, async (db) => { const [d] = await db `select * from app.author_key(${id(c.req.param('id'))})`; if (!d)
         fail('NOT_FOUND', 404); return d; })));
@@ -282,13 +283,9 @@ export function createSocialRoutes() {
     app.get('/feed', async (c) => {
         const after = cursor(c.req.query('cursor'));
         return c.json(await tx(c, async (db) => page(await db`
-            select p.*,h.handle as author_handle from app.posts p
+            select p.*,app.author_category(p.author_id) as author_category,h.handle as author_handle from app.posts p
             left join lateral app.member_handles(array[p.author_id]) h on true
-            where p.group_id is null and p.author_id=any(array(
-                select app.actor() union all
-                select member_b from app.connections where member_a=app.actor() union all
-                select member_a from app.connections where member_b=app.actor()
-            )) and not exists(select from app.mutes where target=p.author_id)
+            where p.group_id is null and not exists(select from app.mutes where target=p.author_id)
             ${after ? db`and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db``}
             order by p.created_at desc,p.id desc limit 31
         `)));

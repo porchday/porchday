@@ -598,6 +598,7 @@ export function VaultProvider({
     );
     const r = await request(audience === "album" ? `/albums/${groupId}/audience` : `/audiences?${qs}`, {signal});
     const list = items<Device>(r);
+    if(list.length>4000)throw Error("This circle has more than 4,000 devices. Choose a smaller audience.");
     if (
       (Array.isArray(r.pending_members) && r.pending_members.length) ||
       (typeof r.pending_members === "number" && r.pending_members > 0)

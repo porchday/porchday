@@ -334,6 +334,38 @@ suite("Encrypted independent photo API",()=>{
     const second=await call(owner.id,"/photo-feed?timezone=UTC&after="+encodeURIComponent(first.data.next));expect(second.data.items).toHaveLength(1);expect(second.data.next).toBeNull();
     const actual=[...first.data.items,...second.data.items].map((e:any)=>e.id);expect(new Set(actual).size).toBe(31);expect(actual.sort()).toEqual(ids.sort());
   },15000);
+  it("shares new posts and photos with two-hop circles while preventing historical access after path changes",async()=>{
+    const owner=await person(),bridge=await person(),far=await person(),late=await person(),outsider=await person();
+    await connect(owner,bridge);await connect(bridge,far);
+    const community=await call(owner.id,"/audiences?audience=community");expect(community.status,JSON.stringify(community.data)).toBe(200);
+    expect(community.data.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,bridge.id,far.id].sort());
+    expect((await call(owner.id,"/audiences?audience=extended_family")).data.devices.map((d:any)=>d.member_id)).toEqual([owner.id]);
+    await db`update app.connections set kind_a='family',kind_b='family' where ${bridge.id} in(member_a,member_b)`;
+    const family=await call(owner.id,"/audiences?audience=extended_family");expect(family.data.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,bridge.id,far.id].sort());
+    const id=randomUUID(),envelope=await seal(owner,{text:"For our extended family"},1,{id,kind:"post",audience:"extended_family"});
+    expect((await call(owner.id,"/posts","POST",{envelope})).status).toBe(201);
+    const photo=await publish(owner,"community");
+    const feed=await call(far.id,"/feed");expect(feed.data.items.find((p:any)=>p.id===id)).toMatchObject({author_category:"extended_family"});
+    expect((await call(far.id,`/photos/${photo.id}`)).status).toBe(200);
+    expect((await call(outsider.id,`/photos/${photo.id}`)).status).toBe(404);
+    const readable=(await call(far.id,`/posts/${id}`)).data.post;
+    expect((await decryptObject<any>({envelope:readable.envelope,expectedContext:envelope.context,privateKey:far.key,authorPublicKey:owner.keys.publicKey})).text).toBe("For our extended family");
+    await connect(bridge,late);
+    expect((await call(late.id,`/photos/${photo.id}`)).status).toBe(404);
+    expect((await call(late.id,`/posts/${id}`)).status).toBe(404);
+    // Breaking one mutual-family label removes the family grant only.
+    await db`update app.connections set kind_a='friend' where member_a=${[bridge.id,far.id].sort()[0]} and member_b=${[bridge.id,far.id].sort()[1]}`;
+    expect((await call(far.id,`/posts/${id}`)).status).toBe(404);
+    expect((await call(far.id,`/photos/${photo.id}`)).status).toBe(200);
+    await db`update app.connections set kind_a='family' where member_a=${[bridge.id,far.id].sort()[0]} and member_b=${[bridge.id,far.id].sort()[1]}`;
+    expect((await call(far.id,`/posts/${id}`)).status).toBe(404);
+    // Blocking a bridge revokes the remaining path persistently.
+    await db`insert into app.blocks(actor,target) values(${owner.id},${bridge.id})`;
+    expect((await call(far.id,`/photos/${photo.id}`)).status).toBe(404);
+    await db`delete from app.blocks where actor=${owner.id} and target=${bridge.id}`;
+    expect((await call(far.id,`/photos/${photo.id}`)).status).toBe(404);
+    expect((await call(owner.id,`/photos/${photo.id}`)).status).toBe(200);
+  });
   it("keeps the original photo when removing an album or cleaning up an upload",async()=>{
     const owner=await person(),p=await publish(owner);
     expect((await call(owner.id,`/photos/${p.id}/grants/${p.grant.envelope.context.id}`,"DELETE")).status).toBe(403);

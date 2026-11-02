@@ -8,8 +8,8 @@ export const authorLabels: Record<AuthorCategory, string> = {
 export type FeedContent = "posts" | "photos";
 export type AuthorFilter = { memberId: string; selected: readonly AuthorCategory[]; relations: ReadonlyMap<string, AuthorCategory> };
 /** Presentation-only filtering. Rows must already be authorized by the service. */
-export function matchesAuthor(row: Pick<SocialObject, "author_id">, filter: AuthorFilter) {
-  const category = row.author_id === filter.memberId ? "me" : filter.relations.get(row.author_id);
+export function matchesAuthor(row: Pick<SocialObject, "author_id"> & {author_category?:string}, filter: AuthorFilter) {
+  const category = row.author_id === filter.memberId ? "me" : filter.relations.get(row.author_id) ?? (authorCategories.includes(row.author_category as AuthorCategory)?row.author_category as AuthorCategory:undefined);
   return category !== undefined && filter.selected.includes(category);
 }
 export function matchesContent(content: Content, selected: FeedContent) {

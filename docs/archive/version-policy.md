@@ -13,3 +13,5 @@ There is no `minor_version` field in the current format, no automatic remote sch
 The original standalone ZIP without `archive_set` remains supported. The existing streaming multipart form is also v1; canonical exporters write unknown totals until the final completion part. A single-part export may still use `archive_set` with `index: 1`, `total: 1`, `complete: true`. Do not split, concatenate, or reassign an existing set's identities without deliberately creating a new complete set and revalidating references.
 
 This policy and its sample are versioned with the source. Their availability does not establish an external support promise or guarantee compatibility with another platform.
+
+Source audience labels `community` and `extended_family` are supported as provenance for new posts. Existing labels retain their meaning. These labels never grant destination permissions: imports continue to create Only me content, and an importer that does not understand a source label must retain it as inert provenance or report it as unsupported. This addition does not authorize reconstructing connection paths or sharing imported history.

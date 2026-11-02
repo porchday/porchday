@@ -36,7 +36,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     const c=envelope.context;
     if(c.kind!=="photo"||c.parentId!==p.id||c.photoDate!==p.photo_date||c.revision!==p.revision||
       (c.expiresAt===null?null:Date.parse(c.expiresAt))!==(p.expires_at===null?null:new Date(p.expires_at as string).getTime())||
-      !["only_me","connections","friends","family","album"].includes(c.audience)||
+      !["only_me","connections","friends","family","extended_family","community","album"].includes(c.audience)||
       (c.audience==="album")!==(c.groupId!==null))fail("ENVELOPE_CONTEXT");
     id(c.id);
   }
@@ -64,7 +64,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
       select 'attachment'::text,m.id,coalesce(d.photo_date,(p.created_at at time zone ${timezone})::date),p.author_id,null::jsonb,to_jsonb(p),to_jsonb(d)
       from app.media_assets m join app.posts p on p.id=m.post_id left join app.attachment_photo_dates d on d.media_id=m.id
       where p.group_id is null and m.state='attached' and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
-    ) select c.*,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
+    ) select c.*,app.author_category(c.author_id) as author_category,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
     where not exists(select 1 from app.mutes where target=c.author_id)
       ${cursor?db`and(c.day,c.id,c.kind)<(${cursor.day}::date,${cursor.id}::uuid,${cursor.kind})`:db``}
       ${month?db`and c.day>=${month+"-01"}::date and c.day<(${month+"-01"}::date+interval '1 month')`:db``}

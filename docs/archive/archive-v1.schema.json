@@ -230,6 +230,8 @@
         "connections",
         "friends",
         "family",
+        "extended_family",
+        "community",
         "only_me",
         "group",
         "moderators"
