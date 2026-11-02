@@ -109,7 +109,7 @@ struct PortableArchive {
         let secret=plaintext ? nil:try CryptoVault.randomSecret(),setID=UUID().uuidString.lowercased(),date=PorchDate.string()
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-export-"+setID,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         var urls:[URL]=[],partNumber=1,files:[String:Data]=[:],refs:[JSON]=[],allRefs:[JSON]=[],size=0
-        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"emojiLibrary":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([])]
+        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"emojiLibrary":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([]),"children":.array([])]
         var manifest=base
         func flush(final:Bool) async throws {
             if !final && size==0 { return }
@@ -147,7 +147,16 @@ struct PortableArchive {
                                   row["envelope"]["recipients"].array.allSatisfy({$0["memberId"].string==member.id}) else { throw PorchError.message("Invalid private emoji collection.") }
                             let payload=try await vault.open(row);_ = try EmojiLibraryPayload.parse(payload);try await append(payload,section:"emojiLibrary",reference:reference);continue
                         }
-                        if section=="profile" { if row["envelope"] != .null { let payload=try await vault.open(row);try await append(payload,section:"profile",reference:reference) };continue }
+                        if section=="profile" {
+                            for child in row["children"].array {
+                                guard child["envelope"]["context"]["authorId"].string == member.id else { throw PorchError.message("Export contained another person's child profile.") }
+                                let shared = try await vault.open(.object(["id": child["id"], "author_id": .string(member.id), "envelope": child["envelope"]]))
+                                let details = child["private_envelope"] == .null ? JSON.null : try await vault.open(.object(["id": child["id"], "author_id": .string(member.id), "envelope": child["private_envelope"]]))
+                                let record: JSON = .object(["id": child["id"], "name": shared["name"], "birthday": details["birthday"], "posting_delegate_ids": child["delegates"]])
+                                try await append(record, section: "children")
+                            }
+                            if row["envelope"] != .null { let payload=try await vault.open(row);try await append(payload,section:"profile",reference:reference) };continue
+                        }
                         if section=="media" {
                             guard let id=row["id"].string else { throw PorchError.message("Invalid photo identifier.") }
                             let raw=try await api.bytes("/api/v1/exports/\(jobID)/media/\(id)/bytes"),envelope=try JSONDecoder().decode(JSON.self,from:raw),payload=try await vault.open(.object(["id":.string(id),"envelope":envelope]))
