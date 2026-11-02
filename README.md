@@ -4,6 +4,8 @@ A simple social network for people who know each other: no ads, no influencer me
 
 Porchday is an actively developed, invitation-only adult pilot. Original application source is [Apache-2.0 licensed](LICENSE), with separate [dependency notices](THIRD_PARTY_NOTICES.md). Source publication and broader service admission are separate decisions.
 
+The [roadmap](ROADMAP.md) defines the ranked backlog, next steps, dependencies and intentionally deferred work. Use it to choose what to work on; linked GitHub Issues hold status and acceptance evidence.
+
 ## What is implemented
 
 - Up to 300 mutual connections, including family; personal walls, named groups and audience controls. Each person chooses full-history or future-only sharing when connecting; see [history sharing](docs/friend-history-sharing.md).

@@ -2,6 +2,8 @@
 
 Maintain follow-up work in [porchday/porchday GitHub Issues](https://github.com/porchday/porchday/issues), as requested by the owner.
 
+- Use [ROADMAP.md](ROADMAP.md) as the authoritative backlog order. Keep its ranked next steps and issue links current when scope, priority, dependencies, deferral or completion changes; reconcile direct GitHub updates before selecting new backlog work. Issues retain detailed status and acceptance evidence. Roadmap rank does not override release gates or authorize deferred/proposed features.
+
 - Search existing open and closed issues before creating one; update the matching issue instead of duplicating it.
 - Record actionable bugs, reliability work, validation gaps and requested future features with context and clear acceptance criteria. Distinguish confirmed defects from investigations and unverified behavior.
 - Use `P1`, `P2` or `P3` for prioritized work. Keep intentionally postponed features labeled `deferred`; do not silently turn them into current release requirements.
