@@ -1,8 +1,8 @@
 # Porchday roadmap
 
-Make the invitation-only pilot dependable, finish the core member experience, then expand it. This is the repository's authoritative order of work. GitHub Issues hold acceptance criteria, implementation status and evidence; this file explains what comes next and why. A merged change to this file changes the default order. It does not authorize deployment, broaden admission or override an issue's approval requirements.
+The owner’s current product priorities are broader connection circles, first-class photos, simpler navigation, working mentions and notifications, and native app distribution. This is the repository's authoritative order of work. GitHub Issues hold acceptance criteria, implementation status and evidence; this file explains what comes next and why. A merged change to this file changes the default order. It does not authorize deployment, broaden admission or override an issue's approval requirements.
 
-Last reviewed: **November 1, 2026**. Covers the 36 open product-backlog issues at that review. Priority labels below reflect GitHub labels; #15 has no priority label yet. Status summaries are a dated snapshot, so read the linked issue's recent evidence before starting.
+Last reviewed: **November 1, 2026**. Covers the 40 open product-backlog issues at that review. The owner’s November 1 priority list supersedes the earlier reliability-first planning order; active incidents and release safeguards still take precedence. Priority labels below reflect GitHub labels; #15 has no priority label yet. Status summaries are a dated snapshot, so read the linked issue's recent evidence before starting.
 
 ## How to choose the next task
 
@@ -14,50 +14,63 @@ Last reviewed: **November 1, 2026**. Covers the 36 open product-backlog issues a
 
 **P1** means privacy, access, availability or a launch-critical requirement; **P2** means core experience or significant validation; **P3** means lower-urgency polish or exploration. These bands describe urgency, while queue rank selects the next action. An investigation remains an investigation until evidence confirms the cause. Open incident issues do not by themselves mean the service is currently down.
 
-Within a priority band, compare: current member harm; dependencies unlocked; strength of evidence; and the effort to reach the next verifiable result. Prefer a bounded reproduction or acceptance check over a speculative rewrite. When changing rank, record those reasons and any effort estimate in the issue. Do not invent numerical scores, reach estimates or delivery dates without evidence.
+The owner’s explicit order below takes precedence over sorting by label alone; P1 reliability work remains visible in the remaining queue and can preempt on an active incident or release dependency. When proposing changes to that order, compare: current member harm; dependencies unlocked; strength of evidence; and the effort to reach the next verifiable result. Prefer a bounded reproduction or acceptance check over a speculative rewrite. When changing rank, record those reasons and any effort estimate in the issue. Do not invent numerical scores, reach estimates or delivery dates without evidence.
 
 ## Execution queue
 
 Ranks continue across the sections below. This is an order for selecting work, not a promise to finish every item before taking any lower-ranked verification step.
 
-### First protect access and reliable releases
+### Owner top product priorities
+
+These rows follow the owner’s list. The two composer/navigation requests and the gear icon are one UI workstream. “Share” is the second-tab label from the explicit ordered list; “Post” describes its composer. The screenshot was not available, so layout details beyond that text remain to be designed.
+
+| Rank | Issue | Priority | Requested outcome and next step |
+| --- | --- | --- | --- |
+| 1 | [#122 Community and Extended family](https://github.com/porchday/porchday/issues/122) | P2 | Community is friends/family of friends/family; Extended family is family of family. For both, a family edge requires **both sides** to label it family. Define two-hop eligibility and encrypted audience behavior; settle direct-member inclusion and history semantics before granting access. |
+| 2 | [#123 First-class photos](https://github.com/porchday/porchday/issues/123) | P2 | Give photos an editable date at upload and later, and allow direct photo uploads without a post. **Posts cannot have custom dates.** Define photo identity, date/calendar semantics, audience and compatibility with existing attachments. |
+| 3 | [#124 Navigation and sharing UI](https://github.com/porchday/porchday/issues/124) | P2 | Bottom nav: **Feed → Share → Photos → Connections**. Use Photos, not Photo Albums. Move Write a post from Feed into Share; make Settings a **gear**, not a sun. Preserve drafts, links and access to other destinations. |
+| 4 | [#125 Typed mentions](https://github.com/porchday/porchday/issues/125) | P2 | Make `@<id>` mentions resolve and render correctly in posts, photo captions and comments, using stable encrypted identity references. Build on existing tags; mentions never expand an audience. |
+| 5 | [#7 App badges and mention push](https://github.com/porchday/porchday/issues/7) | P2 | Working red unread badges on the macOS Dock and mobile app icons. Mention/tag push for posts, captions and comments is **off by default**, independently of badges. Define unread/read and opt-in behavior, then verify actual signed-device delivery with #49/#114. |
+| 6 | [#108 Calendar scroll direction](https://github.com/porchday/porchday/issues/108) | P2 | **Older months above, newer months below.** Load earlier months upward without moving the visible scroll anchor. Coordinate calendar placement with #123; preserve existing media/filter behavior and finish remaining device acceptance. |
+| 7 | [#49 iOS through TestFlight](https://github.com/porchday/porchday/issues/49) | P2 | Deliver a processed, available TestFlight build and verify physical-device installation and recovery. Confirm signing/team access and distribution requirements; report exactly which product changes the build contains. Compilation alone is not delivery. |
+| 8 | [#114 Desktop through the Mac App Store](https://github.com/porchday/porchday/issues/114) | P2 | Publish an installable Mac App Store release. The GitHub preview/TestFlight target is intermediate work. Finish signing, sandboxed Photos/export/key checks, store preparation, review and actual listing/install verification. |
+
+Design dependencies: #122 must preserve #22’s consent model; #123 informs #108’s calendar placement; #125 supplies eligible mention events for #7. Start Apple access/signing preparation for #49/#114 alongside product work because it can block device verification. Shipping either app does not imply every other priority is already complete; record the build scope explicitly.
+
+### Remaining access and release reliability work
 
 | Rank | Issue | Priority | Why this order and the next verifiable step |
 | --- | --- | --- | --- |
-| 1 | [#40 Connection exhaustion and member-route 503s](https://github.com/porchday/porchday/issues/40) | P1 | Availability failures and exhausted connections were observed. Validate current connection headroom through representative traffic and a deployment; establish the remaining mechanism before changing capacity or topology. |
-| 2 | [#1 Interrupted privacy operations](https://github.com/porchday/porchday/issues/1) | P1 | Interrupted work can block account access. Complete the outstanding hosted crash/recovery and in-flight checks while preserving protection for genuinely unknown outcomes. Coordinate load with #40. |
-| 3 | [#55 Logout latency and journey deadlines](https://github.com/porchday/porchday/issues/55) | P1 | Resolve a measured source of failed journeys. Use phase evidence to separate server, pool and network delay; verify old-cookie rejection without merely relaxing deadlines. |
-| 4 | [#3 Repeatable release verification](https://github.com/porchday/porchday/issues/3) | P1 | Every change depends on safe delivery. Consolidate remaining private orchestration into the maintained release path, preserve bounded failure diagnostics, and verify recovery/adoption gaps. Existing successful releases are evidence, not a reason to rebuild the controller. |
-| 5 | [#2 Signup configuration guard](https://github.com/porchday/porchday/issues/2) | P1 | A small guard prevents recurring loss of invited signup. Compare checked-in deployment configuration with generated approved settings in CI and preflight. Integrate with #3. |
-| 6 | [#8 Alert delivery and independent detection](https://github.com/porchday/porchday/issues/8) | P1 | Confirm remaining channels, responder receipt and independent coverage. Track the Mac and GitHub notification destinations under this work; avoid counting them as separate product features. |
-| 7 | [#22 Directional history sharing](https://github.com/porchday/porchday/issues/22) | P1 | This is a consent and encrypted-access contract. Reconcile existing implementation/release evidence and finish outstanding hosted/native acceptance, including future-only recipients and revoked access. Do not silently change existing consent. |
+| 9 | [#40 Connection exhaustion and member-route 503s](https://github.com/porchday/porchday/issues/40) | P1 | Availability failures and exhausted connections were observed. Validate current connection headroom through representative traffic and a deployment; establish the remaining mechanism before changing capacity or topology. |
+| 10 | [#1 Interrupted privacy operations](https://github.com/porchday/porchday/issues/1) | P1 | Interrupted work can block account access. Complete the outstanding hosted crash/recovery and in-flight checks while preserving protection for genuinely unknown outcomes. Coordinate load with #40. |
+| 11 | [#55 Logout latency and journey deadlines](https://github.com/porchday/porchday/issues/55) | P1 | Resolve a measured source of failed journeys. Use phase evidence to separate server, pool and network delay; verify old-cookie rejection without merely relaxing deadlines. |
+| 12 | [#3 Repeatable release verification](https://github.com/porchday/porchday/issues/3) | P1 | Every change depends on safe delivery. Consolidate remaining private orchestration into the maintained release path, preserve bounded failure diagnostics, and verify recovery/adoption gaps. Existing successful releases are evidence, not a reason to rebuild the controller. |
+| 13 | [#2 Signup configuration guard](https://github.com/porchday/porchday/issues/2) | P1 | A small guard prevents recurring loss of invited signup. Compare checked-in deployment configuration with generated approved settings in CI and preflight. Integrate with #3. |
+| 14 | [#8 Alert delivery and independent detection](https://github.com/porchday/porchday/issues/8) | P1 | Confirm remaining channels, responder receipt and independent coverage. Track the Mac and GitHub notification destinations under this work; avoid counting them as separate product features. |
+| 15 | [#22 Directional history sharing](https://github.com/porchday/porchday/issues/22) | P1 | This is a consent and encrypted-access contract. Reconcile existing implementation/release evidence and finish outstanding hosted/native acceptance, including future-only recipients and revoked access. Do not silently change existing consent. |
 
-### Then complete the core pilot experience
-
-| Rank | Issue | Priority | Why this order and the next verifiable step |
-| --- | --- | --- | --- |
-| 8 | [#27 Invitation signup rejection](https://github.com/porchday/porchday/issues/27) | P2 | A reported signup blocker needs recipient evidence. Confirm the submitted destination/error privately and verify actionable guidance. Do not assume premature consumption or replace a valid invitation without cause. |
-| 9 | [#88 Background profile setup after recovery](https://github.com/porchday/porchday/issues/88) | P2 | Reproduce through supported account setup to distinguish fixture behavior from a member-facing defect. Confirm the existing write before retrying it. |
-| 10 | [#19 Six-member end-to-end acceptance](https://github.com/porchday/porchday/issues/19) | P2 | Establish that social flows work together. Run isolated accounts through connections, audience changes, history sharing, media and deletion; use #22 and #88 findings to explain failures. |
-| 11 | [#9 Capacity, mobile performance and cost](https://github.com/porchday/porchday/issues/9) | P2 | Establish a measured pilot envelope rather than extrapolating smoke tests. Start with representative workloads and headroom; coordinate disruptive load with #40 and the release owner. |
-| 12 | [#6 Accessibility acceptance](https://github.com/porchday/porchday/issues/6) | P2 | Complete real VoiceOver/NVDA and mobile checks of core flows. File observed defects separately and promote any access-blocking defect on its evidence. |
-| 13 | [#114 macOS distribution and device acceptance](https://github.com/porchday/porchday/issues/114) | P2 | The downloadable preview exists. Finish real installation, history recovery, Photos selection and export checks; signing/TestFlight work needs the actual Apple credentials and installed-build evidence. |
-| 14 | [#24 Photo import compatibility](https://github.com/porchday/porchday/issues/24) | P2 | Build on the implemented decoder coverage. Verify remaining original-photo/device cases without weakening encrypted received-media validation. |
-| 15 | [#108 Calendar and encrypted video acceptance](https://github.com/porchday/porchday/issues/108) | P2 | Web rollout is verified. Finish real iPhone MOV/HEVC, native and installed-service-worker checks; retain documented size/codec limits. Larger uploads are separate scope. |
-| 16 | [#49 iOS parity and installation](https://github.com/porchday/porchday/issues/49) | P2 | Reconcile current simulator/build evidence, finish supported signing/install steps and explicitly assess browser handoffs. Native builder chat remains postponed. |
-| 17 | [#7 Device migration, notifications and links](https://github.com/porchday/porchday/issues/7) | P2 | Use working signed builds and real devices to prove history recovery, push and link behavior. Preserve existing .com keys/installations until migration is verified. Shares device sessions with #49/#114. |
-| 18 | [#29 Builder chat acceptance](https://github.com/porchday/porchday/issues/29) | P2 | Finish member-facing end-to-end and rollback acceptance of the existing bridge before expanding its scope or allowlist. |
-| 19 | [#44 Feature additions and voting](https://github.com/porchday/porchday/issues/44) | P2 | Reconcile delivered board/feed work with hosted acceptance. Verify authorization, concurrent voting and single dispatch before depending on it for further proposals. |
-| 20 | [#41 Group invitation visibility and selection](https://github.com/porchday/porchday/issues/41) | P2 | Build on recorded staging acceptance. Reconcile production evidence and finish the remaining owner/non-owner and invitation lifecycle checks. |
-| 21 | [#28 Profile photos across the product](https://github.com/porchday/porchday/issues/28) | P2 | Finish remaining surface/device verification, including removal, inaccessible-photo fallback and stale-request cleanup. Reuse implemented behavior rather than duplicating it. |
-
-### Then polish
+### Remaining core pilot work
 
 | Rank | Issue | Priority | Why this order and the next verifiable step |
 | --- | --- | --- | --- |
-| 22 | [#18 Provider-injected analytics](https://github.com/porchday/porchday/issues/18) | P3 | Inspect the provider setting with the required access, suppress injection on exact application hosts, and verify clean browser traffic. Recorded CSP blocking is not evidence of a successful data leak; do not weaken CSP. |
-| 23 | [#4 Emoji upload success wording](https://github.com/porchday/porchday/issues/4) | P3 | Make the message location-neutral and verify its accessible announcement and desktop/mobile placement. |
-| 24 | [#15 Desktop icon cropping](https://github.com/porchday/porchday/issues/15) | Unset; recommend P3 | Reproduce on the affected desktop installation, adjust padding if needed, and verify the resulting icon rather than inferring from the source artwork. |
+| 16 | [#27 Invitation signup rejection](https://github.com/porchday/porchday/issues/27) | P2 | A reported signup blocker needs recipient evidence. Confirm the submitted destination/error privately and verify actionable guidance. Do not assume premature consumption or replace a valid invitation without cause. |
+| 17 | [#88 Background profile setup after recovery](https://github.com/porchday/porchday/issues/88) | P2 | Reproduce through supported account setup to distinguish fixture behavior from a member-facing defect. Confirm the existing write before retrying it. |
+| 18 | [#19 Six-member end-to-end acceptance](https://github.com/porchday/porchday/issues/19) | P2 | Establish that social flows work together. Run isolated accounts through connections, audience changes, history sharing, media and deletion; use #22 and #88 findings to explain failures. |
+| 19 | [#9 Capacity, mobile performance and cost](https://github.com/porchday/porchday/issues/9) | P2 | Establish a measured pilot envelope rather than extrapolating smoke tests. Start with representative workloads and headroom; coordinate disruptive load with #40 and the release owner. |
+| 20 | [#6 Accessibility acceptance](https://github.com/porchday/porchday/issues/6) | P2 | Complete real VoiceOver/NVDA and mobile checks of core flows. File observed defects separately and promote any access-blocking defect on its evidence. |
+| 21 | [#24 Photo import compatibility](https://github.com/porchday/porchday/issues/24) | P2 | Build on the implemented decoder coverage. Verify remaining original-photo/device cases without weakening encrypted received-media validation. |
+| 22 | [#29 Builder chat acceptance](https://github.com/porchday/porchday/issues/29) | P2 | Finish member-facing end-to-end and rollback acceptance of the existing bridge before expanding its scope or allowlist. |
+| 23 | [#44 Feature additions and voting](https://github.com/porchday/porchday/issues/44) | P2 | Reconcile delivered board/feed work with hosted acceptance. Verify authorization, concurrent voting and single dispatch before depending on it for further proposals. |
+| 24 | [#41 Group invitation visibility and selection](https://github.com/porchday/porchday/issues/41) | P2 | Build on recorded staging acceptance. Reconcile production evidence and finish the remaining owner/non-owner and invitation lifecycle checks. |
+| 25 | [#28 Profile photos across the product](https://github.com/porchday/porchday/issues/28) | P2 | Finish remaining surface/device verification, including removal, inaccessible-photo fallback and stale-request cleanup. Reuse implemented behavior rather than duplicating it. |
+
+### Remaining polish
+
+| Rank | Issue | Priority | Why this order and the next verifiable step |
+| --- | --- | --- | --- |
+| 26 | [#18 Provider-injected analytics](https://github.com/porchday/porchday/issues/18) | P3 | Inspect the provider setting with the required access, suppress injection on exact application hosts, and verify clean browser traffic. Recorded CSP blocking is not evidence of a successful data leak; do not weaken CSP. |
+| 27 | [#4 Emoji upload success wording](https://github.com/porchday/porchday/issues/4) | P3 | Make the message location-neutral and verify its accessible announcement and desktop/mobile placement. |
+| 28 | [#15 Desktop icon cropping](https://github.com/porchday/porchday/issues/15) | Unset; recommend P3 | Reproduce on the affected desktop installation, adjust padding if needed, and verify the resulting icon rather than inferring from the source artwork. |
 
 ## Milestones and standing operational threads
 
@@ -102,4 +115,4 @@ These retain their `deferred` labels and are not current release requirements. T
 - Remove completed product issues from the queue only when their acceptance criteria are verified. Put commit, tests and deployment/device evidence in the issue; retain `needs verification` for outstanding checks. Closed issues and [CHANGELOG.md](CHANGELOG.md) hold the history rather than an ever-growing “done” list here.
 - A merged PR is not a deployed feature. Track small follow-up PRs on their issue even when the parent work is complete, and give any unfinished delivery step an explicit place in the issue or queue.
 
-Roadmap maintenance is tracked in [#120](https://github.com/porchday/porchday/issues/120). The initial ranking is an editorial planning decision based on the linked backlog, not an effort estimate or a new grant of operational authority.
+Roadmap maintenance is tracked in [#120](https://github.com/porchday/porchday/issues/120). The top eight workstreams reflect the owner’s explicit priorities; the remaining order is the prior planning baseline. Neither is an effort estimate or a waiver of operational safeguards.
