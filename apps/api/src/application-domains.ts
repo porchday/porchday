@@ -2,7 +2,7 @@ import { createMiddleware } from 'hono/factory';
 import type { Env, Variables } from './types';
 
 const accountPages = new Set([
-  '/login', '/verify', '/forgot', '/reset', '/stolen-account', '/recovery',
+  '/', '/login', '/verify', '/forgot', '/reset', '/stolen-account', '/recovery',
   '/appeals', '/account-deletion',
 ]);
 const publicAssets = new Set([
