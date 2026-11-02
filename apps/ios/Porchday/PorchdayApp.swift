@@ -41,6 +41,7 @@ struct MainTabs: View {
     @ObservedObject private var notifications = NativeNotifications.shared
     let member: Member
     @EnvironmentObject var model: AppModel
+    @State private var builderAvailable = false
     var body: some View {
         TabView {
             NavigationStack { FeedView(title: "Feed", endpoint: "/feed") }.tabItem { Label("Feed", systemImage: "house") }
@@ -50,10 +51,11 @@ struct MainTabs: View {
             NavigationStack { List {
                 NavigationLink("My wall") { ProfileView(memberID: member.id, handle: member.handle) }
                 NavigationLink("Groups") { GroupsView() }
+                if builderAvailable { NavigationLink("Builder chat") { BuilderChatView() }; NavigationLink("Feature additions") { BuilderChatView(features: true) } }
                 NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape") }
             }.navigationTitle("Menu") }.tabItem { Label("Menu", systemImage: "ellipsis") }
         }
-        .task(id: member.id) { await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
+        .task(id: member.id) { builderAvailable = (try? await model.api.social("/builder-chat")) != nil; await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
     }
