@@ -26,6 +26,23 @@ function withSegments(bytes: Uint8Array, ...parts: Uint8Array[]) {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("source JPEG preflight", () => {
+  it.each(["NotReadableError", "NotFoundError", "SecurityError"])("explains %s without leaking native details and allows a fresh selection", async (name) => {
+    const { decode } = browser();
+    const unreadable = new File([jpeg()], "private-photo.jpg");
+    const read = vi.spyOn(unreadable, "arrayBuffer").mockRejectedValue(
+      new DOMException("private native file path", name),
+    );
+    const failure = await preparePhoto(unreadable).catch(error => error as Error);
+    expect(failure).toBeInstanceOf(Error);
+    expect((failure as Error).message).toContain("Your browser could not read this photo");
+    expect((failure as Error).message).toContain("export it from Photos as a JPEG to Downloads");
+    expect((failure as Error).message).not.toContain("private");
+    expect(read).toHaveBeenCalledOnce();
+    expect(decode).not.toHaveBeenCalled();
+    const prepared = await preparePhoto(new File([jpeg()], "export.jpg"));
+    expect(prepared.blob.type).toBe("image/jpeg");
+    expect(decode).toHaveBeenCalledOnce();
+  });
   it("isolates the first complete image and removes its MPF directory, preserving EXIF and ICC for decoding", () => {
     const exif = segment(0xe1, "Exif\0\0orientation"),
       icc = segment(0xe2, "ICC_PROFILE\0color"),
