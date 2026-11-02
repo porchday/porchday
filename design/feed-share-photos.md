@@ -145,3 +145,9 @@ Acceptance should cover:
 This proposal supersedes earlier mockup labels and defaults where they differ: Infinite scroll replaces the local Feed view button, Photos Only replaces Share's Photos subtab, Me joins Friends and Family in default browsing filters, and albums are collaborative rather than personal-only collections. Earlier public-homepage, invitation, deployment and standalone development-tool discussions are outside this design.
 
 November 2 refinement: Albums replaces the Photos navigation destination and has no general photo browser. Feed owns Posts / Photos browsing through top tabs instead of a dropdown. This supersedes the earlier Grid / Calendar / Albums proposal.
+
+## Implementation decisions recorded November 2
+
+Album roles are represented as `read`, `add`, and `admin`. The creator is initially the owner and an album-admin. The owner must transfer ownership to another active album-admin before leaving; ordinary admins cannot remove or demote the owner. Only the owner deletes the album. All album members may inspect the membership list, excluding blocked identities; only admins change others’ roles. Removing a member or downgrading their role records a restrictive recovery decision so an older database backup cannot revive that permission.
+
+Membership and metadata changes are serialized with the directory epoch and an expected album revision. Metadata must be encrypted for the proposed audience before a membership update commits. Full encrypted HTTP and photo-grant verification remains required; the database-only tests are not encryption or deployment evidence.
