@@ -7,6 +7,11 @@ import WebKit
     let view: WKWebView
     private var ready: CheckedContinuation<Void, Error>?
     private var deadline: Task<Void, Never>?
+    #if os(macOS)
+    private var preparationHost: NSWindow?
+    #else
+    private var preparationHost: UIWindow?
+    #endif
     static let html = """
     <!doctype html><meta name="viewport" content="width=device-width,initial-scale=1">
     <meta http-equiv="Content-Security-Policy" content="default-src 'none'; media-src data:; style-src 'unsafe-inline'; script-src 'none'; connect-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'">
@@ -24,6 +29,19 @@ import WebKit
         super.init()
         view.navigationDelegate = self
         view.allowsBackForwardNavigationGestures = false
+        // WebKit requires a window attachment to decode video, even for a
+        // non-visible first-frame probe. This host is never shown or made key.
+        #if os(macOS)
+        let host = NSWindow(contentRect: view.frame, styleMask: .borderless, backing: .buffered, defer: false)
+        host.contentView = view
+        #else
+        let host: UIWindow
+        if let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            host = UIWindow(windowScene: scene); host.frame = view.frame
+        } else { host = UIWindow(frame: view.frame) }
+        host.addSubview(view)
+        #endif
+        preparationHost = host
     }
     func navigationLoaded() async throws {
         try await withCheckedThrowingContinuation { continuation in
@@ -48,7 +66,16 @@ import WebKit
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         decisionHandler(navigationAction.request.url?.absoluteString == "about:blank" && navigationAction.navigationType == .other ? .allow : .cancel)
     }
+    private func releasePreparationHost() {
+        guard preparationHost != nil else { return }
+        view.removeFromSuperview()
+        #if os(macOS)
+        preparationHost?.contentView = nil
+        #endif
+        preparationHost = nil
+    }
     func open(_ bytes: Data) async throws -> PreparedPhoto {
+        defer { releasePreparationHost() }
         guard try VideoContainer.mime(bytes) == "video/webm" else { throw PorchError.message("Invalid WebM video.") }
         try await navigationLoaded()
         try Task.checkCancellation()
@@ -86,6 +113,7 @@ import WebKit
         return PreparedPhoto(bytes: bytes, width: width, height: height, mime: "video/webm", poster: poster)
     }
     func stop() {
+        releasePreparationHost()
         finish(CancellationError())
         view.stopLoading()
         view.evaluateJavaScript("const v=document.querySelector('video'); if(v){v.pause();v.removeAttribute('src');v.load();}")
