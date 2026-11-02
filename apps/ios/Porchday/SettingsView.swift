@@ -47,6 +47,7 @@ struct SettingsView: View {
                 }
             }
             if socialSettingsAvailable {
+            Section("Children") { NavigationLink("Children and posting permissions") { ChildrenSettingsView() } }
             Section("Custom emoji") { NavigationLink("Manage my custom emoji") { ReactionPicker() } }
             Section("Password and sessions") {
                 SecureField("Current password", text: $currentPassword).porchContentType(.password)

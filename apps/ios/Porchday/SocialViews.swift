@@ -78,7 +78,7 @@ struct MomentCard: View {
     var body: some View { VStack(alignment: .leading, spacing: 10) {
         HStack(alignment: .top) { MemberAvatarView(memberID: item.authorID, name: item.authorHandle); VStack(alignment: .leading) { Text(item.authorID == model.member?.id ? "@\(model.member?.handle ?? "")" : item.authorHandle).font(.headline); if let date = item.created { Text(date, style: .relative).font(.caption).foregroundStyle(.secondary) } }; Spacer(); Image(systemName: "lock.fill").font(.caption).accessibilityLabel("End-to-end encrypted") }
         if let expiry = item.expiry { Label("Disappears \(expiry.formatted(date: .abbreviated, time: .shortened))", systemImage: "timer").font(.caption).foregroundStyle(.secondary) }
-        if let error = item.error { Label(error, systemImage: "lock.trianglebadge.exclamationmark").font(.callout).foregroundStyle(.secondary) } else { Text(item.text).font(.body).textSelection(.enabled); if let payload = item.payload, payload["provenance"]["kind"].string == "reaction", let reaction = try? ReactionValue.parse(.object(payload.object.filter { ["emoji","unicode","custom"].contains($0.key) })) { ReactionGlyph(reaction:reaction) }; if let media = item.payload?["media"].array { ForEach(Array(media.enumerated()), id: \.offset) { _, photo in EncryptedPhotoView(photo: photo) } } }
+        if let error = item.error { Label(error, systemImage: "lock.trianglebadge.exclamationmark").font(.callout).foregroundStyle(.secondary) } else { Text(item.text).font(.body).textSelection(.enabled); PeopleTagsView(tags: PersonTag.parse(item.payload?["tags"] ?? .null)); if let payload = item.payload, payload["provenance"]["kind"].string == "reaction", let reaction = try? ReactionValue.parse(.object(payload.object.filter { ["emoji","unicode","custom"].contains($0.key) })) { ReactionGlyph(reaction:reaction) }; if let media = item.payload?["media"].array { ForEach(Array(media.enumerated()), id: \.offset) { _, photo in EncryptedMediaView(media: photo) } } }
     }.padding(.vertical, 10) }
 }
 struct PostDetailView: View {
@@ -148,6 +148,9 @@ struct ComposerView: View {
     @State private var busy = false
     @State private var photoSelection: [PhotosPickerItem] = []
     @State private var photos: [PreparedPhoto] = []
+    @StateObject private var people = PeopleDirectory()
+    @State private var tags: [PersonTag] = []
+    @State private var onBehalf = ""
     @State private var camera = false
     @State private var observedExpiry: Date?
     @State private var observedPostExpiry: Date?
@@ -161,7 +164,9 @@ struct ComposerView: View {
     var body: some View { Form {
         if let member = model.member { HStack { MemberAvatarView(memberID: member.id, name: member.handle); Text("@" + member.handle) } }
         Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("\(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) }
-        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .images) { Label("Add photos", systemImage: "photo") }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Photo description (alt text)", text: $photo.alt) } } } }
+        Section { PeopleTagPicker(tags: $tags, directory: people) }
+        if post == nil { Section { Picker("Posting on behalf of", selection: $onBehalf) { Text("Myself").tag(""); ForEach(people.children.filter { $0.raw["can_post"].boolean }) { Text($0.name).tag($0.id) } }; Text("You remain the author. Posting on a child’s behalf tags them without expanding the audience.").font(.caption) } }
+        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .any(of: [.images, .videos])) { Label("Add photos or videos", systemImage: "photo.on.rectangle") }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Description (alt text)", text: $photo.alt); TextField("Caption", text: $photo.caption); PeopleTagPicker(tags: $photo.tags, directory: people) } } } }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
@@ -193,7 +198,7 @@ struct ComposerView: View {
         }
     }.disabled(!model.canWriteSocial).navigationTitle(post == nil ? "New post" : "Leave a comment").porchInlineTitle().toolbar { Button("Cancel") { dismiss() } }
         .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
-        .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { selected.append(try PhotoPipeline.prepare(bytes)) } }; photos = selected } } }
+        .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) { selected.append(try await VideoPipeline.prepare(bytes)) } else { selected.append(try PhotoPipeline.prepare(bytes)) } } }; photos = selected } } }
         #if os(iOS)
         .sheet(isPresented: $camera) { CameraView { image in Task { await model.perform { guard let data = image.jpegData(compressionQuality: 0.9) else { return }; photos.append(try PhotoPipeline.prepare(data)) } }; camera = false } }
         #endif
@@ -208,7 +213,12 @@ struct ComposerView: View {
         for photo in photos {
             media.append(try await model.uploadSurfacePhoto(photo, audience: share, parent: id, group: group, expiry: expiry))
         }
-        let payload: JSON = .object(["text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines)), "reactionSecret": .string(try CryptoVault.randomSecret()), "media": .array(media)])
+        var chosenTags = tags
+        if !onBehalf.isEmpty {
+            guard let child = people.people.first(where: { $0.kind == "child" && $0.personID == onBehalf }) else { throw PorchError.message("Reload the child directory before posting on their behalf.") }
+            if !chosenTags.contains(child) { chosenTags.append(child) }
+        }
+        let payload: JSON = .object(["tags": .array(chosenTags.map(\.json)), "text": .string(text.trimmingCharacters(in: .whitespacesAndNewlines)), "reactionSecret": .string(try CryptoVault.randomSecret()), "media": .array(media)])
         let envelope = try await vault.seal(payload, member: member, kind: post == nil ? "post" : "comment", audience: share, id: id, group: group, parent: parent?.id, post: post?.id, expiry: expiry)
         if let post {
             do { _ = try await model.api.social("/posts/\(post.id)/comments", method:"POST",body:.object(["envelope":envelope,"parent_expires_at":reviewedParentExpiry.map{.string(PorchDate.string($0))} ?? .null])) }
@@ -230,7 +240,7 @@ struct ComposerView: View {
                 throw PorchError.message("The parent's timer changed. Review the updated inherited timeout above, then submit again.")
             }
         }
-        else { _ = try await model.api.social("/posts", method: "POST", body: .object(["envelope": envelope, "media_ids": .array(media.map { $0["id"] })])) }
+        else { _ = try await model.api.social("/posts", method: "POST", body: .object(["envelope": envelope, "media_ids": .array(media.map { $0["id"] }), "on_behalf_of": onBehalf.isEmpty ? .null : .string(onBehalf)])) }
         submitted(); dismiss()
     } }
 }

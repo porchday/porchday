@@ -1,7 +1,7 @@
 import Foundation
 
 /// Editors keep selection identity stable across separate upload attempts.
-struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); let bytes: Data; let width: Int; let height: Int; var alt = "" }
+struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); let bytes: Data; let width: Int; let height: Int; var alt = ""; var mime = "image/jpeg"; var poster = ""; var caption = ""; var tags: [PersonTag] = [] }
 
 @MainActor enum PhotoUpload {
     /// A manual retry can follow a committed reservation or a partly uploaded
@@ -12,8 +12,8 @@ struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); le
                        reserve: @MainActor (JSON) async throws -> JSON,
                        put: @MainActor (String, Data) async throws -> Void) async throws -> JSON {
         let id = UUID().uuidString.lowercased()
-        let metadata: JSON = .object(["id": .string(id), "mime": .string("image/jpeg"), "name": .string("photo.jpg"),
-                                      "alt": .string(photo.alt), "width": .number(Double(photo.width)), "height": .number(Double(photo.height))])
+        let metadata: JSON = .object(["id": .string(id), "mime": .string(photo.mime), "name": .string(photo.mime == "image/jpeg" ? "photo.jpg" : "video." + VideoContainer.fileExtension(photo.mime)),
+                                      "alt": .string(photo.alt), "caption": .string(photo.caption), "tags": .array(photo.tags.map(\.json)), "poster": .string(photo.poster), "width": .number(Double(photo.width)), "height": .number(Double(photo.height))])
         let envelope = try await seal(metadata.replacing("bytes", with: .string(photo.bytes.base64EncodedString())), id)
         let bytes = try JSONEncoder().encode(envelope)
         let upload = try await reserve(.object(["id": .string(id), "envelope": envelope, "byte_size": .number(Double(bytes.count))]))

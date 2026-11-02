@@ -39,7 +39,7 @@ struct EncryptedPhotoView: View {
                 if expired { Label("This photo has expired.",systemImage:"timer").font(.caption) }
                 else if let image {
                     Image(platformImage:image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius:12)).accessibilityLabel(photo["alt"].string ?? "Shared photo")
-                    if let alt=photo["alt"].string,!alt.isEmpty { Text(alt).font(.caption).foregroundStyle(.secondary) }
+                    if let caption = photo["caption"].string, !caption.isEmpty { Text(caption).font(.caption) }; PeopleTagsView(tags: PersonTag.parse(photo["tags"]))
                 } else { Label(error.isEmpty ? "Opening encrypted photo…":error,systemImage:"photo").font(.caption).padding() }
             }.onChange(of:expired) { _,value in if value { image=nil } }
         }.task(id:photo["id"].string) {

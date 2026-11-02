@@ -43,11 +43,15 @@ struct MainTabs: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         TabView {
-            NavigationStack { FeedView(title: "Feed", endpoint: "/feed", showComposer: true) }.tabItem { Label("Home", systemImage: "house") }
+            NavigationStack { FeedView(title: "Feed", endpoint: "/feed") }.tabItem { Label("Feed", systemImage: "house") }
+            NavigationStack { ComposerView { } }.tabItem { Label("Share", systemImage: "plus.square") }
+            NavigationStack { PhotosCalendarView() }.tabItem { Label("Photos", systemImage: "calendar") }
             NavigationStack { ConnectionsView() }.tabItem { Label("Connections", systemImage: "person.2") }
-            NavigationStack { GroupsView() }.tabItem { Label("Groups", systemImage: "person.3") }
-            NavigationStack { ProfileView(memberID: member.id, handle: member.handle) }.tabItem { Label("My wall", systemImage: "person.crop.rectangle") }
-            NavigationStack { SettingsView() }.tabItem { Label("Settings", systemImage: "gearshape") }
+            NavigationStack { List {
+                NavigationLink("My wall") { ProfileView(memberID: member.id, handle: member.handle) }
+                NavigationLink("Groups") { GroupsView() }
+                NavigationLink { SettingsView() } label: { Label("Settings", systemImage: "gearshape") }
+            }.navigationTitle("Menu") }.tabItem { Label("Menu", systemImage: "ellipsis") }
         }
         .task(id: member.id) { await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
