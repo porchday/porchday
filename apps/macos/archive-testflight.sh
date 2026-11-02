@@ -49,7 +49,7 @@ security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.ke
 xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac -configuration Release \
  -destination 'generic/platform=macOS' -archivePath apps/ios/build/PorchdayMac.xcarchive \
  archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='3rd Party Mac Developer Application' \
- DEVELOPMENT_TEAM="$team" PROVISIONING_PROFILE_SPECIFIER="$uuid" \
+ DEVELOPMENT_TEAM="$team" PORCHDAY_MAC_PROFILE="$uuid" \
  OTHER_CODE_SIGN_FLAGS="--keychain $keychain" CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_PUSH_ENABLED=NO
 xcodebuild -exportArchive -archivePath apps/ios/build/PorchdayMac.xcarchive \
  -exportPath apps/ios/build/MacTestFlight -exportOptionsPlist "$private/export.plist"
