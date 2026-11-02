@@ -1,3 +1,4 @@
+import { Albums, AlbumDetail } from "./Albums";
 import {PeopleDirectory} from "./PeopleTags";
 import { FeatureAdditions } from "./FeatureAdditions";
 import { hasPendingSaves } from "./pending-saves";
@@ -394,6 +395,8 @@ function AppShell({
         <FeedExperience />
       </>
     );
+  else if (path === "/app/albums") content = <Albums />;
+  else if (path.startsWith("/app/albums/")) content = <AlbumDetail key={path.split("/")[3]} id={path.split("/")[3]} />;
   else if (path === "/app/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
   else if (path === "/app/share") content = <><div className="page-heading"><h1>Share</h1></div><Composer onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
   else if (path === "/app/menu") content = <section className="panel form-stack"><h1>More</h1><a href="/app/wall">My wall</a><a href="/app/groups">Groups</a><a href="/app/notifications">Notifications</a><a href="/app/features">Feature additions</a>{builderChat && <a href="/app/builder-chat">Builder chat</a>}<a href="/app/settings/profile">Settings</a></section>;
@@ -448,7 +451,7 @@ function AppShell({
       <aside className="sidebar">
         <Logo href="/app" />
         <nav aria-label="Your Porchday">
-          {[...sidebarLinks, ...(vault.member.status === "suspended" ? [] : [["/app/share", "plus", "Share"], ["/app/photos", "photo", "Photos"]])].map(
+          {[...sidebarLinks, ...(vault.member.status === "suspended" ? [] : [["/app/share", "plus", "Share"], ["/app/albums", "album", "Albums"]])].map(
             ([href, icon, name]) => {
               const active =
                 href === "/app"
@@ -530,7 +533,7 @@ function AppShell({
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {(vault.member.status === "suspended"
           ? [links[5]]
-          : [links[0], ["/app/share", "plus", "Share"], ["/app/photos", "photo", "Photos"], links[2], ["/app/menu", "more", "More"]]
+          : [links[0], ["/app/share", "plus", "Share"], ["/app/albums", "album", "Albums"], links[2], ["/app/menu", "more", "More"]]
         ).map(([href, icon, name]) => (
           <a
             key={href}

@@ -833,7 +833,8 @@ function DataSettings({ onAccountDeleted }: { onAccountDeleted: () => Promise<vo
         <p>
           Deleting your account removes your profile, contributions,
           connections, and access. You can export first, but you don’t have to.
-          Transfer or delete any groups you own before continuing.
+          Transfer or delete any groups you own before continuing. Albums you still own
+          will be deleted; transfer album ownership first to keep them.
         </p>
         {ownedGroups.map((g) => (
           <div className="member-row" key={g.id}>
@@ -881,7 +882,8 @@ function DataSettings({ onAccountDeleted }: { onAccountDeleted: () => Promise<vo
             <p>
               This revokes your sessions and integrations immediately. Posts,
               comments, reactions, and encrypted photos are deleted through the
-              cleanup process. Existing saved copies cannot be recalled, and
+              cleanup process. Albums you still own are deleted too; transferred albums remain.
+              Existing saved copies cannot be recalled, and
               encrypted backups age out under the operator’s retention policy.
             </p>
             <p>

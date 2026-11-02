@@ -1,3 +1,4 @@
+import { registerAlbumRoutes, albumSnapshot } from "./social-albums";
 import {registerCalendarRoutes} from './social-calendar.js';
 import {readMemberBootstrap} from './member-bootstrap';
 import {phaseTiming} from './request-timing';
@@ -70,8 +71,10 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
     allowPast?: boolean;
     historyPostId?: string;
     historySourceRevision?: number;
+    albumChange?: { memberId: string; role: "read" | "add" | "admin" | null };
 } = {}) {
     const e = envelope.context;
+    if (e.audience === "album" && !["album", "media"].includes(kind)) fail("ENVELOPE_CONTEXT");
     if ((kind === 'report') !== (e.audience === 'moderators'))
         fail('ENVELOPE_CONTEXT');
     if (e.authorId !== member || e.kind !== kind)
@@ -92,7 +95,9 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
         if (source.author_id !== member || source.group_id !== null || !['connections','friends','family'].includes(source.audience) || e.audience !== source.audience || e.groupId !== null || (kind === 'post' ? e.id !== source.id : kind !== 'media' || e.parentId !== source.id)) fail('ENVELOPE_CONTEXT');
         if (options.historySourceRevision !== undefined && source.envelope.context.revision !== options.historySourceRevision) fail('REVISION_CHANGED',409);
     }
-    const s = await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
+    const s = e.audience === "album"
+      ? await albumSnapshot(db, e.groupId!, options.albumChange)
+      : await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
     if (s.pending_members.length)
         fail('KEY_SETUP_REQUIRED', 409, { pending_members: s.pending_members });
     if (!options.skipEpoch && e.epoch !== s.epoch)
@@ -134,7 +139,7 @@ export function createSocialRoutes() {
         const code = (err as {
             code?: string;
         }).code;
-        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED','REACTION_LIMIT','REACTION_STORAGE_LIMIT'];
+        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED','REACTION_LIMIT','REACTION_STORAGE_LIMIT','ALBUM_OWNER_REQUIRED','ALBUM_ADMIN_REQUIRED','ALBUM_MEMBER_LIMIT','ALBUM_AUDIENCE_BLOCKED','ACCOUNT_UNAVAILABLE'];
         if (known.includes(err.message))
             return c.json({ error: { code: err.message, message: err.message.toLowerCase().replaceAll('_', ' ') } }, 409);
         if (code === '23505')
@@ -151,6 +156,7 @@ export function createSocialRoutes() {
         if (!allowed)
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
+    registerAlbumRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerCalendarRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerEmojiRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     app.get('/me', async c => c.json(await readMemberBootstrap(c.env,c.get('memberId'),c.req.query('bootstrap')==='1',phaseTiming(c))));

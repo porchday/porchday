@@ -5,6 +5,7 @@ import postgres, { type Sql, type TransactionSql } from "postgres";
 const base = process.env.TEST_DATABASE_URL;
 const suite = base ? describe : describe.skip;
 let admin: Sql, db: Sql, database: string;
+const devices = new Map<string,string>();
 const actor = (who: string, run: (sql: TransactionSql) => Promise<unknown>) => db.begin(async sql => {
   await sql`set local role porchday_social`;
   await sql`select set_config('app.member_id',${who},true)`;
@@ -13,10 +14,13 @@ const actor = (who: string, run: (sql: TransactionSql) => Promise<unknown>) => d
 async function member() {
   const id = randomUUID();
   await db`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`;
+  const device=randomUUID(); devices.set(id,device);
+  await db`insert into app.profiles(member_id,handle) values(${id},${"u_"+id.replaceAll("-","").slice(0,20)})`;
+  await db`insert into app.device_keys(id,member_id,public_key,fingerprint,authorization_proof) values(${device},${id},${"synthetic".repeat(30)},${randomUUID().replaceAll("-","")+"aabbccdd"},'{}')`;
   return id;
 }
 function envelope(album: string, author: string, revision = 1) {
-  return { context: {id:album, authorId:author, kind:"album",revision}, ciphertext:"synthetic SQL fixture; not crypto evidence" };
+  return { context: {id:album, authorId:author, authorDeviceId:devices.get(author), kind:"album",revision}, ciphertext:"synthetic SQL fixture; not crypto evidence" };
 }
 async function create(owner: string) {
   const id = randomUUID();
@@ -76,6 +80,15 @@ suite("Social album database authorization and restore", () => {
     await actor(owner,sql=>sql`select app.delete_album(${album})`);
     expect(await db`select * from app.deletion_ledger where kind='albums' and object_id=${album}`).toHaveLength(1);
     await expect(actor(owner,sql=>sql`select app.create_album(${album},${sql.json(envelope(album,owner))})`)).rejects.toThrow(/CONTENT_DELETED/);
+  });
+  it("allows account deletion and tombstones owned albums while preserving transferred albums",async()=>{
+    const owner=await member(), successor=await member(), owned=await create(owner), transferred=await create(owner);
+    await change(owner,transferred,successor,"admin",1);
+    await actor(owner,sql=>sql`select app.transfer_album(${transferred},${successor})`);
+    await actor(owner,sql=>sql`select app.delete_member()`);
+    expect(await db`select id from app.albums where id=${owned}`).toHaveLength(0);
+    expect(await db`select * from app.deletion_ledger where kind='albums' and object_id=${owned}`).toHaveLength(1);
+    expect(await actor(successor,sql=>sql`select id from app.albums where id=${transferred}`)).toHaveLength(1);
   });
   it("restricts prospective audiences to admins and preserves the owner",async()=>{
     const owner=await member(), reader=await member(), outsider=await member(), album=await create(owner);

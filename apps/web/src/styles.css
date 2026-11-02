@@ -4822,3 +4822,9 @@ button.trace-row:focus-visible {
 .composer-photo-heading { font-size:1rem; margin:1rem 0 .5rem; }
 .mobile-nav > a > svg { width:34px; height:40px; flex-shrink:0; }
 .mobile-nav > a > svg * { vector-effect:non-scaling-stroke; stroke-width:1.7px; }
+.album-heading, .album-actions { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:1rem; }
+.album-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:1rem; }
+.album-card { display:block; text-decoration:none; }
+.album-card h2 { margin-top:1rem; }
+.album-member { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem; justify-content:space-between; }
+.album-member select { width:auto; max-width:100%; }

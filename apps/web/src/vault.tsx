@@ -72,7 +72,7 @@ type VaultValue = {
   open: (
     row:
       | SocialObject
-      | { envelope: EncryptedEnvelope; id?: string; author_id?: string },
+      | { envelope: EncryptedEnvelope; id?: string; author_id?: string; author_key?: Device },
   ) => Promise<Content>;
   seal: (
     payload: unknown,
@@ -87,6 +87,7 @@ type VaultValue = {
     groupId?: string | null,
     postId?: string,
   ) => Promise<{ epoch: number; devices: Device[] }>;
+  sealAlbum: (payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) => Promise<EncryptedEnvelope>;
   clear: () => Promise<void>;
 };
 const Vault = createContext<VaultValue | null>(null);
@@ -643,6 +644,16 @@ export function VaultProvider({
       })),
     });
   }
+  async function sealAlbum(payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) {
+    requireSealingAuthor(member.status, "album", active!.device);
+    const query = change ? "?" + new URLSearchParams({member_id:change.memberId,role:change.role??"remove"}) : "";
+    const snapshot = await get(`/albums/${context.id}/audience${query}`);
+    if (snapshot.pending_members?.length) throw new Error("Someone in this album has not set up encryption yet. No one will be silently left out.");
+    const devices = snapshot.devices as Device[];
+    for (const device of devices) await checkDevice(device);
+    return encryptObject({payload, context:{...context,kind:"album",audience:"album",groupId:context.id,parentId:null,authorId:member.id,authorDeviceId:active!.device.id,epoch:snapshot.epoch}, signingKey:active!.key,
+      recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+  }
   function open(row: Parameters<typeof openContent>[0]) {
     return traced("decrypt", () => openContent(row)).then((value) => {
       markOnce("first-decrypt");
@@ -652,7 +663,7 @@ export function VaultProvider({
   async function openContent(
     row:
       | SocialObject
-      | { envelope: EncryptedEnvelope; id?: string; author_id?: string },
+      | { envelope: EncryptedEnvelope; id?: string; author_id?: string; author_key?: Device },
   ) {
     const envelope = row.envelope;
     if (!envelope?.context)
@@ -662,6 +673,12 @@ export function VaultProvider({
       throw new Error("Content identity did not match.");
     if (row.author_id && row.author_id !== expected.authorId)
       throw new Error("Content author did not match.");
+    const retained = "author_key" in row ? row.author_key : undefined;
+    if (retained && expected.kind === "album") {
+      if (retained.id !== expected.authorDeviceId || retained.member_id !== expected.authorId) throw new Error("Album signature identity did not match.");
+      await checkDevice(retained);
+      authorKeys.current.set(expected.authorDeviceId, Promise.resolve(retained));
+    }
     if (!authorKeys.current.has(expected.authorDeviceId)) {
       authorKeys.current.set(
         expected.authorDeviceId,
@@ -709,6 +726,7 @@ export function VaultProvider({
         notifyProfileChanged,
         open,
         seal,
+        sealAlbum,
         audience,
         clear: async () => {
           await forgetAllDevices();

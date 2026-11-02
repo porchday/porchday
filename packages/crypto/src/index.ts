@@ -6,8 +6,8 @@ import * as pgp from 'openpgp';
 
 export type UnlockedPrivateKey = pgp.PrivateKey;
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
-export type ContentKind = 'post' | 'comment' | 'reaction' | 'profile' | 'group' | 'media' | 'report' | 'export';
-export type Audience = 'connections' | 'friends' | 'family' | 'only_me' | 'group' | 'moderators';
+export type ContentKind = 'post' | 'comment' | 'reaction' | 'profile' | 'group' | 'media' | 'report' | 'export' | 'album';
+export type Audience = 'connections' | 'friends' | 'family' | 'only_me' | 'group' | 'moderators' | 'album';
 export interface ContentContext {
   id: string;
   kind: ContentKind;
@@ -104,8 +104,8 @@ function checkDate(value: string, label: string): number {
 }
 export function validateContext(c: ContentContext, now = Date.now()): void {
   checkId(c.id, 'content ID'); checkId(c.authorId, 'author ID'); checkId(c.authorDeviceId, 'device ID');
-  if (!['post', 'comment', 'reaction', 'profile', 'group', 'media', 'report', 'export'].includes(c.kind)) throw new Error('Invalid content kind');
-  if (!['connections', 'friends', 'family', 'only_me', 'group', 'moderators'].includes(c.audience)) throw new Error('Invalid audience');
+  if (!['post', 'comment', 'reaction', 'profile', 'group', 'media', 'report', 'export', 'album'].includes(c.kind)) throw new Error('Invalid content kind');
+  if (!['connections', 'friends', 'family', 'only_me', 'group', 'moderators', 'album'].includes(c.audience)) throw new Error('Invalid audience');
   if (c.parentId !== null) checkId(c.parentId, 'parent ID');
   if (c.groupId !== null) checkId(c.groupId, 'group ID');
   if (!Number.isSafeInteger(c.epoch) || c.epoch < 0 || !Number.isSafeInteger(c.revision) || c.revision < 1) throw new Error('Invalid epoch or revision');
