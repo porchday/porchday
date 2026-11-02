@@ -1,4 +1,5 @@
 import XCTest
+import ImageIO
 @testable import Porchday
 
 final class AppleParityTests: XCTestCase {
@@ -49,7 +50,14 @@ final class AppleParityTests: XCTestCase {
         let clip = try await decoder.open(bytes)
         XCTAssertEqual(clip.mime, "video/webm")
         XCTAssertEqual(clip.width, 16); XCTAssertEqual(clip.height, 16)
-        XCTAssertFalse(clip.poster.isEmpty)
+        let poster = try XCTUnwrap(Data(base64Encoded: clip.poster))
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(poster as CFData, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        var pixel = [UInt8](repeating: 0, count: 4)
+        let context = try XCTUnwrap(CGContext(data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        XCTAssertGreaterThan(pixel[2], 150, "The thumbnail must contain the decoded blue frame, not a blank canvas")
+        XCTAssertLessThan(pixel[0], 50); XCTAssertLessThan(pixel[1], 50)
     }
     func testPrivatePlaybackFileIsRemovedAndNotWorldReadable() throws {
         var file: PrivateMediaFile? = try PrivateMediaFile(Data([1, 2, 3]), ext: "mp4")

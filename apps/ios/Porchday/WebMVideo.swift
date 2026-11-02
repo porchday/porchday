@@ -92,18 +92,25 @@ import WebKit
           const timer = setTimeout(() => reject(new Error('Video decoding timed out: ready=' + v.readyState + ', network=' + v.networkState + ', paused=' + v.paused + ', supported=' + v.canPlayType('video/webm') + ', visibility=' + document.visibilityState)), 15000);
           const fail = () => { clearTimeout(timer); reject(new Error('This device cannot decode this WebM video')); };
           v.onerror = fail;
-          v.onloadeddata = () => {
+          v.onloadedmetadata = () => {
+            if (!(v.videoWidth > 0 && v.videoHeight > 0 && v.videoWidth <= 3840 && v.videoHeight <= 3840 && v.videoWidth*v.videoHeight <= 3840*2160 && Number.isFinite(v.duration) && v.duration > 0)) {
+              v.pause(); v.removeAttribute('src'); v.load(); fail();
+            }
+          };
+          // WebKit's frame callback guarantees canvas sees a decoded frame.
+          // https://bugs.webkit.org/show_bug.cgi?id=236604
+          v.requestVideoFrameCallback(() => {
             try {
               const w = v.videoWidth, h = v.videoHeight;
               if (!(w > 0 && h > 0 && w <= 3840 && h <= 3840 && w*h <= 3840*2160 && Number.isFinite(v.duration) && v.duration > 0)) return fail();
               const c = document.createElement('canvas'); const scale = Math.min(1, 320 / Math.max(w,h));
               c.width = Math.max(1, Math.round(w*scale)); c.height = Math.max(1, Math.round(h*scale));
               c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-              clearTimeout(timer); v.onerror = null; v.onloadeddata = null;
+              clearTimeout(timer); v.onerror = null; v.onloadedmetadata = null;
               v.pause(); v.currentTime = 0; v.muted = false;
               resolve({width:w, height:h, poster:c.toDataURL('image/jpeg', 0.8).split(',')[1]});
             } catch (_) { fail(); }
-          };
+          });
           v.muted = true;
           const raw = atob(encoded); const bytes = Uint8Array.from(raw, c => c.charCodeAt(0));
           const url = URL.createObjectURL(new Blob([bytes], {type:'video/webm'}));
