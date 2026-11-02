@@ -2,6 +2,8 @@
 # Run only on a trusted, manually dispatched CI revision after native tests.
 set -euo pipefail
 umask 077
+sdk_version="$(xcrun --sdk iphoneos --show-sdk-version)"
+[[ "${sdk_version%%.*}" -ge 26 ]] || { echo 'App Store upload requires iOS SDK 26 or newer.' >&2; exit 1; }
 cd "$(dirname "$0")/../.."
 : "${APPLE_DISTRIBUTION_P12:?Missing distribution certificate}"
 : "${APPLE_DISTRIBUTION_PASSWORD:?Missing certificate password}"
