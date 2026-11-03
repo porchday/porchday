@@ -86,6 +86,7 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  if(options.monitorRecoveryObservation!==undefined&&(options.monitorRecoveryObservation!==true||!recoveryTarget(plan.worker).monitor))throw new RecoveryError('DEPLOYMENT_MONITOR_RECOVERY_SCOPE_INVALID');
  const monitorRecoveryObservation=options.monitorRecoveryObservation===true;
  const promotionAllowed=options.promotionAllowed??(()=>true);
+ const rollbackUnfinalizedComplete=options.rollbackUnfinalizedComplete===true;
  const assertPromotion=()=>{if(!promotionAllowed())throw new RecoveryError('DEPLOYMENT_CONTINUITY_FAILED');};
  const hash=deploymentPlanHash(plan);plan=Object.freeze({...plan,...(plan.assetManifests?{assetManifests:Object.freeze({...plan.assetManifests})}:{}),compatibleRollbackVersions:Object.freeze([...plan.compatibleRollbackVersions])});
  const rollbackId=rollbackOperationId(plan.operationId);
@@ -110,10 +111,10 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
  }
  // An outer continuity failure may arrive after journey completion but before
  // canonical finalization. Only an owning, unfinalized lease caller may opt in.
- const lateRollback=state!.phase==='complete'&&options.rollbackUnfinalizedComplete===true&&!promotionAllowed();
+ const lateRollback=state!.phase==='complete'&&rollbackUnfinalizedComplete&&!promotionAllowed();
  if(state!.phase==='candidate-observed'||lateRollback){
   const observed=await observe();if(!observed)return 'observation-unavailable';if(!candidate(observed)||observed.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
-  let health:'healthy'|'unhealthy'|'unknown';try{health=promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
+  let health:'healthy'|'unhealthy'|'unknown';try{health=!lateRollback&&promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
   if(health!=='healthy'&&health!=='unhealthy')return 'verification-unavailable';
   if(health==='healthy'){
    const after=await observe();if(!after)return 'observation-unavailable';if(!candidate(after)||after.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
