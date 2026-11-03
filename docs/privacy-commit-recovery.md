@@ -1,10 +1,12 @@
 # Independent proof of committed privacy transactions
 
-Work in progress for #1 and #42. The atomic SQL writer, independent verifier
-and guarded active reconciliation are implemented and tested locally. Neither
-migration 057 nor the runtime flags have been deployed. Existing quarantine
-and receipt rules remain authoritative; this is not an operator command to
-clear a pending operation.
+This branch carries the previously tested atomic auth commit marker and canonical
+journal reconciliation onto the current application. Migration 069 extends the
+installed restore reader rather than replacing newer child/photo handlers. It
+also accepts an already prepared staging marker table/reader. Both runtime flags
+remain off until the schema and recovery readers are admitted before writers.
+The incident dispatcher handles failures that still lack independent proof;
+neither elapsed time nor an AI response authorizes clearing an uncertain intent.
 
 ## Failure being addressed
 
@@ -74,7 +76,7 @@ still need to be enforced by the caller/adapter.
 
 ## Writer and active recovery
 
-Migration 057 adds an RLS-protected unique operation fence and grants only
+Migration 069 adds an RLS-protected unique operation fence and grants only
 `porchday_auth` execution of `complete_privacy_transaction`. The function checks
 generation and quarantine, appends the terminal marker and inserts the fence
 inside the caller's transaction. A duplicate throws and rolls back the second
@@ -126,11 +128,11 @@ reconciliation tests remain in place.
 
 ## Rollout and daily-release compatibility
 
-1. Apply additive migration 057 with writers disabled. It adds no required
+1. Apply additive migration 069 with writers disabled. It adds no required
    columns to existing tables and preserves legacy restore actions. Verify the
    old application against the expanded schema before enabling new behavior.
 2. Deploy the recovery-capable reader with only its recovery flag enabled. Test
-   restore from a pre-057 backup after applying 057, including real credential
+   restore from a pre-marker backup after applying migration 069, including real credential
    holds, session invalidation and canonical marker replay. A SQL function unit
    test alone does not prove the complete restore workflow.
 3. Establish a rollback version that understands this protocol. Enable the
