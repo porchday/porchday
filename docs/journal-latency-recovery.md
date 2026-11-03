@@ -1,6 +1,6 @@
-# Journal latency recovery — implementation in progress
+# Journal latency and interrupted-operation recovery
 
-The new latency protections are not yet deployed or admitted for production. The previously deployed commit-marker reader/writer remains active. Production completion requires hosted staging recovery/rollback tests and verification of the active production version.
+This runbook describes the fenced journal protocol, its waiting budgets and release requirements. The [recovery issue](https://github.com/porchday/porchday/issues/1) records current deployment status, exact versions and acceptance evidence. A passing build alone is not production admission.
 
 ## Evidence and operating assumptions
 
@@ -14,7 +14,7 @@ A production Analytics Engine sample from November 3, 17:00–18:20 UTC measured
 
 ## Caller budgets and safety
 
-The development limits are five seconds per journal I/O and thirty seconds shared across the HTTP guard, registration, work and completion. Five seconds is roughly seven times the measured read maximum and three times the measured write maximum. It is a responsiveness budget, not an assumption that storage always responds within five seconds. Known transport failures retain bounded jittered retries, now counting the first failed attempt. Never-resolving calls and bodies are bounded; unresolved operations and user SQL work are not replayed. Deadline expiry closes the request's adapter, including late continuations.
+The operating limits are five seconds per journal I/O and thirty seconds shared across the HTTP guard, registration, work and completion. Five seconds is roughly seven times the measured read maximum and three times the measured write maximum. It is a responsiveness budget, not an assumption that storage always responds within five seconds. Known transport failures retain bounded jittered retries, now counting the first failed attempt. Never-resolving calls and bodies are bounded; unresolved operations and user SQL work are not replayed. Deadline expiry closes the request's adapter, including late continuations.
 
 Migration 070 prepares an operation in SQL before registering its pending R2 intent. Preparation expires after three minutes; expiry only permits attempting a durable terminal fence, never assuming rollback. Auth claim and finish occur in one transaction, enforced by a deferred constraint. Multi-step operations hold a shared admission lock in each SQL transaction; sealing takes an exclusive lock and prohibits future transactions. Earlier committed steps remain in the safety journal. Active SQL transactions use transaction/statement timeouts of thirty/ten seconds.
 
@@ -28,4 +28,17 @@ Local tests cover never-resolving lookup/body calls, late writes, aggregate dead
 
 The recovery and writer switches are separate: JOURNAL_LATENCY_RECOVERY_V1 enables admission recovery; JOURNAL_LATENCY_WRITER_V1 enables new fenced registrations and bounded waiting. Reader-only rollout and writer rollback preserve legacy waiting behavior so deadlines cannot strand an unfenced legacy registration. The normal admitted configuration enables both. The writer requires latency recovery plus the existing privacy commit reader/writer. Configuration generation preserves explicit admission and rejects incompatible switches. Both new flags default off. Disabling the new writer must retain the new recovery reader. Old reader code cannot interpret the new multi-transaction scope, so advance the admitted reader/rollback floor before enabling writers.
 
-Remaining gates: complete local/CI validation, exercise native Worker behavior and hosted staging interruption/rollback, apply migration 070, deploy the compatible reader and record its rollback floor, enable the writer, verify production terminal proof/receipts and full user journeys, and update issue #1 with exact release evidence. No destructive production fault injection is authorized.
+The local PostgreSQL suite passed 38 tests, including process termination and restore fences; the auth suite passed 30 tests, including writer-disabled recovery. A native Worker/R2 check bounded a never-resolving lookup at 5.008 seconds while a concurrent request and a fresh recovery request succeeded. A full pre-admission dump/restore drill replayed 16 journal events and verified encrypted content, revoked access, media cleanup and terminal marker recovery.
+
+The November 3 hosted staging drill withheld a successful registration reply for 210 seconds. The caller stopped waiting after 6.406 seconds overall, including preceding preparation steps. Both synthetic auth and multi-step preparations recovered through deployed requests after real SQL expiry, without changing clocks, manually clearing control state or calling a local recovery function. Five sampled health requests returned temporary 503 responses during uncertainty; the journal remained active throughout. Both receipts appeared and health returned to 200. After the late reply arrived, a delayed SQL claim was rejected. The complete observation took 212.839 seconds. This demonstrates automatic recovery, not uninterrupted success during the recovery interval.
+
+Release procedure:
+
+1. Require CI for the exact runtime source, source-verified bundles, atomic migration checks and a full restore drill. Apply additive migration 070 while existing code continues serving.
+2. Deploy admission recovery with the new writer disabled. Verify allowed and revoked-session continuity, then record that compatible reader as the rollback minimum.
+3. Enable the fenced writer and deadlines together. Exercise prolonged-response recovery in staging, then disable and re-enable the writer while preserving the recovery reader and rollback minimum.
+4. Promote only after staging acceptance. Verify active production bindings, real SQL terminal admission and independent R2 marker/receipt proof, followed by full monitored user journeys. Record exact versions and evidence in issue #1 before reporting completion.
+
+For an incident, inspect the active version and both latency flags. A deadline is an uncertain outcome: do not replay the original user action or clear its pending entry. Let fresh guarded requests recover once dependencies respond. Recognized active admissions can temporarily return 503; their expiry does not override an active SQL lock. Persistent integrity or restore quarantine still requires investigating its specific cause. Do not roll back below the admitted multi-step reader floor. Disabling the writer preserves recovery but temporarily restores legacy waiting behavior for new unfenced operations.
+
+No destructive production fault injection is authorized.
