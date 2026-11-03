@@ -14,8 +14,8 @@ const base=process.env.TEST_DATABASE_URL,suite=base?describe:describe.skip;
 const suffix=randomUUID().replaceAll('-',''),database='porchday_invitations_'+suffix,role='porchday_invite_auth_'+suffix;
 let admin:Pool,owner:Pool,env:Env,mailFails=true;
 const delivered:{to:string;subject:string;text:string}[]=[];
-async function person(){
- const id=randomUUID(),email=id+'@example.test',handle='i_'+id.replaceAll('-','').slice(0,16),session=randomUUID(),token=randomUUID();
+async function person(id=randomUUID()){
+ const email=id+'@example.test',handle='i_'+id.replaceAll('-','').slice(0,16),session=randomUUID(),token=randomUUID();
  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$2,$3,true)',[id,handle,email]);
  await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,handle]);
  await owner.query('INSERT INTO public.auth_session(id,"expiresAt",token,"userId") VALUES($1,now()+interval\'7 days\',$2,$3)',[session,token,id]);
@@ -76,6 +76,31 @@ suite('member platform invitations through real auth sessions and restricted SQL
   await owner.query('UPDATE public.auth_user SET "emailVerified"=false WHERE id=$1',[id]);
   await owner.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);
   expect((await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows).toHaveLength(0);
+ });
+ it.each([['full',true],['full',false],['future',true],['future',false]] as const)('persists %s history for only the inviter (inviter sorts first: %s)',async (choice,first)=>{
+  const senderId=(first?'00000000':'ffffffff')+randomUUID().slice(8),a=await person(senderId),email=randomUUID()+'@example.test',id=randomUUID();
+  expect((await call('/api/v1/platform-invitations',{email,kind:'family',history:choice},a.cookie)).status).toBe(202);
+  const invitation=await row(email),message=await decryptAccountEmail(env,invitation.encrypted_payload);
+  expect(invitation.connection_history).toBe(choice);
+  expect(message.text).toContain(choice==='full'?'earlier and future posts and photos':'only new posts and photos after you connect');
+  expect((await (await history(a.cookie,'?v=2')).json() as any).items[0]).toMatchObject({history:choice,kind:'family'});
+  // Retrying with another choice cannot silently change the already-sent invitation.
+  expect((await call('/api/v1/platform-invitations',{email,kind:'friend',history:choice==='full'?'future':'full'},a.cookie)).status).toBe(202);
+  expect((await row(email)).connection_history).toBe(choice);
+  expect((await (await history(a.cookie,'?v=2')).json() as any).items[0]).toMatchObject({history:choice,kind:'family'});
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2',[id,invitation.token_hash]);
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$1,$2,false)',[id,email]);
+  await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,'i_'+id.replaceAll('-','').slice(0,16)]);
+  const auth=new Pool({connectionString:env.HYPERDRIVE_AUTH.connectionString});
+  try{await auth.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);}finally{await auth.end();}
+  const connection=(await owner.query('SELECT * FROM app.connections WHERE member_a=$1 AND member_b=$2',[first?a.id:id,first?id:a.id])).rows[0];
+  expect(connection).toMatchObject({kind_a:'family',kind_b:'family',history_a:first?choice:'full',history_b:first?'full':choice});
+ });
+ it('rejects invalid history without sending or recording an invitation',async()=>{
+  const a=await person(),email=randomUUID()+'@example.test';
+  expect((await call('/api/v1/platform-invitations',{email,kind:'friend',history:'all'},a.cookie)).status).toBe(400);
+  expect(await row(email)).toBeUndefined();
+  expect((await (await history(a.cookie)).json() as any).items).toEqual([]);
  });
  it('revokes only the sender receipt, invalidates claims and queued mail, and supports old list clients',async()=>{
   const a=await person(),b=await person(),email=randomUUID()+'@example.test';
@@ -216,7 +241,7 @@ suite('member platform invitations through real auth sessions and restricted SQL
   const response=await history(a.cookie),body=await response.json() as any;
   expect(response.status).toBe(200);expect(response.headers.get('cache-control')).toContain('no-store');
   expect(body.items).toHaveLength(2);expect(body.items.map((row:any)=>row.status)).toEqual(['pending','pending']);
-  for(const item of body.items)expect(Object.keys(item).sort()).toEqual(['email','expires_at','id','kind','requested_at','status']);
+  for(const item of body.items)expect(Object.keys(item).sort()).toEqual(['email','expires_at','history','id','kind','requested_at','status']);
   const other=await(await history(b.cookie)).json() as any;expect(other.items).toHaveLength(1);expect(other.items[0].email).toBe(email);expect(other.items[0].status).toBe('pending');
   const stored=(await owner.query('SELECT * FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows;
   expect(JSON.stringify(stored)).not.toContain(email);expect(JSON.stringify(stored)).not.toContain(existing.email);

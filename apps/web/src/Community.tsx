@@ -1,3 +1,5 @@
+import { HistoryChoice } from "./HistoryChoice";
+export { HistoryChoice } from "./HistoryChoice";
 import { GroupInviteForm } from "./GroupInviteForm";
 import { invitationHandle, notificationPath } from "./invitation-notification";
 import { MemberAvatar } from "./MemberAvatar";
@@ -401,15 +403,6 @@ export function Connections() {
       )}
     </>
   );
-}
-export function HistoryChoice({ value, onChange, disabled }: { value: "full" | "future"; onChange: (value: "full" | "future") => void; disabled?: boolean }) {
-  return <label className="field history-choice">
-    <span>Share your posts and photos</span>
-    <select aria-label="Share your posts and photos" value={value} disabled={disabled} onChange={event => onChange(event.target.value as "full" | "future")}>
-      <option value="full">Share full history (recommended)</option>
-      <option value="future">Only share new posts and photos</option>
-    </select>
-  </label>;
 }
 export function ConnectionKindChoice({ value, onChange, disabled }: { value: "friend" | "family"; onChange: (value: "friend" | "family") => void; disabled?: boolean }) {
   return <label className="field">
