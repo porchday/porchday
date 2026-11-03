@@ -2,7 +2,9 @@
 
 The owner’s current product priorities are broader connection circles, first-class photos, simpler navigation, working mentions and notifications, and native app distribution. This is the repository's authoritative order of work. GitHub Issues hold acceptance criteria, implementation status and evidence; this file explains what comes next and why. A merged change to this file changes the default order. It does not authorize deployment, broaden admission or override an issue's approval requirements.
 
-Last reviewed: **November 2, 2026**. The original November 1 inventory covered 40 open product-backlog issues; the release status below supersedes that snapshot. The owner’s November 1 priority list supersedes the earlier reliability-first planning order; active incidents and release safeguards still take precedence. Priority labels below reflect GitHub labels; #15 has no priority label yet. Status summaries are a dated snapshot, so read the linked issue's recent evidence before starting.
+Last reviewed: **November 3, 2026**. The original November 1 inventory covered 40 open product-backlog issues; the release status below supersedes that snapshot. The owner’s November 1 priority list supersedes the earlier reliability-first planning order; active incidents and release safeguards still take precedence. Priority labels below reflect GitHub labels; #15 has no priority label yet. Status summaries are a dated snapshot, so read the linked issue's recent evidence before starting.
+
+Owner follow-up November 3: #123 adds an album picker for any available past upload, including older post attachments, preserving existing audiences. #124 simplifies mobile headers and Share, moves notifications/logout to More, and labels both photo subtabs Photos. Implementation and release verification are in progress.
 
 ## How to choose the next task
 

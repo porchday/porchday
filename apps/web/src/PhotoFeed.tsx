@@ -11,17 +11,17 @@ import {EncryptedPhoto} from "./Social";
 import {PhotoCard,openPhoto,type PhotoRow} from "./PhotoCollection";
 import {matchesAuthor,type AuthorFilter} from "./feed-filters";
 import {localDay,monthCells,calendarDate} from "./photo-calendar";
-type Entry={attachment_date?:AttachmentDate|null;id:string;kind:"photo"|"attachment";day:string;author_id:string;author_handle?:string;photo:PhotoRow|null;post:SocialObject|null;media?:MediaPayload;photoProof?:PhotoProof;error?:string};
-function usePhotos(month?:string,enabled=true){
+export type Entry={attachment_date?:AttachmentDate|null;id:string;kind:"photo"|"attachment";day:string;author_id:string;author_handle?:string;photo:PhotoRow|null;post:SocialObject|null;media?:MediaPayload;photoProof?:PhotoProof;error?:string};
+export function usePhotos(month?:string,enabled=true,owned=false){
  const vault=useVault(),action=useAction(),generation=useRef(0),loading=useRef(false);
  const [entries,setEntries]=useState<Entry[]>([]),[next,setNext]=useState<string|null>(null),[loaded,setLoaded]=useState(false);
  async function load(after?:string){
   if(after&&loading.current)return;
   const current=++generation.current;loading.current=true;
   await action.run(async()=>{
-   const result=await get("/photo-feed?"+new URLSearchParams({timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,...(month?{month}:{}),...(after?{after}:{})}));
+   const result=await get("/photo-feed?"+new URLSearchParams({timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,...(month?{month}:{}),...(owned?{owner:"me"}:{}),...(after?{after}:{})}));
    const posts=new Map<string,ReturnType<typeof vault.open>>();
-   const decoded=await Promise.all(items<Entry>(result).map(async entry=>{
+   const decoded=await Promise.all(items<Entry>(result).filter(entry=>!owned||entry.author_id===vault.member.id).map(async entry=>{
     try{
      let media:MediaPayload|undefined,photoProof:PhotoProof|undefined;
      if(entry.photo){let last:unknown=Error("No encrypted photo is available.");for(const grant of entry.photo.grants){try{const content=await openPhoto(vault,entry.photo,grant);media=content.media![0];photoProof=content.photoProof as PhotoProof;break;}catch(error){last=error;}}if(!media)throw last;}
@@ -35,7 +35,7 @@ function usePhotos(month?:string,enabled=true){
   });
   if(current===generation.current)loading.current=false;
  }
- useEffect(()=>{if(!enabled)return;setLoaded(false);setEntries([]);setNext(null);void load();const refresh=()=>void load();window.addEventListener("porchday:posts-shared",refresh);return()=>{generation.current++;loading.current=false;window.removeEventListener("porchday:posts-shared",refresh);};},[month,vault.member.id,enabled]);
+ useEffect(()=>{if(!enabled)return;setLoaded(false);setEntries([]);setNext(null);void load();const refresh=()=>void load();window.addEventListener("porchday:posts-shared",refresh);return()=>{generation.current++;loading.current=false;window.removeEventListener("porchday:posts-shared",refresh);};},[month,vault.member.id,enabled,owned]);
  return {entries,next,loaded,busy:action.busy,error:action.error,load};
 }
 function EntryCard({entry,refresh}:{entry:Entry;refresh:()=>void}){

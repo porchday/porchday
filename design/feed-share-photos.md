@@ -18,7 +18,7 @@ Feed displays chronological posts without a composer. Its controls are:
 
 | Control | Choices and behavior |
 | --- | --- |
-| Content | **Posts / Photos Only** tabs, visually mirroring Share’s top tabs. Photos filters readable content to photos; it does not change permissions. Replace the earlier content dropdown. |
+| Content | **Posts / Photos** tabs, visually mirroring Share’s top tabs. Photos filters readable content to photos; it does not change permissions. Replace the earlier content dropdown. |
 | View | **Infinite scroll / Calendar**. Infinite scroll replaces the earlier Feed button label; the main navigation destination remains Feed. |
 | Author filter | “Show posts by” with independently selectable categories. |
 
@@ -32,7 +32,7 @@ Calendar months progress with **older months above and newer months below**. Loa
 
 ## Share
 
-Share has two top tabs: **Post / Photos Only**. The bottom navigation tab remains Share; the separate collection destination is Albums.
+Share has two top tabs: **Post / Photos**. The bottom navigation tab remains Share; the separate collection destination is Albums.
 
 ### Post
 
@@ -40,9 +40,9 @@ Show the author's identity, a substantial text field and selected attachment thu
 
 Keep the audience visible near the final Share post action. Expiration can sit under More options. Do not offer a custom post date.
 
-Include the secondary action **“Skip the post and add photos directly”**. It switches to Photos Only and carries selected photos into that workflow without creating a placeholder post. Preserve the text draft rather than silently discarding it. Implementation must define draft ownership and attachment handling so switching back does not duplicate uploads or publish anything.
+Include the secondary action **“Skip the post and add photos directly”**. It switches to Photos and carries selected photos into that workflow without creating a placeholder post. Preserve the text draft rather than silently discarding it. Implementation must define draft ownership and attachment handling so switching back does not duplicate uploads or publish anything.
 
-### Photos Only
+### Photos
 
 Remove the earlier “Little moments, kept.” heading. Explain briefly that this flow adds photos without creating a post. Let people choose photos, then review a grid. Selecting a thumbnail exposes the photo date, caption and people tags. Dates are editable at upload and afterward. Use the same direct-photo workflow whether reached through the tab, the post shortcut or an album.
 
@@ -65,7 +65,7 @@ Only me is last. Friends appears before Family. The mockup starts with Friends &
 
 The third navigation destination is **Albums**, focused entirely on social photo albums. Remove the former Grid / Calendar / Albums view switch from this destination. Show album covers, names, photo counts, membership/role information and Create album. Opening an album shows its photos and the relevant contribution and administration controls.
 
-Individual photo browsing lives in **Feed → Photos Only**, using the same Infinite scroll / Calendar controls and default Me, Friends & Family author selection as Feed → Posts. Feed's Posts / Photos Only tabs visually mirror Share's Post / Photos Only tabs; use Photos Only consistently for browsing and composing.
+Individual photo browsing lives in **Feed → Photos**, using the same Infinite scroll / Calendar controls and default Me, Friends & Family author selection as Feed → Posts. Feed's Posts / Photos tabs visually mirror Share's Post / Photos tabs; use Photos consistently for browsing and composing.
 
 Photo calendar placement follows the editable photo date. Posts retain server-created chronology. Both calendar experiences preserve older months above and newer months below. A photo has stable identity independent of attachments and album memberships, so date edits and membership in multiple albums do not duplicate media.
 
@@ -83,7 +83,7 @@ Albums are collaborative from the start. An album-admin can add people and assig
 
 The creator initially becomes an album-admin. The editing boundary is that contributors edit their own photos; album-admins may remove another person's photo from the album without deleting its original object. Ownership and deletion boundaries are specified below.
 
-An album shows an Add photos button for Add and Album-admin members. It opens **Share → Photos Only** with the destination album preselected. The Share screen identifies the album and inherited audience before confirmation; after success, return to the album. Read-only members do not receive a working contribution action. Authorization must be enforced by the service as well as the UI.
+An album shows an Add photos button for Add and Album-admin members. It opens **Share → Photos** with the destination album preselected. The Share screen identifies the album and inherited audience before confirmation; after success, return to the album. Read-only members do not receive a working contribution action. Authorization must be enforced by the service as well as the UI.
 
 People & permissions shows the member list and role selector for each person. Only authorized album-admins can change it. Non-admin contributors still see enough audience information to make an informed sharing decision.
 
@@ -109,7 +109,7 @@ These circles include qualifying direct connections and deduplicate overlapping 
 
 Photo dates are date-only calendar metadata. Posts keep their original chronology. Only photo owners can add their photos to another album; admins may redistribute existing album photos to current members while preserving owner signatures. The owner transfers ownership before leaving; album deletion removes only its grants. New album members receive history through an unlocked authorized admin, with explicit retry for unavailable keys or interrupted work.
 
-Post / Photos Only switching preserves the mounted composer's text and selected media. This is not persistent draft autosave across navigation or devices. Imports restore owned photos and albums privately, preserving dates, expiry and source associations without reconstructing sharing consent. Broader album search, custom cover/reordering, album comments/reactions, cross-device filter preferences and persistent draft storage are not part of this release.
+Post / Photos switching preserves the mounted composer's text and selected media. This is not persistent draft autosave across navigation or devices. Imports restore owned photos and albums privately, preserving dates, expiry and source associations without reconstructing sharing consent. Broader album search, custom cover/reordering, album comments/reactions, cross-device filter preferences and persistent draft storage are not part of this release.
 
 Native clients guard unsupported album/photo archives and direct people to web data tools. Native album screens, native distribution and physical-device acceptance remain separate workstreams (#49/#114/#108).
 
@@ -122,7 +122,7 @@ Acceptance should cover:
 - Correct navigation order, labels, icon proportions, keyboard access, theme contrast and small-screen layouts.
 - Author defaults and column ordering on both Feed content tabs; category changes narrow only authorized results.
 - Infinite scroll and calendar transitions, chronological posts and stable scroll anchors when loading older months.
-- Post / Photos Only switching, intact drafts, direct uploads without placeholder posts, photo date edits and all entry points.
+- Post / Photos switching, intact drafts, direct uploads without placeholder posts, photo date edits and all entry points.
 - Album creation, each member role, permission changes, unauthorized direct requests and the preselected Share destination.
 - Grant unions across existing direct access and multiple albums; removing one grant preserves others, while removing the final eligible path denies new reads.
 - Concurrent membership changes, lost responses, retries, expiry, blocks, account deletion and cleanup without orphaned accessible media.
@@ -139,9 +139,9 @@ Acceptance should cover:
 | Typed mentions and notifications | [#125](https://github.com/porchday/porchday/issues/125), [#7](https://github.com/porchday/porchday/issues/7) |
 | Existing history-sharing consent | [#22](https://github.com/porchday/porchday/issues/22) |
 
-This proposal supersedes earlier mockup labels and defaults where they differ: Infinite scroll replaces the local Feed view button, Photos Only replaces Share's Photos subtab, Me joins Friends and Family in default browsing filters, and albums are collaborative rather than personal-only collections. Earlier public-homepage, invitation, deployment and standalone development-tool discussions are outside this design.
+This proposal supersedes earlier mockup labels and defaults where they differ: Infinite scroll replaces the local Feed view button, Photos replaces Share's Photos subtab, Me joins Friends and Family in default browsing filters, and albums are collaborative rather than personal-only collections. Earlier public-homepage, invitation, deployment and standalone development-tool discussions are outside this design.
 
-November 2 refinement: Albums replaces the Photos navigation destination and has no general photo browser. Feed owns Posts / Photos Only browsing through top tabs instead of a dropdown. This supersedes the earlier Grid / Calendar / Albums proposal.
+November 2 refinement: Albums replaces the Photos navigation destination and has no general photo browser. Feed owns Posts / Photos browsing through top tabs instead of a dropdown. This supersedes the earlier Grid / Calendar / Albums proposal.
 
 ## Implementation history recorded November 2
 
@@ -167,7 +167,7 @@ The encrypted photo API now supports publication without posts, month/date pagin
 
 ### Share and album photo UI progress
 
-Share now has Post / Photos Only modes in one composer, retaining the post text and selected attachments when switching. Photos Only assigns a date, caption and tags to each independent photo, optionally adds an album grant, and confirms the combined audience. An album entry defaults the direct audience to Only me. The original direct grant remains independent of the album. Album pages display photos and provide owner date/caption/tag editing, owner deletion, and authorized removal from the album. A post draft prevents automatic return to an album so its text is not discarded.
+Share now has Post / Photos modes in one composer, retaining the post text and selected attachments when switching. Photos assigns a date, caption and tags to each independent photo, optionally adds an album grant, and confirms the combined audience. An album entry defaults the direct audience to Only me. The original direct grant remains independent of the album. Album pages display photos and provide owner date/caption/tag editing, owner deletion, and authorized removal from the album. A post draft prevents automatic return to an album so its text is not discarded.
 
 Draft photo IDs stay stable during retries. Publication checks an existing ID before uploading, reconciles an ambiguous publication response, and refuses to treat a different audience/caption/date as the requested write. A batch removes only confirmed photos from the selection and reports partial success. Controls are disabled during saves. These are implementation and focused unit-test results; interactive browser/device acceptance remains required. Unified Feed browsing, legacy attached-photo integration, and date controls for photos being attached to a post are still outstanding.
 
@@ -238,3 +238,11 @@ New direct connections default to sharing all past and future content, with an e
 Community and Extended family are functions of the current connection graph, not separately created connections. Per-friend history preferences do not change their membership or restrict the history of content explicitly shared to those circle audiences. Current eligible circle members receive earlier circle content through author-device encryption catch-up. Blocks, expiration, deletion, mutual-family requirements and current graph eligibility still apply. The service cannot re-encrypt content without an unlocked authorized device, so delivery can be pending while its author is offline. Album history remains governed by album membership.
 
 This supersedes the earlier blanket “new paths never receive older content” assumption. Post and standalone-photo catch-up now use this policy. Signed/encrypted API tests verify both circle audiences across future-only edges, direct full-history defaults, explicit future-only exclusions, and unauthorized refresh denial. The unlocked web client shares earlier standalone photos with progress and explicit retry after an unconfirmed failure. Final hosted acceptance and production promotion passed; see the release evidence above.
+
+### November 3 mobile and existing-photo refinement
+
+Mobile outer tabs omit repeated page titles, retain accessible headings, and use a compact corn wordmark header. Notifications and Log out live under More. Detail pages retain their meaningful titles. Feed and Share both label their photo subtab Photos.
+
+In Post composition, place a divider above Add Photos to this Post, followed immediately by small parenthesized text: (Skip the post and add photos directly.). Only add photos directly is a link; it switches modes while preserving the draft.
+
+Writable albums offer Upload new photos (Share with the album selected) and Choose existing photos. The latter is a paginated multi-select browser of the member’s own uploads, including older post attachments. Already-added photos are disabled. Partial saves retain remaining selections for retry. Adding album access preserves existing photo and source-post audiences, expiry, and authorization. Read-only members cannot contribute.

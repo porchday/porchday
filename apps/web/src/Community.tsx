@@ -111,7 +111,7 @@ export function Connections() {
   return (
     <>
       <div className="page-heading">
-        <h1>Connections</h1>
+        <h1 className="mobile-tab-title">Connections</h1>
         <p>
           Up to 300 mutual connections, including family.
         </p>

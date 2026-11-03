@@ -257,7 +257,7 @@ export function Composer({
   groupId?: string;
 }) {
   const vault = useVault();
-  const [mode,setMode]=useState<"post"|"photos">(initialAlbum?"photos":"post");
+  const [mode,setMode]=useState<"post"|"photos">(initialAlbum||(shareTabs&&new URLSearchParams(location.search).get("mode")==="photos")?"photos":"post");
   const [album,setAlbum]=useState(initialAlbum||"");
   const [albums,setAlbums]=useState<{id:string;name:string;role:string}[]>([]);
   const [albumsLoaded,setAlbumsLoaded]=useState(false);
@@ -408,7 +408,7 @@ export function Composer({
       onSubmit={submit}
     >
       <fieldset disabled={action.busy} className="composer-fields">
-      {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos Only</button></div>}
+      {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos</button></div>}
       {mode==="post"&&<>
       <div className="composer-start">
         <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
@@ -429,7 +429,7 @@ export function Composer({
       {<label>Posting on behalf of <select aria-label="Posting on behalf of" onFocus={directory.ensure} value={onBehalf} onChange={e=>{setOnBehalf(e.target.value);const child=directory.people.find(p=>p.kind==="child"&&p.id===e.target.value);if(child&&!tags.some(t=>t.id===child.id))setTags([...tags,child]);}}><option value="">Myself</option>{directory.children.filter(c=>c.can_post).map(c=><option key={c.id} value={c.id}>{c.name} · posted by @{vault.member.handle}</option>)}</select></label>}
       {onBehalf && <p className="muted">The child will be tagged automatically. You remain the author.</p>}
       </>}
-      {mode==="post"?<><h2 className="composer-photo-heading">Add Photos to this Post</h2>{shareTabs&&<Button variant="quiet" disabled={action.busy} onClick={()=>setMode("photos")}>Skip the post and add photos directly</Button>}</>:<>
+      {mode==="post"?<><hr className="composer-photo-divider"/><h2 className="composer-photo-heading">Add Photos to this Post</h2>{shareTabs&&<p className="composer-photo-shortcut">(Skip the post and <a href="/share?mode=photos" aria-disabled={action.busy} onClick={event=>{event.preventDefault();if(!action.busy)setMode("photos");}}>add photos directly</a>.)</p>}</>:<>
         <h2 className="composer-photo-heading">Add photos</h2>
         <p>Each photo has its own date, caption and audience. No post is created.</p>
         <label>Album<select value={album} disabled={action.busy||!albumsLoaded} onChange={e=>setAlbum(e.target.value)}><option value="">No album</option>{initialAlbum&&!albums.some(a=>a.id===initialAlbum)&&<option value={initialAlbum}>Selected album (checking access…)</option>}{albums.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
@@ -474,7 +474,7 @@ export function Composer({
       {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} photo{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos are still selected.":""}</p>}
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
-      <div className="composer-controls">
+      <div className={"composer-controls"+(mode==="post"?" composer-post-controls":"")}>
         <div className="composer-tools">
           <input
             ref={input}
