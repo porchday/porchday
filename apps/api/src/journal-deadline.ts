@@ -22,12 +22,10 @@ export function journalDeadline(options: {
       throw new JournalDeadlineError();
     }
   };
-  return {
-    assertOpen,
-    async run<T>(work: (scope: JournalDeadlineScope) => Promise<T>): Promise<T> {
+  async function run<T>(work: (scope: JournalDeadlineScope) => Promise<T>,maximumMs:number): Promise<T> {
       assertOpen();
       deadline ??= now() + totalMs;
-      const wait = Math.min(attemptMs, deadline - now());
+      const wait = Math.min(maximumMs, deadline - now());
       const attemptDeadline = now() + wait;
       const assertAttempt = () => {
         assertOpen();
@@ -52,6 +50,9 @@ export function journalDeadline(options: {
       } finally {
         if (timer !== undefined) clearTimeout(timer);
       }
-    },
+  }
+  return {assertOpen,
+    run:<T>(work:(scope:JournalDeadlineScope)=>Promise<T>)=>run(work,attemptMs),
+    runLifecycle:<T>(work:(scope:JournalDeadlineScope)=>Promise<T>)=>run(work,totalMs),
   };
 }

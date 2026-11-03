@@ -1,3 +1,5 @@
+import {withJournalRequestDeadline} from './journal-request-deadline';
+import {withPrivacyOperation} from './privacy-operation-context';
 import {ConfirmedTransactionRollback} from './confirmed-rollback';
 import {logoutJournalTiming,measureJournalPhase,type JournalTiming} from './journal-timing';
 import {phaseTiming, measureJournalRead, type RequestTiming} from './request-timing';
@@ -31,8 +33,9 @@ export {pointer as journalPointerSchema,batchSchema as journalBatchSchema,intent
 export interface JournalDatabase {
   status(): Promise<{generation: string; sequence: string; quarantined: boolean}>;
   page(after: string): Promise<JournalEvent[]>;
-  prepareAuth?(scope:AuthPrivacyCommitScope):Promise<void>;
-  recoverAuth?(scope:AuthPrivacyCommitScope):Promise<{recognized:boolean;sequence:string|null}>;
+  seal?(scope:AuthPrivacyCommitScope):Promise<void>;
+  prepareOperation?(scope:AuthPrivacyCommitScope):Promise<void>;
+  recoverOperation?(scope:AuthPrivacyCommitScope):Promise<{recognized:boolean;sequence:string|null}>;
 }
 const CONTROL = 'control.json';
 export class JournalError extends Error {
@@ -182,7 +185,7 @@ async function reconcileStalePrivacyReceipts(store:JournalStore,db:JournalDataba
       }
     }
     let admissionPending=false;
-    if(recoverAuthCommits&&db.recoverAuth&&completed.size<stale.length){
+    if(recoverAuthCommits&&db.recoverOperation&&completed.size<stale.length){
       const {privacyCommitScopeSchema}=await import('./privacy-commit-proof');
       let fenced=false;
       for(const intent of stale.filter(p=>!completed.has(p.id))){
@@ -192,7 +195,7 @@ async function reconcileStalePrivacyReceipts(store:JournalStore,db:JournalDataba
         const raw=await proofText(object);
         try{scope=privacyCommitScopeSchema.parse(JSON.parse(raw));}catch{return stop('INVALID_JOURNAL_COMMIT_PROOF');}
         if(scope.id!==intent.id||scope.started_at!==intent.started_at||scope.generation!==remote.value.generation)stop('INVALID_JOURNAL_COMMIT_PROOF');
-        const result=await db.recoverAuth({operationId:intent.id,scopeSha256:await sha256(raw),generation:scope.generation,admission:true});
+        const result=await db.recoverOperation({operationId:intent.id,scopeSha256:await sha256(raw),generation:scope.generation,admission:true});
         if(result.recognized){admissionPending=true;if(result.sequence!==null)fenced=true;}
       }
       if(fenced){
@@ -265,7 +268,7 @@ async function registerPrivacyIntent(store:JournalStore,db:JournalDatabase,inten
   }
   return stop('JOURNAL_BUSY');
 }
-export type AuthPrivacyCommitScope={operationId:string;scopeSha256:string;generation:string;admission?:true};
+export type AuthPrivacyCommitScope={operationId:string;scopeSha256:string;generation:string;admission?:true;transactionKind?:'multi'};
 /** Publish opt-in before SQL starts. Generic/multi-transaction routes never call
  * this through their middleware. The ordinary v1 intent/receipt stay compatible.
  */
@@ -281,15 +284,15 @@ export async function publishAuthPrivacyCommitScope(store:JournalStore,db:Journa
 }
 /** Scope and SQL preparation precede registration, so even a lost registration
  * response leaves enough independent identity to fence abandoned auth work. */
-export async function prepareAuthPrivacyIntent(store:JournalStore,db:JournalDatabase,recoverAuthCommits=true){
-  if(!db.prepareAuth)stop('PRIVACY_ADMISSION_REQUIRED');
+export async function prepareFencedPrivacyIntent(store:JournalStore,db:JournalDatabase,recoverAuthCommits=true,kind:'auth'|'multi'='auth'){
+  if(!db.prepareOperation)stop('PRIVACY_ADMISSION_REQUIRED');
   const remote=await assertJournalReadable(store,db,undefined,recoverAuthCommits);
   const intent={id:crypto.randomUUID(),started_at:new Date().toISOString()},original=JSON.stringify({v:1,...intent});
   await immutable(store,`intents/${intent.id}.json`,{v:1,...intent});
-  const record={v:1,...intent,generation:remote.value.generation,transaction:'single-auth-transaction',intent_sha256:await sha256(original),baseline:{sequence:remote.value.sequence,head:remote.value.head}};
+  const record={v:1,...intent,generation:remote.value.generation,transaction:kind==='auth'?'single-auth-transaction':'fenced-multi-transaction',intent_sha256:await sha256(original),baseline:{sequence:remote.value.sequence,head:remote.value.head}};
   await immutable(store,`commit-scopes/v1/${intent.id}.json`,record);
-  const scope:AuthPrivacyCommitScope={operationId:intent.id,scopeSha256:await sha256(JSON.stringify(record)),generation:remote.value.generation,admission:true};
-  await db.prepareAuth!(scope);
+  const scope:AuthPrivacyCommitScope={operationId:intent.id,scopeSha256:await sha256(JSON.stringify(record)),generation:remote.value.generation,admission:true,...(kind==='multi'?{transactionKind:'multi' as const}:{})};
+  await db.prepareOperation!(scope);
   await registerPrivacyIntent(store,db,intent,recoverAuthCommits);
   return{intent,scope};
 }
@@ -346,7 +349,7 @@ export async function verifyJournalChain(store: JournalStore): Promise<{control:
   return {control,batches:batches.reverse()};
 }
 
-type RuntimeEnv=Pick<Env,'RECOVERY_JOURNAL'|'HYPERDRIVE_JOBS'|'ENVIRONMENT'|'METRICS'|'PRIVACY_COMMIT_WRITER_V1'|'PRIVACY_COMMIT_RECOVERY_V1'|'JOURNAL_LATENCY_RECOVERY_V1'>;
+type RuntimeEnv=Pick<Env,'RECOVERY_JOURNAL'|'HYPERDRIVE_JOBS'|'ENVIRONMENT'|'METRICS'|'PRIVACY_COMMIT_WRITER_V1'|'PRIVACY_COMMIT_RECOVERY_V1'|'JOURNAL_LATENCY_RECOVERY_V1'|'JOURNAL_LATENCY_WRITER_V1'>;
 function runtime(env:RuntimeEnv,timing?:JournalTiming) {
   if(!env.RECOVERY_JOURNAL) {
     if(env.ENVIRONMENT==='development')return null;
@@ -358,8 +361,9 @@ function runtime(env:RuntimeEnv,timing?:JournalTiming) {
     async page(after){const[r]=await sql`select app.safety_page(${after}::bigint,200) as value`;return r.value;},
   };
   if(env.JOURNAL_LATENCY_RECOVERY_V1==='true'){
-    db.prepareAuth=async scope=>{await sql`select app.prepare_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid)`;};
-    db.recoverAuth=async scope=>{const [r]=await sql`select app.recover_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid) as value`;return z.object({recognized:z.boolean(),sequence:sequence.nullable()}).strict().parse(r.value);};
+    db.prepareOperation=async scope=>{await sql`select app.prepare_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid,${scope.transactionKind==='multi'?'multi':'auth'})`;};
+    db.seal=async scope=>{await sql`select app.seal_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid)`;};
+    db.recoverOperation=async scope=>{const [r]=await sql`select app.recover_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid) as value`;return z.object({recognized:z.boolean(),sequence:sequence.nullable()}).strict().parse(r.value);};
   }
   const io=resilientJournalIO(env.RECOVERY_JOURNAL as JournalStore,db,{deadlineEnabled:env.JOURNAL_LATENCY_RECOVERY_V1==='true',report:code=>event('error',{code},env)});
   const store:JournalStore={
@@ -379,7 +383,7 @@ export function isPrivacyMutation(method:string,path:string):boolean {
   if(path==='/api/v1/imports')return true; // An import may replace private profile content.
   return new RegExp(`^/api/staff/(?:moderation/reports/${uuid}/actions|recovery/cases/${uuid}/review)$`).test(path);
 }
-export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
+export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>withJournalRequestDeadline(c.env.JOURNAL_LATENCY_RECOVERY_V1==='true',async()=>{
   let resources:ReturnType<typeof runtime>=null;
   const timing=phaseTiming(c);
   const logoutTiming=logoutJournalTiming(c.env,c.req);
@@ -396,7 +400,7 @@ export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables
     return c.json({error:{code:'PRIVACY_CHECKPOINT_REQUIRED',message}},503);
   } finally {if(resources)await measureJournalPhase(logoutTiming,'read_guard_close',()=>measureFeedPhase(timing,'journal_close',()=>resources!.close()));}
   await next();
-});
+}));
 function knownRollback(error:unknown):boolean {
   const e=error as {code?:string;status?:number;name?:string};
   return error instanceof ConfirmedTransactionRollback || !!(e.status&&e.status>=400&&e.status<500)||e.name==='ZodError'
@@ -439,12 +443,16 @@ async function withHttpJournal<T>(context:HttpJournalContext,work:(scope?:AuthPr
     // supply one before any journal intent or application work can start.
     if(context.env.ENVIRONMENT!=='development')throw new JournalError('JOURNAL_EXECUTION_CONTEXT_REQUIRED');
   }
-  const operation=withJournal(context.env,work,timing??logoutJournalTiming(context.env,context.req),authTransaction);
-  if(keepAlive)keepAlive(operation.then(()=>undefined,()=>undefined));
-  return await operation;
+  return await withJournalRequestDeadline(context.env.JOURNAL_LATENCY_RECOVERY_V1==='true',()=>{
+    const operation=withJournal(context.env,work,timing??logoutJournalTiming(context.env,context.req),authTransaction);
+    // Keep observing the underlying lifecycle if the caller budget wins first.
+    // Process termination is still handled by the durable admission fence.
+    if(keepAlive)keepAlive(operation.then(()=>undefined,()=>undefined));
+    return operation;
+  });
 }
 export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>,timing?:JournalTiming):Promise<T> {
-  return withJournal(env,work,timing,false);
+  return withJournalRequestDeadline(env.JOURNAL_LATENCY_RECOVERY_V1==='true',()=>withJournal(env,work,timing,false));
 }
 async function withJournal<T>(env:RuntimeEnv,work:(scope?:AuthPrivacyCommitScope)=>Promise<T>,timing:JournalTiming|undefined,authTransaction:boolean):Promise<T>{
   const resources=runtime(env,timing);
@@ -455,16 +463,26 @@ async function withJournal<T>(env:RuntimeEnv,work:(scope?:AuthPrivacyCommitScope
   let failedPhase:JournalFailureCode='journal_begin_failed';
   try {
     if(commitWriter&&!resources.recoverAuthCommits)stop('PRIVACY_COMMIT_RECOVERY_REQUIRED');
-    if(authTransaction&&env.JOURNAL_LATENCY_RECOVERY_V1==='true'&&!commitWriter)stop('PRIVACY_COMMIT_WRITER_REQUIRED');
+    if(env.JOURNAL_LATENCY_RECOVERY_V1==='true'&&!resources.recoverAuthCommits)stop('PRIVACY_COMMIT_RECOVERY_REQUIRED');
+    if(env.JOURNAL_LATENCY_WRITER_V1==='true'&&env.JOURNAL_LATENCY_RECOVERY_V1!=='true')stop('JOURNAL_LATENCY_RECOVERY_REQUIRED');
+    if(authTransaction&&env.JOURNAL_LATENCY_WRITER_V1==='true'&&!commitWriter)stop('PRIVACY_COMMIT_WRITER_REQUIRED');
     await measureJournalPhase(timing,'guard',()=>assertJournalReadable(resources.store,resources.db,undefined,resources.recoverAuthCommits));
-    const prepared=commitWriter&&env.JOURNAL_LATENCY_RECOVERY_V1==='true'
-      ?await measureJournalPhase(timing,'registration',()=>prepareAuthPrivacyIntent(resources.store,resources.db,resources.recoverAuthCommits)):undefined;
+    const prepared=env.JOURNAL_LATENCY_WRITER_V1==='true'
+      ?await measureJournalPhase(timing,'registration',()=>prepareFencedPrivacyIntent(resources.store,resources.db,resources.recoverAuthCommits,authTransaction?'auth':'multi')):undefined;
     const intent=prepared?.intent??await measureJournalPhase(timing,'registration',()=>beginPrivacyIntent(resources.store,resources.db,resources.recoverAuthCommits));
     const scope=prepared?.scope??(commitWriter?await publishAuthPrivacyCommitScope(resources.store,resources.db,intent,resources.recoverAuthCommits):undefined);
     let value:T;
     failedPhase='journal_work_failed';
-    try {value=await measureJournalPhase(timing,'work',()=>scope?work(scope):work());}
-    catch(error){if(knownRollback(error)){failedPhase='journal_completion_failed';await completePrivacyIntent(resources.store,resources.db,intent,timing);failedPhase='journal_work_failed';}throw error;}
+    const execute=async()=>{
+      if(scope?.transactionKind==='multi'){
+        if(!resources.db.seal)stop('PRIVACY_ADMISSION_REQUIRED');
+        try{return await withPrivacyOperation(scope,()=>work());}
+        finally{await resources.db.seal!(scope);}
+      }
+      return scope?work(scope):work();
+    };
+    try {value=await measureJournalPhase(timing,'work',execute);}
+    catch(error){if(!prepared&&knownRollback(error)){failedPhase='journal_completion_failed';await completePrivacyIntent(resources.store,resources.db,intent,timing);failedPhase='journal_work_failed';}throw error;}
     failedPhase='journal_completion_failed';
     try {await completePrivacyIntent(resources.store,resources.db,intent,timing);}
     catch(error){if(error instanceof JournalError)throw error;throw new JournalError('PRIVACY_CHECKPOINT_REQUIRED');}

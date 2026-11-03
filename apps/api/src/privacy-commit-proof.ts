@@ -2,10 +2,11 @@ import {z} from 'zod';
 import {controlSchema,journalPointerSchema,journalBatchSchema,privacyIntentSchema,JournalError,sha256,type JournalControl,type JournalStore} from './privacy-journal';
 
 const sequence=z.string().regex(/^(0|[1-9][0-9]*)$/);
-/** Opt-in evidence for exactly one transaction, never a generic multi-step route. */
+/** Opt-in evidence for a single auth transaction or a multi-step operation whose
+ * database transactions share an admission fence before terminal checkpointing. */
 export const privacyCommitScopeSchema=z.object({
  v:z.literal(1),id:z.uuid(),started_at:z.string().datetime(),generation:z.uuid(),
- transaction:z.literal('single-auth-transaction'),intent_sha256:z.string().regex(/^[a-f0-9]{64}$/),
+ transaction:z.enum(['single-auth-transaction','fenced-multi-transaction']),intent_sha256:z.string().regex(/^[a-f0-9]{64}$/),
  baseline:z.object({sequence,head:journalPointerSchema.nullable()}).strict(),
 }).strict();
 export const privacyCommitMarkerSchema=z.object({
