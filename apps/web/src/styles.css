@@ -4855,3 +4855,7 @@ button.trace-row:focus-visible {
  .app-main .mobile-tab-heading { margin: 0; padding: 0; border: 0; }
  .page-heading:has(> .mobile-tab-title):not(.album-heading) { margin: 0; padding: 0; border: 0; }
 }
+.existing-photo-choice .calendar-thumbnail { height: 140px; width: 100%; overflow: hidden; }
+.existing-photo-choice .calendar-thumbnail figure { margin: 0; height: 100%; }
+.existing-photo-choice .calendar-thumbnail img { height: 100%; object-fit: contain; }
+.existing-photo-choice label { margin-top: 8px; }
