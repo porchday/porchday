@@ -1,3 +1,4 @@
+import {privacySqlTransaction} from './privacy-operation-context';
 import postgres from 'postgres';
 import {authPool} from './auth';
 import type {Env} from './types';
@@ -18,7 +19,7 @@ export async function cleanupDeletedIdentities(env: Env):Promise<number>{
     await client.query('COMMIT');
    }catch{await client.query('ROLLBACK');throw new Error('IDENTITY_CLEANUP_RETRY');}
    finally{client.release();}
-   await jobs`UPDATE app.identity_deletion_outbox SET completed_at=now() WHERE member_id=${row.member_id}`;
+   await privacySqlTransaction(jobs,db=>db`UPDATE app.identity_deletion_outbox SET completed_at=now() WHERE member_id=${row.member_id}`);
    count++;
   }
   return count;

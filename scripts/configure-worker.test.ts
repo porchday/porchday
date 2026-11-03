@@ -174,6 +174,15 @@ test('journal rollout survives regeneration and cannot enable a writer without i
     const result=spawnSync('python3',[resolve('scripts/configure-worker.py'),name],{cwd:directory,encoding:'utf8'});expect(result.status,result.stderr).toBe(0);
     const rendered=JSON.parse(await readFile(output,'utf8'));expect(rendered.vars.PRIVACY_COMMIT_RECOVERY_V1).toBe('true');expect(rendered.vars.PRIVACY_COMMIT_WRITER_V1).toBe(String(writer));
    }
+   env.privacy_commit_writer_v1=true;env.journal_latency_recovery_v1=true;
+   for(const writer of [true,false]){
+    env.journal_latency_writer_v1=writer;await writeFile(manifest,JSON.stringify(resources));
+    const result=spawnSync('python3',[resolve('scripts/configure-worker.py'),name],{cwd:directory,encoding:'utf8'});expect(result.status,result.stderr).toBe(0);
+    const rendered=JSON.parse(await readFile(output,'utf8'));expect(rendered.vars.JOURNAL_LATENCY_RECOVERY_V1).toBe('true');expect(rendered.vars.JOURNAL_LATENCY_WRITER_V1).toBe(String(writer));
+   }
+   env.journal_latency_writer_v1=true;env.journal_latency_recovery_v1=false;await writeFile(manifest,JSON.stringify(resources));
+   const rejected=spawnSync('python3',[resolve('scripts/configure-worker.py'),name],{cwd:directory,encoding:'utf8'});expect(rejected.status).not.toBe(0);expect(rejected.stderr).toContain('latency writer requires');
+   env.journal_latency_writer_v1=false;env.journal_latency_recovery_v1=false;
    const before=await readFile(output,'utf8');env.privacy_commit_writer_v1=true;env.privacy_commit_recovery_v1=false;await writeFile(manifest,JSON.stringify(resources));
    const invalid=spawnSync('python3',[resolve('scripts/configure-worker.py'),name],{cwd:directory,encoding:'utf8'});expect(invalid.status).not.toBe(0);expect(invalid.stderr).toContain('writer requires the recovery reader');expect(await readFile(output,'utf8')).toBe(before);
    env.privacy_commit_recovery_v1=true;

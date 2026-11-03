@@ -1,3 +1,4 @@
+import {currentJournalDeadline} from './journal-request-deadline';
 import {journalDeadline,JournalDeadlineError} from './journal-deadline';
 import type {JournalDatabase,JournalStore} from './privacy-journal';
 
@@ -13,7 +14,7 @@ type Options={deadlineEnabled?:boolean;report:(code:Code)=>void;sleep?:(ms:numbe
  */
 export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options:Options){
  const sleep=options.sleep??(ms=>new Promise(resolve=>setTimeout(resolve,ms))),now=options.now??Date.now,random=options.random??Math.random;
- const deadline=options.deadlineEnabled===false?{run:<T>(work:(scope:{assertOpen:()=>void})=>Promise<T>)=>work({assertOpen:()=>{}})}:journalDeadline({attemptMs:5000,totalMs:30000});
+ const deadline=options.deadlineEnabled===false?{run:<T>(work:(scope:{assertOpen:()=>void})=>Promise<T>)=>work({assertOpen:()=>{}})}:currentJournalDeadline()??journalDeadline({attemptMs:5000,totalMs:30000});
  let retries=0,firstFailure:number|undefined;
  const report=(code:Code)=>{try{options.report(code);}catch{/* Telemetry cannot affect durability. */}};
  async function retry<T>(operation:()=>Promise<T>,classify:(error:unknown)=>Code|undefined):Promise<T>{
@@ -52,8 +53,9 @@ export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options
   db:{
    // Preparation/recovery can commit metadata. Bound waiting without replaying
    // an uncertain database mutation; later recovery uses its exact identity.
-   ...(db.prepareAuth?{prepareAuth:(scope:Parameters<NonNullable<JournalDatabase['prepareAuth']>>[0])=>deadline.run(()=>db.prepareAuth!(scope))}:{}),
-   ...(db.recoverAuth?{recoverAuth:(scope:Parameters<NonNullable<JournalDatabase['recoverAuth']>>[0])=>deadline.run(()=>db.recoverAuth!(scope))}:{}),
+   ...(db.seal?{seal:(scope:Parameters<NonNullable<JournalDatabase['seal']>>[0])=>deadline.run(()=>db.seal!(scope))}:{}),
+   ...(db.prepareOperation?{prepareOperation:(scope:Parameters<NonNullable<JournalDatabase['prepareOperation']>>[0])=>deadline.run(()=>db.prepareOperation!(scope))}:{}),
+   ...(db.recoverOperation?{recoverOperation:(scope:Parameters<NonNullable<JournalDatabase['recoverOperation']>>[0])=>deadline.run(()=>db.recoverOperation!(scope))}:{}),
    status:()=>retry(()=>deadline.run(()=>db.status()),databaseFailure),page:(after)=>retry(()=>deadline.run(()=>db.page(after)),databaseFailure)} satisfies JournalDatabase,
  };
 }
