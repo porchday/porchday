@@ -1,10 +1,11 @@
+import {signAttachmentDate} from "./attachment-photo-date";
 import {openPhoto} from "./photo-record";
 import {createPhotoProof,photoBytesHash,photoMetadata} from "@porchday/crypto/photos";
 import { bytesToBase64, canonicalJson, type Audience } from "@porchday/crypto";
 import { ApiError, get, post, request, type MediaPayload } from "./api";
 import type { PersonTag } from "./PeopleTags";
 import type { useVault } from "./vault";
-export type PhotoDraft={id:string;name:string;alt:string;blob:Blob;width:number;height:number;mime?:string;poster?:string;tags?:PersonTag[];photoDate?:string};
+export type PhotoDraft={id:string;name:string;alt:string;blob:Blob;width:number;height:number;mime?:string;poster?:string;tags?:PersonTag[];photoDate?:string;source?:{postId:string;revision:number}};
 export function localPhotoDate(date=new Date()) {
   return `${date.getFullYear().toString().padStart(4,"0")}-${(date.getMonth()+1).toString().padStart(2,"0")}-${date.getDate().toString().padStart(2,"0")}`;
 }
@@ -16,6 +17,7 @@ export async function publishPhoto(vault:ReturnType<typeof useVault>,photo:Photo
   async function existing(){
     try{
       const result=await get("/photos/"+photo.id);
+      if((result.photo.source_media_id||null)!==(photo.source?photo.id:null))throw Error("This photo identity belongs to a different source.");
       if(result.photo.owner_id!==vault.member.id)throw Error("This photo identity is already in use.");
       if(!result.photo.grants.some((g:any)=>g.album_id===null&&g.audience===audience)||Boolean(album)!==result.photo.grants.some((g:any)=>g.album_id===album&&album!==null))throw Error("This photo was already shared with a different audience. Open it in Feed → Photos to review its sharing.");
       const grant=result.photo.grants.find((g:any)=>g.album_id===album)||result.photo.grants[0];
@@ -40,7 +42,8 @@ export async function publishPhoto(vault:ReturnType<typeof useVault>,photo:Photo
     const envelope=await vault.seal({media:[media],photoProof},{id:crypto.randomUUID(),kind:"photo",parentId:photo.id,...destination,createdAt,expiresAt,photoDate});
     grants.push({envelope,media_id:media.id});
   }
-  try{await post("/photos",{id:photo.id,photo_date:photoDate,expires_at:expiresAt,grants});}
+  const source_date=photo.source?await signAttachmentDate(vault,photo.id,photo.source.postId,photoDate,photo.source.revision):undefined;
+  try{await post("/photos",{id:photo.id,photo_date:photoDate,expires_at:expiresAt,grants,...(photo.source?{source_media_id:photo.id,source_date}:{})});}
   catch(error){
     // A committed publication must not be repeated after a lost response.
     // If reconciliation itself is unavailable, retain the draft and its ID.

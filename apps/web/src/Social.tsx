@@ -823,7 +823,7 @@ export function PostCard({
   const own = row.author_id === vault.member.id;
   async function remove() {
     if (
-      !confirm("Delete this post and all its comments, reactions, and photos?")
+      !confirm("Delete this post and its comments, reactions, and attachments? Photos added to albums remain available separately. Use Delete photo in Feed → Photos to remove those everywhere.")
     )
       return;
     await action.run(async () => {

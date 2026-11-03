@@ -2,7 +2,7 @@ import {verifyPhotoProof,photoMetadata,type PhotoProof} from "@porchday/crypto/p
 import type { Content, EncryptedEnvelope, Device } from "./api";
 import type { useVault } from "./vault";
 export type PhotoGrant={author_key:Device;id:string;photo_id:string;album_id:string|null;audience:string;envelope:EncryptedEnvelope;media_id:string};
-export type PhotoRow={owner_key:Device;id:string;owner_id:string;photo_date:string;revision:number;created_at:string;expires_at:string|null;grants:PhotoGrant[]};
+export type PhotoRow={source_media_id?:string|null;source_post_id?:string|null;owner_key:Device;id:string;owner_id:string;photo_date:string;revision:number;created_at:string;expires_at:string|null;grants:PhotoGrant[]};
 export async function openPhoto(vault:ReturnType<typeof useVault>,photo:PhotoRow,grant:PhotoGrant){
   const context=grant.envelope.context;
   if(grant.photo_id!==photo.id||context.groupId!==grant.album_id||context.audience!==grant.audience||context.kind!=="photo"||context.id!==grant.id||context.parentId!==photo.id||context.photoDate!==photo.photo_date||context.revision!==photo.revision)throw Error("Photo identity or date did not match its signed metadata.");

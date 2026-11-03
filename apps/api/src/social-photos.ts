@@ -43,7 +43,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
   async function grants(db:Db,photo:string){return db`select * from app.photo_grants where photo_id=${photo} order by id`;}
   app.get("/media/:id/photo-date",async c=>c.json(await tx(c,async db=>{
     const media=id(c.req.param("id"));const [row]=await db`select id from app.media_assets where id=${media} and post_id is not null and state='attached'`;if(!row)fail("NOT_FOUND",404);
-    const [date]=await db`select *,photo_date::text as photo_date from app.attachment_photo_dates where media_id=${media}`;return {date:date||null};
+    const [date]=await db`select *,photo_date::text as photo_date from app.attachment_photo_dates where media_id=${media}`;const [photo]=await db`select id from app.photos where source_media_id=${media} and owner_id=${c.get("memberId")}`;return {date:date||null,photo_id:photo?.id||null};
   })));
   app.put("/media/:id/photo-date",async c=>{
     const media=id(c.req.param("id")),proof=await body(c,attachmentDateProof,40000);
@@ -63,7 +63,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
       union all
       select 'attachment'::text,m.id,coalesce(d.photo_date,(p.created_at at time zone ${timezone})::date),p.author_id,null::jsonb,to_jsonb(p),to_jsonb(d)
       from app.media_assets m join app.posts p on p.id=m.post_id left join app.attachment_photo_dates d on d.media_id=m.id
-      where p.group_id is null and m.state='attached' and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
+      where p.group_id is null and m.state='attached' and not exists(select 1 from app.photos adopted where adopted.source_media_id=m.id) and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
     ) select c.*,app.author_category(c.author_id) as author_category,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
     where not exists(select 1 from app.mutes where target=c.author_id)
       ${cursor?db`and(c.day,c.id,c.kind)<(${cursor.day}::date,${cursor.id}::uuid,${cursor.kind})`:db``}
@@ -90,13 +90,18 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
   })));
   app.get("/photos/:id",async c=>c.json(await tx(c,async db=>{const photo=await requirePhoto(db,id(c.req.param("id")));return {photo:{...photo,grants:await grants(db,photo.id)}};})));
   app.post("/photos",async c=>{
-    const b=await body(c,z.object({id:z.string().uuid(),photo_date:day,expires_at:z.string().datetime({offset:true}).nullable(),grants:z.array(grantSchema).min(1).max(20)}).strict(),12*1024*1024);
+    const b=await body(c,z.object({id:z.string().uuid(),photo_date:day,expires_at:z.string().datetime({offset:true}).nullable(),source_media_id:z.string().uuid().optional(),source_date:attachmentDateProof.optional(),grants:z.array(grantSchema).min(1).max(20)}).strict(),12*1024*1024);
     return c.json(await tx(c,async db=>{
       await writeAllowed(db);await db`select app.lock_epoch()`;
       if(b.grants.filter(g=>g.envelope.context.groupId===null).length!==1)fail("PHOTO_ORIGINAL_REQUIRED");
       for(const g of b.grants){context(g.envelope,{...b,revision:1});await checkEnvelope(db,c.get("memberId"),g.envelope,"photo");}
       await db`select app.create_photo(${b.id},${b.photo_date}::date,${b.expires_at}::timestamptz)`;
       for(const g of b.grants)await db`select app.add_photo_grant(${g.envelope.context.id},${b.id},${g.envelope.context.groupId},${db.json(g.envelope)},${g.media_id})`;
+      if(b.source_media_id){
+        if(!b.source_date||b.source_date.statement.mediaId!==b.source_media_id||b.source_date.statement.date!==b.photo_date)fail("ENVELOPE_CONTEXT");
+        await setAttachmentDate(db,c.get("memberId"),b.source_date!,fail);
+        await db`select app.link_photo_source(${b.id},${b.source_media_id})`;
+      }else if(b.source_date)fail("ENVELOPE_CONTEXT");
       return {id:b.id,revision:1};
     }),201);
   });
@@ -134,7 +139,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     }));
   });
   app.put("/photos/:id",async c=>{
-    const photoId=id(c.req.param("id")),b=await body(c,z.object({photo_date:day,expected_revision:z.number().int().positive(),envelopes:z.array(envelopeSchema).min(1).max(100)}).strict(),12*1024*1024);
+    const photoId=id(c.req.param("id")),b=await body(c,z.object({photo_date:day,expected_revision:z.number().int().positive(),source_date:attachmentDateProof.optional(),envelopes:z.array(envelopeSchema).min(1).max(100)}).strict(),12*1024*1024);
     return c.json(await tx(c,async db=>{
       await writeAllowed(db);await db`select app.lock_epoch()`;
       const photo=await requirePhoto(db,photoId);if(photo.owner_id!==c.get("memberId"))fail("FORBIDDEN",403);
@@ -147,6 +152,13 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
         await checkEnvelope(db,c.get("memberId"),envelope,"photo",{allowPast:true,photoGrantId:envelope.context.id});
       }
       await db`select app.edit_photo(${photoId},${b.photo_date}::date,${b.expected_revision},${db.json(b.envelopes)})`;
+      if(photo.source_media_id){
+        const [source]=await db`select id from app.media_assets where id=${photo.source_media_id}`;
+        if(source){
+          if(!b.source_date||b.source_date.statement.mediaId!==photo.source_media_id||b.source_date.statement.date!==b.photo_date)fail("ENVELOPE_CONTEXT");
+          await setAttachmentDate(db,c.get("memberId"),b.source_date!,fail);
+        }else if(b.source_date)fail("ENVELOPE_CONTEXT");
+      }else if(b.source_date)fail("ENVELOPE_CONTEXT");
       return {ok:true,revision:b.expected_revision+1};
     }));
   });

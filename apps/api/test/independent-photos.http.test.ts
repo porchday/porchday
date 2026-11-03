@@ -101,15 +101,15 @@ async function seal(
 
 type Person=Awaited<ReturnType<typeof person>>;
 async function connect(a:Person,b:Person){await db`insert into app.connections(member_a,member_b,kind) values(${[a.id,b.id].sort()[0]},${[a.id,b.id].sort()[1]},'friend')`;}
-async function uploadGrant(owner:Person,photo:string,audience:ContentContext["audience"]="only_me",album:string|null=null,photoDate="2026-10-31") {
+async function uploadGrant(owner:Person,photo:string,audience:ContentContext["audience"]="only_me",album:string|null=null,photoDate="2026-10-31",expiresAt:string|null=null) {
   const media=randomUUID(),grant=randomUUID();
-  const encryptedMedia=await seal(owner,{bytes:"aGVsbG8=",mime:"image/jpeg",id:media},1,{id:media,kind:"media",parentId:photo,audience,groupId:album});
+  const encryptedMedia=await seal(owner,{bytes:"aGVsbG8=",mime:"image/jpeg",id:media},1,{id:media,kind:"media",parentId:photo,audience,groupId:album,expiresAt});
   const encoded=new TextEncoder().encode(JSON.stringify(encryptedMedia));
   const reserve=await call(owner.id,"/media","POST",{id:media,envelope:encryptedMedia,byte_size:encoded.length});
   expect(reserve.status,JSON.stringify(reserve.data)).toBe(201);
   const uploaded=await app.request(`https://local.test/media/${media}/bytes`,{method:"PUT",headers:{"x-member":owner.id,"content-type":"application/octet-stream"},body:encoded},env);
   expect(uploaded.status,await uploaded.text()).toBe(200);
-  const envelope=await seal(owner,{media:[{id:media,mime:"image/jpeg",alt:"Original caption"}]},1,{id:grant,kind:"photo",parentId:photo,audience,groupId:album,photoDate});
+  const envelope=await seal(owner,{media:[{id:media,mime:"image/jpeg",alt:"Original caption"}]},1,{id:grant,kind:"photo",parentId:photo,audience,groupId:album,photoDate,expiresAt});
   return {envelope,media_id:media,encryptedMedia};
 }
 async function publish(owner:Person,audience:ContentContext["audience"]="only_me") {
@@ -289,6 +289,75 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(reader.id,"/photo-feed")).data.items).toHaveLength(0);
     expect((await call(reader.id,"/photo-feed?timezone=not-a-zone")).status).toBe(400);
     expect((await call(reader.id,"/photo-feed?after=invalid")).status).toBe(400);
+  });
+  it("adopts a post attachment into an album while preserving original readers, one calendar identity and atomic dates",async()=>{
+    const owner=await person(),reader=await person(),albumReader=await person(),outsider=await person();await connect(owner,reader);
+    const postId=randomUUID(),source=await uploadGrant(owner,postId,"connections");
+    const original=await seal(owner,{text:"Original post",media:[{id:source.media_id,mime:"image/jpeg"}]},1,{id:postId,kind:"post",audience:"connections"});
+    expect((await call(owner.id,"/posts","POST",{envelope:original,media_ids:[source.media_id]})).status).toBe(201);
+    const postBefore=(await call(owner.id,"/posts/"+postId)).data.post;
+    const album=randomUUID(),albumEnvelope=await seal(owner,{name:"Album"},1,{id:album,kind:"album"});
+    expect((await call(owner.id,"/albums","POST",{envelope:albumEnvelope})).status).toBe(201);
+    const shared=await seal(owner,{name:"Album"},2,{...albumEnvelope.context,audience:"album",groupId:album,revision:2},{memberId:albumReader.id,role:"read"});
+    expect((await call(owner.id,`/albums/${album}/members/${albumReader.id}`,"PUT",{role:"read",expected_revision:1,envelope:shared})).status).toBe(200);
+    const direct=await uploadGrant(owner,source.media_id),copy=await uploadGrant(owner,source.media_id,"album",album);
+    const sourceStatement={v:1,purpose:"porchday-attachment-date",mediaId:source.media_id,postId,ownerId:owner.id,deviceId:owner.deviceId,date:"2026-10-31",revision:1};
+    const attempted=await uploadGrant(reader,source.media_id);
+    const outsiderDate=await signStatement({...sourceStatement,ownerId:reader.id,deviceId:reader.deviceId},reader.key);
+    const denied=await call(reader.id,"/photos","POST",{id:source.media_id,photo_date:"2026-10-31",expires_at:null,source_media_id:source.media_id,source_date:outsiderDate,grants:[{envelope:attempted.envelope,media_id:attempted.media_id}]});
+    expect(denied.status,JSON.stringify(denied.data)).toBe(403);
+    expect(await db`select id from app.photos where id=${source.media_id}`).toHaveLength(0);
+    const sourceDate=await signStatement(sourceStatement,owner.key);
+    const body={id:source.media_id,photo_date:"2026-10-31",expires_at:null,source_media_id:source.media_id,source_date:sourceDate,grants:[direct,copy].map(g=>({envelope:g.envelope,media_id:g.media_id}))};
+    const result=await call(owner.id,"/photos","POST",body);expect(result.status,JSON.stringify(result.data)).toBe(201);
+    expect((await call(owner.id,"/posts/"+postId)).data.post).toEqual(postBefore);
+    expect((await call(reader.id,"/posts/"+postId)).status).toBe(200);
+    expect((await call(albumReader.id,"/posts/"+postId)).status).toBe(404);
+    expect((await call(reader.id,"/photo-feed")).data.items.map((e:any)=>e.kind)).toEqual(["attachment"]);
+    expect((await call(owner.id,"/photo-feed")).data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
+    expect((await call(albumReader.id,"/photo-feed")).data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
+    expect((await call(outsider.id,"/photo-feed")).data.items).toHaveLength(0);
+    const envelopes=[];
+    for(const grant of [direct,copy]){
+      const snapshot=(await call(owner.id,`/photos/${source.media_id}/grants/${grant.envelope.context.id}/audience`)).data;
+      envelopes.push(await encryptObject({payload:{media:[{id:grant.media_id,mime:"image/jpeg"}]},context:{...grant.envelope.context,photoDate:"2001-02-03",revision:2,epoch:snapshot.epoch},signingKey:owner.key,recipients:snapshot.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))}));
+    }
+    const edit={photo_date:"2001-02-03",expected_revision:1,envelopes};
+    expect((await call(owner.id,`/photos/${source.media_id}`,"PUT",edit)).status).toBe(400);
+    expect((await call(owner.id,`/photos/${source.media_id}`)).data.photo.revision).toBe(1);
+    const nextDate=await signStatement({...sourceStatement,date:"2001-02-03",revision:2},owner.key);
+    const saved=await call(owner.id,`/photos/${source.media_id}`,"PUT",{...edit,source_date:nextDate});expect(saved.status,JSON.stringify(saved.data)).toBe(200);
+    for(const who of [owner,reader,albumReader])expect((await call(who.id,"/photo-feed?month=2001-02")).data.items).toHaveLength(1);
+    expect((await call(owner.id,`/media/${source.media_id}/photo-date`)).data.photo_id).toBe(source.media_id);
+    expect((await call(reader.id,`/media/${source.media_id}/photo-date`)).data.photo_id).toBeNull();
+    const unilateral=await signStatement({...sourceStatement,date:"2002-03-04",revision:3},owner.key);
+    expect((await call(owner.id,`/media/${source.media_id}/photo-date`,"PUT",unilateral)).status).toBe(409);
+    expect((await call(owner.id,`/photos/${source.media_id}/grants/${copy.envelope.context.id}`,"DELETE")).status).toBe(200);
+    expect((await call(albumReader.id,`/photos/${source.media_id}`)).status).toBe(404);
+    expect((await call(reader.id,"/posts/"+postId)).status).toBe(200);
+    expect((await call(owner.id,`/photos/${source.media_id}`,"DELETE")).status).toBe(200);
+    expect(await db`select id from app.media_assets where id=${source.media_id}`).toHaveLength(0);
+    expect((await call(reader.id,"/posts/"+postId)).status).toBe(200);
+    expect((await call(reader.id,"/photo-feed")).data.items).toHaveLength(0);
+  });
+  it("refuses adoption that extends the original post deadline and retains adopted copies after post removal",async()=>{
+    const owner=await person(),postId=randomUUID(),deadline=new Date(Date.now()+3600000).toISOString(),later=new Date(Date.now()+7200000).toISOString();
+    const source=await uploadGrant(owner,postId,"only_me",null,"2026-10-31",later);
+    const original=await seal(owner,{media:[{id:source.media_id,mime:"image/jpeg"}]},1,{id:postId,kind:"post",expiresAt:deadline});
+    expect((await call(owner.id,"/posts","POST",{envelope:original,media_ids:[source.media_id]})).status).toBe(201);
+    const invalid=await uploadGrant(owner,source.media_id,"only_me",null,"2026-10-31",later);
+    const statement={v:1,purpose:"porchday-attachment-date",mediaId:source.media_id,postId,ownerId:owner.id,deviceId:owner.deviceId,date:"2026-10-31",revision:1};
+    const proof=await signStatement(statement,owner.key);
+    const body={id:source.media_id,photo_date:"2026-10-31",expires_at:later,source_media_id:source.media_id,source_date:proof,grants:[{envelope:invalid.envelope,media_id:invalid.media_id}]};
+    const rejected=await call(owner.id,"/photos","POST",body);expect(rejected.status,JSON.stringify(rejected.data)).toBe(409);expect(rejected.data.error.code).toBe("SOURCE_EXPIRY_CHANGED");
+    expect(await db`select id from app.photos where id=${source.media_id}`).toHaveLength(0);
+    expect(await db`select media_id from app.attachment_photo_dates where media_id=${source.media_id}`).toHaveLength(0);
+    const valid=await uploadGrant(owner,source.media_id,"only_me",null,"2026-10-31",deadline);
+    expect((await call(owner.id,"/photos","POST",{...body,expires_at:deadline,grants:[{envelope:valid.envelope,media_id:valid.media_id}]})).status).toBe(201);
+    expect((await call(owner.id,"/posts/"+postId,"DELETE")).status).toBe(200);
+    expect(await db`select id from app.media_assets where id=${source.media_id}`).toHaveLength(0);
+    const retained=await call(owner.id,"/photos/"+source.media_id);expect(retained.status).toBe(200);expect(retained.data.photo.expires_at).toBe(deadline);
+    expect((await app.request(`https://local.test/media/${valid.media_id}/bytes`,{headers:{"x-member":owner.id}},env)).status).toBe(200);
   });
   it("imports attachment dates atomically and exports only owned date records",async()=>{
     const owner=await person(),outsider=await person();

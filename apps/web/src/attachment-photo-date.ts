@@ -1,3 +1,4 @@
+import {updatePhoto} from "./photo-update";
 import {canonicalJson,signStatement,verifyStatement,validateContext,type SignedStatement} from '@porchday/crypto';
 import {get,request,type Device} from './api';
 import type {useVault} from './vault';
@@ -16,7 +17,8 @@ export async function verifyAttachmentDate(vault:ReturnType<typeof useVault>,rec
  await verifyStatement(record.proof,record.author_key.public_key);
 }
 export async function updateAttachmentDate(vault:ReturnType<typeof useVault>,mediaId:string,postId:string,date:string){
- const {date:current}=await get(`/media/${mediaId}/photo-date`);
+ const {date:current,photo_id}=await get(`/media/${mediaId}/photo-date`);
+ if(photo_id){const {photo}=await get("/photos/"+photo_id);await updatePhoto(vault,photo,date);return;}
  const proof=await signAttachmentDate(vault,mediaId,postId,date,(current?.revision||0)+1);
  try{await request(`/media/${mediaId}/photo-date`,{method:'PUT',body:JSON.stringify(proof)});}
  catch(error){const {date:latest}=await get(`/media/${mediaId}/photo-date`);if(canonicalJson(latest?.proof??null)!==canonicalJson(proof))throw error;}
