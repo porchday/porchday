@@ -5,7 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import type { Content, Device, EncryptedEnvelope, Json } from "./api";
 import { get, post, request, del, items, message } from "./api";
 import { useVault } from "./vault";
-import { Alert, Button, Empty, Field, Icon, Loading, Modal, navigate, useAction } from "./ui";
+import { Alert, Button, Empty, Field, Icon, Loading, Modal, navigateAfterSaves, useAction } from "./ui";
 export type AlbumRole = "read" | "add" | "admin";
 export type AlbumRow = {photo_count?:number;cover?:PhotoRow|null;id:string;owner_id:string;envelope:EncryptedEnvelope;author_key:Device;revision:number;role:AlbumRole};
 const roleLabels:Record<AlbumRole,string>={read:"Read-only",add:"Add",admin:"Album-admin"};
@@ -29,11 +29,12 @@ export function Albums() {
   useEffect(()=>{mounted.current=true;void load();return()=>{mounted.current=false;};},[vault.member.id]);
   async function create(e:React.FormEvent) {
     e.preventDefault();if(!name.trim())return;
-    await action.runSave(async()=>{
+    const created=await action.runSave(async()=>{
       const id=crypto.randomUUID();
       const envelope=await vault.seal({name:name.trim(),description:""},{id,kind:"album",audience:"only_me"});
-      await post("/albums",{envelope});navigate("/app/albums/"+id);
+      await post("/albums",{envelope});return id;
     });
+    if(created)navigateAfterSaves("/app/albums/"+created);
   }
   return <>
     <div className="page-heading album-heading"><h1>Albums</h1>{vault.member.status==="active"&&<Button variant="primary" onClick={()=>setCreating(true)}><Icon name="plus"/>Create album</Button>}</div>
@@ -88,6 +89,6 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
       </section>}
       {children?.(data.album)}
     </>}
-    {confirm&&<Modal title={confirm==="delete"?"Delete album?":confirm==="leave"?"Leave album?":"Transfer album ownership?"} onClose={()=>setConfirm(null)}><p>{confirm==="delete"?"This removes the album and its access grants. Photos keep any access they have outside this album.":confirm==="leave"?"You’ll lose access supplied by this album. Other photo access is unchanged.":"The new owner will control deletion and future ownership transfers. You remain an album-admin."}</p><Button busy={action.busy} onClick={()=>action.runSave(async()=>{if(confirm==="delete")await del("/albums/"+id);else if(confirm==="leave")await post(`/albums/${id}/leave`,{});else await post(`/albums/${id}/transfer`,{member_id:confirm});if(confirm==="leave"||confirm==="delete")navigate("/app/albums");else{setConfirm(null);await load();}})}>Confirm</Button><Alert>{action.error}</Alert></Modal>}
+    {confirm&&<Modal title={confirm==="delete"?"Delete album?":confirm==="leave"?"Leave album?":"Transfer album ownership?"} onClose={()=>setConfirm(null)}><p>{confirm==="delete"?"This removes the album and its access grants. Photos keep any access they have outside this album.":confirm==="leave"?"You’ll lose access supplied by this album. Other photo access is unchanged.":"The new owner will control deletion and future ownership transfers. You remain an album-admin."}</p><Button busy={action.busy} onClick={async()=>{const destination=await action.runSave(async()=>{if(confirm==="delete")await del("/albums/"+id);else if(confirm==="leave")await post(`/albums/${id}/leave`,{});else await post(`/albums/${id}/transfer`,{member_id:confirm});if(confirm==="leave"||confirm==="delete")return "/app/albums";setConfirm(null);await load();});if(destination)navigateAfterSaves(destination);}}>Confirm</Button><Alert>{action.error}</Alert></Modal>}
   </>;
 }

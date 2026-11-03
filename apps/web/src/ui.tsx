@@ -461,3 +461,18 @@ export function navigate(path: string) {
   window.dispatchEvent(new PopStateEvent("popstate"));
   window.scrollTo(0, 0);
 }
+
+/** Save-completion redirects must wait for other in-flight writes too. */
+export function navigateAfterSaves(path: string) {
+  const from = location.href;
+  let unsubscribe = () => {};
+  const cancel = () => { unsubscribe(); window.removeEventListener("popstate", cancel); };
+  const attempt = () => {
+    if (location.href !== from) { cancel(); return; }
+    if (!hasPendingSaves()) { cancel(); navigate(path); }
+  };
+  unsubscribe = pendingSaves.subscribe(attempt);
+  window.addEventListener("popstate", cancel);
+  attempt();
+  return cancel;
+}

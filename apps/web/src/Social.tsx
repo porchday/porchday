@@ -46,7 +46,7 @@ import {
   Loading,
   Modal,
   useAction,
-  navigate,
+  navigateAfterSaves,
 } from "./ui";
 import { useVault } from "./vault";
 import { reshareDeadline, resharePayload } from "./reshare";
@@ -317,13 +317,14 @@ export function Composer({
     e.preventDefault();
     if(mode==="photos"&&shareTabs){
       if(!photos.length)return;
-      await action.runSave(async()=>{
+      const destination=await action.runSave(async()=>{
         if(album&&(!albumsLoaded||!albums.some(a=>a.id===album)))throw Error("Select an album where you have Add or Album-admin permission and working encryption keys.");
         const expiresAt=deadline(timer);setPhotosShared(0);
         for(const photo of photos){await publishPhoto(vault,photo,audience,expiresAt,album||null);setPhotos(current=>current.filter(p=>p.id!==photo.id));setPhotosShared(count=>count+1);}
         setTimer("");onPosted();
-        if(album&&!text.trim())navigate("/app/albums/"+album);
+        if(album&&!text.trim())return "/app/albums/"+album;
       },"Photos shared. Your post draft is preserved.");
+      if(destination)navigateAfterSaves(destination);
       return;
     }
     if (!text.trim() && !photos.length) return;
