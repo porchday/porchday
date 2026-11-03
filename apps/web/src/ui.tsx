@@ -1,7 +1,7 @@
 import { hasPendingSaves, pendingSaves, withPendingSave } from "./pending-saves";
 import React, { useEffect, useState } from "react";
 import { message } from "./api";
-import { needsDomainNavigation } from "./domain-navigation";
+import { canonicalNavigation, needsDomainNavigation } from "./domain-navigation";
 export function Icon({
   name,
   size = 20,
@@ -454,7 +454,7 @@ export function navigate(path: string) {
   if (hasPendingSaves()) return;
   const destination = new URL(path, location.href);
   if (needsDomainNavigation(destination, location.origin)) {
-    location.assign(destination.href);
+    location.assign(canonicalNavigation(destination) ?? destination.href);
     return;
   }
   history.pushState({}, "", path);

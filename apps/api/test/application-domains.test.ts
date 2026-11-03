@@ -41,8 +41,8 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('canonical domain transition through the actual Worker routes', () => {
-  it('redirects only legacy public GET/HEAD navigation, retaining path and query', async () => {
-    for (const path of ['/about', '/principles', '/contact', '/privacy', '/community', '/join', '/unknown-page']) {
+  it('redirects all legacy website GET/HEAD navigation, retaining path and query', async () => {
+    for (const path of ['/', '/app', '/app/post/fixture', '/login', '/verify', '/forgot', '/reset', '/stolen-account', '/recovery', '/appeals', '/staff', '/staff/moderation', '/account-deletion', '/about', '/principles', '/contact', '/privacy', '/community', '/join', '/unknown-page']) {
       for (const method of ['GET', 'HEAD']) {
         const response = await request(legacy + path + '?view=plain', { method });
         expect(response.status).toBe(307);
@@ -55,9 +55,8 @@ describe('canonical domain transition through the actual Worker routes', () => {
     expect(response.headers.get('Location')).toBe(canonical + '/join?invite=synthetic');
   });
 
-  it('retains legacy account routes, installed shell assets and well-known responses', async () => {
-    for (const path of ['/app', '/app/post/fixture', '/login', '/verify', '/forgot', '/reset',
-      '/stolen-account', '/recovery', '/appeals', '/staff', '/staff/moderation', '/account-deletion',
+  it('retains legacy static assets and well-known responses', async () => {
+    for (const path of [
       '/sw.js', '/manifest.webmanifest', '/app-shell', '/app-shell.html', '/index.html', '/assets/client.js',
       '/assets/openpgp/openpgp.mjs', '/fonts.css', '/color-scheme.js', '/fonts/font.woff2', '/icon-192-hash.png',
       '/logo.svg', '/wallpaper-checker.svg', '/third-party-notices.txt', '/source/client.tar.gz',
@@ -67,7 +66,6 @@ describe('canonical domain transition through the actual Worker routes', () => {
       expect(response.headers.get('Location'), path).toBeNull();
       expect(await response.text()).toBe(path);
     }
-    expect((await request(legacy + '/app')).headers.get('X-Robots-Tag')).toBe('noindex');
     for (const shell of ['/app-shell', '/app-shell.html'])
       expect((await request(legacy + shell)).headers.get('X-Robots-Tag')).toBe('noindex');
     expect((await request(canonical + '/app')).headers.get('X-Robots-Tag')).toBeNull();
@@ -160,12 +158,12 @@ describe('canonical domain transition through the actual Worker routes', () => {
     }
   });
 
-  it('upgrades known HTTP navigation without forwarding mutation bodies or stranding legacy keys', async () => {
+  it('upgrades known HTTP navigation to the canonical website without forwarding mutation bodies', async () => {
     for (const [host, path, target] of [
       ['http://porchday.org', '/app', canonical],
       ['http://porchday.org:80', '/api/auth/verify-email', canonical],
-      ['http://porchday.com', '/app', legacy],
-      ['http://porchday.com', '/login', legacy],
+      ['http://porchday.com', '/app', canonical],
+      ['http://porchday.com', '/login', canonical],
       ['http://porchday.com', '/sw.js', legacy],
       ['http://porchday.com', '/join', canonical],
       ['http://porchday.com', '/about', canonical],
@@ -216,13 +214,13 @@ it('clones request bindings without changing shared bindings during concurrent r
   const running = new Promise<void>(resolve => { started = resolve; });
   const harness = new Hono<{ Bindings: Env; Variables: Variables }>();
   harness.use('*', applicationDomains);
-  harness.get('/app/probe', async c => {
+  harness.get('/api/probe', async c => {
     if (new URL(c.req.url).origin === legacy) { started(); await wait; }
     return c.json({ origin: c.env.APP_URL, sameBindings: c.env === env, sameAssets: c.env.ASSETS === env.ASSETS });
   });
-  const oldRequest = harness.request(legacy + '/app/probe', {}, env);
+  const oldRequest = harness.request(legacy + '/api/probe', {}, env);
   await running;
-  const newResponse = await harness.request(canonical + '/app/probe', {}, env);
+  const newResponse = await harness.request(canonical + '/api/probe', {}, env);
   expect(await newResponse.json()).toEqual({ origin: canonical, sameBindings: true, sameAssets: true });
   resume();
   expect(await (await oldRequest).json()).toEqual({ origin: legacy, sameBindings: false, sameAssets: true });

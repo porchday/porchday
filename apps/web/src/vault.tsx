@@ -42,7 +42,6 @@ import {
 } from "./api";
 import { Alert, Button, Field, Icon, Loading, useAction } from "./ui";
 import { LockedAccount } from "./LockedAccount";
-import { PreviousDomainUnlockHint } from "./DomainMigration";
 import { startInitialProfileSetup,type InitialProfileState } from "./initial-profile-lifecycle";
 import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
 import { preparePostAudienceRefresh, startPostAudienceRefresh, type AudienceRefreshState, type RefreshPost } from "./post-audience-refresh";
@@ -466,7 +465,6 @@ export function VaultProvider({
           {devices.length ? (
             <form className="form-stack" onSubmit={unlock}>
               <h2>Unlock this device</h2>
-              <PreviousDomainUnlockHint origin={location.origin} />
               <p>
                 {["restricted", "suspended"].includes(member.status || "")
                   ? "Use your saved recovery secret to read existing encrypted content and export your data. This does not enroll a new device or restore restricted social features."

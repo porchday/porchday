@@ -38,7 +38,7 @@ import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
 import { BackgroundControls } from "./BackgroundControls";
 import { ColorSchemeControls } from "./ColorSchemeControls";
-import { LegacyDomainNotice } from "./DomainMigration";
+import { canonicalNavigation } from "./domain-navigation";
 import { initSiteAppearance } from "./site-appearance";
 import { initColorScheme } from "./color-scheme";
 import { BuilderChat, builderChatAvailable } from "./BuilderChat";
@@ -305,7 +305,6 @@ function App() {
           </Button>
         </div>
       )}
-      <LegacyDomainNotice origin={location.origin} path={path} />
       {page}
     </>
   );
@@ -555,12 +554,17 @@ function AppShell({
     </PeopleDirectory></MemberAvatarProvider>
   );
 }
-installTracing();
-initColorScheme();
-initSiteAppearance();
-createRoot(document.getElementById("root")!).render(
-  <ErrorBoundary>
-    <PendingSaveStatus />
-    <App />
-  </ErrorBoundary>,
-);
+const canonicalDestination = canonicalNavigation(new URL(location.href));
+if (canonicalDestination) {
+  location.replace(canonicalDestination);
+} else {
+  installTracing();
+  initColorScheme();
+  initSiteAppearance();
+  createRoot(document.getElementById("root")!).render(
+    <ErrorBoundary>
+      <PendingSaveStatus />
+      <App />
+    </ErrorBoundary>,
+  );
+}
