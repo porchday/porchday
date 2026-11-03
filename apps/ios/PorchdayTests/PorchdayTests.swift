@@ -3,6 +3,14 @@ import Porchcrypto
 @testable import Porchday
 
 final class PorchdayTests: XCTestCase {
+    func testUnsupportedPhotoCollectionsDoNotSilentlyLoseData() throws {
+        XCTAssertNoThrow(try PortableArchive.requireSupportedCollections(.object([:])))
+        XCTAssertNoThrow(try PortableArchive.requireSupportedCollections(.object(["photos": .array([]), "albums": .array([]), "attachment_dates": .array([])])))
+        for name in ["photos", "albums", "attachment_dates"] {
+            XCTAssertThrowsError(try PortableArchive.requireSupportedCollections(.object([name: .array([.object(["id": .string("fixture")])])])))
+            XCTAssertThrowsError(try PortableArchive.requireSupportedCollections(.object([name: .string("malformed")])))
+        }
+    }
     func testAncestorDeadlineCannotExtend() {
         let parent=Date().addingTimeInterval(50)
         XCTAssertEqual(PorchDate.deadline(seconds:0,parent:parent),parent)

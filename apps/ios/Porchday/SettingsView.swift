@@ -33,6 +33,8 @@ struct SettingsView: View {
             Section("Account") { Text("@" + (model.member?.handle ?? "")); if let device = vault.device { Text("Device fingerprint").font(.caption); Text(device.fingerprint).font(.system(.caption, design: .monospaced)).textSelection(.enabled) }; Text("Compare fingerprints through a channel you trust. The service can see account and delivery metadata, but does not hold your content keys.").font(.footnote) }
             Section("Your data") {
                 Text("Export your own posts, comments, reactions, custom emoji collection, photos and profile. References to connections and groups are included; other people's private contributions are excluded.")
+                Text("For albums and custom photo dates, use the web data tools. This native version stops rather than omit those collections.").font(.footnote)
+                Link("Open web data settings", destination: ServerConfiguration.origin.appendingPathComponent("app/settings"))
                 Toggle("Export readable, unencrypted ZIP files", isOn: $plaintext)
                 if plaintext { Text("Anyone with these files can read them. Saved copies cannot be recalled after deletion or expiry.").foregroundStyle(.orange) }
                 Button(busy ? "Preparing archive…" : "Export my data") { Task { await export() } }.disabled(busy || !vault.unlocked)

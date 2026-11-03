@@ -2,21 +2,24 @@ import type { Content, SocialObject } from "./api";
 import { contentTags } from "./PeopleTags";
 export type CalendarEntry = { row: SocialObject; content: Content };
 export function localDay(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return `${String(date.getFullYear()).padStart(4,"0")}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+export function calendarDate(year:number,month:number,day=1) {
+  const date=new Date(0);date.setFullYear(year,month,day);date.setHours(0,0,0,0);return date;
 }
 export function monthRange(year: number, month: number) {
   return {
-    start: new Date(year, month, 1).toISOString(),
-    end: new Date(year, month + 1, 1).toISOString(),
+    start: calendarDate(year, month, 1).toISOString(),
+    end: calendarDate(year, month + 1, 1).toISOString(),
   };
 }
 export function monthCells(year: number, month: number) {
-  const offset = new Date(year, month, 1).getDay(),
-    days = new Date(year, month + 1, 0).getDate();
+  const offset = calendarDate(year, month, 1).getDay(),
+    days = calendarDate(year, month + 1, 0).getDate();
   return Array.from({ length: Math.ceil((offset + days) / 7) * 7 }, (_, i) =>
     i < offset || i >= offset + days
       ? null
-      : localDay(new Date(year, month, i - offset + 1)),
+      : localDay(calendarDate(year, month, i - offset + 1)),
   );
 }
 export function filterEntries(

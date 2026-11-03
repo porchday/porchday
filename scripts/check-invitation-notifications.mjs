@@ -35,8 +35,8 @@ try{for(const [name,engine]of Object.entries({chromium,webkit})){
   assert.equal(new URL(page.url()).pathname,'/app/connections');assert.equal(new URL(page.url()).searchParams.get('handle'),'new_member');
   assert.deepEqual(calls,[{method:'PUT',path:'/api/v1/notifications/joined/read',body:{}}]);
   assert.equal(await page.getByLabel('Your label',{exact:true}).inputValue(),'friend');
-  assert.equal(await page.getByLabel('Share your posts',{exact:true}).inputValue(),'full');
-  await page.getByLabel('Your label',{exact:true}).selectOption('family');await page.getByLabel('Share your posts',{exact:true}).selectOption('future');
+  assert.equal(await page.getByLabel('Share your posts and photos',{exact:true}).inputValue(),'full');
+  await page.getByLabel('Your label',{exact:true}).selectOption('family');await page.getByLabel('Share your posts and photos',{exact:true}).selectOption('future');
   await page.getByRole('button',{name:'Send request',exact:true}).click();await page.getByText('Connection request sent.',{exact:true}).waitFor();
   assert.deepEqual(calls.at(-1),{method:'POST',path:'/api/v1/connections/requests',body:{handle:'new_member',kind:'family',history:'future'}});
   assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);assert.deepEqual(errors,[]);

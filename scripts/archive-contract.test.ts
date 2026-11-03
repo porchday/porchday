@@ -24,6 +24,9 @@ const parts = [1, 2].map(n => unpackArchive(fixture(`multipart/porchday-syntheti
 const cryptoInterface: ArchiveEncryption = { encryptArchive, decryptArchive };
 
 describe("portable archive contract and fictional examples", () => {
+  it("retains circle audience labels as source provenance",()=>{
+    for(const audience of ["community","extended_family"]){const archive=structuredClone(single.archive);archive.posts[0].audience=audience;expect(validate(archive),JSON.stringify(validate.errors)).toBe(true);expect(unpackArchive(packArchive(archive,single.files)).archive.posts[0].audience).toBe(audience);}
+  });
   it("accepts 4K video metadata while retaining JPEG dimension limits", () => {
     const archive = structuredClone(single.archive);
     archive.media[0] = { ...archive.media[0], mime: "video/mp4", path: archive.media[0].path.replace(/jpg$/, "mp4"), width: 3840, height: 2160 };

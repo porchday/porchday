@@ -1,6 +1,7 @@
 /** Real web components in Chromium with isolated synthetic transport.
  * Cryptographic authorization is exercised by photo-calendar.integration.test.ts. */
 import assert from "node:assert/strict";
+import {generateDeviceKeys} from "@porchday/crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
@@ -8,9 +9,10 @@ import { chromium } from "playwright";
 const self = "00000000-0000-4000-8000-000000000001",
   friend = "00000000-0000-4000-8000-000000000002",
   child = "00000000-0000-4000-8000-000000000003";
+const fixtureKeys=await generateDeviceKeys(self,"00000000-0000-4000-8000-000000000099");
 const bundle = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';const root=createRoot(document.getElementById('root'));root.render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';const root=createRoot(document.getElementById('root'));window.fixtureReady.then(()=>root.render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>));`,
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -35,8 +37,9 @@ const bundle = await build({
           namespace: "fixture",
         }));
         b.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
-          contents: `const vault={member:{id:'${self}',handle:'parent',status:'active'},device:{id:'synthetic'},open:async row=>row.envelope.payload,seal:async(payload,context)=>({payload,context})};export const useVault=()=>vault;export const useOptionalVault=useVault;export const Fingerprint=()=>null;export const VaultProvider=({children})=>children;`,
+          contents: `import {unlockPrivateKey} from '@porchday/crypto';const vault={member:{id:'${self}',handle:'parent',status:'active'},device:{id:'00000000-0000-4000-8000-000000000099'},open:async row=>row.envelope.payload,seal:async(payload,context)=>({payload,context})};window.fixtureReady=unlockPrivateKey(${JSON.stringify(fixtureKeys.encryptedPrivateKey)},${JSON.stringify(fixtureKeys.recoverySecret)}).then(key=>{vault.privateKey=key;});export const useVault=()=>vault;export const useOptionalVault=useVault;export const Fingerprint=()=>null;export const VaultProvider=({children})=>children;`,
           loader: "js",
+          resolveDir:process.cwd(),
         }));
       },
     },
@@ -92,7 +95,7 @@ const server = createServer(async (req, res) => {
     });
   if (url.pathname === "/api/v1/connections")
     return send({
-      items: [{ member_a: self, member_b: friend }],
+      items: [{ member_a: self, member_b: friend,kind:"friend",mutual_family:false }],
       handles: [
         { id: self, handle: "parent" },
         { id: friend, handle: "friend" },
@@ -120,7 +123,13 @@ const server = createServer(async (req, res) => {
   }
   if (url.pathname === "/api/v1/calendar/highlights")
     return send({ items: highlights });
+  if(url.pathname==='/api/v1/photo-feed'){
+    await new Promise(resolve=>setTimeout(resolve,150));
+    const month=url.searchParams.get('month')||new Date().toISOString().slice(0,7),day=month+'-12';
+    return send({items:[{id:'00000000-0000-4000-8000-000000000006',kind:'attachment',day,author_id:self,author_handle:'parent',photo:null,post:{id:'00000000-0000-4000-8000-000000000004',author_id:self,created_at:day+'T12:00:00.000Z',expires_at:null,envelope:{payload:{text:'Picnic in the park',media:[{id:'00000000-0000-4000-8000-000000000006',alt:'Synthetic photo',mime:'image/jpeg',width:32,height:24}]}}}}],next:null});
+  }
   if (url.pathname === "/api/v1/calendar") {
+    await new Promise(resolve=>setTimeout(resolve,150));
     const start = new Date(url.searchParams.get("start"));
     const day = new Date(
       start.getFullYear(),
@@ -183,15 +192,25 @@ try {
   const firstMonth = await page.locator('[data-calendar-month]').first().getAttribute('data-calendar-month');
   const beforeMonths = await page.locator('[data-calendar-month]').count();
   await page.locator('.calendar-earlier').scrollIntoViewIfNeeded();
+  const preservedMonth=page.locator(`[data-calendar-month="${firstMonth}"]`);
+  await preservedMonth.locator('.loading').waitFor({state:'hidden'});
+  const previousTop=(await preservedMonth.boundingBox()).y;
+  await page.getByRole('button',{name:'Load earlier month'}).click();
   await page.waitForFunction(before => document.querySelectorAll('[data-calendar-month]').length > before, beforeMonths);
   const monthKeys = await page.locator('[data-calendar-month]').evaluateAll(elements => elements.map(e => e.dataset.calendarMonth));
-  assert.equal(monthKeys[0], firstMonth);
+  assert.equal(monthKeys.at(-1), firstMonth);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert(Math.abs((await preservedMonth.boundingBox()).y-previousTop)<3,"loading an older month preserves the reading anchor");
+  await page.locator('[data-calendar-month]').first().getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
+  await page.locator('[data-calendar-month]').first().locator('.loading').waitFor({state:'hidden'});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert(Math.abs((await preservedMonth.boundingBox()).y-previousTop)<3,"loading older month photos preserves the reading anchor");
   assert.equal(new Set(monthKeys).size, monthKeys.length);
-  for(let i=1;i<monthKeys.length;i++) assert(monthKeys[i] < monthKeys[i-1]);
+  for(let i=1;i<monthKeys.length;i++) assert(monthKeys[i] > monthKeys[i-1]);
   const beforeManual = await page.locator('[data-calendar-month]').count();
   await page.getByRole('button',{name:'Load earlier month'}).click();
   assert(await page.locator('[data-calendar-month]').count()>beforeManual);
-  await page.getByRole('heading',{name:'Photos',exact:true}).scrollIntoViewIfNeeded();
+  await page.getByRole('heading',{name:'Calendar',exact:true}).scrollIntoViewIfNeeded();
   if (process.env.CALENDAR_SCREENSHOT)
     await page.screenshot({ path: process.env.CALENDAR_SCREENSHOT });
   await page.getByLabel("Tagged person").selectOption("child:" + child);
@@ -245,6 +264,7 @@ try {
     false,
   );
   await page.goto(origin + "/compose");
+  assert.deepEqual(await page.getByRole("combobox",{name:"Post audience",exact:true}).locator("option").allTextContents(),["Friends & family","Friends","Family","Extended family","Community","Only me"]);
   await page.getByRole("button", { name: "Tag people", exact: true }).click();
   await page
     .getByLabel("Tag people", { exact: true })
@@ -337,16 +357,29 @@ try {
   assert.equal(save.body.envelope.payload.birthday, undefined);
   await page.goto(origin + "/app/photos");
   await page.getByRole('img',{name:'Synthetic photo',exact:true}).first().waitFor();
+  await page.locator('.calendar-earlier').scrollIntoViewIfNeeded();
+  const photoMonthLabel=await page.locator('.photo-calendar h2').first().textContent();
+  const photoMonth=page.locator('.photo-calendar').filter({has:page.getByRole('heading',{name:photoMonthLabel,exact:true})});
+  await photoMonth.locator('.loading').waitFor({state:'hidden'});
+  const photoMonthTop=(await photoMonth.boundingBox()).y;
+  await page.getByRole('button',{name:'Load earlier month',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelectorAll('.photo-calendar').length===2);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert(Math.abs((await photoMonth.boundingBox()).y-photoMonthTop)<3,'photo calendar preserves the reading anchor');
+  await page.locator('.photo-calendar').first().getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
+  await page.locator('.photo-calendar').first().locator('.loading').waitFor({state:'hidden'});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert(Math.abs((await photoMonth.boundingBox()).y-photoMonthTop)<3,'photo calendar preserves the anchor after delayed photo loading');
   const thumbnail=page.getByRole('img',{name:'Synthetic photo',exact:true}).first();
   await thumbnail.evaluate(async i=>{await i.decode();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
   assert(await thumbnail.evaluate(i=>{const image=i.getBoundingClientRect(),cell=i.closest('button').getBoundingClientRect();return i.naturalWidth===32&&image.width>0&&image.left>=cell.left&&image.right<=cell.right&&image.top>=cell.top&&image.bottom<=cell.bottom;}));
   if(process.env.CALENDAR_SCREENSHOT)await page.screenshot({path:process.env.CALENDAR_SCREENSHOT});
   const nav = page.getByRole("navigation", { name: "Mobile navigation" });
   assert.deepEqual(await nav.getByRole("link").allTextContents(), [
-    "Home",
+    "Feed",
+    "Share",
+    "Albums",
     "Connections",
-    "Groups",
-    "Photos",
     "More",
   ]);
   await nav.getByRole("link", { name: "More" }).click();

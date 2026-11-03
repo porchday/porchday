@@ -1,3 +1,5 @@
+import {useCalendarScrollAnchor} from "./calendar-scroll-anchor";
+import { matchesAuthor, matchesContent, type AuthorFilter, type FeedContent } from "./feed-filters";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { get, request, del, items, type Json, type SocialObject } from "./api";
 import { useVault } from "./vault";
@@ -14,13 +16,12 @@ import {
   featuredEntry,
   type CalendarEntry,
 } from "./photo-calendar";
-export function PhotosCalendar() {
+export function PhotosCalendar({ embedded = false, authorFilter, contentFilter = "posts" }: { embedded?: boolean; authorFilter?: AuthorFilter; contentFilter?: FeedContent }) {
   const [anchor, setAnchor] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [count, setCount] = useState(1);
   const [author, setAuthor] = useState(""), [tag, setTag] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [directory, setDirectory] = useState<Record<string, { authors: [string, string][]; tags: [string, string][] }>>({});
-  const sentinel = useRef<HTMLDivElement>(null);
   const loaded = useCallback((key: string, entries: CalendarEntry[]) => {
     const authors: [string,string][] = entries.map(e => [e.row.author_id, e.row.author_handle || "Member"]);
     const tags: [string,string][] = entries.flatMap(e => contentTags(e.content).map(t => [t.kind + ":" + t.id, t.label] as [string,string]));
@@ -35,14 +36,8 @@ export function PhotosCalendar() {
     }
     setSelected(day);
   }, [anchor.getTime()]);
-  useEffect(() => {
-    if (selected || !sentinel.current || typeof IntersectionObserver === "undefined") return;
-    const observer = new IntersectionObserver(entries => {
-      if (entries.some(e => e.isIntersecting)) { observer.disconnect(); setCount(old => old + 1); }
-    }, { rootMargin: "100px" });
-    observer.observe(sentinel.current);
-    return () => observer.disconnect();
-  }, [count, selected, anchor.getTime()]);
+  const {root:monthsRoot,capture}=useCalendarScrollAnchor(count);
+  function earlier() {capture();setCount(old=>old+1);}
   function jump(offset: number) {
     setSelected(null); setCount(1); setDirectory({});
     setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1));
@@ -50,7 +45,7 @@ export function PhotosCalendar() {
   const authors = new Map(Object.values(directory).flatMap(d => d.authors));
   const tags = new Map(Object.values(directory).flatMap(d => d.tags));
   return <>
-    <div className="page-heading"><h1>Photos</h1><p>Scroll down for earlier months of moments.</p></div>
+    {!embedded && <div className="page-heading"><h1>Calendar</h1><p>Older months above, newer months below.</p></div>}
     <section className="panel calendar-controls">
       <nav className="calendar-month" aria-label="Calendar navigation">
         <Button aria-label="Previous month" onClick={() => jump(-1)}>←</Button>
@@ -63,14 +58,17 @@ export function PhotosCalendar() {
         <Button onClick={() => {setAuthor(""); setTag("");}}>Clear filters</Button>
       </div>
     </section>
+    <div className="calendar-earlier"><Button onClick={earlier}>Load earlier month</Button></div>
+    <div ref={monthsRoot}>
     {Array.from({length:count}, (_,i) => {
-      const month = new Date(anchor.getFullYear(), anchor.getMonth()-i, 1), key = localDay(month).slice(0,7);
-      return <CalendarMonth key={key} month={month} author={author} tag={tag} selected={selected?.startsWith(key + "-") ? selected : null} setSelected={selectDay} onLoaded={loaded}/>;
+      const month = new Date(anchor.getFullYear(), anchor.getMonth()-(count-1-i), 1), key = localDay(month).slice(0,7);
+      return <CalendarMonth key={key} month={month} authorFilter={authorFilter} contentFilter={contentFilter} author={author} tag={tag} selected={selected?.startsWith(key + "-") ? selected : null} setSelected={selectDay} onLoaded={loaded}/>;
     })}
-    <div ref={sentinel} className="calendar-earlier"><Button onClick={() => setCount(old => old+1)}>Load earlier month</Button></div>
+    </div>
   </>;
 }
-function CalendarMonth({month, author, tag, selected, setSelected, onLoaded}: {
+function CalendarMonth({month, author, tag, selected, setSelected, onLoaded, authorFilter, contentFilter}: {
+  authorFilter?: AuthorFilter; contentFilter: FeedContent;
   month: Date; author: string; tag: string; selected: string | null;
   setSelected: (day: string | null) => void;
   onLoaded: (key: string, entries: CalendarEntry[]) => void;
@@ -197,7 +195,7 @@ function CalendarMonth({month, author, tag, selected, setSelected, onLoaded}: {
         : old,
     );
   }, [clock]);
-  const filtered = filterEntries(entries, author, tag ? [tag] : [], clock);
+  const filtered = filterEntries(entries, author, tag ? [tag] : [], clock).filter(entry => (!authorFilter || matchesAuthor(entry.row, authorFilter)) && matchesContent(entry.content, contentFilter));
   const byDay = new Map<string, CalendarEntry[]>();
   for (const entry of filtered) {
     const day = localDay(new Date(entry.row.created_at));

@@ -1,4 +1,5 @@
-import {PhotosCalendar} from "./PhotosCalendar";
+import { PhotoCollection } from "./PhotoCollection";
+import { Albums, AlbumDetail } from "./Albums";
 import {PeopleDirectory} from "./PeopleTags";
 import { FeatureAdditions } from "./FeatureAdditions";
 import { hasPendingSaves } from "./pending-saves";
@@ -20,7 +21,8 @@ import {
 } from "./ui";
 import { AuthPage, Landing, Policy, StolenAccount, InvitedPolicyPage } from "./Public";
 import { VaultProvider, useVault } from "./vault";
-import { Feed } from "./Social";
+import { Feed, Composer } from "./Social";
+import { FeedExperience } from "./FeedExperience";
 import {
   Connections,
   Groups,
@@ -335,7 +337,7 @@ function OfflineScreen({ onRetry }: { onRetry: () => Promise<void> }) {
   );
 }
 const links = [
-  ["/app", "home", "Home"],
+  ["/app", "feed", "Feed"],
   ["/app/wall", "wall", "My wall"],
   ["/app/connections", "people", "Connections"],
   ["/app/groups", "group", "Groups"],
@@ -391,12 +393,14 @@ function AppShell({
   else if (path === "/app" || path === "/app/")
     content = (
       <>
-        <h1 className="sr-only">Home</h1>
-        <Feed />
+        <FeedExperience />
       </>
     );
-  else if (path === "/app/photos") content = <PhotosCalendar />;
-  else if (path === "/app/menu") content = <section className="panel form-stack"><h1>More</h1><a href="/app/wall">My wall</a>{builderChat && <a href="/app/builder-chat">Builder chat</a>}<a href="/app/settings/profile">Settings</a></section>;
+  else if (path === "/app/albums") content = <Albums />;
+  else if (path.startsWith("/app/albums/")) content = <AlbumDetail key={path.split("/")[3]} id={path.split("/")[3]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
+  else if (path === "/app/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
+  else if (path === "/app/share") content = <><div className="page-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
+  else if (path === "/app/menu") content = <section className="panel form-stack"><h1>More</h1><a href="/app/wall">My wall</a><a href="/app/groups">Groups</a><a href="/app/notifications">Notifications</a><a href="/app/features">Feature additions</a>{builderChat && <a href="/app/builder-chat">Builder chat</a>}<a href="/app/settings/profile">Settings</a></section>;
   else if (path.startsWith("/app/post/"))
     content = <Feed singleId={path.split("/")[3]} />;
   else if (path.startsWith("/app/wall"))
@@ -448,7 +452,7 @@ function AppShell({
       <aside className="sidebar">
         <Logo href="/app" />
         <nav aria-label="Your Porchday">
-          {[...sidebarLinks, ...(vault.member.status === "suspended" ? [] : [["/app/photos", "photo", "Photos"]])].map(
+          {[...sidebarLinks, ...(vault.member.status === "suspended" ? [] : [["/app/share", "plus", "Share"], ["/app/albums", "album", "Albums"]])].map(
             ([href, icon, name]) => {
               const active =
                 href === "/app"
@@ -530,7 +534,7 @@ function AppShell({
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {(vault.member.status === "suspended"
           ? [links[5]]
-          : [links[0], links[2], links[3], ["/app/photos", "photo", "Photos"], ["/app/menu", "more", "More"]]
+          : [links[0], ["/app/share", "plus", "Share"], ["/app/albums", "album", "Albums"], links[2], ["/app/menu", "more", "More"]]
         ).map(([href, icon, name]) => (
           <a
             key={href}

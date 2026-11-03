@@ -75,6 +75,10 @@ export class ApiError extends Error {
     super(
       (
         {
+          ALBUM_OWNER_REQUIRED: "Transfer this album to another album-admin before leaving or changing your role.",
+          ALBUM_ADMIN_REQUIRED: "Choose an active album-admin as the new owner.",
+          ALBUM_AUDIENCE_BLOCKED: "A blocked person is still in this album. Resolve its membership before sharing again.",
+          ALBUM_MEMBER_LIMIT: "An album can include up to 300 people.",
           RECENT_AUTH_REQUIRED:
             "For this security-sensitive action, sign out and sign in again, then return here. Your draft remains until you leave.",
           AUDIENCE_CHANGED:

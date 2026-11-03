@@ -54,7 +54,7 @@ suite('member platform invitations through real auth sessions and restricted SQL
    await admin.query('DROP DATABASE IF EXISTS '+database);await admin.query('DROP ROLE IF EXISTS '+role);
   }finally{await admin.end();}
  });
- it.each(['friend','family'])('connects an opted-in %s invitation only on verification, once, with future-only history',async kind=>{
+ it.each(['friend','family'])('connects an opted-in %s invitation only on verification, once, with the full-history default',async kind=>{
   const a=await person(),email=randomUUID()+'@example.test',id=randomUUID();
   expect((await call('/api/v1/platform-invitations',{email,kind},a.cookie)).status).toBe(202);
   const invitation=await row(email),message=await decryptAccountEmail(env,invitation.encrypted_payload);
@@ -68,7 +68,7 @@ suite('member platform invitations through real auth sessions and restricted SQL
   const auth=new Pool({connectionString:env.HYPERDRIVE_AUTH.connectionString});
   try {await auth.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);} finally {await auth.end();}
   const connections=(await owner.query('SELECT * FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows;
-  expect(connections).toHaveLength(1);expect(connections[0]).toMatchObject({kind_a:kind,kind_b:kind,history_a:'future',history_b:'future'});
+  expect(connections).toHaveLength(1);expect(connections[0]).toMatchObject({kind_a:kind,kind_b:kind,history_a:'full',history_b:'full'});
   const list=await (await history(a.cookie,'?v=2')).json() as any;
   expect(list.items[0]).toMatchObject({status:'joined',kind});
   expect((await call('/api/v1/platform-invitations/'+list.items[0].id+'/revoke',{},a.cookie)).status).toBe(409);

@@ -3,7 +3,7 @@
  * The live implementations remain apps/web/src/{archive,DataTransfer}.tsx/ts and
  * apps/ios/Porchday/PortableArchive.swift. See importer-guide.md for required checks.
  */
-import type { Audience, EncryptedEnvelope, Json } from "@porchday/crypto";
+import type { Audience, EncryptedEnvelope, Json, SignedStatement } from "@porchday/crypto";
 
 export type JsonObject = { [key: string]: Json };
 export type Timestamp = string; // Canonical UTC ISO: YYYY-MM-DDTHH:mm:ss.sssZ.
@@ -55,6 +55,9 @@ export interface ArchiveManifestV1 {
   comments: AuthoredEntryV1[];
   reactions: AuthoredEntryV1[];
   media: PhotoV1[];
+  photos?: { id: UUID; photo_date: string; created_at: Timestamp; expires_at: Deadline; payload: JsonObject; album_ids: UUID[]; source_media_id?: UUID | null; source_post_id?: UUID | null }[];
+  albums?: { id: UUID; created_at: Timestamp; payload: JsonObject }[];
+  attachment_dates?: { media_id: UUID; post_id: UUID; photo_date: string }[];
   connections: { member_id: UUID; kind: "friend" | "family" }[];
   groups: { group_id: UUID; role: "owner" | "moderator" | "member" }[];
 }
@@ -86,6 +89,7 @@ export interface ImportBatchRequest {
     /** `${sourceMemberId}:${kind}:${sourceId}`, <=200 characters. */
     source_id: string;
     media_ids?: UUID[]; // <=10, already uploaded as destination-owned ciphertext.
+    photo_dates?: SignedStatement<{v:1; purpose:"porchday-attachment-date"; mediaId:UUID; postId:UUID; ownerId:UUID; deviceId:UUID; date:string; revision:number}>[];
   }[]; // <=50. Envelopes must be posts with audience only_me and no parent/group.
 }
 export interface ImportBatchResult {

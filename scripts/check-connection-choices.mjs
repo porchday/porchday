@@ -83,7 +83,7 @@ try {
       reset(); await load();
       const incoming = page.locator(".connection-request-row");
       assert.equal(await incoming.getByLabel("Your label", { exact: true }).inputValue(), "friend");
-      assert.equal(await incoming.getByLabel("Share your posts", { exact: true }).inputValue(), "full");
+      assert.equal(await incoming.getByLabel("Share your posts and photos", { exact: true }).inputValue(), "full");
       assert.equal(await incoming.getByText(/Wants to connect as|agreed|proposed/i).count(), 0);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
       await incoming.getByRole("button", { name: "Accept connection request from @new_person" }).click();
@@ -95,7 +95,7 @@ try {
       // Even an old server's sender label must not become the recipient's choice.
       assert.equal(await incoming.getByLabel("Your label", { exact: true }).inputValue(), "friend");
       await incoming.getByLabel("Your label", { exact: true }).selectOption("family");
-      await incoming.getByLabel("Share your posts", { exact: true }).selectOption("future");
+      await incoming.getByLabel("Share your posts and photos", { exact: true }).selectOption("future");
       await incoming.getByRole("button", { name: "Accept connection request from @new_person" }).click();
       await page.getByText("Connected with @new_person.", { exact: true }).waitFor();
       assert.deepEqual(state.calls.at(-1).body, { kind: "family", history: "future" });
@@ -125,7 +125,7 @@ try {
       const send = page.locator(".connection-search");
       await send.getByLabel("Their exact handle").fill("@New_Person");
       await send.getByLabel("Your label", { exact: true }).selectOption("family");
-      await send.getByLabel("Share your posts", { exact: true }).selectOption("future");
+      await send.getByLabel("Share your posts and photos", { exact: true }).selectOption("future");
       await send.getByRole("button", { name: "Send request" }).click();
       await page.getByText("Connection request sent.", { exact: true }).waitFor();
       assert.deepEqual(state.calls.at(-1), { method: "POST", path: "/api/v1/connections/requests", body: { handle: "new_person", kind: "family", history: "future" } });

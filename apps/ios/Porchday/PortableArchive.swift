@@ -7,6 +7,13 @@ struct PortableArchive {
     let files: [String: Data]
     static let limit = 30 * 1024 * 1024
     static let partBudget = 20 * 1024 * 1024
+    static func requireSupportedCollections(_ manifest: JSON) throws {
+        for section in ["photos", "albums", "attachment_dates"] {
+            if case .null = manifest[section] { continue }
+            if case .array(let entries) = manifest[section], entries.isEmpty { continue }
+            throw PorchError.message("This archive contains photo dates or albums that this native version cannot restore completely. Open Porchday in your browser and use Settings → Your data to preserve them.")
+        }
+    }
     static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     func zip() throws -> Data {
         let archive = try Archive(accessMode: .create)
@@ -80,6 +87,7 @@ struct PortableArchive {
         for url in urls {
             let scoped=url.startAccessingSecurityScopedResource();defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             let archive=try read(url:url,secret:secret),set=archive.manifest["archive_set"],index=set["index"].integer ?? 1
+            try PortableArchive.requireSupportedCollections(archive.manifest)
             if urls.count>1 && set["id"].string==nil { throw PorchError.message("Select a single legacy archive or a complete multipart archive.") }
             let currentSet=set["id"].string ?? "legacy";if let setID,setID != currentSet { throw PorchError.message("Files belong to different archive sets.") };setID=currentSet
             let owner=archive.manifest["member_id"].string ?? "";if let memberID,memberID != owner { throw PorchError.message("Archive owner mismatch.") };memberID=owner
@@ -128,6 +136,12 @@ struct PortableArchive {
             if let reference { refs.append(reference);allRefs.append(reference) };if let photo { files[photo.0]=photo.1 };size += added
         }
         do {
+            // Do not produce an apparently complete archive while omitting
+            // collections this native version does not yet understand.
+            for section in ["photos", "albums", "attachment_dates"] where job["sections"].array.contains(.string(section)) {
+                let page = try await api.social("/exports/" + jobID + "?section=" + section)
+                try PortableArchive.requireSupportedCollections(page)
+            }
             for section in ["profile","emoji_library","posts","comments","post_reactions","comment_reactions","media","connections","groups"] {
                 var cursor:String?=nil
                 repeat {
