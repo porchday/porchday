@@ -1,13 +1,15 @@
+import { HistoryChoice } from "./HistoryChoice";
 import React, { useEffect, useRef, useState } from "react";
 import { ApiError, post, request, localDate, accessLost } from "./api";
 import { Alert, Button, Field } from "./ui";
 
-type Invitation = { id: string; email: string; requested_at: string; expires_at: string; status: "pending" | "joined" | "expired" | "revoked"; kind: "friend" | "family" | null };
+type Invitation = { id: string; email: string; requested_at: string; expires_at: string; status: "pending" | "joined" | "expired" | "revoked"; kind: "friend" | "family" | null; history?: "full" | "future" };
 const statusLabels = { pending: "Pending", joined: "Joined", expired: "Expired", revoked: "Revoked" };
 
 export function PlatformInvitation({ canInvite }: { canInvite: boolean }) {
   const [email, setEmail] = useState("");
   const [kind, setKind] = useState<"friend" | "family">("friend");
+  const [history, setHistory] = useState<"full" | "future">("full");
   const [revoking, setRevoking] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -67,7 +69,7 @@ export function PlatformInvitation({ canInvite }: { canInvite: boolean }) {
     setError("");
     setNotice("");
     try {
-      const result = await post("/platform-invitations", { email: email.trim(), kind });
+      const result = await post("/platform-invitations", { email: email.trim(), kind, history });
       if (!mounted.current) return;
       if (result.accepted !== true) throw new Error("UNCONFIRMED");
       setEmail("");
@@ -118,7 +120,8 @@ export function PlatformInvitation({ canInvite }: { canInvite: boolean }) {
             <option value="friend">Friend</option><option value="family">Family</option>
           </select>
         </label>
-        <p>When they accept and verify their email, you will automatically connect as {kind === "family" ? "Family" : "Friends"}. You will share future posts for that audience. Each of you can change your own label or disconnect later.</p>
+        <HistoryChoice value={history} onChange={setHistory} disabled={busy || !canInvite} />
+        <p>When they accept and verify their email, you will automatically connect as {kind === "family" ? "Family" : "Friends"}. {history === "full" ? "You will share your earlier and future posts and photos for that audience." : "You will only share new posts and photos after you connect."} Each of you can change your own sharing choice or label, or disconnect later.</p>
         <Button variant="primary compact" type="submit" busy={busy} disabled={!canInvite}>
           Send invitation
         </Button>
@@ -142,6 +145,7 @@ export function PlatformInvitation({ canInvite }: { canInvite: boolean }) {
               <div className="invitation-recipient"><strong>{invitation.email}</strong>
                 <small>Requested {localDate(invitation.requested_at)}</small>
                 {invitation.kind && <small>Connect as {invitation.kind === "family" ? "Family" : "Friend"}</small>}
+                {invitation.kind && invitation.history && <small>{invitation.history === "full" ? "Share full history" : "Only share new posts and photos"}</small>}
                 {invitation.status === "pending" && <small>Expires {localDate(invitation.expires_at)}</small>}
               </div>
               <span className={`invitation-status ${invitation.status}`}>{statusLabels[invitation.status]}</span>

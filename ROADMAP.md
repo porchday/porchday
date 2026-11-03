@@ -20,6 +20,8 @@ Owner follow-up November 2: retire legacy `.com` website navigation after confir
 
 Owner follow-up: use root-level member routes (`/connections`, `/albums`, `/share`, feed `/`) with compatible `/app/...` redirects; tracked with navigation in [#124](https://github.com/porchday/porchday/issues/124).
 
+Owner follow-up: invitations offer the same full-history (default) or future-only choice as direct connection requests; apply it only to the inviter’s sharing and preserve pending invitations on retries. Tracked in [#99](https://github.com/porchday/porchday/issues/99).
+
 ## Execution queue
 
 Ranks continue across the sections below. This is an order for selecting work, not a promise to finish every item before taking any lower-ranked verification step.
@@ -30,7 +32,7 @@ Ranks continue across the sections below. This is an order for selecting work, n
 
 Community and Extended family follow the current connection graph, independently of direct-connection history preferences. New direct connections default to full history with a directional future-only override; existing choices remain unchanged. An unlocked authorized device performs encrypted history catch-up.
 
-The [Feed, Share, Photos and social albums design](design/feed-share-photos.md) records the delivered web behavior and platform limits. Native archive compatibility guards are built, but this release does not deliver native album UI parity or a new native binary. Typed mentions (#125), badges/push (#7), and native distribution (#49/#114) remain separate priorities. **Typed mentions are the next ready product implementation**, subject to active incidents and release safeguards.
+The [Feed, Share, Photos and social albums design](design/feed-share-photos.md) records the delivered web behavior and platform limits. Native archive compatibility guards are built, but this release does not deliver native album UI parity or a new native binary. Typed mentions (#125), badges/push (#7), and native distribution (#49/#114) remain separate priorities. **Invitation history choice (#99) is the current owner-requested follow-up; typed mentions are next afterward**, subject to active incidents and release safeguards.
 
 These rows follow the owner’s list. The two composer/navigation requests and the gear icon are one UI workstream. “Share” is the second-tab label from the explicit ordered list; “Post” describes its composer. The supplied sketch adds More as tab five, Post / Photos Only tabs inside Share, and Feed content/view/author filters. Use its handwritten numbering for order and the final Albums and Community names from the owner’s text.
 

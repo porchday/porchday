@@ -6,7 +6,7 @@ import { encryptAccountEmail, processAccountEmails } from './email-outbox';
 import { invitationRecipientKey, invitationHistoryRecipient, recordInvitationHistory } from './invitation-history';
 import type { Env, Variables } from './types';
 
-const input = z.object({email:z.email().max(254),kind:z.enum(['friend','family']).optional()}).strict();
+const input = z.object({email:z.email().max(254),kind:z.enum(['friend','family']).optional(),history:z.enum(['full','future']).default('full')}).strict();
 const accepted = {accepted:true,message:'If eligible, an invitation will be emailed.'};
 const cursorSchema=z.object({at:z.iso.datetime(),id:z.uuid()}).strict();
 
@@ -24,7 +24,7 @@ export function createPlatformInvitationRoutes() {
    const actor=await pool.query(`SELECT 1 FROM public.auth_session s
     WHERE s.id=$1 AND s."userId"=$2 AND s."expiresAt">now() AND app.auth_member_status(s."userId"::uuid) IN('active','restricted')`,[c.get('sessionId'),c.get('memberId')]);
    if(!actor.rowCount)return c.json({error:{code:'ACCOUNT_UNAVAILABLE',message:'Sign in to view your invitations.'}},403);
-   const {rows}=await pool.query(`SELECT id,sender_id,recipient_key,encrypted_recipient,requested_at,expires_at,connection_kind,
+   const {rows}=await pool.query(`SELECT id,sender_id,recipient_key,encrypted_recipient,requested_at,expires_at,connection_kind,connection_history,
     to_char(requested_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_at,
     CASE WHEN revoked_at IS NOT NULL THEN 'revoked' WHEN joined_at IS NOT NULL OR EXISTS(SELECT FROM public.auth_user u WHERE u.id=claimed_user AND u."emailVerified")
      THEN 'joined' WHEN expires_at<=now() THEN 'expired' ELSE 'pending' END AS status
@@ -32,7 +32,7 @@ export function createPlatformInvitationRoutes() {
     AND ($2::timestamptz IS NULL OR (requested_at,id)<($2::timestamptz,$3::uuid))
     ORDER BY requested_at DESC,id DESC LIMIT 51`,[c.get('memberId'),cursor?.at||null,cursor?.id||null]);
    const page=rows.slice(0,50),last=page.at(-1);
-   const items=await Promise.all(page.map(async row=>({id:row.id,email:await invitationHistoryRecipient(c.env,row),requested_at:row.requested_at,expires_at:row.expires_at,status:row.status==='revoked' && c.req.query('v')!=='2'?'expired':row.status,kind:row.connection_kind})));
+   const items=await Promise.all(page.map(async row=>({id:row.id,email:await invitationHistoryRecipient(c.env,row),requested_at:row.requested_at,expires_at:row.expires_at,status:row.status==='revoked' && c.req.query('v')!=='2'?'expired':row.status,kind:row.connection_kind,history:row.connection_history})));
    return c.json({items,next_cursor:rows.length>50&&last?Buffer.from(JSON.stringify({at:last.cursor_at,id:last.id})).toString('base64url'):null});
   }finally{c.executionCtx.waitUntil(pool.end());}
  });
@@ -68,22 +68,22 @@ export function createPlatformInvitationRoutes() {
    if(issue){
     const bytes=crypto.getRandomValues(new Uint8Array(32)),token=Buffer.from(bytes).toString('base64url'),tokenHash=await hashToken(token);
     const link=new URL('/join',c.env.APP_URL);link.hash='invite='+token;
-    const invitation=await db.query("INSERT INTO public.pilot_invitations(token_hash,email,expires_at,sender_id,connection_kind) VALUES($1,$2,now()+interval '7 days',$3,$4) RETURNING expires_at",[tokenHash,email,c.get('memberId'),parsed.data.kind||null]);
+    const invitation=await db.query("INSERT INTO public.pilot_invitations(token_hash,email,expires_at,sender_id,connection_kind,connection_history) VALUES($1,$2,now()+interval '7 days',$3,$4,$5) RETURNING expires_at",[tokenHash,email,c.get('memberId'),parsed.data.kind||null,parsed.data.history]);
     const deadline=new Date(invitation.rows[0].expires_at).toISOString();
-    const text=`@${actor.rows[0].handle} invited you to join Porchday, a simple social network.\n\nCreate an account using this private invitation link:\n${link.href}\n\nOr visit ${new URL('/join',c.env.APP_URL).href} and enter this invitation code:\n${token}\n\nThis invitation is for this email address only and can be used once. It expires at ${deadline} (seven days after it was requested). The pilot is for adults 18 and older. ${parsed.data.kind ? `Accepting this invitation and verifying your email automatically connects you and @${actor.rows[0].handle} as ${parsed.data.kind === 'family' ? 'Family' : 'Friends'}. You will share future posts for that audience, not past posts. Each of you can change your own label or disconnect later.` : 'Joining does not automatically connect you to the inviter.'}\n\nIf you do not want to join, ignore this email. No account has been created for you. Please do not forward this invitation.`;
+    const text=`@${actor.rows[0].handle} invited you to join Porchday, a simple social network.\n\nCreate an account using this private invitation link:\n${link.href}\n\nOr visit ${new URL('/join',c.env.APP_URL).href} and enter this invitation code:\n${token}\n\nThis invitation is for this email address only and can be used once. It expires at ${deadline} (seven days after it was requested). The pilot is for adults 18 and older. ${parsed.data.kind ? `Accepting this invitation and verifying your email automatically connects you and @${actor.rows[0].handle} as ${parsed.data.kind === 'family' ? 'Family' : 'Friends'}. ${parsed.data.history === 'full' ? 'Your inviter chose to share their earlier and future posts and photos for that audience.' : 'Your inviter chose to share only new posts and photos after you connect.'} Your own sharing starts with full history for this connection. Each of you can change your own label or disconnect later.` : 'Joining does not automatically connect you to the inviter.'}\n\nIf you do not want to join, ignore this email. No account has been created for you. Please do not forward this invitation.`;
     const encrypted=await encryptAccountEmail(c.env,{to:email,subject:'You are invited to Porchday',text});
     await db.query("INSERT INTO public.auth_email_outbox(member_id,purpose,invitation_token_hash,encrypted_payload,expires_at) VALUES($1,'platform_invitation',$2,$3,$4)",[c.get('memberId'),tokenHash,encrypted,deadline]);
    }
    // Associate only this sender's actual invitation. Never reveal another
    // sender's invitation, an existing account, suppression or mail delivery.
-   const own=await db.query(`SELECT i.token_hash,i.expires_at,i.consumed_user,i.connection_kind,
+   const own=await db.query(`SELECT i.token_hash,i.expires_at,i.consumed_user,i.connection_kind,i.connection_history,
     CASE WHEN u."emailVerified" THEN coalesce(i.claimed_at,i.created_at) END AS joined_at
     FROM public.pilot_invitations i LEFT JOIN public.auth_user u ON u.id=i.consumed_user
     WHERE i.sender_id=$1 AND i.email=$2 ORDER BY i.created_at DESC LIMIT 1`,[c.get('memberId'),email]);
    const prior=own.rows[0],requestedAt=new Date(receipt.rows[0].created_at);
    await recordInvitationHistory(db,c.env,{sender:c.get('memberId'),email,key,requestedAt,
     expiresAt:prior?new Date(prior.expires_at):new Date(requestedAt.getTime()+7*24*60*60_000),
-    tokenHash:prior?.token_hash||null,claimedUser:prior?.consumed_user,joinedAt:prior?.joined_at,connectionKind:prior?prior.connection_kind:parsed.data.kind});
+    tokenHash:prior?.token_hash||null,claimedUser:prior?.consumed_user,joinedAt:prior?.joined_at,connectionKind:prior?prior.connection_kind:parsed.data.kind,connectionHistory:prior?prior.connection_history:parsed.data.history});
    if(prior)await db.query('UPDATE public.pilot_invitations SET history_recorded=true WHERE token_hash=$1',[prior.token_hash]);
    await db.query('COMMIT');committed=true;
    // Response never reveals recipient existence, duplicate suppression or mail

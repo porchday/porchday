@@ -9,15 +9,16 @@ export async function invitationRecipientKey(secret:string,email:string) {
  return [...new Uint8Array(bytes)].map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-type HistoryInput={sender:string;email:string;key:string;requestedAt:Date;expiresAt:Date;tokenHash:string|null;claimedUser?:string|null;joinedAt?:Date|null;connectionKind?:string|null};
+type HistoryInput={sender:string;email:string;key:string;requestedAt:Date;expiresAt:Date;tokenHash:string|null;claimedUser?:string|null;joinedAt?:Date|null;connectionKind?:string|null;connectionHistory?:"full"|"future"};
 /** Every accepted request gets a receipt, including suppressed requests. */
 export async function recordInvitationHistory(db:Pick<Pool|PoolClient,'query'>,env:Env,input:HistoryInput) {
  const encrypted=await encryptAccountEmail(env,{to:input.email,subject:'Porchday invitation receipt',text:input.sender+'\n'+input.key});
  await db.query(`INSERT INTO public.platform_invitation_history
-  (id,sender_id,recipient_key,encrypted_recipient,requested_at,expires_at,invitation_token_hash,claimed_user,joined_at,connection_kind)
-  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+  (id,sender_id,recipient_key,encrypted_recipient,requested_at,expires_at,invitation_token_hash,claimed_user,joined_at,connection_kind,connection_history)
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
   ON CONFLICT(sender_id,recipient_key) DO UPDATE SET
    encrypted_recipient=EXCLUDED.encrypted_recipient,
+   connection_history=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at THEN EXCLUDED.connection_history ELSE platform_invitation_history.connection_history END,
    connection_kind=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at THEN EXCLUDED.connection_kind ELSE platform_invitation_history.connection_kind END,
    revoked_at=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN NULL ELSE platform_invitation_history.revoked_at END,
    connection_checked_at=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN NULL ELSE platform_invitation_history.connection_checked_at END,
@@ -26,7 +27,7 @@ export async function recordInvitationHistory(db:Pick<Pool|PoolClient,'query'>,e
    invitation_token_hash=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at THEN EXCLUDED.invitation_token_hash ELSE platform_invitation_history.invitation_token_hash END,
    claimed_user=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN EXCLUDED.claimed_user ELSE coalesce(platform_invitation_history.claimed_user,EXCLUDED.claimed_user) END,
    joined_at=CASE WHEN EXCLUDED.requested_at>=platform_invitation_history.requested_at AND EXCLUDED.invitation_token_hash IS NOT NULL AND EXCLUDED.invitation_token_hash IS DISTINCT FROM platform_invitation_history.invitation_token_hash THEN EXCLUDED.joined_at ELSE coalesce(platform_invitation_history.joined_at,EXCLUDED.joined_at) END`,
-  [crypto.randomUUID(),input.sender,input.key,encrypted,input.requestedAt,input.expiresAt,input.tokenHash,input.claimedUser||null,input.joinedAt||null,input.connectionKind||null]);
+  [crypto.randomUUID(),input.sender,input.key,encrypted,input.requestedAt,input.expiresAt,input.tokenHash,input.claimedUser||null,input.joinedAt||null,input.connectionKind||null,input.connectionHistory||"full"]);
 }
 
 export async function invitationHistoryRecipient(env:Env,row:{sender_id:string;recipient_key:string;encrypted_recipient:string}) {
@@ -39,7 +40,7 @@ export async function invitationHistoryRecipient(env:Env,row:{sender_id:string;r
  * Bounded and idempotent; no email is sent and no token is made valid again.
  */
 export async function captureLegacyInvitations(db:Pick<Pool|PoolClient,'query'>,env:Env) {
- const {rows}=await db.query(`SELECT i.sender_id,i.email,i.token_hash,i.created_at,i.expires_at,i.consumed_user,
+ const {rows}=await db.query(`SELECT i.sender_id,i.email,i.token_hash,i.created_at,i.expires_at,i.consumed_user,i.connection_kind,i.connection_history,
   CASE WHEN u."emailVerified" THEN coalesce(i.claimed_at,i.created_at) END AS joined_at
   FROM public.pilot_invitations i LEFT JOIN public.auth_user u ON u.id=i.consumed_user
   WHERE i.sender_id IS NOT NULL AND NOT i.history_recorded AND i.created_at>now()-interval '90 days'
@@ -48,7 +49,7 @@ export async function captureLegacyInvitations(db:Pick<Pool|PoolClient,'query'>,
   const key=await invitationRecipientKey(env.BETTER_AUTH_SECRET,row.email);
   // A newer receipt may already represent the same recipient. Never replace it
   // with an older credential or repeatedly backfill an old superseded token.
-  await recordInvitationHistory(db,env,{sender:row.sender_id,email:row.email,key,requestedAt:row.created_at,expiresAt:row.expires_at,tokenHash:row.token_hash,claimedUser:row.consumed_user,joinedAt:row.joined_at});
+  await recordInvitationHistory(db,env,{sender:row.sender_id,email:row.email,key,requestedAt:row.created_at,expiresAt:row.expires_at,tokenHash:row.token_hash,claimedUser:row.consumed_user,joinedAt:row.joined_at,connectionKind:row.connection_kind,connectionHistory:row.connection_history});
   await db.query('UPDATE public.pilot_invitations SET history_recorded=true WHERE token_hash=$1',[row.token_hash]);
  }
 }
