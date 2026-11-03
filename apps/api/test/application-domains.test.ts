@@ -46,7 +46,7 @@ describe('canonical domain transition through the actual Worker routes', () => {
       for (const method of ['GET', 'HEAD']) {
         const response = await request(legacy + path + '?view=plain', { method });
         expect(response.status).toBe(307);
-        expect(response.headers.get('Location')).toBe(canonical + path + '?view=plain');
+        expect(response.headers.get('Location')).toBe(canonical + (path === '/app' ? '/' : path.replace(/^\/app\//, '/')) + '?view=plain');
         expect(response.headers.get('Cache-Control')).toBe('no-store');
         expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
       }
@@ -134,7 +134,7 @@ describe('canonical domain transition through the actual Worker routes', () => {
       for (const path of ['/app/post/fixture?view=all', '/api/auth/verify-email?token=synthetic', '/manifest.webmanifest']) {
         const response = await request(host + path);
         expect(response.status).toBe(307);
-        expect(response.headers.get('Location')).toBe(canonical + path);
+        expect(response.headers.get('Location')).toBe(canonical + path.replace(/^\/app\//, '/'));
       }
       for (const method of ['POST', 'PUT', 'DELETE', 'OPTIONS']) {
         const response = await request(host + '/api/auth/sign-in/email', { method, body: 'synthetic' });
@@ -173,7 +173,7 @@ describe('canonical domain transition through the actual Worker routes', () => {
       for (const method of ['GET', 'HEAD']) {
         const response = await request(host + path + '?view=plain', { method });
         expect(response.status).toBe(307);
-        expect(response.headers.get('Location')).toBe(target + path + '?view=plain');
+        expect(response.headers.get('Location')).toBe(target + (path === '/app' ? '/' : path.replace(/^\/app\//, '/')) + '?view=plain');
         expect(response.headers.get('Cache-Control')).toBe('no-store');
       }
       const denied = await request(host + '/api/auth/sign-in/email', { method: 'POST', headers: { Origin: target }, body: 'synthetic' });
@@ -225,4 +225,18 @@ it('clones request bindings without changing shared bindings during concurrent r
   resume();
   expect(await (await oldRequest).json()).toEqual({ origin: legacy, sameBindings: false, sameAssets: true });
   expect(env.APP_URL).toBe(canonical);
+});
+
+it('redirects old member URLs on canonical and staging origins without matching /app-shell or /appeals', async () => {
+  for (const host of [canonical,'https://staging.porchday.com']) {
+    const env=host===canonical?environment():environment({APP_URL:host,LEGACY_APP_URL:undefined,ENVIRONMENT:'staging'});
+    for(const [path,target] of [['/app','/'],['/app/','/'],['/app/connections','/connections'],['/app/albums/id','/albums/id'],['/app//evil.test','/evil.test']]) {
+      for(const method of ['GET','HEAD']) {
+        const response=await request(host+path+'?keep=yes',{method},env);
+        expect(response.status).toBe(307);expect(response.headers.get('Location')).toBe(host+target+'?keep=yes');
+      }
+      const response=await request(host+path,{method:'POST'},env);expect(response.headers.get('Location')).toBeNull();
+    }
+    for(const path of ['/connections','/albums/id','/app-shell','/appeals','/application']) expect((await request(host+path,{},env)).headers.get('Location')).toBeNull();
+  }
 });

@@ -12,7 +12,7 @@ type RouteKey = keyof Summary["routes"][number];
 const number = new Intl.NumberFormat();
 const ms = (value: number | null) => value === null ? "" : number.format(Math.round(value));
 
-/** /app/performance. The signed-in member's own traces, read from the
+/** /performance. The signed-in member's own traces, read from the
  * existing /api/v1/traces endpoints; nothing here is visible to anyone else. */
 export default function TraceInspector() {
   const [traces, setTraces] = useState<Json[] | null>(null);
@@ -35,7 +35,7 @@ export default function TraceInspector() {
   }
   useEffect(() => { void action.run(load); }, []);
   useEffect(() => {
-    if (selected) history.replaceState(history.state, "", `/app/performance?trace=${selected}`);
+    if (selected) history.replaceState(history.state, "", `/performance?trace=${selected}`);
     void action.run(() => loader.select(selected));
   }, [selected]);
 
@@ -46,7 +46,7 @@ export default function TraceInspector() {
         <h1>Performance</h1>
         <p className="small-copy">
           Timings from your own page loads, from this and any other browser where you turned on performance tracing.
-          {!tracingEnabled() && <> Tracing is off in this browser; turn it on in <a href="/app/settings/data">Settings → My data</a>.</>}
+          {!tracingEnabled() && <> Tracing is off in this browser; turn it on in <a href="/settings/data">Settings → My data</a>.</>}
         </p>
         {traces === null ? <Loading /> : !traces.length ? <p>No traces yet. Load a few pages, then come back.</p> : (
           <div className="trace-picker">

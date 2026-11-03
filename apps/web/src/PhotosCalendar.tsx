@@ -334,7 +334,7 @@ function CalendarMonth({month, author, tag, selected, setSelected, onLoaded, aut
           )}
           {(byDay.get(selected) || []).map(({ row, content }) => (
             <article className="calendar-post" key={row.id}>
-              <a href={`/app/post/${row.id}`}>
+              <a href={`/post/${row.id}`}>
                 @{row.author_handle || "Member"} · Open post
               </a>
               <p>{content.text}</p>

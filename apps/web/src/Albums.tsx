@@ -34,12 +34,12 @@ export function Albums() {
       const envelope=await vault.seal({name:name.trim(),description:""},{id,kind:"album",audience:"only_me"});
       await post("/albums",{envelope});return id;
     });
-    if(created)navigateAfterSaves("/app/albums/"+created);
+    if(created)navigateAfterSaves("/albums/"+created);
   }
   return <>
     <div className="page-heading album-heading"><h1>Albums</h1>{vault.member.status==="active"&&<Button variant="primary" onClick={()=>setCreating(true)}><Icon name="plus"/>Create album</Button>}</div>
     <Alert>{action.error}</Alert>
-    {!loaded&&action.busy?<Loading/>:<div className="album-grid">{albums.map(({row,content,error})=><a className="album-card panel" href={"/app/albums/"+row.id} key={row.id}><AlbumCover photo={row.cover}/><h2>{content?.name||"Encrypted album"}</h2><p>{row.photo_count||0} {(row.photo_count||0)===1?"photo":"photos"} · {roleLabels[row.role]}</p>{error&&<p>{error}</p>}</a>)}</div>}
+    {!loaded&&action.busy?<Loading/>:<div className="album-grid">{albums.map(({row,content,error})=><a className="album-card panel" href={"/albums/"+row.id} key={row.id}><AlbumCover photo={row.cover}/><h2>{content?.name||"Encrypted album"}</h2><p>{row.photo_count||0} {(row.photo_count||0)===1?"photo":"photos"} · {roleLabels[row.role]}</p>{error&&<p>{error}</p>}</a>)}</div>}
     {loaded&&!albums.length&&<Empty icon="album" title="Make an album together">Create an album, add people and choose whether they can view, add photos or administer it.</Empty>}
     {next&&<Button busy={action.busy} onClick={()=>load(next)}>Load more albums</Button>}
     {creating&&<Modal title="Create album" onClose={()=>setCreating(false)}><form className="form-stack" onSubmit={create}><Field label="Album name" value={name} onChange={e=>setName(e.target.value)} maxLength={100} required/><p>You’ll be the album-admin. Add people after creating it.</p><Alert>{action.error}</Alert><Button type="submit" variant="primary" busy={action.busy} disabled={!name.trim()}>Create album</Button></form></Modal>}
@@ -72,10 +72,10 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
   },"Album updated.");}
   const admin=data?.album.role==="admin",owner=data?.album.owner_id===vault.member.id,canWrite=vault.member.status==="active";
   return <>
-    <a className="text-link" href="/app/albums">← Albums</a><Alert>{action.error}</Alert><Alert success>{action.notice}</Alert>
+    <a className="text-link" href="/albums">← Albums</a><Alert>{action.error}</Alert><Alert success>{action.notice}</Alert>
     {!data||!content?(!action.error&&<Loading/>):<>
       <div className="page-heading"><h1>{String(content.name||"Album")}</h1><p>{data.members.length} people · {roleLabels[data.album.role]}</p></div>
-      <div className="album-actions">{data.album.role!=="read"&&canWrite&&<a className="button primary" href={"/app/share?album="+id}>Add photos <Icon name="plus"/></a>}<Button onClick={showPeople}>People & permissions</Button></div>
+      <div className="album-actions">{data.album.role!=="read"&&canWrite&&<a className="button primary" href={"/share?album="+id}>Add photos <Icon name="plus"/></a>}<Button onClick={showPeople}>People & permissions</Button></div>
       {data.album.role!=="read"&&<p className="muted">Add photos opens Share → Photos Only.</p>}
       {people&&<section className="panel form-stack"><h2>People & permissions</h2><p>Album members can view its photos. A photo’s existing audience keeps access too.</p>
         {data.members.map(m=><div className="album-member" key={m.member_id}><span>{m.member_id===vault.member.id?"You":"@"+m.handle}{m.member_id===data.album.owner_id?" · owner":""}</span>
@@ -89,6 +89,6 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
       </section>}
       {children?.(data.album)}
     </>}
-    {confirm&&<Modal title={confirm==="delete"?"Delete album?":confirm==="leave"?"Leave album?":"Transfer album ownership?"} onClose={()=>setConfirm(null)}><p>{confirm==="delete"?"This removes the album and its access grants. Photos keep any access they have outside this album.":confirm==="leave"?"You’ll lose access supplied by this album. Other photo access is unchanged.":"The new owner will control deletion and future ownership transfers. You remain an album-admin."}</p><Button busy={action.busy} onClick={async()=>{const destination=await action.runSave(async()=>{if(confirm==="delete")await del("/albums/"+id);else if(confirm==="leave")await post(`/albums/${id}/leave`,{});else await post(`/albums/${id}/transfer`,{member_id:confirm});if(confirm==="leave"||confirm==="delete")return "/app/albums";setConfirm(null);await load();});if(destination)navigateAfterSaves(destination);}}>Confirm</Button><Alert>{action.error}</Alert></Modal>}
+    {confirm&&<Modal title={confirm==="delete"?"Delete album?":confirm==="leave"?"Leave album?":"Transfer album ownership?"} onClose={()=>setConfirm(null)}><p>{confirm==="delete"?"This removes the album and its access grants. Photos keep any access they have outside this album.":confirm==="leave"?"You’ll lose access supplied by this album. Other photo access is unchanged.":"The new owner will control deletion and future ownership transfers. You remain an album-admin."}</p><Button busy={action.busy} onClick={async()=>{const destination=await action.runSave(async()=>{if(confirm==="delete")await del("/albums/"+id);else if(confirm==="leave")await post(`/albums/${id}/leave`,{});else await post(`/albums/${id}/transfer`,{member_id:confirm});if(confirm==="leave"||confirm==="delete")return "/albums";setConfirm(null);await load();});if(destination)navigateAfterSaves(destination);}}>Confirm</Button><Alert>{action.error}</Alert></Modal>}
   </>;
 }

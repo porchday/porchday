@@ -232,7 +232,7 @@ export function Connections() {
                 return (
                   <div className="member-row" key={r.id}>
                     <MemberAvatar memberId={other} name={label(other)} />
-                    <a className="member-info" href={`/app/wall/${other}`}>
+                    <a className="member-info" href={`/wall/${other}`}>
                       <strong>@{label(other)}</strong>
                       <small>
                         Your label: {r.kind === "family" ? "Family" : "Friend"}
@@ -464,7 +464,7 @@ export function Groups() {
       );
       const r = await post("/groups", { envelope });
       setCreate(false);
-      navigate(`/app/groups/${r.id}`);
+      navigate(`/groups/${r.id}`);
     });
   }
   return (
@@ -542,7 +542,7 @@ export function Groups() {
             <a
               className={`group-card ${["sage", "apricot", "lavender"][i % 3]}`}
               key={g.id}
-              href={`/app/groups/${g.id}`}
+              href={`/groups/${g.id}`}
             >
               <span className="group-art">
                 <Icon name={["leaf", "sun", "group"][i % 3]} size={46} />
@@ -868,7 +868,7 @@ export function GroupDetail({ id }: { id: string }) {
                       ? `/groups/${id}`
                       : `/groups/${id}/members/${vault.member.id}`,
                   );
-                  navigate("/app/groups");
+                  navigate("/groups");
                 });
             }}
           >
@@ -959,7 +959,7 @@ export function Wall({ id }: { id?: string }) {
             <p>@{handle || "private"}</p>
           </div>
           {own ? (
-            <a href="/app/settings/profile" className="button outline compact">
+            <a href="/settings/profile" className="button outline compact">
               <Icon name="edit" size={16} />
               Edit profile
             </a>

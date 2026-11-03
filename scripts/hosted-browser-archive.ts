@@ -127,7 +127,7 @@ try{
  page.on('response',response=>{const url=new URL(response.url());if(url.origin===stagingOrigin&&url.pathname==='/api/v1/media/'+state.interop.webMediaId+'/bytes'&&photoStatuses.length<8)photoStatuses.push(response.status());});
  progress('login');await page.goto(stagingOrigin+'/login');check(new URL(page.url()).origin===stagingOrigin,'LOGIN_ORIGIN_CHANGED');
  await page.getByLabel('Email address',{exact:true}).fill(a.email);await page.getByLabel('Password',{exact:true}).fill(a.password);
- await page.getByRole('button',{name:'Log in',exact:true}).click();await page.waitForURL(stagingOrigin+'/app');
+ await page.getByRole('button',{name:'Log in',exact:true}).click();await page.waitForURL(stagingOrigin+'/');
  cookie=(await context.cookies(stagingOrigin)).map(c=>`${c.name}=${c.value}`).join('; ');check(cookie,'BROWSER_SESSION_REQUIRED');
  const devices=list(await api('/api/v1/devices'));baselineDevices=digest(JSON.stringify(devices.map(d=>[d.id,d.fingerprint,d.revoked_at]).sort()));
  activeDevice=await page.evaluate(id=>localStorage.getItem(`porchday-device:${id}`),a.id) as string;
@@ -138,11 +138,11 @@ try{
  await page.getByRole('checkbox',{name:/Remember this private device/}).check();await page.getByRole('button',{name:'Unlock'}).click();
  await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({timeout:90000});
  check(baselineDevices===digest(JSON.stringify(list(await api('/api/v1/devices')).map(d=>[d.id,d.fingerprint,d.revoked_at]).sort())),'ARCHIVE_ENROLLED_EXTRA_DEVICE');
- progress('original-photo');await page.goto(stagingOrigin+'/app/post/'+state.interop.webPostId);
+ progress('original-photo');await page.goto(stagingOrigin+'/post/'+state.interop.webPostId);
  progress('original-photo-text');await page.getByText(state.interop.expectedPostText,{exact:true}).waitFor({timeout:60000});await knownPhoto();
  if(photoOnly){complete=true;await receipt('photo-result',{v:1,checkedAt:new Date().toISOString(),originalPhotoDecoded:true,referenceJPEGHashVerified:true,pixelsVerified:true,photoStatuses});progress('photo-only-passed');}
  else{
- progress('protected-export');await page.goto(stagingOrigin+'/app/settings/data');
+ progress('protected-export');await page.goto(stagingOrigin+'/settings/data');
  await page.getByRole('heading',{name:'Export your data',exact:true}).waitFor();
  check(!await page.getByRole('checkbox',{name:/Download readable, unencrypted ZIP/}).isChecked(),'DEFAULT_EXPORT_NOT_PROTECTED');
  page.on('download',d=>{const task=saveDownload(d).catch(()=>{observerFailure=true;});downloadTasks.push(task);});
@@ -215,7 +215,7 @@ try{
   check(payload.provenance?.source_id===source.id&&payload.provenance?.source_member_id===a.id,'IMPORTED_PROVENANCE_MISMATCH');
   if(source.id===state.interop.webPostId){check(payload.text===state.interop.expectedPostText,'IMPORTED_TEXT_MISMATCH');importedKnown=id;}
  }
- check(importedKnown,'KNOWN_POST_NOT_IMPORTED');await page.goto(stagingOrigin+'/app/post/'+importedKnown);
+ check(importedKnown,'KNOWN_POST_NOT_IMPORTED');await page.goto(stagingOrigin+'/post/'+importedKnown);
  await page.getByText(state.interop.expectedPostText,{exact:true}).waitFor({timeout:60000});await knownPhoto();
  progress('scoped-cleanup');await cleanNewContent();
  check(digest(JSON.stringify((await api('/api/v1/me')).envelope))===baselineProfile,'ARCHIVE_PROFILE_CHANGED');

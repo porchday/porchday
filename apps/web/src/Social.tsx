@@ -322,7 +322,7 @@ export function Composer({
         const expiresAt=deadline(timer);setPhotosShared(0);
         for(const photo of photos){await publishPhoto(vault,photo,audience,expiresAt,album||null);setPhotos(current=>current.filter(p=>p.id!==photo.id));setPhotosShared(count=>count+1);}
         setTimer("");onPosted();
-        if(album&&!text.trim())return "/app/albums/"+album;
+        if(album&&!text.trim())return "/albums/"+album;
       },"Photos shared. Your post draft is preserved.");
       if(destination)navigateAfterSaves(destination);
       return;
@@ -679,7 +679,7 @@ export function Feed({
             }
             action={
               !groupId && !singleId ? (
-                <a className="button outline compact" href="/app/connections">
+                <a className="button outline compact" href="/connections">
                   Find a friend <Icon name="arrow" size={16} />
                 </a>
               ) : undefined
@@ -879,7 +879,7 @@ export function PostCard({
   return (
     <article ref={cardRef} className="post-card panel">
       <header className="post-heading">
-        <a href={`/app/wall/${row.author_id}`} className="post-author">
+        <a href={`/wall/${row.author_id}`} className="post-author">
           <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} />
           <div>
             <strong>
@@ -960,7 +960,7 @@ export function PostCard({
                 <Icon name="shield" size={16} />
                 Report a concern
               </button>
-              <a href={`/app/post/${row.id}`}>
+              <a href={`/post/${row.id}`}>
                 <Icon name="external" size={16} />
                 Open post
               </a>

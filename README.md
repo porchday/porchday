@@ -82,7 +82,7 @@ To produce the tracked client source/rebuild archive locally, run `python3 scrip
 
 ## Production domains
 
-[porchday.org](https://porchday.org) became the primary production address on October 26, 2026. Public `.com` pages forward to `.org`; [porchday.com/app](https://porchday.com/app) remains available for existing devices because their saved encryption keys belong to that origin. Use the same account at `.org` and your encryption recovery secret to unlock its history. Keep the old browser data and installed app until that succeeds. See the [migration guide](docs/domain-migration.md), completed public-migration evidence in [issue #17](https://github.com/porchday/porchday/issues/17), and remaining member-device checks in [issue #7](https://github.com/porchday/porchday/issues/7).
+[porchday.org](https://porchday.org) is the production address. After owner-confirmed member migration, `.com` website visits automatically redirect to `.org`. Member pages use root-level paths such as `/connections`, `/share`, `/albums` and `/settings/profile`; the feed is `/`. Old `/app/...` bookmarks redirect to their new paths without changing queries or fragments. Existing browser data and the PWA's internal identity are preserved. See the [routing and migration guide](docs/domain-migration.md), [domain issue #17](https://github.com/porchday/porchday/issues/17), and separate native/device checks in [#7](https://github.com/porchday/porchday/issues/7).
 
 ## Secrets
 

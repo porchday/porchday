@@ -14,7 +14,7 @@ test('Apple association is absent until real signing identifiers are configured 
  const body=await response.json() as any;
  expect(body.applinks.details).toHaveLength(1);
  expect(body.applinks.details[0].appIDs).toEqual(['A123456789.com.example.porchday']);
- expect(body.applinks.details[0].components.map((c:Record<string,string>)=>c['/'])).toEqual(['/app/post/*']);
+ expect(body.applinks.details[0].components.map((c:Record<string,string>)=>c['/'])).toEqual(['/post/*','/app/post/*']);
 });
 
 test('unconfigured deployment safeguards stop API traffic while health remains available',async()=>{

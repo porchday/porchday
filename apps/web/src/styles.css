@@ -4531,7 +4531,7 @@ hr {
   font-size: 14px;
 }
 
-/* Performance inspector (/app/performance). */
+/* Performance inspector (/performance). */
 .trace-inspector {
   display: grid;
   gap: 1rem;

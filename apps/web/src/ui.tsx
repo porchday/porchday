@@ -1,3 +1,4 @@
+import { canonicalPath } from "./routes";
 import { hasPendingSaves, pendingSaves, withPendingSave } from "./pending-saves";
 import React, { useEffect, useState } from "react";
 import { message } from "./api";
@@ -457,7 +458,7 @@ export function navigate(path: string) {
     location.assign(canonicalNavigation(destination) ?? destination.href);
     return;
   }
-  history.pushState({}, "", path);
+  history.pushState({}, "", destination.origin === location.origin ? canonicalPath(destination.pathname) + destination.search + destination.hash : path);
   window.dispatchEvent(new PopStateEvent("popstate"));
   window.scrollTo(0, 0);
 }

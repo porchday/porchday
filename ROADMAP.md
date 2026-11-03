@@ -18,6 +18,8 @@ The owner’s explicit order below takes precedence over sorting by label alone;
 
 Owner follow-up November 2: retire legacy `.com` website navigation after confirmed member migration; redirect app/login routes to `.org` while preserving API compatibility. Tracked in [#17](https://github.com/porchday/porchday/issues/17).
 
+Owner follow-up: use root-level member routes (`/connections`, `/albums`, `/share`, feed `/`) with compatible `/app/...` redirects; tracked with navigation in [#124](https://github.com/porchday/porchday/issues/124).
+
 ## Execution queue
 
 Ranks continue across the sections below. This is an order for selecting work, not a promise to finish every item before taking any lower-ranked verification step.

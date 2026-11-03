@@ -20,8 +20,12 @@ enum ServerConfiguration {
               url.port == nil, url.user == nil, url.password == nil,
               url.query == nil, url.fragment == nil else { return nil }
         let path = url.pathComponents
-        guard path.count == 4, path[1] == "app", path[2] == "post", UUID(uuidString: path[3]) != nil else { return nil }
-        return path[3]
+        let post: String?
+        if path.count == 3, path[1] == "post" { post = path[2] }
+        else if path.count == 4, path[1] == "app", path[2] == "post" { post = path[3] }
+        else { post = nil }
+        guard let post, UUID(uuidString: post) != nil else { return nil }
+        return post
     }
 
     static func passwordResetRedirect(origin: URL = ServerConfiguration.origin) -> URL {
