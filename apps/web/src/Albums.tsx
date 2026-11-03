@@ -1,3 +1,4 @@
+import {ExistingAlbumPhotos} from "./ExistingAlbumPhotos";
 import {shareAlbumHistory} from "./photo-album";
 import { AlbumCover } from "./AlbumCover";
 import type { PhotoRow } from "./photo-record";
@@ -37,7 +38,7 @@ export function Albums() {
     if(created)navigateAfterSaves("/albums/"+created);
   }
   return <>
-    <div className="page-heading album-heading"><h1>Albums</h1>{vault.member.status==="active"&&<Button variant="primary" onClick={()=>setCreating(true)}><Icon name="plus"/>Create album</Button>}</div>
+    <div className="page-heading album-heading"><h1 className="mobile-tab-title">Albums</h1>{vault.member.status==="active"&&<Button variant="primary" onClick={()=>setCreating(true)}><Icon name="plus"/>Create album</Button>}</div>
     <Alert>{action.error}</Alert>
     {!loaded&&action.busy?<Loading/>:<div className="album-grid">{albums.map(({row,content,error})=><a className="album-card panel" href={"/albums/"+row.id} key={row.id}><AlbumCover photo={row.cover}/><h2>{content?.name||"Encrypted album"}</h2><p>{row.photo_count||0} {(row.photo_count||0)===1?"photo":"photos"} · {roleLabels[row.role]}</p>{error&&<p>{error}</p>}</a>)}</div>}
     {loaded&&!albums.length&&<Empty icon="album" title="Make an album together">Create an album, add people and choose whether they can view, add photos or administer it.</Empty>}
@@ -49,6 +50,7 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
   const vault=useVault(),action=useAction();
   const [data,setData]=useState<{album:AlbumRow;members:Json[]}|null>(null),[content,setContent]=useState<Content|null>(null);
   const [name,setName]=useState(""),[people,setPeople]=useState(false),[choices,setChoices]=useState<Json[]>([]),[target,setTarget]=useState(""),[role,setRole]=useState<AlbumRole>("read");
+  const [choosing,setChoosing]=useState(false),[photoRevision,setPhotoRevision]=useState(0);
   const [history,setHistory]=useState<string>("");
   const [confirm,setConfirm]=useState<"leave"|"delete"|string|null>(null);
   async function load(){const result=await get("/albums/"+id);const decoded=await vault.open(result.album);setData(result as typeof data);setContent(decoded);setName(String(decoded.name||""));}
@@ -75,8 +77,8 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
     <a className="text-link" href="/albums">← Albums</a><Alert>{action.error}</Alert><Alert success>{action.notice}</Alert>
     {!data||!content?(!action.error&&<Loading/>):<>
       <div className="page-heading"><h1>{String(content.name||"Album")}</h1><p>{data.members.length} people · {roleLabels[data.album.role]}</p></div>
-      <div className="album-actions">{data.album.role!=="read"&&canWrite&&<a className="button primary" href={"/share?album="+id}>Add photos <Icon name="plus"/></a>}<Button onClick={showPeople}>People & permissions</Button></div>
-      {data.album.role!=="read"&&<p className="muted">Add photos opens Share → Photos Only.</p>}
+      <div className="album-actions">{data.album.role!=="read"&&canWrite&&<a className="button primary" href={"/share?album="+id}>Upload new photos <Icon name="plus"/></a>}{data.album.role!=="read"&&canWrite&&<Button onClick={()=>setChoosing(true)}>Choose existing photos</Button>}<Button onClick={showPeople}>People & permissions</Button></div>
+      {data.album.role!=="read"&&<p className="muted">Upload new photos opens Share → Photos.</p>}
       {people&&<section className="panel form-stack"><h2>People & permissions</h2><p>Album members can view its photos. A photo’s existing audience keeps access too.</p>
         {data.members.map(m=><div className="album-member" key={m.member_id}><span>{m.member_id===vault.member.id?"You":"@"+m.handle}{m.member_id===data.album.owner_id?" · owner":""}</span>
           {admin&&canWrite&&m.member_id!==data.album.owner_id&&m.member_id!==vault.member.id?<><select aria-label={"Role for @"+m.handle} value={m.role} disabled={action.busy} onChange={e=>changeMember(m.member_id,e.target.value as AlbumRole)}>{Object.entries(roleLabels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><Button variant="outline compact" disabled={action.busy} onClick={()=>changeMember(m.member_id,null)}>Remove</Button></>:<span>{roleLabels[m.role as AlbumRole]}</span>}
@@ -87,7 +89,8 @@ export function AlbumDetail({id,children}:{id:string;children?:(album:AlbumRow)=
           <Field label="Album name" value={name} maxLength={100} onChange={e=>setName(e.target.value)}/><Button disabled={!name.trim()||name===content.name} busy={action.busy} onClick={rename}>Save name</Button></>}
         {owner&&canWrite?<><Button variant="outline" onClick={()=>setConfirm("delete")}>Delete album</Button>{data.members.filter(m=>m.member_id!==vault.member.id&&m.role==="admin").map(m=><Button key={m.member_id} onClick={()=>setConfirm(m.member_id)}>Transfer ownership to @{m.handle}</Button>)}</>:canWrite&&<Button variant="outline" onClick={()=>setConfirm("leave")}>Leave album</Button>}
       </section>}
-      {children?.(data.album)}
+      <React.Fragment key={photoRevision}>{children?.(data.album)}</React.Fragment>
+      {choosing&&<ExistingAlbumPhotos albumId={id} onClose={()=>setChoosing(false)} onAdded={async()=>{setPhotoRevision(value=>value+1);await load();}}/>}
     </>}
     {confirm&&<Modal title={confirm==="delete"?"Delete album?":confirm==="leave"?"Leave album?":"Transfer album ownership?"} onClose={()=>setConfirm(null)}><p>{confirm==="delete"?"This removes the album and its access grants. Photos keep any access they have outside this album.":confirm==="leave"?"You’ll lose access supplied by this album. Other photo access is unchanged.":"The new owner will control deletion and future ownership transfers. You remain an album-admin."}</p><Button busy={action.busy} onClick={async()=>{const destination=await action.runSave(async()=>{if(confirm==="delete")await del("/albums/"+id);else if(confirm==="leave")await post(`/albums/${id}/leave`,{});else await post(`/albums/${id}/transfer`,{member_id:confirm});if(confirm==="leave"||confirm==="delete")return "/albums";setConfirm(null);await load();});if(destination)navigateAfterSaves(destination);}}>Confirm</Button><Alert>{action.error}</Alert></Modal>}
   </>;

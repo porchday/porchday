@@ -383,7 +383,11 @@ try {
     "More",
   ]);
   await nav.getByRole("link", { name: "More" }).click();
+  assert.equal(await page.locator(".app-mobile-header").getByRole("button").count(),0);
+  assert.equal(await page.locator(".app-mobile-header").getByRole("link").count(),1);
   const main = page.locator("main");
+  await main.getByRole("button",{name:"Log out",exact:true}).waitFor();
+  await main.getByRole("link",{name:"Notifications",exact:true}).waitFor();
   await main.getByRole("link", { name: "Builder chat", exact: true }).waitFor();
   assert.equal(
     await main

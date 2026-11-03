@@ -28,10 +28,10 @@ export function FeedExperience({ initialContent = "posts", initialView = "scroll
   const filter = useMemo(() => ({memberId: vault.member.id, selected, relations}), [vault.member.id, selected, relations]);
   const summary = selected.length === 3 && defaultAuthorCategories.every(c => selected.includes(c)) ? "Me, Friends & Family" : selected.map(c => authorLabels[c]).join(", ") || "Nobody";
   return <>
-    <div className="page-heading"><h1>Feed</h1></div>
+    <div className="page-heading mobile-tab-heading"><h1>Feed</h1></div>
     <div className="tabs" aria-label="Feed content">
       <button type="button" className={content === "posts" ? "active" : ""} aria-pressed={content === "posts"} onClick={() => setContent("posts")}>Posts</button>
-      <button type="button" className={content === "photos" ? "active" : ""} aria-pressed={content === "photos"} onClick={() => setContent("photos")}>Photos Only</button>
+      <button type="button" className={content === "photos" ? "active" : ""} aria-pressed={content === "photos"} onClick={() => setContent("photos")}>Photos</button>
     </div>
     <div className="feed-view-controls" aria-label="Feed view">
       <Button aria-pressed={view === "scroll"} onClick={() => setView("scroll")}>Infinite scroll</Button>

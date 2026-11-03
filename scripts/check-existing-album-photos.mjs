@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {readFile} from 'node:fs/promises';
+import {build} from 'esbuild';
+import {chromium} from 'playwright';
+const bundle=await build({stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {ExistingAlbumPhotos} from './apps/web/src/ExistingAlbumPhotos';window.calls=[];window.fail=true;window.fixtureClosed=false;window.refreshed=0;createRoot(document.getElementById('root')).render(<ExistingAlbumPhotos albumId="album" onClose={()=>{window.fixtureClosed=true}} onAdded={async()=>{window.refreshed++}}/>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'iife',define:{'process.env.NODE_ENV':'"production"'},plugins:[{name:'fixture',setup(b){
+ const mocks={
+ './vault':`export const useVault=()=>({member:{id:'me'}});`,
+ './PhotoFeed':`import {useState} from 'react';export function usePhotos(month,enabled,owned){if(!owned)throw Error('Must filter own uploads');const [older,setOlder]=useState(false);return {entries:[{id:'first',kind:'photo',day:'2026-01-01',media:{},photo:{id:'first',grants:[]}},{id:'included',kind:'photo',day:'2025-01-01',media:{},photo:{id:'included',grants:[{album_id:'album'}]}},{id:'broken',kind:'photo',day:'2024-01-01',error:'missing'},...(older?[{id:'old',kind:'attachment',day:'2014-01-01',media:{},post:{id:'post'}}]:[])],next:older?null:'next',loaded:true,busy:false,error:'',load:async()=>setOlder(true)}}`,
+ './Social':`import React from 'react';export const EncryptedPhoto=()=> <div className="fixture-photo">Photo</div>;`,
+ './photo-album':`export async function addPhotoToAlbum(v,id,album){window.calls.push(id);await new Promise(r=>setTimeout(r,100));}`,
+ './photo-adopt':`export async function adoptAttachment(v,post,id,day,album){window.calls.push(id);if(window.fail){window.fail=false;throw Error('Synthetic retry needed')}}`
+ };b.onResolve({filter:/^\.\/(vault|PhotoFeed|Social|photo-album|photo-adopt)$/},args=>({path:args.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:mocks[args.path],loader:'tsx',resolveDir:process.cwd()}));
+}}]});
+const css=await readFile('apps/web/src/styles.css','utf8');
+const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text}</script></body></html>`)});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+const browser=await chromium.launch();
+try{for(const width of [320,390,1200]){
+ const page=await browser.newPage({viewport:{width,height:850}});await page.goto(`http://127.0.0.1:${server.address().port}`);
+ await page.getByRole('dialog').waitFor();const boxes=page.getByRole('checkbox');assert.equal(await boxes.count(),3);assert.equal(await boxes.nth(1).isDisabled(),true);assert.equal(await boxes.nth(2).isDisabled(),true);
+ await boxes.nth(0).check();await page.getByRole('button',{name:'Load older photos'}).click();await boxes.nth(3).check();await page.getByRole('button',{name:'Add 2 photos',exact:true}).click();
+ await page.getByText('Synthetic retry needed').waitFor();assert.deepEqual(await page.evaluate(()=>calls),['first','old']);assert.equal(await boxes.nth(0).isDisabled(),true);assert.equal(await boxes.nth(3).isChecked(),true);
+ await page.getByRole('button',{name:'Add 1 photo',exact:true}).click();await page.waitForFunction(()=>window.refreshed===2);assert.deepEqual(await page.evaluate(()=>calls),['first','old','old']);assert.equal(await boxes.nth(3).isDisabled(),true);
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);await page.getByRole('button',{name:'Done',exact:true}).click();assert.equal(await page.evaluate(()=>window.fixtureClosed),true);await page.close();
+}console.log('Album picker: pagination, existing/unavailable photos, partial failure, retry, refresh, and mobile widths passed.');}finally{await browser.close();await new Promise(r=>server.close(r));}

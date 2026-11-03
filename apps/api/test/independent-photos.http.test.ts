@@ -318,6 +318,12 @@ suite("Encrypted independent photo API",()=>{
     expect(local.data.items.every((e:any)=>e.day==="2026-10-31")).toBe(true);
     expect(local.data.items.find((e:any)=>e.kind==="attachment").post.id).toBe(postId);
     expect(local.data.items.find((e:any)=>e.kind==="photo").photo.id).toBe(independent.id);
+    const owned=await call(owner.id,"/photo-feed?owner=me");
+    expect(owned.status).toBe(200);
+    expect(owned.data.items).toHaveLength(2);
+    expect(owned.data.items.every((entry:any)=>entry.author_id===owner.id)).toBe(true);
+    expect((await call(reader.id,"/photo-feed?owner=me")).data.items).toHaveLength(0);
+    expect((await call(reader.id,"/photo-feed?owner="+owner.id)).status).toBe(400);
     const utc=await call(reader.id,"/photo-feed?month=2026-10&timezone=UTC");expect(utc.data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
     expect((await call(outsider.id,"/photo-feed")).data.items).toHaveLength(0);
     await db`insert into app.mutes(actor,target) values(${reader.id},${owner.id})`;
