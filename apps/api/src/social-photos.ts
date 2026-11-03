@@ -51,6 +51,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     return c.json(await tx(c,async db=>{await writeAllowed(db);await setAttachmentDate(db,c.get("memberId"),proof,fail);return {ok:true};}));
   });
   app.get("/photo-feed",async c=>c.json(await tx(c,async db=>{
+    const owner=c.req.query("owner");if(owner&&owner!=="me")fail("INVALID_OWNER");
     const timezone=c.req.query("timezone")||"UTC";
     const [zone]=await db`select name from pg_timezone_names where name=${timezone}`;
     if(!zone)fail("INVALID_TIMEZONE");
@@ -63,9 +64,10 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
       union all
       select 'attachment'::text,m.id,coalesce(d.photo_date,(p.created_at at time zone ${timezone})::date),p.author_id,null::jsonb,to_jsonb(p),to_jsonb(d)
       from app.media_assets m join app.posts p on p.id=m.post_id left join app.attachment_photo_dates d on d.media_id=m.id
-      where p.group_id is null and m.state='attached' and not exists(select 1 from app.photos adopted where adopted.source_media_id=m.id) and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
+      where (p.group_id is null ${owner==="me"?db`or p.author_id=${c.get("memberId")}`:db``}) and m.state='attached' and not exists(select 1 from app.photos adopted where adopted.source_media_id=m.id) and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
     ) select c.*,app.author_category(c.author_id) as author_category,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
-    where not exists(select 1 from app.mutes where target=c.author_id)
+    where true ${owner==="me"?db`and c.author_id=${c.get("memberId")}`:db``}
+      and not exists(select 1 from app.mutes where target=c.author_id)
       ${cursor?db`and(c.day,c.id,c.kind)<(${cursor.day}::date,${cursor.id}::uuid,${cursor.kind})`:db``}
       ${month?db`and c.day>=${month+"-01"}::date and c.day<(${month+"-01"}::date+interval '1 month')`:db``}
     order by c.day desc,c.id desc,c.kind desc limit 31`;
