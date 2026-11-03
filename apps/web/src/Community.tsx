@@ -367,7 +367,7 @@ export function Connections() {
       )}
       {sharingConnection && (
         <Modal title="Post sharing" onClose={() => setSharingConnection(null)}>
-          <p>Share your posts with <strong>@{sharingConnection.name}</strong>.</p>
+          <p>Share your posts and photos with <strong>@{sharingConnection.name}</strong>.</p>
           <HistoryChoice value={sharingConnection.history} onChange={history => setSharingConnection(previous => previous && ({ ...previous, history }))} disabled={action.busy} />
           <p>Full history includes your earlier posts and photos whose audience allows this connection. Only me posts, expired posts, and earlier comments and reactions stay excluded.</p>
           <p>Earlier posts are shared while your account is unlocked. Choosing only new posts does not take back posts already shared.</p>
@@ -404,10 +404,10 @@ export function Connections() {
 }
 export function HistoryChoice({ value, onChange, disabled }: { value: "full" | "future"; onChange: (value: "full" | "future") => void; disabled?: boolean }) {
   return <label className="field history-choice">
-    <span>Share your posts</span>
-    <select aria-label="Share your posts" value={value} disabled={disabled} onChange={event => onChange(event.target.value as "full" | "future")}>
+    <span>Share your posts and photos</span>
+    <select aria-label="Share your posts and photos" value={value} disabled={disabled} onChange={event => onChange(event.target.value as "full" | "future")}>
       <option value="full">Share full history (recommended)</option>
-      <option value="future">Only share new posts</option>
+      <option value="future">Only share new posts and photos</option>
     </select>
   </label>;
 }

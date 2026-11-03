@@ -8,8 +8,8 @@ describe("directional connection history choices", () => {
   it("defaults a new request to explicitly labeled full history", () => {
     const html = renderToStaticMarkup(createElement(Connections));
     expect(html).toContain('<option value="full" selected="">Share full history (recommended)</option>');
-    expect(html).toContain('<option value="future">Only share new posts</option>');
-    expect(html).toContain("Share your posts");
+    expect(html).toContain('<option value="future">Only share new posts and photos</option>');
+    expect(html).toContain("Share your posts and photos");
     expect(html).toContain('<option value="friend" selected="">Friend</option>');
     expect(html).toContain("Your label");
     expect(html).toContain("Each person chooses their own label.");
@@ -17,7 +17,7 @@ describe("directional connection history choices", () => {
   });
   it("shows an existing future-only choice without silently upgrading it", () => {
     const html = renderToStaticMarkup(createElement(HistoryChoice, { value: "future", onChange() {} }));
-    expect(html).toContain('<option value="future" selected="">Only share new posts</option>');
+    expect(html).toContain('<option value="future" selected="">Only share new posts and photos</option>');
     expect(html).not.toContain('<option value="full" selected="">');
   });
   it("keeps a person's family label selected without an agreement step", () => {

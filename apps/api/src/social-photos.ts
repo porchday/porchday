@@ -88,6 +88,21 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     const result=selected.map(row=>({...row,grants:visibleGrants.filter(g=>g.photo_id===row.id)}));
     return {items:result,next:rows.length>30?JSON.stringify({day:selected[29].photo_date,id:selected[29].id}):null};
   })));
+  app.get("/photos/history-refresh",async c=>c.json(await tx(c,async db=>{
+    await writeAllowed(db);await db`select app.lock_epoch()`;
+    const after=c.req.query("after")?id(c.req.query("after")):null;
+    const rows=await db`select p.*,p.photo_date::text as photo_date from app.photos p
+      join app.photo_grants g on g.photo_id=p.id and g.album_id is null
+      where p.owner_id=app.actor() and g.audience in('connections','friends','family','community','extended_family')
+      ${after?db`and p.id>${after}::uuid`:db``}
+      and exists(select from app.photo_refresh_devices(g.id) d where
+        not exists(select from app.photo_grant_recipients r where r.grant_id=g.id and r.member_id=d.member_id)
+        or not exists(select from jsonb_array_elements(g.envelope->'recipients') r where r->>'deviceId'=d.id::text and r->>'memberId'=d.member_id::text and r->>'fingerprint'=d.fingerprint))
+      order by p.id limit 6`;
+    const selected=rows.slice(0,5);
+    const visible=selected.length?await db`select * from app.photo_grants where photo_id in ${db(selected.map(p=>p.id))} order by id`:[];
+    return {items:selected.map(p=>({...p,grants:visible.filter(g=>g.photo_id===p.id)})),next:rows.length>5?selected[4].id:null};
+  })));
   app.get("/photos/:id",async c=>c.json(await tx(c,async db=>{const photo=await requirePhoto(db,id(c.req.param("id")));return {photo:{...photo,grants:await grants(db,photo.id)}};})));
   app.post("/photos",async c=>{
     const b=await body(c,z.object({id:z.string().uuid(),photo_date:day,expires_at:z.string().datetime({offset:true}).nullable(),source_media_id:z.string().uuid().optional(),source_date:attachmentDateProof.optional(),grants:z.array(grantSchema).min(1).max(20)}).strict(),12*1024*1024);

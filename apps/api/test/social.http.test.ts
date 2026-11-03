@@ -39,7 +39,7 @@ const memoryBucket={
 async function request(member: string, path: string, method = 'GET', value?: unknown) { const init: RequestInit = { method, headers: { 'x-test-member': member, ...(value ? { 'content-type': 'application/json' } : {}) }, ...(value ? { body: JSON.stringify(value) } : {}) }; const response = await app.request('https://porchday.test' + path, init, env); const data = await response.json(); if (response.status >= 500)
     throw Error(JSON.stringify({ path, status: response.status, data })); return { status: response.status, data }; }
 async function person() { const id = randomUUID(), deviceId = randomUUID(); await sql `insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`; await sql `insert into app.profiles(member_id,handle) values(${id},${'t_' + id.replaceAll('-', '').slice(0, 20)})`; const keys = await generateDeviceKeys(id, deviceId); const recovery = await generateDeviceKeys(id, 'recovery', keys.recoverySecret); const { status } = await request(id, '/devices', 'POST', { id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, authorization: { type: 'initial' }, recovery_public_key: recovery.publicKey, backup: { v: 1, devices: [{ id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, encrypted_private_key: keys.encryptedPrivateKey }], recovery: { public_key: recovery.publicKey, fingerprint: recovery.fingerprint, encrypted_private_key: recovery.encryptedPrivateKey } } }); expect(status).toBe(201); return { id, deviceId, key: await unlockPrivateKey(keys.encryptedPrivateKey, keys.recoverySecret), publicKey: keys.publicKey }; }
-async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST', {kind})).status).toBe(200); }
+async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend', history: 'full' | 'future' | null = 'future') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind, ...(history ? {history} : {}) }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST', {kind, ...(history ? {history} : {})})).status).toBe(200); }
 async function seal(a: Person, payload: unknown, override: Partial<ContentContext> = {}, postId?: string) { const audience = override.audience ?? 'connections'; const snap = await request(a.id, `/audiences?audience=${audience}${override.groupId ? '&group_id=' + override.groupId : ''}${postId ? '&post_id=' + postId : ''}`); expect(snap.status).toBe(200); const context: ContentContext = { id: randomUUID(), kind: 'post', authorId: a.id, authorDeviceId: a.deviceId, audience, parentId: null, groupId: null, epoch: snap.data.epoch, createdAt: new Date().toISOString(), expiresAt: null, revision: 1, ...override, epoch: snap.data.epoch }; return encryptObject({ context, payload, signingKey: a.key, recipients: snap.data.devices.map((d: any) => ({ memberId: d.member_id, deviceId: d.id, publicKey: d.public_key })) }); }
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     beforeAll(async () => {
@@ -183,7 +183,7 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect(pending.status).toBe(201);
         expect((await request(a.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id)).toMatchObject({kind:'family'});
         expect((await request(b.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id)).toMatchObject({kind:null});
-        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST');
+        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{history:'future'});
         expect(accepted.status).toBe(200);const edge=accepted.data.id;
         const own=async(p:Person)=>(await request(p.id,'/connections')).data.items.find((r:any)=>r.id===edge);
         const aEdge=await own(a),bEdge=await own(b);
@@ -220,19 +220,19 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     it('lets an accepting member choose Family independently of the sender’s Friend label',async()=>{
         const a=await person(),b=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
-        const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend'});
+        const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend',history:'future'});
         const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'family',history:'full'});
         expect(accepted.status).toBe(200);
         expect((await request(a.id,'/connections')).data.items.find((r:any)=>r.id===accepted.data.id)).toMatchObject({kind:'friend',own_history:'future'});
         expect((await request(b.id,'/connections')).data.items.find((r:any)=>r.id===accepted.data.id)).toMatchObject({kind:'family',own_history:'full'});
     },60000);
-    it('keeps history consent directional, defaults old clients to future, and resets it on reconnect', async()=>{
+    it('keeps explicit history consent directional and defaults new connections to full history', async()=>{
         const a=await person(),b=await person(),outsider=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
         const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend',history:'full'});
         expect(pending.status).toBe(201);
         expect((await request(b.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id).history).toBe('full');
-        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST');
+        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{history:'future'});
         expect(accepted.status).toBe(200);const edge=accepted.data.id;
         const own=async(p:Person)=>(await request(p.id,'/connections')).data.items.find((r:any)=>r.id===edge);
         expect(await own(a)).toMatchObject({own_history:'full',peer_history:'future'});
@@ -247,8 +247,8 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect(await own(a)).toMatchObject({own_history:'future',peer_history:'full'});
         expect((await sql`select decision from app.test_history_journal where decision->>'action'='connection' and decision->>'a'=${[a.id,b.id].sort()[0]} and decision->>'b'=${[a.id,b.id].sort()[1]}`)).toHaveLength(1);
         expect((await request(a.id,'/connections/'+edge,'DELETE')).status).toBe(200);
-        await connection(a,b);
-        expect((await request(a.id,'/connections')).data.items[0]).toMatchObject({own_history:'future',peer_history:'future'});
+        await connection(a,b,'friend',null);
+        expect((await request(a.id,'/connections')).data.items[0]).toMatchObject({own_history:'full',peer_history:'full'});
     },60000);
     it('refreshes author-signed history and immutable photos only for consented audiences, retaining original dates and hiding old children',async()=>{
         const owner=await person(),oldFriend=await person(),full=await person(),future=await person(),relative=await person(),outsider=await person();
@@ -316,6 +316,38 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(owner.id,'/blocks/'+full.id,'DELETE')).status).toBe(200);
         await connection(owner,full);
         expect((await request(owner.id,'/posts/'+postId+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===full.id)).toBe(false);
+    },90000);
+    it('shares old circle posts by the current graph independently of direct future-only history choices',async()=>{
+        for(const audience of ['community','extended_family'] as const){
+            const owner=await person(),bridge=await person(),newcomer=await person(),outsider=await person();
+            await connection(owner,bridge,'family','future');
+            const payload={text:'Circle history before the second hop'};
+            const original=await seal(owner,payload,{audience});
+            expect((await request(owner.id,'/posts','POST',{envelope:original})).status).toBe(201);
+            await connection(bridge,newcomer,'family','future');
+            // The author must first encrypt history to the newly eligible device.
+            expect((await request(newcomer.id,'/posts/'+original.context.id)).status).toBe(404);
+            expect((await request(owner.id,'/posts/audience-refresh')).data.items.map((p:any)=>p.id)).toContain(original.context.id);
+            const snap=(await request(owner.id,'/posts/'+original.context.id+'/audience-refresh/audience')).data;
+            expect(snap.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,bridge.id,newcomer.id].sort());
+            const envelope=await encryptObject({context:{...original.context,epoch:snap.epoch,revision:2},payload,signingKey:owner.key,recipients:snap.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+            const lifecycle=await signStatement({purpose:'porchday-lifecycle',id:original.context.id,revision:2,expiresAt:null},owner.key);
+            expect((await request(owner.id,'/posts/'+original.context.id+'/audience-refresh','POST',{envelope,lifecycle,source_revision:1,source_expires_at:null,source_media_ids:[],media_ids:[]})).status).toBe(200);
+            const detail=await request(newcomer.id,'/posts/'+original.context.id);
+            expect(detail.status).toBe(200);
+            expect(await decryptObject({envelope:detail.data.post.envelope,expectedContext:envelope.context,privateKey:newcomer.key,authorPublicKey:owner.publicKey})).toEqual(payload);
+            expect((await request(outsider.id,'/posts/'+original.context.id)).status).toBe(404);
+            if(audience==='extended_family'){
+                const edge=(await request(bridge.id,'/connections')).data.items.find((r:any)=>[r.member_a,r.member_b].includes(newcomer.id));
+                expect((await request(bridge.id,'/connections/'+edge.id+'/kind','PUT',{kind:'friend'})).status).toBe(200);
+                expect((await request(newcomer.id,'/posts/'+original.context.id)).status).toBe(404);
+                expect((await request(owner.id,'/posts/'+original.context.id+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===newcomer.id)).toBe(false);
+            }else{
+                expect((await request(owner.id,'/blocks/'+newcomer.id,'PUT')).status).toBe(200);
+                expect((await request(newcomer.id,'/posts/'+original.context.id)).status).toBe(404);
+                expect((await request(owner.id,'/posts/'+original.context.id+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===newcomer.id)).toBe(false);
+            }
+        }
     },90000);
     it('rejects stale history snapshots, source revisions and expired posts without changing their grants',async()=>{
         const a=await person(),b=await person();

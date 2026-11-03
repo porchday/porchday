@@ -61,7 +61,7 @@ export async function preparePostAudienceRefresh(
   if (row.id !== id || row.author_id !== io.memberId || context.id !== id ||
       context.authorId !== io.memberId || context.kind !== "post" || context.parentId !== null ||
       context.groupId !== null || row.group_id ||
-      !["connections", "friends", "family"].includes(context.audience) ||
+      !["connections", "friends", "family", "community", "extended_family"].includes(context.audience) ||
       row.audience !== context.audience)
     throw Error("This post cannot be shared through connection history.");
   const expiresAt = row.expires_at ? new Date(row.expires_at).toISOString() : null;

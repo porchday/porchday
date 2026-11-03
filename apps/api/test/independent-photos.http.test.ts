@@ -227,6 +227,37 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(owner.id,`/photos/${id}`,"DELETE")).status).toBe(200);
     expect((await call(friend.id,`/photos/${id}`)).status).toBe(404);
   });
+  it("refreshes original photo history using direct consent or circle membership independently",async()=>{
+    for(const audience of ["connections","community","extended_family"] as const){
+      const owner=await person(),bridge=await person(),reader=await person(),future=await person();
+      const circle=audience!=="connections";
+      if(circle){await connect(owner,bridge);await db`update app.connections set kind_a='family',kind_b='family',history_a='future',history_b='future' where member_a=${[owner.id,bridge.id].sort()[0]} and member_b=${[owner.id,bridge.id].sort()[1]}`;}
+      const p=await publish(owner,audience),gid=p.grant.envelope.context.id,path=`/photos/${p.id}/grants/${gid}`;
+      await connect(circle?bridge:owner,reader);
+      if(circle)await db`update app.connections set kind_a='family',kind_b='family',history_a='future',history_b='future' where member_a=${[bridge.id,reader.id].sort()[0]} and member_b=${[bridge.id,reader.id].sort()[1]}`;
+      else{
+        await connect(owner,future);
+        await db`update app.connections set history_a='future',history_b='future' where member_a=${[owner.id,future.id].sort()[0]} and member_b=${[owner.id,future.id].sort()[1]}`;
+      }
+      expect((await call(reader.id,`/photos/${p.id}`)).status).toBe(404);
+      const pending=await call(owner.id,"/photos/history-refresh");expect(pending.status,JSON.stringify(pending.data)).toBe(200);
+      expect(pending.data.items.map((x:any)=>x.id)).toContain(p.id);
+      const snapshot=await call(owner.id,path+"/refresh-audience");expect(snapshot.status,JSON.stringify(snapshot.data)).toBe(200);
+      expect(snapshot.data.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,reader.id,...(circle?[bridge.id]:[])].sort());
+      const encrypt=(payload:unknown,context:ContentContext)=>encryptObject({payload,context:{...context,epoch:snapshot.data.epoch},signingKey:owner.key,recipients:snapshot.data.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+      const media=randomUUID(),{photoDate:_,...base}=p.grant.envelope.context;
+      const encrypted=await encrypt({bytes:"aGVsbG8=",mime:"image/jpeg"},{...base,id:media,kind:"media"}),bytes=new TextEncoder().encode(JSON.stringify(encrypted));
+      const reserve=await call(owner.id,"/media","POST",{id:media,envelope:encrypted,byte_size:bytes.length,photo_refresh_id:gid});expect(reserve.status,JSON.stringify(reserve.data)).toBe(201);
+      expect((await app.request(`https://local.test/media/${media}/bytes`,{method:"PUT",headers:{"x-member":owner.id,"content-type":"application/octet-stream"},body:bytes},env)).status).toBe(200);
+      const envelope=await encrypt({media:[{id:media,mime:"image/jpeg",alt:"Original caption"}]},p.grant.envelope.context);
+      const refreshed=await call(owner.id,path+"/refresh","POST",{envelope,media_id:media,expected_media_id:p.grant.media_id,expected_revision:1});expect(refreshed.status,JSON.stringify(refreshed.data)).toBe(200);
+      const detail=await call(reader.id,`/photos/${p.id}`);expect(detail.status).toBe(200);expect(detail.data.photo.photo_date).toBe("2026-10-31");
+      expect((await decryptObject<any>({envelope:detail.data.photo.grants[0].envelope,expectedContext:envelope.context,privateKey:reader.key,authorPublicKey:owner.keys.publicKey})).media[0].id).toBe(media);
+      expect((await call(future.id,`/photos/${p.id}`)).status).toBe(404);
+      expect((await call(reader.id,path+"/refresh-audience")).status).toBe(403);
+      expect((await call(owner.id,"/photos/history-refresh")).data.items).toEqual([]);
+    }
+  },90000);
   it("lets an existing admin share album history without replacing direct access or the owner identity",async()=>{
     const owner=await person(),admin=await person(),reader=await person(),friend=await person();await connect(owner,admin);await connect(owner,reader);await connect(owner,friend);
     const album=randomUUID();const first=await seal(owner,{name:"History"},1,{id:album,kind:"album"});

@@ -1,3 +1,4 @@
+import {PhotoAudienceSharing} from "./PhotoAudienceSharing";
 import { validatedMedia } from "./video";
 import React, {
   createContext,
@@ -756,6 +757,7 @@ export function VaultProvider({
       }}
     >
       <PostAudienceSharing />
+      <PhotoAudienceSharing />
       {profileSetup?.key===profileContext && profileSetup.state==='unconfirmed' && dismissedProfileSetup!==profileContext && (
         <div className="panel" role="status">
           <p>Background setup hasn’t been confirmed. You can keep using Porchday.</p>
@@ -866,7 +868,7 @@ function PostAudienceSharing() {
   }, [context]);
   if (state === "idle") return null;
   return <div className="panel" role="status">
-    <p>{state === "sharing" ? "Sharing earlier posts with the connections you selected…" : "Sharing earlier posts hasn’t finished. Your account is ready to use."}</p>
+    <p>{state === "sharing" ? "Sharing earlier posts with their current audience…" : "Sharing earlier posts hasn’t finished. Your account is ready to use."}</p>
     {state === "unconfirmed" && <Button variant="outline" onClick={() => { void task.current?.retry(); }}>Try sharing again</Button>}
   </div>;
 }

@@ -5,7 +5,7 @@ vi.mock("../src/api",async original=>({...await original<typeof import("../src/a
 vi.mock("../src/video",()=>({validatedMedia:vi.fn().mockResolvedValue({})}));
 import {get,post,request} from "../src/api";
 import {validatedMedia} from "../src/video";
-import {addPhotoToAlbum,readOwnedPhoto,refreshAlbumPhoto} from "../src/photo-album";
+import {addPhotoToAlbum,readOwnedPhoto,refreshAlbumPhoto,refreshPhotoGrant} from "../src/photo-album";
 import type {PhotoRow} from "../src/photo-record";
 const metadata={id:"old-media",name:"day.jpg",mime:"image/jpeg",alt:"Caption",width:1,height:1,tags:[]};
 let ownerKey:any,proof:any;
@@ -45,6 +45,26 @@ describe("add existing photo to an album",()=>{
   vi.clearAllMocks();vi.mocked(get).mockResolvedValue({...source,payload:{...source.payload,bytes:"YmFk"}});
   await expect(refreshAlbumPhoto(vault,p,"album")).rejects.toThrow(/owner signature/);
   expect(post).not.toHaveBeenCalled();
+ });
+ it("refreshes a direct audience with its original proof and stops a cancelled session before writes",async()=>{
+  const p=photo(),grant=p.grants[0];
+  await refreshPhotoGrant(vault,p,grant);
+  expect(vi.mocked(post).mock.calls[1][1]).toMatchObject({envelope:{context:{audience:"connections",groupId:null,photoDate:p.photo_date},payload:{photoProof:proof}},expected_revision:2});
+  vi.clearAllMocks();let checks=0;
+  await expect(refreshPhotoGrant(vault,p,grant,()=>{if(++checks===2)throw new DOMException("Stopped","AbortError");})).rejects.toThrow("Stopped");
+  expect(post).not.toHaveBeenCalled();
+ });
+ it("reconciles a lost history-refresh response using the exact new media identity",async()=>{
+  const p=photo(),grant=p.grants[0];
+  vi.mocked(post).mockImplementation(async(path,body:any)=>{
+   if(path.endsWith("/refresh")){
+    const latest=photo();latest.grants[0].media_id=body.media_id;
+    vi.mocked(get).mockResolvedValueOnce({photo:latest});throw Error("Response lost");
+   }
+   return {upload_url:"/media/upload"};
+  });
+  await expect(refreshPhotoGrant(vault,p,grant)).resolves.toBeUndefined();
+  expect(vi.mocked(post).mock.calls.filter(([path])=>path.endsWith("/refresh"))).toHaveLength(1);
  });
  it("reconciles an existing album grant before uploading or after an ambiguous response",async()=>{
   const existing=photo();existing.grants.push({...existing.grants[0],id:"album-grant",album_id:"album",audience:"album"});

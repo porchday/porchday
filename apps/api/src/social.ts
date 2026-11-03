@@ -96,13 +96,13 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
         fail('DEVICE_NOT_TRUSTED', 403);
     if (options.historyPostId) {
         const source = await requirePost(db, options.historyPostId, true);
-        if (source.author_id !== member || source.group_id !== null || !['connections','friends','family'].includes(source.audience) || e.audience !== source.audience || e.groupId !== null || (kind === 'post' ? e.id !== source.id : kind !== 'media' || e.parentId !== source.id)) fail('ENVELOPE_CONTEXT');
+        if (source.author_id !== member || source.group_id !== null || !['connections','friends','family','community','extended_family'].includes(source.audience) || e.audience !== source.audience || e.groupId !== null || (kind === 'post' ? e.id !== source.id : kind !== 'media' || e.parentId !== source.id)) fail('ENVELOPE_CONTEXT');
         if (options.historySourceRevision !== undefined && source.envelope.context.revision !== options.historySourceRevision) fail('REVISION_CHANGED',409);
     }
     if (e.photoDate !== undefined && kind !== "photo") fail("ENVELOPE_CONTEXT");
     if(options.photoRefreshId){
       const [grant]=await db`select * from app.photo_grants where id=${options.photoRefreshId}`;
-      if(!grant||e.audience!=="album"||e.groupId!==grant.album_id||e.parentId!==grant.photo_id||!["photo","media"].includes(kind)||(kind==="photo"&&e.id!==grant.id))fail("ENVELOPE_CONTEXT");
+      if(!grant||e.audience!==grant.audience||e.groupId!==grant.album_id||e.parentId!==grant.photo_id||!["photo","media"].includes(kind)||(kind==="photo"&&e.id!==grant.id))fail("ENVELOPE_CONTEXT");
     }
     const s = options.photoRefreshId ? await photoRefreshSnapshot(db,options.photoRefreshId) : options.photoGrantId ? await photoGrantSnapshot(db, options.photoGrantId) : e.audience === "album"
       ? await albumSnapshot(db, e.groupId!, options.albumChange)
@@ -266,10 +266,10 @@ export function createSocialRoutes() {
     app.put('/keys/backup', async (c) => { recent(c); const b = await body(c, z.object({ envelope: backupSchema })); await checkBackup(b.envelope); return c.json(await tx(c, async (db) => { const [recovery] = await db `select public_key from app.recovery_keys where member_id=${c.get('memberId')}`; if (!recovery || b.envelope.recovery.public_key !== recovery.public_key)
         fail('BACKUP_KEY_MISMATCH'); await db `update app.encrypted_key_backups set envelope=${db.json(b.envelope)},updated_at=now() where member_id=${c.get('memberId')}`; return { ok: true }; })); });
     app.get('/connections', async (c) => c.json(await tx(c, async (db) => { const items = await db `select id,member_a,member_b,accepted_at,(kind_a='family' and kind_b='family') as mutual_family,case when member_a=app.actor() then kind_a else kind_b end as kind,case when member_a=app.actor() then history_a else history_b end as own_history,case when member_a=app.actor() then history_b else history_a end as peer_history from app.connections order by accepted_at desc`; const requests = await db `select id,sender,recipient,state,created_at,history,case when sender=app.actor() then kind else null end as kind from app.connection_requests where state='pending' order by created_at desc`; const ids = [...new Set([...items.flatMap(r => [r.member_a, r.member_b]), ...requests.flatMap(r => [r.sender, r.recipient])])]; const handles = ids.length ? await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(ids)}))::uuid[])` : []; return { items, requests, handles, limit: 300 }; })));
-    app.post('/connections/requests', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), kind: z.enum(['friend', 'family']), history: historyMode.default('future'), id: uuid.optional() })); return c.json(await tx(c, async (db) => { await writeAllowed(db); const [target] = await db `select * from app.lookup_handle(${b.handle})`; if (!target || target.id === c.get('memberId'))
+    app.post('/connections/requests', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), kind: z.enum(['friend', 'family']), history: historyMode.default('full'), id: uuid.optional() })); return c.json(await tx(c, async (db) => { await writeAllowed(db); const [target] = await db `select * from app.lookup_handle(${b.handle})`; if (!target || target.id === c.get('memberId'))
         fail('NOT_FOUND', 404); const [{ count }] = await db `select count(*)::int count from app.connection_requests where sender=${c.get('memberId')} and created_at>now()-interval '1 day'`; if (count >= 30)
         fail('REQUEST_LIMIT', 429); const requestId = b.id ?? crypto.randomUUID(); await db `insert into app.connection_requests(id,sender,recipient,kind,history) values(${requestId},${c.get('memberId')},${target.id},${b.kind},${b.history})`; await db `select app.notify(${target.id},'connection_request',null,null,null,${'request:' + requestId})`; return { id: requestId }; }), 201); });
-    app.post('/connections/requests/:id/accept', async (c) => { const b=await body(c,z.object({history:historyMode.default('future'),kind:z.enum(['friend','family']).default('friend')}).strict(),1024,true); return c.json(await tx(c,async db=>{const [r]=await db`select app.accept_connection_with_preferences(${id(c.req.param('id'))},${b.history},${b.kind}) as id`;return r;})); });
+    app.post('/connections/requests/:id/accept', async (c) => { const b=await body(c,z.object({history:historyMode.default('full'),kind:z.enum(['friend','family']).default('friend')}).strict(),1024,true); return c.json(await tx(c,async db=>{const [r]=await db`select app.accept_connection_with_preferences(${id(c.req.param('id'))},${b.history},${b.kind}) as id`;return r;})); });
     app.post('/connections/requests/:id/decline', async (c) => c.json(await tx(c, async (db) => { await db `update app.connection_requests set state=case when sender=${c.get('memberId')} then 'cancelled' else 'declined' end where id=${id(c.req.param('id'))} and state='pending'`; return { ok: true }; })));
     app.delete('/connections/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.change_connection(${id(c.req.param('id'))},null,true)`; return { ok: true }; })));
     app.put('/connections/:id/kind', async (c) => { const b = await body(c, z.object({ kind: z.enum(['friend', 'family']) })); return c.json(await tx(c, async (db) => { await db `select app.change_connection(${id(c.req.param('id'))},${b.kind},false)`; return { ok: true }; })); });
@@ -324,7 +324,7 @@ export function createSocialRoutes() {
         return c.json(await tx(c,async db=>{
             await db`select app.lock_epoch()`;
             const rows=await db`select p.* from app.posts p where p.author_id=app.actor()
-                and p.group_id is null and p.audience in('connections','friends','family')
+                and p.group_id is null and p.audience in('connections','friends','family','community','extended_family')
                 ${after?db`and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)`:db``}
                 and exists(select from app.history_audience_devices(p.id) d where
                     not exists(select from app.post_recipients r where r.post_id=p.id and r.device_id=d.id and r.member_id=d.member_id)
@@ -344,7 +344,7 @@ export function createSocialRoutes() {
             await writeAllowed(db);
             const source=await requirePost(db,id(c.req.param('id')),true),e=b.envelope.context,old=source.envelope.context;
             if(source.author_id!==c.get('memberId'))fail('FORBIDDEN',403);
-            if(source.group_id!==null||!['connections','friends','family'].includes(source.audience)
+            if(source.group_id!==null||!['connections','friends','family','community','extended_family'].includes(source.audience)
                 ||e.id!==source.id||e.authorId!==old.authorId||e.createdAt!==old.createdAt
                 ||e.audience!==old.audience||e.groupId!==old.groupId||e.parentId!==old.parentId
                 ||e.revision!==b.source_revision+1)fail('ENVELOPE_CONTEXT');
