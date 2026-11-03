@@ -50,7 +50,7 @@ export function FeatureAdditions() {
         <label className="field"><span>Suggest a feature</span><textarea rows={4} maxLength={2000} required value={text} onChange={event=>setText(event.target.value)} /></label>
         <small>Your resulting plan and handle will be visible to builder-chat participants. Keep private information out of the suggestion.</small>
         <Button variant="primary" busy={action.busy} disabled={!text.trim() || !!pending || state.paused || state.sent_today >= state.limits.daily_messages}>Generate a plan</Button>
-        {pending && <p>A request is already queued or running. <a href="/app/builder-chat">View progress in Builder chat</a>.</p>}
+        {pending && <p>A request is already queued or running. <a href="/builder-chat">View progress in Builder chat</a>.</p>}
         {state.paused && <p>Builder chat is paused.</p>}
       </form>
       {!features.length && <p>No feature plans yet.</p>}

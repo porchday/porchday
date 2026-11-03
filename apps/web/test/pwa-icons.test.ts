@@ -26,7 +26,7 @@ describe("installed PWA icon updates", () => {
     const updated = JSON.parse(readFileSync(join(directory, "manifest.webmanifest"), "utf8"));
     expect(updated).toEqual({ ...original, icons: original.icons.map((icon: object, index: number) => ({ ...icon, src: paths[index] })) });
     expect(updated.id).toBe("/app");
-    expect(updated.start_url).toBe("/app");
+    expect(updated.start_url).toBe("/");
     expect(updated.scope).toBe("/");
     for (const [index, path] of paths.entries()) {
       expect(path).toMatch(/^\/icon-(192|512)-[a-f0-9]{16}\.png$/);

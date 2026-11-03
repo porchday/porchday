@@ -18,7 +18,9 @@ final class ServerConfigurationTests: XCTestCase {
     func testSharedPostLinksAcceptBothOwnedDomainsWithoutBroadeningAPITrust() {
         let id = "11111111-1111-4111-8111-111111111111"
         for host in ["porchday.org", "porchday.com"] {
-            XCTAssertEqual(ServerConfiguration.postID(from: URL(string: "https://" + host + "/app/post/" + id)!), id)
+            for prefix in ["/post/", "/app/post/"] {
+                XCTAssertEqual(ServerConfiguration.postID(from: URL(string: "https://" + host + prefix + id)!), id)
+            }
         }
         XCTAssertFalse(ServerConfiguration.permits(URL(string: "https://porchday.com/api/v1/me")!))
         XCTAssertTrue(ServerConfiguration.permits(URL(string: "https://porchday.org/api/v1/me")!))
@@ -35,6 +37,7 @@ final class ServerConfigurationTests: XCTestCase {
             "https://porchday.org/app/post/" + id + "#unexpected",
         ] {
             XCTAssertNil(ServerConfiguration.postID(from: URL(string: value)!), value)
+            XCTAssertNil(ServerConfiguration.postID(from: URL(string: value.replacingOccurrences(of: "/app/post/", with: "/post/"))!), value)
         }
     }
 

@@ -2,6 +2,14 @@
 
 The public cutover to [porchday.org](https://porchday.org) completed on October 26, 2026. Both `.org` and `.com` apex domains and their `www` aliases are attached to the existing production Worker. Public `.com` navigation forwards to `.org`; existing-device account and API access on `.com` remains available. [Issue #17](https://github.com/porchday/porchday/issues/17) records the completed public migration and dated verification evidence. Remaining member-device acceptance is tracked in [issue #7](https://github.com/porchday/porchday/issues/7). The November 2 follow-up below retires legacy website navigation after owner-confirmed member migration.
 
+## Root-level member routes
+
+The feed is `/`; member pages use `/connections`, `/share`, `/albums`, `/albums/:id`, `/post/:id`, `/wall/:id`, `/groups/:id`, `/notifications`, `/settings/:tab`, `/menu`, `/features`, `/builder-chat`, `/performance` and `/integrations/authorize`. General photo browsing is available through Feed; the existing calendar shortcut is `/photos`.
+
+GET/HEAD requests to `/app` or `/app/...` redirect to `/` or the corresponding root path on production and staging. Legacy `.com` and exact www aliases combine the domain and path change into one redirect. Queries remain intact and browsers retain fragments. Client startup also normalizes old URLs for cached shells; SPA links and post-login destinations use canonical paths. Root member pages retain their login/vault checks. `/api/*`, staff access, consent pages, recovery callbacks, and the public `/app-shell` asset are not renamed. Mutation bodies are not redirected.
+
+The PWA starts at `/` but keeps its historical internal manifest ID `/app`, preserving installation identity. Notifications use root routes. Native post-link parsing and the association document support `/post/:id` and legacy `/app/post/:id`; shipping native binaries and physical-device link verification remain separately tracked.
+
 ## November 2 retirement of legacy website navigation
 
 The owner confirmed that everyone who needed the browser migration has migrated and requested automatic forwarding. All `.com` website GET/HEAD routes now forward to the same path and query on `.org`, including `/`, `/login`, `/app/*`, recovery pages and staff pages. The redirect leaves fragments absent so browsers preserve invitation/recovery fragments. Responses remain 307 with `no-store` to permit safe rollback. New web shells also redirect at startup and SPA navigation goes directly to `.org`; no browser keys or local data are deleted. The obsolete link back to the old browser and transition notice have been removed.

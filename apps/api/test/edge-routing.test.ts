@@ -47,7 +47,7 @@ test('public health remains at the edge without any backend/private dependency',
 test('effective public edge policy permits decrypted video blobs and preserves script restrictions',async()=>{
  const {env,assets,backend,denied}=environment();
  assets.mockResolvedValueOnce(new Response('public shell',{headers:{'Content-Security-Policy':"default-src 'self'; media-src 'none'"}}));
- const response=await edge.fetch(new Request('https://porchday.org/app/photos'),env,ctx);
+ const response=await edge.fetch(new Request('https://porchday.org/photos'),env,ctx);
  const policy=response.headers.get('content-security-policy')||'';
  expect(policy).toMatch(/(?:^|;)\s*media-src 'self' blob:(?:;|$)/);
  expect(policy).toMatch(/(?:^|;)\s*script-src 'self'(?:;|$)/);

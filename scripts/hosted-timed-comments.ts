@@ -174,7 +174,7 @@ try {
       const body = request.postData() ? request.postDataJSON() : undefined;
       if (method === 'POST' && url.pathname === '/api/auth/sign-in/email') {
         check(stage === 'login' && !loginStarted && body?.email === a.email && body.password === a.password &&
-          body.callbackURL === '/app' && Object.keys(body).length === 3, 'TIMED_LOGIN_BOUNDARY');
+          body.callbackURL === '/' && Object.keys(body).length === 3, 'TIMED_LOGIN_BOUNDARY');
         loginStarted = true; await receipt('login-intent', { member: a.id });
       } else if (method === 'POST' && url.pathname === '/api/auth/sign-out') {
         await receipt('signout-intent', { member: a.id });
@@ -194,7 +194,7 @@ try {
   progress('login'); await page.goto(stagingOrigin + '/login');
   await page.getByLabel('Email address', { exact: true }).fill(a.email);
   await page.getByLabel('Password', { exact: true }).fill(a.password);
-  await page.getByRole('button', { name: 'Log in', exact: true }).click(); await page.waitForURL(stagingOrigin + '/app');
+  await page.getByRole('button', { name: 'Log in', exact: true }).click(); await page.waitForURL(stagingOrigin + '/');
   savedCookie = (await context.cookies(stagingOrigin)).map(c => `${c.name}=${c.value}`).join('; ');
   check(savedCookie, 'BROWSER_SESSION_REQUIRED'); const me = await api('/api/v1/me'); check(me.id === a.id, 'WRONG_MEMBER');
   baselineProfile = digest(me.envelope); const beforeDevices = await api('/api/v1/devices'); baselineDevices = deviceDigest(beforeDevices);
@@ -214,7 +214,7 @@ try {
   await composer.getByLabel('Post audience', { exact: true }).selectOption('only_me');
   await selectCustom(composer, parentExpiry);
   await submit({ kind: 'post', parentId: null, expiresAt: parentExpiry, acknowledged: null, text: postText, expectedStatus: 201 }, true);
-  await page.goto(stagingOrigin + '/app/post/' + boundary.postId); await page.getByText(postText, { exact: true }).waitFor();
+  await page.goto(stagingOrigin + '/post/' + boundary.postId); await page.getByText(postText, { exact: true }).waitFor();
   await form().getByLabel('Write a comment', { exact: true }).waitFor();
   progress('inherited-warning-and-input-bound'); await warning(parentExpiry, false);
   check(await form().getByRole('combobox', { name: 'Expiration', exact: true }).inputValue() === 'inherit', 'DEFAULT_INHERIT_REQUIRED');
@@ -285,7 +285,7 @@ try {
   check(baselineProfile === digest((await api('/api/v1/me')).envelope) && baselineDevices === deviceDigest(await api('/api/v1/devices')),
     'PROFILE_OR_DEVICES_CHANGED');
   // Leave the deleted post before signing out, with no unsaved draft present.
-  await page.goto(stagingOrigin + '/app'); progress('signout');
+  await page.goto(stagingOrigin + '/'); progress('signout');
   await page.getByRole('button', { name: 'Sign out', exact: true }).filter({ visible: true }).click();
   await page.waitForURL(stagingOrigin + '/login');
   const ended = await context.request.get(stagingOrigin + '/api/auth/get-session', { headers: { Cookie: savedCookie }, maxRedirects: 0, timeout: 30000 });

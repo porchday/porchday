@@ -183,7 +183,7 @@ try {
   const deadline=Date.now()+180000;let observed=false;
   while(Date.now()<deadline){
     observed=await bounded(page.evaluate(async () => (await (await navigator.serviceWorker.ready).getNotifications()).some(n=>
-      n.title==='Porchday' && n.body==='You have a new update.' && n.tag==='porchday-update' && n.data?.url==='/app')),
+      n.title==='Porchday' && n.body==='You have a new update.' && n.tag==='porchday-update' && n.data?.url==='/')),
       Math.max(1,Math.min(10000,deadline-Date.now())),'NOTIFICATION_OBSERVATION_TIMEOUT');
     if(observed)break;await wait(Math.max(1,Math.min(2500,deadline-Date.now())));
   }

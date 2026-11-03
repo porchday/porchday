@@ -66,7 +66,7 @@ export function Settings({
           <a
             className={tab === id ? "active" : ""}
             aria-current={tab === id ? "page" : undefined}
-            href={`/app/settings/${id}`}
+            href={`/settings/${id}`}
             key={id}
           >
             {name}
@@ -844,7 +844,7 @@ function DataSettings({ onAccountDeleted }: { onAccountDeleted: () => Promise<vo
               <small>{g.id}</small>
             </div>
             {!suspended && (
-              <a className="button quiet compact" href={`/app/groups/${g.id}`}>
+              <a className="button quiet compact" href={`/groups/${g.id}`}>
                 Manage
               </a>
             )}

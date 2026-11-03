@@ -52,7 +52,7 @@ export function PerformanceTracing() {
             upload once a minute and when you leave the page.
           </p>
           <div className="button-row">
-            <a className="button compact" href="/app/performance">Open the performance inspector</a>
+            <a className="button compact" href="/performance">Open the performance inspector</a>
             <Button variant="outline compact" busy={action.busy}
               onClick={() => action.run(async () => { await flushTraces(true); await load(); }, "Sent.")}>
               Send now
@@ -69,7 +69,7 @@ export function PerformanceTracing() {
                 {localDate(new Date(t.started_at).toISOString())} · {t.page} · {t.span_count} spans
                 {t.trace_id === currentTraceId() ? " · this visit" : ""}
               </span>
-              <a className="button outline compact" href={`/app/performance?trace=${t.trace_id}`}>View</a>
+              <a className="button outline compact" href={`/performance?trace=${t.trace_id}`}>View</a>
             </div>
           ))}
         </>

@@ -141,7 +141,7 @@ try {
       const body = request.postData() ? request.postDataJSON() : undefined;
       if (method === 'POST' && url.pathname === '/api/auth/sign-in/email') {
         ensure(stage === 'login' && !loginStarted && body?.email === a.email && body.password === a.password &&
-          body.callbackURL === '/app' && Object.keys(body).length === 3, 'LOGIN_BOUNDARY');
+          body.callbackURL === '/' && Object.keys(body).length === 3, 'LOGIN_BOUNDARY');
         loginStarted = true; await receipt('login-intent', { member: a.id });
       } else {
         const kind = classifyMutation(method, url.pathname, body, boundary!);
@@ -159,7 +159,7 @@ try {
   await page.getByLabel('Email address', { exact: true }).fill(a.email);
   await page.getByLabel('Password', { exact: true }).fill(a.password);
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
-  await page.waitForURL(stagingOrigin + '/app');
+  await page.waitForURL(stagingOrigin + '/');
   savedCookie = (await context.cookies(stagingOrigin)).map(c => `${c.name}=${c.value}`).join('; ');
   ensure(savedCookie, 'BROWSER_SESSION_REQUIRED');
   const me = await memberAPI('/api/v1/me'); ensure(me.id === a.id, 'WRONG_MEMBER');
@@ -175,7 +175,7 @@ try {
   await page.getByRole('button', { name: 'Unlock', exact: true }).click();
   await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({ timeout: 90000 });
   ensure(baselineDevices === digest(devices(await memberAPI('/api/v1/devices'))), 'DEVICE_SET_CHANGED');
-  progress('register-ui'); await page.goto(stagingOrigin + '/app/settings/data');
+  progress('register-ui'); await page.goto(stagingOrigin + '/settings/data');
   await page.getByRole('button', { name: 'Register a tool you’re building', exact: true }).click();
   await page.getByLabel('App name', { exact: true }).fill(boundary.name);
   await page.getByLabel('Purpose', { exact: true }).fill(boundary.purpose);
@@ -190,7 +190,7 @@ try {
   progress('cancel-consent'); await page.goto(consentURL);
   await page.getByRole('heading', { name: boundary.name, exact: true }).waitFor();
   await page.getByRole('link', { name: 'Cancel', exact: true }).click();
-  await page.waitForURL(stagingOrigin + '/app/settings/data');
+  await page.waitForURL(stagingOrigin + '/settings/data');
   ensure(!callback.hasCode() && !(await memberAPI('/api/v1/integrations')).grants.some((g: any) => g.client_id === boundary!.clientId), 'CANCEL_CREATED_GRANT');
   progress('consent-ui'); await page.goto(consentURL);
   await page.getByRole('heading', { name: boundary.name, exact: true }).waitFor();
@@ -233,7 +233,7 @@ try {
   await external('/api/integration/v1/token', { body: { grant_type: 'refresh_token',
     client_id: boundary.clientId, refresh_token: oldPair.refresh }, expected: 401 });
   assertOwnedPage('profile', await external('/api/integration/v1/own/profile', { access: pair.access }), a.id);
-  progress('revoke-ui'); await page.goto(stagingOrigin + '/app/settings/data');
+  progress('revoke-ui'); await page.goto(stagingOrigin + '/settings/data');
   const row = page.locator('.member-row').filter({ has: page.getByText(boundary.name, { exact: true }) });
   await row.getByRole('button', { name: 'Revoke', exact: true }).click();
   await row.waitFor({ state: 'detached' });

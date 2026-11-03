@@ -1,3 +1,4 @@
+import { loginDestination } from "./routes";
 import React, { useEffect, useRef, useState } from "react";
 import { auth, post, localDate } from "./api";
 import { Logo, Icon, Button, Field, Alert, useAction, navigate } from "./ui";
@@ -64,7 +65,7 @@ export function Landing() {
 export function AuthPage({
   mode,
   onSignedIn,
-  returnTo = "/app",
+  returnTo = "/",
 }: {
   mode: string;
   onSignedIn: () => void;
@@ -104,9 +105,7 @@ export function AuthPage({
         setFactorCode("");
         onSignedIn();
         navigate(
-          returnTo === "/" || /^\/(?:about|mission|principles|privacy|community|accessibility|help|contact)$/.test(returnTo) || returnTo.startsWith("/app") || returnTo === "/staff"
-            ? returnTo
-            : "/app",
+          loginDestination(returnTo),
         );
       } else if (join) {
         await auth("sign-up/email", {
@@ -142,7 +141,7 @@ export function AuthPage({
         const result = await auth("sign-in/email", {
           email,
           password,
-          callbackURL: "/app",
+          callbackURL: "/",
         });
         setPassword("");
         if (result.twoFactorRedirect) {
@@ -150,9 +149,7 @@ export function AuthPage({
         } else {
           onSignedIn();
           navigate(
-            returnTo === "/" || /^\/(?:about|mission|principles|privacy|community|accessibility|help|contact)$/.test(returnTo) || returnTo.startsWith("/app") || returnTo === "/staff"
-              ? returnTo
-              : "/app",
+            loginDestination(returnTo),
           );
         }
       }

@@ -7,7 +7,7 @@ import {build} from 'esbuild';
 import {chromium,webkit} from 'playwright';
 const root=resolve(import.meta.dirname,'..');
 const bundle=await build({stdin:{contents:`import React,{useState,useEffect} from 'react';import {createRoot} from 'react-dom/client';import {Connections,Notifications} from './apps/web/src/Community';
-function Fixture(){const [path,setPath]=useState(location.pathname);useEffect(()=>{const change=()=>setPath(location.pathname);addEventListener('popstate',change);return()=>removeEventListener('popstate',change)},[]);return path==='/app/connections'?<Connections/>:<Notifications/>}createRoot(document.getElementById('root')).render(<Fixture/>);`,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',platform:'browser',define:{'process.env.NODE_ENV':'"production"','import.meta.env':'{}'},plugins:[{name:'synthetic-vault',setup(b){
+function Fixture(){const [path,setPath]=useState(location.pathname);useEffect(()=>{const change=()=>setPath(location.pathname);addEventListener('popstate',change);return()=>removeEventListener('popstate',change)},[]);return path==='/connections'?<Connections/>:<Notifications/>}createRoot(document.getElementById('root')).render(<Fixture/>);`,resolveDir:root,loader:'tsx'},bundle:true,write:false,format:'iife',platform:'browser',define:{'process.env.NODE_ENV':'"production"','import.meta.env':'{}'},plugins:[{name:'synthetic-vault',setup(b){
  b.onResolve({filter:/^\.\/vault$/},()=>({path:'vault',namespace:'synthetic'}));
  b.onLoad({filter:/.*/,namespace:'synthetic'},()=>({contents:`export const useVault=()=>({member:{id:'self',handle:'self',status:'active'},device:{id:'synthetic'}});export const useOptionalVault=useVault;export const Fingerprint=()=>null;export const VaultProvider=({children})=>children;`,loader:'js'}));
 }}]});
@@ -30,9 +30,9 @@ await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const origin=`h
 try{for(const [name,engine]of Object.entries({chromium,webkit})){
  const browser=await engine.launch();try{
   const page=await browser.newPage({viewport:{width:390,height:844}});const errors=[];page.on('pageerror',e=>errors.push(e.message));calls=[];
-  await page.goto(origin+'/app/notifications');await page.getByRole('button',{name:/@new_member joined Porchday/}).click();
+  await page.goto(origin+'/notifications');await page.getByRole('button',{name:/@new_member joined Porchday/}).click();
   await page.getByLabel('Their exact handle').waitFor();assert.equal(await page.getByLabel('Their exact handle').inputValue(),'new_member');
-  assert.equal(new URL(page.url()).pathname,'/app/connections');assert.equal(new URL(page.url()).searchParams.get('handle'),'new_member');
+  assert.equal(new URL(page.url()).pathname,'/connections');assert.equal(new URL(page.url()).searchParams.get('handle'),'new_member');
   assert.deepEqual(calls,[{method:'PUT',path:'/api/v1/notifications/joined/read',body:{}}]);
   assert.equal(await page.getByLabel('Your label',{exact:true}).inputValue(),'friend');
   assert.equal(await page.getByLabel('Share your posts and photos',{exact:true}).inputValue(),'full');

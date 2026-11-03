@@ -12,7 +12,7 @@ const self = "00000000-0000-4000-8000-000000000001",
 const fixtureKeys=await generateDeviceKeys(self,"00000000-0000-4000-8000-000000000099");
 const bundle = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';const root=createRoot(document.getElementById('root'));window.fixtureReady.then(()=>root.render(<PeopleDirectory>{location.pathname.startsWith('/app/')?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>));`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';import {isMemberPath} from './apps/web/src/routes';const root=createRoot(document.getElementById('root'));window.fixtureReady.then(()=>root.render(<PeopleDirectory>{location.pathname!=='/'&&isMemberPath(location.pathname)?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>));`,
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -355,7 +355,7 @@ try {
   assert.equal(save.body.envelope.context.audience, "connections");
   assert.equal(save.body.private_envelope.context.audience, "only_me");
   assert.equal(save.body.envelope.payload.birthday, undefined);
-  await page.goto(origin + "/app/photos");
+  await page.goto(origin + "/photos");
   await page.getByRole('img',{name:'Synthetic photo',exact:true}).first().waitFor();
   await page.locator('.calendar-earlier').scrollIntoViewIfNeeded();
   const photoMonthLabel=await page.locator('.photo-calendar h2').first().textContent();
@@ -389,13 +389,13 @@ try {
     await main
       .getByRole("link", { name: "My wall", exact: true })
       .getAttribute("href"),
-    "/app/wall",
+    "/wall",
   );
   assert.equal(
     await main
       .getByRole("link", { name: "Settings", exact: true })
       .getAttribute("href"),
-    "/app/settings/profile",
+    "/settings/profile",
   );
   assert.equal(
     await page.evaluate(

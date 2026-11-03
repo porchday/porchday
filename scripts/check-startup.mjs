@@ -32,7 +32,7 @@ const server=http.createServer(async(req,res)=>{
 try{for(const engine of [chromium,webkit]){
  const browser=await engine.launch();try{for(let i=0;i<(engine===chromium?5:1);i++){
  calls=[];const context=await browser.newContext({serviceWorkers:'block'});await context.addInitScript(({id,deviceId})=>{localStorage.setItem('porchday-device:'+id,deviceId);const observer=new MutationObserver(()=>{if(document.getElementById('root')?.textContent.includes('Startup fixture ready')){window.fixtureReadyMs=performance.now();observer.disconnect();}});observer.observe(document,{childList:true,subtree:true});},{id,deviceId});const page=await context.newPage();const errors=[];page.on('pageerror',e=>errors.push(e.message));
- const start=performance.now();await page.goto(origin+'/app');await page.getByText('Startup fixture ready',{exact:true}).waitFor();const readyMs=Math.round(await page.evaluate(()=>window.fixtureReadyMs));await page.waitForTimeout(750);
+ const start=performance.now();await page.goto(origin+'/');await page.getByText('Startup fixture ready',{exact:true}).waitFor();const readyMs=Math.round(await page.evaluate(()=>window.fixtureReadyMs));await page.waitForTimeout(750);
  const summary={engine:engine.name(),readyMs,me:calls.filter(x=>x.path.startsWith('/api/v1/me')).length,devices:calls.filter(x=>x.path==='/api/v1/devices').length,authorKeys:calls.filter(x=>x.path.startsWith('/api/v1/devices/')).length,writes:calls.filter(x=>x.method!=='GET').length};
  assert.deepEqual(errors,[]);assert.equal(await page.locator('.pending-save-status').count(),0);assert.equal(summary.writes,0);
  if(root===process.cwd()){assert.equal(summary.me,1);assert.equal(summary.devices,0);assert.equal(summary.authorKeys,0);}
