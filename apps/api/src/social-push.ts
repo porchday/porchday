@@ -75,7 +75,7 @@ export function registerPushRoutes(app: Hono<{Bindings: Env; Variables: Variable
 }
 
 /** No social identifiers, names, text, counts or secret keys enter this payload. */
-export const GENERIC_PUSH_PAYLOAD = JSON.stringify({title: 'Porchday', body: 'You have a new update', url: '/app/notifications'});
+export const GENERIC_PUSH_PAYLOAD = JSON.stringify({title: 'Porchday', body: 'You have a new update', url: '/notifications'});
 export function generatePushRequest(subscription: PushSubscription, env: PushEnv) {
   if (!configured(env) || !validPushEndpoint(subscription.endpoint)) throw new Error('PUSH_UNAVAILABLE');
   return webPush.generateRequestDetails(subscription, GENERIC_PUSH_PAYLOAD, {

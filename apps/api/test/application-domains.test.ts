@@ -41,12 +41,12 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks());
 
 describe('canonical domain transition through the actual Worker routes', () => {
-  it('redirects only legacy public GET/HEAD navigation, retaining path and query', async () => {
-    for (const path of ['/about', '/principles', '/contact', '/privacy', '/community', '/join', '/unknown-page']) {
+  it('redirects all legacy website GET/HEAD navigation, retaining path and query', async () => {
+    for (const path of ['/', '/app', '/app/post/fixture', '/login', '/verify', '/forgot', '/reset', '/stolen-account', '/recovery', '/appeals', '/staff', '/staff/moderation', '/account-deletion', '/about', '/principles', '/contact', '/privacy', '/community', '/join', '/unknown-page']) {
       for (const method of ['GET', 'HEAD']) {
         const response = await request(legacy + path + '?view=plain', { method });
         expect(response.status).toBe(307);
-        expect(response.headers.get('Location')).toBe(canonical + path + '?view=plain');
+        expect(response.headers.get('Location')).toBe(canonical + (path === '/app' ? '/' : path.replace(/^\/app\//, '/')) + '?view=plain');
         expect(response.headers.get('Cache-Control')).toBe('no-store');
         expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
       }
@@ -55,9 +55,8 @@ describe('canonical domain transition through the actual Worker routes', () => {
     expect(response.headers.get('Location')).toBe(canonical + '/join?invite=synthetic');
   });
 
-  it('retains legacy account routes, installed shell assets and well-known responses', async () => {
-    for (const path of ['/app', '/app/post/fixture', '/login', '/verify', '/forgot', '/reset',
-      '/stolen-account', '/recovery', '/appeals', '/staff', '/staff/moderation', '/account-deletion',
+  it('retains legacy static assets and well-known responses', async () => {
+    for (const path of [
       '/sw.js', '/manifest.webmanifest', '/app-shell', '/app-shell.html', '/index.html', '/assets/client.js',
       '/assets/openpgp/openpgp.mjs', '/fonts.css', '/color-scheme.js', '/fonts/font.woff2', '/icon-192-hash.png',
       '/logo.svg', '/wallpaper-checker.svg', '/third-party-notices.txt', '/source/client.tar.gz',
@@ -67,7 +66,6 @@ describe('canonical domain transition through the actual Worker routes', () => {
       expect(response.headers.get('Location'), path).toBeNull();
       expect(await response.text()).toBe(path);
     }
-    expect((await request(legacy + '/app')).headers.get('X-Robots-Tag')).toBe('noindex');
     for (const shell of ['/app-shell', '/app-shell.html'])
       expect((await request(legacy + shell)).headers.get('X-Robots-Tag')).toBe('noindex');
     expect((await request(canonical + '/app')).headers.get('X-Robots-Tag')).toBeNull();
@@ -136,7 +134,7 @@ describe('canonical domain transition through the actual Worker routes', () => {
       for (const path of ['/app/post/fixture?view=all', '/api/auth/verify-email?token=synthetic', '/manifest.webmanifest']) {
         const response = await request(host + path);
         expect(response.status).toBe(307);
-        expect(response.headers.get('Location')).toBe(canonical + path);
+        expect(response.headers.get('Location')).toBe(canonical + path.replace(/^\/app\//, '/'));
       }
       for (const method of ['POST', 'PUT', 'DELETE', 'OPTIONS']) {
         const response = await request(host + '/api/auth/sign-in/email', { method, body: 'synthetic' });
@@ -160,12 +158,12 @@ describe('canonical domain transition through the actual Worker routes', () => {
     }
   });
 
-  it('upgrades known HTTP navigation without forwarding mutation bodies or stranding legacy keys', async () => {
+  it('upgrades known HTTP navigation to the canonical website without forwarding mutation bodies', async () => {
     for (const [host, path, target] of [
       ['http://porchday.org', '/app', canonical],
       ['http://porchday.org:80', '/api/auth/verify-email', canonical],
-      ['http://porchday.com', '/app', legacy],
-      ['http://porchday.com', '/login', legacy],
+      ['http://porchday.com', '/app', canonical],
+      ['http://porchday.com', '/login', canonical],
       ['http://porchday.com', '/sw.js', legacy],
       ['http://porchday.com', '/join', canonical],
       ['http://porchday.com', '/about', canonical],
@@ -175,7 +173,7 @@ describe('canonical domain transition through the actual Worker routes', () => {
       for (const method of ['GET', 'HEAD']) {
         const response = await request(host + path + '?view=plain', { method });
         expect(response.status).toBe(307);
-        expect(response.headers.get('Location')).toBe(target + path + '?view=plain');
+        expect(response.headers.get('Location')).toBe(target + (path === '/app' ? '/' : path.replace(/^\/app\//, '/')) + '?view=plain');
         expect(response.headers.get('Cache-Control')).toBe('no-store');
       }
       const denied = await request(host + '/api/auth/sign-in/email', { method: 'POST', headers: { Origin: target }, body: 'synthetic' });
@@ -216,15 +214,29 @@ it('clones request bindings without changing shared bindings during concurrent r
   const running = new Promise<void>(resolve => { started = resolve; });
   const harness = new Hono<{ Bindings: Env; Variables: Variables }>();
   harness.use('*', applicationDomains);
-  harness.get('/app/probe', async c => {
+  harness.get('/api/probe', async c => {
     if (new URL(c.req.url).origin === legacy) { started(); await wait; }
     return c.json({ origin: c.env.APP_URL, sameBindings: c.env === env, sameAssets: c.env.ASSETS === env.ASSETS });
   });
-  const oldRequest = harness.request(legacy + '/app/probe', {}, env);
+  const oldRequest = harness.request(legacy + '/api/probe', {}, env);
   await running;
-  const newResponse = await harness.request(canonical + '/app/probe', {}, env);
+  const newResponse = await harness.request(canonical + '/api/probe', {}, env);
   expect(await newResponse.json()).toEqual({ origin: canonical, sameBindings: true, sameAssets: true });
   resume();
   expect(await (await oldRequest).json()).toEqual({ origin: legacy, sameBindings: false, sameAssets: true });
   expect(env.APP_URL).toBe(canonical);
+});
+
+it('redirects old member URLs on canonical and staging origins without matching /app-shell or /appeals', async () => {
+  for (const host of [canonical,'https://staging.porchday.com']) {
+    const env=host===canonical?environment():environment({APP_URL:host,LEGACY_APP_URL:undefined,ENVIRONMENT:'staging'});
+    for(const [path,target] of [['/app','/'],['/app/','/'],['/app/connections','/connections'],['/app/albums/id','/albums/id'],['/app//evil.test','/evil.test']]) {
+      for(const method of ['GET','HEAD']) {
+        const response=await request(host+path+'?keep=yes',{method},env);
+        expect(response.status).toBe(307);expect(response.headers.get('Location')).toBe(host+target+'?keep=yes');
+      }
+      const response=await request(host+path,{method:'POST'},env);expect(response.headers.get('Location')).toBeNull();
+    }
+    for(const path of ['/connections','/albums/id','/app-shell','/appeals','/application']) expect((await request(host+path,{},env)).headers.get('Location')).toBeNull();
+  }
 });

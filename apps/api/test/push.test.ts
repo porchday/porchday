@@ -28,7 +28,7 @@ describe('Web Push encryption and endpoint validation', () => {
     expect(request.headers.Authorization).toMatch(/^vapid t=/);
     const clear = ece.decrypt(request.body, {version: 'aes128gcm', privateKey: b.key, authSecret: b.subscription.keys.auth}).toString();
     expect(clear).toBe(GENERIC_PUSH_PAYLOAD);
-    expect(JSON.parse(clear)).toEqual({title: 'Porchday', body: 'You have a new update', url: '/app/notifications'});
+    expect(JSON.parse(clear)).toEqual({title: 'Porchday', body: 'You have a new update', url: '/notifications'});
     expect(Buffer.from(request.body!).includes(Buffer.from('You have'))).toBe(false);
   });
   it('rejects redirects-by-URL, custom servers, credentials, ports and invalid curve keys', async () => {
