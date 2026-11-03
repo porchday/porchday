@@ -27,7 +27,7 @@ const bundle = await build({
       setup(b) {
         b.onLoad({ filter: /apps\/web\/src\/main\.tsx$/ }, async (args) => ({
           contents: (await readFile(args.path, "utf8"))
-            .split("installTracing();")[0]
+            .split("const canonicalDestination =")[0]
             .replace("function AppShell(", "export function AppShell(")
             .replace(/^import ["\'].*\.css["\'];?$/gm, ""),
           loader: "tsx",
