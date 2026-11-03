@@ -18,7 +18,7 @@ Feed displays chronological posts without a composer. Its controls are:
 
 | Control | Choices and behavior |
 | --- | --- |
-| Content | **Posts / Photos** tabs, visually mirroring Share’s top tabs. Photos filters readable content to photos; it does not change permissions. Replace the earlier content dropdown. |
+| Content | **Posts / Photos Only** tabs, visually mirroring Share’s top tabs. Photos filters readable content to photos; it does not change permissions. Replace the earlier content dropdown. |
 | View | **Infinite scroll / Calendar**. Infinite scroll replaces the earlier Feed button label; the main navigation destination remains Feed. |
 | Author filter | “Show posts by” with independently selectable categories. |
 
@@ -65,7 +65,7 @@ Only me is last. Friends appears before Family. The mockup starts with Friends &
 
 The third navigation destination is **Albums**, focused entirely on social photo albums. Remove the former Grid / Calendar / Albums view switch from this destination. Show album covers, names, photo counts, membership/role information and Create album. Opening an album shows its photos and the relevant contribution and administration controls.
 
-Individual photo browsing lives in **Feed → Photos**, using the same Infinite scroll / Calendar controls and default Me, Friends & Family author selection as Feed → Posts. Feed's Posts / Photos tabs visually mirror Share's Post / Photos Only tabs; retain those distinct labels because browsing and composing are different actions.
+Individual photo browsing lives in **Feed → Photos Only**, using the same Infinite scroll / Calendar controls and default Me, Friends & Family author selection as Feed → Posts. Feed's Posts / Photos Only tabs visually mirror Share's Post / Photos Only tabs; use Photos Only consistently for browsing and composing.
 
 Photo calendar placement follows the editable photo date. Posts retain server-created chronology. Both calendar experiences preserve older months above and newer months below. A photo has stable identity independent of attachments and album memberships, so date edits and membership in multiple albums do not duplicate media.
 
@@ -141,7 +141,7 @@ Acceptance should cover:
 
 This proposal supersedes earlier mockup labels and defaults where they differ: Infinite scroll replaces the local Feed view button, Photos Only replaces Share's Photos subtab, Me joins Friends and Family in default browsing filters, and albums are collaborative rather than personal-only collections. Earlier public-homepage, invitation, deployment and standalone development-tool discussions are outside this design.
 
-November 2 refinement: Albums replaces the Photos navigation destination and has no general photo browser. Feed owns Posts / Photos browsing through top tabs instead of a dropdown. This supersedes the earlier Grid / Calendar / Albums proposal.
+November 2 refinement: Albums replaces the Photos navigation destination and has no general photo browser. Feed owns Posts / Photos Only browsing through top tabs instead of a dropdown. This supersedes the earlier Grid / Calendar / Albums proposal.
 
 ## Implementation history recorded November 2
 
