@@ -124,10 +124,12 @@ const server = createServer(async (req, res) => {
   if (url.pathname === "/api/v1/calendar/highlights")
     return send({ items: highlights });
   if(url.pathname==='/api/v1/photo-feed'){
+    await new Promise(resolve=>setTimeout(resolve,150));
     const month=url.searchParams.get('month')||new Date().toISOString().slice(0,7),day=month+'-12';
     return send({items:[{id:'00000000-0000-4000-8000-000000000006',kind:'attachment',day,author_id:self,author_handle:'parent',photo:null,post:{id:'00000000-0000-4000-8000-000000000004',author_id:self,created_at:day+'T12:00:00.000Z',expires_at:null,envelope:{payload:{text:'Picnic in the park',media:[{id:'00000000-0000-4000-8000-000000000006',alt:'Synthetic photo',mime:'image/jpeg',width:32,height:24}]}}}}],next:null});
   }
   if (url.pathname === "/api/v1/calendar") {
+    await new Promise(resolve=>setTimeout(resolve,150));
     const start = new Date(url.searchParams.get("start"));
     const day = new Date(
       start.getFullYear(),
@@ -191,12 +193,18 @@ try {
   const beforeMonths = await page.locator('[data-calendar-month]').count();
   await page.locator('.calendar-earlier').scrollIntoViewIfNeeded();
   const preservedMonth=page.locator(`[data-calendar-month="${firstMonth}"]`);
+  await preservedMonth.locator('.loading').waitFor({state:'hidden'});
   const previousTop=(await preservedMonth.boundingBox()).y;
   await page.getByRole('button',{name:'Load earlier month'}).click();
   await page.waitForFunction(before => document.querySelectorAll('[data-calendar-month]').length > before, beforeMonths);
   const monthKeys = await page.locator('[data-calendar-month]').evaluateAll(elements => elements.map(e => e.dataset.calendarMonth));
   assert.equal(monthKeys.at(-1), firstMonth);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   assert(Math.abs((await preservedMonth.boundingBox()).y-previousTop)<3,"loading an older month preserves the reading anchor");
+  await page.locator('[data-calendar-month]').first().getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
+  await page.locator('[data-calendar-month]').first().locator('.loading').waitFor({state:'hidden'});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert(Math.abs((await preservedMonth.boundingBox()).y-previousTop)<3,"loading older month photos preserves the reading anchor");
   assert.equal(new Set(monthKeys).size, monthKeys.length);
   for(let i=1;i<monthKeys.length;i++) assert(monthKeys[i] > monthKeys[i-1]);
   const beforeManual = await page.locator('[data-calendar-month]').count();
@@ -352,10 +360,16 @@ try {
   await page.locator('.calendar-earlier').scrollIntoViewIfNeeded();
   const photoMonthLabel=await page.locator('.photo-calendar h2').first().textContent();
   const photoMonth=page.locator('.photo-calendar').filter({has:page.getByRole('heading',{name:photoMonthLabel,exact:true})});
+  await photoMonth.locator('.loading').waitFor({state:'hidden'});
   const photoMonthTop=(await photoMonth.boundingBox()).y;
   await page.getByRole('button',{name:'Load earlier month',exact:true}).click();
   await page.waitForFunction(()=>document.querySelectorAll('.photo-calendar').length===2);
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
   assert(Math.abs((await photoMonth.boundingBox()).y-photoMonthTop)<3,'photo calendar preserves the reading anchor');
+  await page.locator('.photo-calendar').first().getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
+  await page.locator('.photo-calendar').first().locator('.loading').waitFor({state:'hidden'});
+  await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+  assert(Math.abs((await photoMonth.boundingBox()).y-photoMonthTop)<3,'photo calendar preserves the anchor after delayed photo loading');
   const thumbnail=page.getByRole('img',{name:'Synthetic photo',exact:true}).first();
   await thumbnail.evaluate(async i=>{await i.decode();await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));});
   assert(await thumbnail.evaluate(i=>{const image=i.getBoundingClientRect(),cell=i.closest('button').getBoundingClientRect();return i.naturalWidth===32&&image.width>0&&image.left>=cell.left&&image.right<=cell.right&&image.top>=cell.top&&image.bottom<=cell.bottom;}));

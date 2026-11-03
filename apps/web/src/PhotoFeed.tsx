@@ -1,8 +1,9 @@
+import {useCalendarScrollAnchor} from "./calendar-scroll-anchor";
 import {AttachmentAlbumPicker} from "./AttachmentAlbumPicker";
 import {verifyAttachmentDate,updateAttachmentDate,type AttachmentDate} from "./attachment-photo-date";
 import type {PhotoProof} from "@porchday/crypto/photos";
 import { useNearViewport } from "./near-viewport";
-import React,{useEffect,useLayoutEffect,useRef,useState} from "react";
+import React,{useEffect,useRef,useState} from "react";
 import {get,items,message,type MediaPayload,type SocialObject} from "./api";
 import {useVault} from "./vault";
 import {Alert,Button,Empty,Field,Loading,Modal,useAction} from "./ui";
@@ -68,9 +69,8 @@ function PhotoMonth({month,authorFilter}:{month:Date;authorFilter:AuthorFilter})
 }
 export function PhotoFeedCalendar({authorFilter}:{authorFilter:AuthorFilter}){
  const [anchor,setAnchor]=useState(()=>calendarDate(new Date().getFullYear(),new Date().getMonth())),[count,setCount]=useState(1);
- const root=useRef<HTMLDivElement>(null),scrollAnchor=useRef<{element:Element;top:number}|null>(null);
- function earlier(){const element=root.current?.firstElementChild;scrollAnchor.current=element?{element,top:element.getBoundingClientRect().top}:null;setCount(n=>n+1);}
- useLayoutEffect(()=>{const saved=scrollAnchor.current;if(saved?.element.isConnected)window.scrollBy({top:saved.element.getBoundingClientRect().top-saved.top,behavior:"instant"});scrollAnchor.current=null;},[count]);
+ const {root,capture}=useCalendarScrollAnchor(count);
+ function earlier(){capture();setCount(n=>n+1);}
  function move(offset:number){setAnchor(calendarDate(anchor.getFullYear(),anchor.getMonth()+offset));setCount(1);}
  return <><nav className="calendar-month" aria-label="Photo calendar navigation"><Button onClick={()=>move(-1)} aria-label="Previous month">←</Button><Button onClick={()=>{setAnchor(calendarDate(new Date().getFullYear(),new Date().getMonth()));setCount(1);}}>This month</Button><Button onClick={()=>move(1)} aria-label="Next month">→</Button><label>Jump to month<input type="month" value={localDay(anchor).slice(0,7)} onChange={e=>{if(/^\d{4}-\d{2}$/.test(e.target.value)){setAnchor(new Date(e.target.value+"-01T12:00:00"));setCount(1);}}}/></label></nav><div className="calendar-earlier"><Button onClick={earlier}>Load earlier month</Button></div><div ref={root}>{Array.from({length:count},(_,i)=>calendarDate(anchor.getFullYear(),anchor.getMonth()-count+1+i)).map(month=><PhotoMonth key={localDay(month)} month={month} authorFilter={authorFilter}/>)}</div></>;
 }

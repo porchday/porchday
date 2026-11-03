@@ -1,5 +1,6 @@
+import {useCalendarScrollAnchor} from "./calendar-scroll-anchor";
 import { matchesAuthor, matchesContent, type AuthorFilter, type FeedContent } from "./feed-filters";
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { get, request, del, items, type Json, type SocialObject } from "./api";
 import { useVault } from "./vault";
 import { Alert, Button, Loading, Modal, useAction } from "./ui";
@@ -35,18 +36,8 @@ export function PhotosCalendar({ embedded = false, authorFilter, contentFilter =
     }
     setSelected(day);
   }, [anchor.getTime()]);
-  const monthsRoot = useRef<HTMLDivElement>(null);
-  const scrollAnchor = useRef<{element: Element; top: number} | null>(null);
-  function earlier() {
-    const element = monthsRoot.current?.firstElementChild;
-    scrollAnchor.current = element ? {element, top: element.getBoundingClientRect().top} : null;
-    setCount(old => old + 1);
-  }
-  useLayoutEffect(() => {
-    const anchor = scrollAnchor.current;
-    if (anchor?.element.isConnected) window.scrollBy({top:anchor.element.getBoundingClientRect().top-anchor.top,behavior:"instant"});
-    scrollAnchor.current = null;
-  }, [count]);
+  const {root:monthsRoot,capture}=useCalendarScrollAnchor(count);
+  function earlier() {capture();setCount(old=>old+1);}
   function jump(offset: number) {
     setSelected(null); setCount(1); setDirectory({});
     setAnchor(new Date(anchor.getFullYear(), anchor.getMonth() + offset, 1));
