@@ -12,7 +12,7 @@ import {provePrivacyCommits} from '../src/privacy-commit-proof';
 
 const url=process.env.PRIVACY_COMMIT_TEST_DATABASE_URL;
 const suite=url?describe:describe.skip;
-let owner:Sql,auth:Sql,generation:string;
+let owner:Sql,auth:Sql,generation:string,restoreBefore:string;
 const digest='a'.repeat(64);
 async function fixture(){const id=randomUUID();await owner`insert into public.commit_fixture(id,value) values(${id},0)`;return id;}
 async function value(id:string){return Number((await owner`select value from public.commit_fixture where id=${id}`)[0].value);}
@@ -29,7 +29,10 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
   if(!url||!['localhost','127.0.0.1'].includes(new URL(url).hostname)||!new URL(url).pathname.endsWith('/porchday_commit_proof_test'))throw Error('DISPOSABLE_LOCAL_COMMIT_PROOF_DATABASE_REQUIRED');
   owner=postgres(url,{max:3,prepare:false,onnotice:()=>{}});
   await owner`drop schema if exists app cascade`;await owner`drop schema public cascade`;await owner`create schema public`;
-  for(const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())await owner.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  for(const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort()){
+   if(name==='069_privacy_transaction_commits.sql')restoreBefore=(await owner`select pg_get_functiondef('app.replay_safety_batch(jsonb)'::regprocedure) as definition`)[0].definition;
+   await owner.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+  }
   await owner.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_commit_auth_test') THEN CREATE ROLE porchday_commit_auth_test LOGIN PASSWORD 'local-commit-proof-only' IN ROLE porchday_auth; END IF; END $$");
   await owner`create table public.commit_fixture(id uuid primary key,value integer not null)`;
   await owner`grant select,update on public.commit_fixture to porchday_auth`;
@@ -37,6 +40,14 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
   const connection=new URL(url);connection.username='porchday_commit_auth_test';connection.password='local-commit-proof-only';auth=postgres(connection.href,{max:2,prepare:false,onnotice:()=>{}});
  },30000);
  afterAll(async()=>{await auth?.end();await owner?.end();});
+ it('preserves every installed photo/child restore handler and an already prepared marker reader',async()=>{
+  const definition=async()=>String((await owner`select pg_get_functiondef('app.replay_safety_batch(jsonb)'::regprocedure) as definition`)[0].definition);
+  const after=await definition(),actions=(text:string)=>text.slice(text.indexOf("  CASE d->>'action'"),text.indexOf('  END CASE;')+'  END CASE;'.length);
+  expect(actions(after)).toBe(actions(restoreBefore));expect(after).toContain('privacy_operation_committed');
+  expect(after).toContain('child_profiles');expect(after).toContain('photos');
+  await owner.unsafe(await readFile(new URL('../migrations/069_privacy_transaction_commits.sql',import.meta.url),'utf8'));
+  expect(await definition()).toBe(after);
+ });
  it('commits SQL work, marker, counter and unique fence atomically',async()=>{
   const id=await fixture(),operation=randomUUID(),sequence=await run(id,operation);
   expect(await value(id)).toBe(1);
