@@ -365,7 +365,7 @@ function runtime(env:RuntimeEnv,timing?:JournalTiming) {
     db.seal=async scope=>{await sql`select app.seal_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid)`;};
     db.recoverOperation=async scope=>{const [r]=await sql`select app.recover_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid) as value`;return z.object({recognized:z.boolean(),sequence:sequence.nullable()}).strict().parse(r.value);};
   }
-  const io=resilientJournalIO(env.RECOVERY_JOURNAL as JournalStore,db,{deadlineEnabled:env.JOURNAL_LATENCY_RECOVERY_V1==='true',report:code=>event('error',{code},env)});
+  const io=resilientJournalIO(env.RECOVERY_JOURNAL as JournalStore,db,{deadlineEnabled:env.JOURNAL_LATENCY_WRITER_V1==='true',report:code=>event('error',{code},env)});
   const store:JournalStore={
     // The retry adapter consumes the body, so this includes lookup, body and retry waits.
     get:key=>measureJournalPhase(timing,'r2_read',()=>io.store.get(key)),
@@ -383,7 +383,7 @@ export function isPrivacyMutation(method:string,path:string):boolean {
   if(path==='/api/v1/imports')return true; // An import may replace private profile content.
   return new RegExp(`^/api/staff/(?:moderation/reports/${uuid}/actions|recovery/cases/${uuid}/review)$`).test(path);
 }
-export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>withJournalRequestDeadline(c.env.JOURNAL_LATENCY_RECOVERY_V1==='true',async()=>{
+export const privacyReadGuard=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>withJournalRequestDeadline(c.env.JOURNAL_LATENCY_WRITER_V1==='true',async()=>{
   let resources:ReturnType<typeof runtime>=null;
   const timing=phaseTiming(c);
   const logoutTiming=logoutJournalTiming(c.env,c.req);
@@ -443,7 +443,7 @@ async function withHttpJournal<T>(context:HttpJournalContext,work:(scope?:AuthPr
     // supply one before any journal intent or application work can start.
     if(context.env.ENVIRONMENT!=='development')throw new JournalError('JOURNAL_EXECUTION_CONTEXT_REQUIRED');
   }
-  return await withJournalRequestDeadline(context.env.JOURNAL_LATENCY_RECOVERY_V1==='true',()=>{
+  return await withJournalRequestDeadline(context.env.JOURNAL_LATENCY_WRITER_V1==='true',()=>{
     const operation=withJournal(context.env,work,timing??logoutJournalTiming(context.env,context.req),authTransaction);
     // Keep observing the underlying lifecycle if the caller budget wins first.
     // Process termination is still handled by the durable admission fence.
@@ -452,7 +452,7 @@ async function withHttpJournal<T>(context:HttpJournalContext,work:(scope?:AuthPr
   });
 }
 export async function withPrivacyJournal<T>(env:RuntimeEnv,work:()=>Promise<T>,timing?:JournalTiming):Promise<T> {
-  return withJournalRequestDeadline(env.JOURNAL_LATENCY_RECOVERY_V1==='true',()=>withJournal(env,work,timing,false));
+  return withJournalRequestDeadline(env.JOURNAL_LATENCY_WRITER_V1==='true',()=>withJournal(env,work,timing,false));
 }
 async function withJournal<T>(env:RuntimeEnv,work:(scope?:AuthPrivacyCommitScope)=>Promise<T>,timing:JournalTiming|undefined,authTransaction:boolean):Promise<T>{
   const resources=runtime(env,timing);
