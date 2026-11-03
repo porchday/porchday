@@ -2,7 +2,7 @@
 
 ## Corrected finding
 
-A production logout completed its auth work, then waited approximately two
+A production logout spent 504 ms in its auth-work phase, then waited approximately two
 minutes for an R2 read of `control.json` in its completion checkpoint. Cloudflare
 recorded that exact object's GetObject as HTTP 500 / internalError at
 13:04:39 UTC. Before the read returned, another request found the unfinished
@@ -35,9 +35,12 @@ The request-local summary has sample interval 1. Unlike unrelated phase maxima,
 its dimensions belong to one invocation. They overlap, so do not add the R2
 read duration to its enclosing checkpoint duration. The original summary is
 emitted in the auth handler's `finally`, hence it appears two minutes after
-request start. Source inspection shows checkpoint is entered after auth work
-returns following an acknowledged COMMIT; the checkpoint first reads SQL status
-and then `control.json`. The long checkpoint never reached receipt publication.
+request start. Source inspection shows the checkpoint first reads SQL status and then
+`control.json`. The normal path enters it after acknowledged COMMIT; a known
+rollback also enters completion. The sampled COMMIT phase is consistent with
+commit, but is not a durable operation-specific SQL outcome proof. We therefore
+do not use these diagnostic timings to authorize recovery or claim the exact
+SQL outcome. The long checkpoint never reached receipt publication.
 
 The initial investigation queried logout timing only through 13:03:00. That
 window missed the failed invocation's summary at 13:04:40. The earlier statement
