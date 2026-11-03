@@ -1,12 +1,15 @@
+import {photoBytesHash} from "@porchday/crypto/photos";
 import {generateDeviceKeys,unlockPrivateKey} from "@porchday/crypto";
 import {beforeAll,beforeEach,describe,it,expect,vi} from "vitest";
 vi.mock("../src/api",async importOriginal=>({...await importOriginal<typeof import("../src/api")>(),get:vi.fn(),post:vi.fn(),request:vi.fn()}));
 import {ApiError,get,post,request} from "../src/api";
 import {publishPhoto,localPhotoDate,type PhotoDraft} from "../src/photo-publish";
+vi.mock("../src/photo-record",()=>({openPhoto:vi.fn(async(_vault,_photo,grant)=>grant.envelope.payload)}));
+let sourceHash:string;
 const draft:PhotoDraft={id:"photo-id",name:"day.jpg",alt:"A day outside",blob:new Blob(["synthetic image bytes"]),width:1,height:1,photoDate:"2026-10-31"};
 const vault={member:{id:"owner"},device:{id:"device"},seal:vi.fn(async(payload,context)=>({context,payload})),open:vi.fn(async(row)=>row.envelope.payload)} as any;
-function saved(audience="connections",album:string|null=null){return {photo:{owner_id:"owner",photo_date:draft.photoDate,expires_at:null,grants:[{id:"direct",album_id:null,audience,envelope:{payload:{media:[{alt:draft.alt,tags:[]}]}}},...(album?[{id:"album",album_id:album,audience:"album",envelope:{payload:{media:[{alt:draft.alt,tags:[]}]}}}]:[])]}};}
-beforeAll(async()=>{const keys=await generateDeviceKeys("owner","device");vault.privateKey=await unlockPrivateKey(keys.encryptedPrivateKey,keys.recoverySecret);});
+function saved(audience="connections",album:string|null=null){return {photo:{owner_id:"owner",photo_date:draft.photoDate,expires_at:null,grants:[{id:"direct",album_id:null,audience,envelope:{payload:{photoProof:{statement:{sha256:sourceHash}},media:[{alt:draft.alt,tags:[]}]}}},...(album?[{id:"album",album_id:album,audience:"album",envelope:{payload:{photoProof:{statement:{sha256:sourceHash}},media:[{alt:draft.alt,tags:[]}]}}}]:[])]}};}
+beforeAll(async()=>{sourceHash=await photoBytesHash(new Uint8Array(await draft.blob.arrayBuffer()));const keys=await generateDeviceKeys("owner","device");vault.privateKey=await unlockPrivateKey(keys.encryptedPrivateKey,keys.recoverySecret);});
 beforeEach(()=>{vi.clearAllMocks();vi.mocked(get).mockRejectedValue(new ApiError(404,{error:{code:"NOT_FOUND"}}));vi.mocked(post).mockImplementation(async(path)=>path==="/media"?{upload_url:"/media/upload"}:{id:draft.id});vi.mocked(request).mockResolvedValue({ok:true});});
 describe("independent photo publication",()=>{
  it("publishes one logical photo with distinct direct and album media grants and no post",async()=>{
@@ -23,6 +26,11 @@ describe("independent photo publication",()=>{
   vi.mocked(post).mockImplementation(async(path)=>{if(path==="/photos")throw Error("Response lost");return {upload_url:"/media/upload"};});
   await expect(publishPhoto(vault,draft,"connections",null,null)).resolves.toBeUndefined();
   expect(vi.mocked(post).mock.calls.filter(([path])=>path==="/photos")).toHaveLength(1);
+ });
+ it("rejects a different photo using the same stable identity",async()=>{
+  vi.mocked(get).mockResolvedValue(saved());
+  await expect(publishPhoto(vault,{...draft,blob:new Blob(["different bytes"])},"connections",null,null)).rejects.toThrow(/already shared/);
+  expect(post).not.toHaveBeenCalled();
  });
  it("checks the stable ID before uploading again and refuses silently changed audiences or captions",async()=>{
   vi.mocked(get).mockResolvedValue(saved());

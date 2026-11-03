@@ -130,6 +130,130 @@
         }
       ],
       "description": "Optional decrypted owner-only custom emoji collection. Validate PNG bytes/digest and merge by image identity before re-encrypting for the destination owner."
+    },
+    "photos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "photo_date",
+          "created_at",
+          "expires_at",
+          "payload",
+          "album_ids"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "photo_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "media"
+            ],
+            "properties": {
+              "media": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "album_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "albums": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "payload"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 5000
+              }
+            }
+          }
+        }
+      }
+    },
+    "attachment_dates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "media_id",
+          "post_id",
+          "photo_date"
+        ],
+        "properties": {
+          "media_id": {
+            "type": "string"
+          },
+          "post_id": {
+            "type": "string"
+          },
+          "photo_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
     }
   },
   "additionalProperties": true,

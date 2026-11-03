@@ -49,6 +49,32 @@ async function connect(a:string,b:string) {
   await db`insert into app.connections(member_a,member_b,kind) values(${[a,b].sort()[0]},${[a,b].sort()[1]},'friend')`;
 }
 suite("Independent photo sharing paths",()=>{
+  it("exports owned originals and albums without other contributors or duplicate album media; mutations invalidate export",async()=>{
+    const owner=await member(),other=await member();await connect(owner,other);
+    const album=await create(owner);await change(owner,album,other,"add",1);
+    const mine=await photo(owner),theirs=await photo(other);
+    const original=await grant(owner,mine,[],null,"only_me");
+    const copy=await grant(owner,mine,[other],album);
+    await grant(other,theirs,[],null,"only_me");await grant(other,theirs,[owner],album);
+    const job=randomUUID();
+    await actor(owner,sql=>sql`insert into app.data_transfer_jobs(id,member_id,kind,state) values(${job},${owner},'export','complete')`);
+    const page=await actor(owner,sql=>sql`select app.export_page(${job},'photos','') as page`) as any;
+    expect(page[0].page.photos.map((p:any)=>p.id)).toEqual([mine]);
+    expect(page[0].page.photos[0].grants.map((g:any)=>g.id)).toEqual([original.id]);
+    expect(page[0].page.photos[0].album_ids).toEqual([album]);
+    const media=await actor(owner,sql=>sql`select app.export_page(${job},'media','') as page`) as any;
+    expect(media[0].page.media.map((m:any)=>m.id)).toContain(original.media);
+    expect(media[0].page.media.map((m:any)=>m.id)).not.toContain(copy.media);
+    const albums=await actor(owner,sql=>sql`select app.export_page(${job},'albums','') as page`) as any;
+    expect(albums[0].page.albums.map((a:any)=>a.id)).toEqual([album]);
+    const refs=[{kind:"photo",id:mine,revision:1,expires_at:null},{kind:"album",id:album,revision:2,expires_at:null}];
+    const checked=await actor(owner,sql=>sql`select app.validate_export(${job},${sql.json(refs)}) as valid`) as any;
+    expect(checked[0].valid).toBe(true);
+    await actor(owner,sql=>sql`select app.remove_photo_grant(${copy.id})`);
+    const [state]=await db`select state from app.data_transfer_jobs where id=${job}`;
+    expect(state.state).toBe("invalidated");
+  });
+
   beforeAll(async () => {
     const url = new URL(base!);
     if (!["localhost","127.0.0.1"].includes(url.hostname)) throw Error("Disposable loopback database required");

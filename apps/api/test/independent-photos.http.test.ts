@@ -290,6 +290,27 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(reader.id,"/photo-feed?timezone=not-a-zone")).status).toBe(400);
     expect((await call(reader.id,"/photo-feed?after=invalid")).status).toBe(400);
   });
+  it("imports attachment dates atomically and exports only owned date records",async()=>{
+    const owner=await person(),outsider=await person();
+    const postId=randomUUID(),attachment=await uploadGrant(owner,postId,"only_me");
+    const envelope=await seal(owner,{text:"Imported",media:[{id:attachment.media_id,mime:"image/jpeg"}]},1,{id:postId,kind:"post",audience:"only_me"});
+    const statement={v:1,purpose:"porchday-attachment-date",mediaId:attachment.media_id,postId,ownerId:owner.id,deviceId:owner.deviceId,date:"2000-02-29",revision:1};
+    const proof=await signStatement(statement,owner.key);
+    const body={id:randomUUID(),posts:[{envelope,source_id:"synthetic:"+postId,media_ids:[attachment.media_id],photo_dates:[{...proof,statement:{...statement,date:"2001-02-03"}}]}]};
+    expect((await call(owner.id,"/imports","POST",body)).status).toBe(400);
+    expect(await db`select id from app.posts where id=${postId}`).toHaveLength(0);
+    body.posts[0].photo_dates=[proof];
+    expect((await call(owner.id,"/imports","POST",body)).status).toBe(201);
+    expect((await call(owner.id,"/imports","POST",body)).status).toBe(201);
+    expect((await call(owner.id,`/media/${attachment.media_id}/photo-date`)).data.date.photo_date).toBe("2000-02-29");
+    const job=await call(owner.id,"/exports","POST",{});expect(job.status).toBe(201);
+    const result=await call(owner.id,`/exports/${job.data.id}?section=attachment_dates`);
+    expect(result.status).toBe(200);expect(result.data.attachment_dates.map((d:any)=>d.media_id)).toEqual([attachment.media_id]);
+    const checked=await call(owner.id,`/exports/${job.data.id}/validate`,"POST",{items:[{kind:"attachment_date",id:attachment.media_id,revision:1,expires_at:null}]});
+    expect(checked.status,JSON.stringify(checked.data)).toBe(200);
+    const other=await call(outsider.id,"/exports","POST",{});
+    expect((await call(outsider.id,`/exports/${other.data.id}?section=attachment_dates`)).data.attachment_dates).toHaveLength(0);
+  });
   it("publishes and edits signed attachment dates without backdating posts or changing their recipients",async()=>{
     const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
     const postId=randomUUID(),attachment=await uploadGrant(owner,postId,"connections");

@@ -24,7 +24,7 @@ async function readPhoto(vault:ReturnType<typeof useVault>,photo:PhotoRow,grants
  }
  throw last;
 }
-export async function addPhotoToAlbum(vault:ReturnType<typeof useVault>,photoId:string,albumId:string){
+export async function addPhotoToAlbum(vault:ReturnType<typeof useVault>,photoId:string,albumId:string,privateOnly=false){
  const current=(await get("/photos/"+photoId)).photo as PhotoRow;
  if(current.owner_id!==vault.member.id)throw Error("Only the photo owner can add it to another album.");
  if(current.grants.some(g=>g.album_id===albumId))return;
@@ -32,11 +32,13 @@ export async function addPhotoToAlbum(vault:ReturnType<typeof useVault>,photoId:
  const media={...content.media![0],id:crypto.randomUUID()},createdAt=new Date().toISOString();
  const common={audience:"album" as const,groupId:albumId,parentId:photoId,createdAt,expiresAt:current.expires_at};
  const encrypted=await vault.seal({...payload,...media},{...common,id:media.id,kind:"media"});
+ if(privateOnly&&encrypted.recipients.some(r=>r.memberId!==vault.member.id))throw Error("This imported album is now shared. Import stopped before adding private photos.");
  const bytes=new TextEncoder().encode(JSON.stringify(encrypted));
  if(bytes.length>22_020_096)throw Error("This encrypted photo is too large for this album's audience.");
  const upload=await post("/media",{id:media.id,envelope:encrypted,byte_size:bytes.length});
  await request(upload.upload_url,{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:new Blob([bytes])});
  const envelope=await vault.seal({...content,media:[media]},{...common,id:crypto.randomUUID(),kind:"photo",photoDate:current.photo_date,revision:current.revision});
+ if(privateOnly&&envelope.recipients.some(r=>r.memberId!==vault.member.id))throw Error("This imported album is now shared. Import stopped before adding private photos.");
  try{await post(`/photos/${photoId}/grants`,{envelope,media_id:media.id});}
  catch(error){
   const latest=(await get("/photos/"+photoId)).photo as PhotoRow;

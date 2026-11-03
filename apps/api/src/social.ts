@@ -540,7 +540,7 @@ export function createSocialRoutes() {
             fail('ENVELOPE_CONTEXT');
     } await db `insert into app.reports(id,reporter,target_member,target_id,reason,evidence_envelope,evidence_disclosed) values(${reportId},${c.get('memberId')},${b.target_member},${b.target_id},${b.reason},${b.evidence_envelope ? db.json(b.evidence_envelope) : null},${b.evidence_disclosed})`; return { id: reportId }; }), 201); });
     registerExportRoutes(app, { tx, recent, fail, id });
-    app.post('/imports', async (c) => { recent(c); const b = await body(c, z.object({ id: uuid, profile: envelopeBody.optional(), posts: z.array(envelopeBody.extend({ source_id: z.string().max(200), media_ids: z.array(uuid).max(10).default([]) })).max(50) })); return c.json(await tx(c, async (db) => { await writeAllowed(db); if (b.profile) {
+    app.post('/imports', async (c) => { recent(c); const b = await body(c, z.object({ id: uuid, profile: envelopeBody.optional(), posts: z.array(envelopeBody.extend({ source_id: z.string().max(200), photo_dates:z.array(attachmentDateProof).max(10).default([]), media_ids: z.array(uuid).max(10).default([]) })).max(50) })); return c.json(await tx(c, async (db) => { await writeAllowed(db); if (b.profile) {
         await checkEnvelope(db, c.get('memberId'), b.profile.envelope, 'profile', { allowPast: true });
         if (b.profile.envelope.context.id !== c.get('memberId'))
             fail('ENVELOPE_CONTEXT');
@@ -557,6 +557,8 @@ export function createSocialRoutes() {
         const inserted = await db `insert into app.posts(id,author_id,audience,envelope,epoch,created_at,expires_at,import_source) values(${e.id},${c.get('memberId')},'only_me',${db.json(item.envelope)},${e.epoch},${e.createdAt},${e.expiresAt},${item.source_id}) on conflict do nothing`;
         if (inserted.count === 1) {
             await attachMedia(db, c.get('memberId'), e.id, item.media_ids);
+            if(new Set(item.photo_dates.map(p=>p.statement.mediaId)).size!==item.photo_dates.length)fail('ENVELOPE_CONTEXT');
+            for(const proof of item.photo_dates){if(proof.statement.postId!==e.id||!item.media_ids.includes(proof.statement.mediaId))fail('ENVELOPE_CONTEXT');await setAttachmentDate(db,c.get('memberId'),proof,fail);}
             for (const r of item.envelope.recipients)
                 await db `insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
             imported.push(e.id);

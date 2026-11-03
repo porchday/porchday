@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import postgres, { type Sql } from 'postgres';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { generateDeviceKeys, unlockPrivateKey, encryptObject, decryptObject, signStatement, authorizeDevice, createReactionSecret, reactionTag, type UnlockedPrivateKey, type ContentContext } from '@porchday/crypto';
 import { createSocialRoutes } from '../src/social';
@@ -13,6 +13,9 @@ import { requestTimingMiddleware } from '../src/request-timing';
 const url = process.env.SOCIAL_HTTP_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 let sql: Sql;
+let admin: Sql;
+let databaseName: string;
+let isolatedDatabaseUrl: string;
 let app: Hono<{
     Bindings: Env;
     Variables: Variables;
@@ -39,11 +42,23 @@ async function person() { const id = randomUUID(), deviceId = randomUUID(); awai
 async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST', {kind})).status).toBe(200); }
 async function seal(a: Person, payload: unknown, override: Partial<ContentContext> = {}, postId?: string) { const audience = override.audience ?? 'connections'; const snap = await request(a.id, `/audiences?audience=${audience}${override.groupId ? '&group_id=' + override.groupId : ''}${postId ? '&post_id=' + postId : ''}`); expect(snap.status).toBe(200); const context: ContentContext = { id: randomUUID(), kind: 'post', authorId: a.id, authorDeviceId: a.deviceId, audience, parentId: null, groupId: null, epoch: snap.data.epoch, createdAt: new Date().toISOString(), expiresAt: null, revision: 1, ...override, epoch: snap.data.epoch }; return encryptObject({ context, payload, signingKey: a.key, recipients: snap.data.devices.map((d: any) => ({ memberId: d.member_id, deviceId: d.id, publicKey: d.public_key })) }); }
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
-    beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
-        throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); for (const name of ['045_emoji_library.sql','046_connection_history.sql','047_independent_connection_labels.sql','052_group_invitation_roster.sql','059_photo_calendar.sql']) await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
-    afterAll(async () => { if (sql)
-        await sql.end(); });
+    beforeAll(async () => {
+        if (!url || !new URL(url).pathname.includes('test') || !['localhost','127.0.0.1'].includes(new URL(url).hostname))
+            throw Error('Only disposable loopback test databases');
+        const adminUrl=new URL(url);adminUrl.pathname="/postgres";
+        admin=postgres(adminUrl.href,{prepare:false,max:1,onnotice:()=>{}});
+        databaseName='porchday_social_http_test_'+randomUUID().replaceAll('-','');
+        await admin.unsafe('CREATE DATABASE '+databaseName);
+        const isolated=new URL(url);isolated.pathname='/'+databaseName;isolatedDatabaseUrl=isolated.href;
+        sql=postgres(isolated.href,{prepare:false,max:4,onnotice:()=>{}});
+        for (const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())
+            await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+        await sql.unsafe('CREATE VIEW app.test_history_journal AS SELECT decision FROM app.safety_journal');
+        await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(isolated); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+    afterAll(async () => {
+        if(sql)await sql.end();
+        if(admin){if(databaseName)await admin.unsafe('DROP DATABASE IF EXISTS '+databaseName+' WITH (FORCE)');await admin.end();}
+    });
     it('bootstraps only the same authorized roster as devices, preserving the ordinary me shape', async () => {
         const viewer = await person(), unrelated = await person();
         const ordinary = (await request(viewer.id, '/me')).data;
@@ -419,7 +434,7 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         const envelope=await seal(a,{mime:'image/jpeg',bytes:'c2FtcGxl',alt:'Deleted stream fixture'},{id:mediaId,kind:'media',parentId:a.id});
         const bytes=new TextEncoder().encode(JSON.stringify(envelope)),key='media/'+a.id+'/'+mediaId;
         expect((await request(a.id,'/media','POST',{id:mediaId,envelope,byte_size:bytes.length})).status).toBe(201);
-        const jobs={HYPERDRIVE_JOBS:{connectionString:url!},MEDIA:memoryBucket} as unknown as Env;
+        const jobs={HYPERDRIVE_JOBS:{connectionString:isolatedDatabaseUrl},MEDIA:memoryBucket} as unknown as Env;
         const intercepted=vi.spyOn(memoryBucket,'put').mockImplementation(async(k,body)=>{
             const buffered=await new Response(body).arrayBuffer();
             await sql`delete from app.media_assets where id=${mediaId}`;

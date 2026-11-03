@@ -31,6 +31,9 @@ export interface PortableArchive extends Json {
   media: Json[];
   connections: Json[];
   groups: Json[];
+  photos?: Json[];
+  albums?: Json[];
+  attachment_dates?: Json[];
 }
 export function emptyArchive(
   memberId: string,
@@ -51,6 +54,9 @@ export function emptyArchive(
     media: [],
     connections: [],
     groups: [],
+    photos: [],
+    albums: [],
+    attachment_dates: [],
   };
 }
 export const htmlEscape = (value: unknown) =>
@@ -99,7 +105,7 @@ export function packArchive(
     ...photos,
     "archive.json": strToU8(JSON.stringify(archive, null, 2)),
     "index.html": strToU8(
-      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your Porchday archive</title><style>body{font:18px/1.6 system-ui;max-width:760px;margin:60px auto;padding:20px;color:#244e43;background:#f6f3ea}article{padding:25px 0;border-bottom:1px solid #bbb}img,video{max-width:100%}small{font-size:14px}p{white-space:pre-wrap}</style><h1>Your Porchday archive</h1><p>@${htmlEscape(archive.handle)} · ${htmlEscape(archive.generated_at)}</p><p>${archive.archive_set ? `Part ${archive.archive_set.index}${archive.archive_set.total ? " of " + archive.archive_set.total : ""}. Keep all files in this archive set. Extract all parts into one folder to view photos referenced by other parts.` : ""}</p><p>Your contributions only. Other members’ private content is not included. Saved copies are outside the service’s deletion control.</p>${[...archive.posts, ...archive.comments, ...archive.reactions].map((p) => `<article><small>${htmlEscape(p.created_at)} · ${htmlEscape(p.audience)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small><p>${htmlEscape(p.payload.text || "")}${p.payload.emoji ? archiveReactionHtml(p.payload) : ""}</p>${(p.payload.media || []).map((m: Json) => archiveMediaHtml(m)).join("")}</article>`).join("")}${archive.emojiLibrary ? `<section><h2>My images</h2>${archive.emojiLibrary.customEmojis.map((item) => `<p>${archiveReactionHtml(item)}</p>`).join("")}</section>` : ""}<p>See archive.json for profile, saved emoji images, connection/group references, reactions, and provenance. Reference IDs do not reveal unavailable private context.</p></html>`,
+      `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your Porchday archive</title><style>body{font:18px/1.6 system-ui;max-width:760px;margin:60px auto;padding:20px;color:#244e43;background:#f6f3ea}article{padding:25px 0;border-bottom:1px solid #bbb}img,video{max-width:100%}small{font-size:14px}p{white-space:pre-wrap}</style><h1>Your Porchday archive</h1><p>@${htmlEscape(archive.handle)} · ${htmlEscape(archive.generated_at)}</p><p>${archive.archive_set ? `Part ${archive.archive_set.index}${archive.archive_set.total ? " of " + archive.archive_set.total : ""}. Keep all files in this archive set. Extract all parts into one folder to view photos referenced by other parts.` : ""}</p><p>Your contributions only. Other members’ private content is not included. Saved copies are outside the service’s deletion control.</p>${[...archive.posts, ...archive.comments, ...archive.reactions].map((p) => `<article><small>${htmlEscape(p.created_at)} · ${htmlEscape(p.audience)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small><p>${htmlEscape(p.payload.text || "")}${p.payload.emoji ? archiveReactionHtml(p.payload) : ""}</p>${(p.payload.media || []).map((m: Json) => archiveMediaHtml(m)).join("")}</article>`).join("")}${(archive.photos || []).map(p => `<article><small>Photo · ${htmlEscape(p.photo_date)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small>${p.payload.media.map((m: Json) => archiveMediaHtml(m)).join("")}</article>`).join("")}${(archive.albums || []).map(a => `<section><h2>${htmlEscape(a.payload.name)}</h2><p>${htmlEscape(a.payload.description)}</p><small>Owned album · ${htmlEscape(a.id)}. Photo membership is recorded in archive.json; sharing permissions are not restored.</small></section>`).join("")}${archive.emojiLibrary ? `<section><h2>My images</h2>${archive.emojiLibrary.customEmojis.map((item) => `<p>${archiveReactionHtml(item)}</p>`).join("")}</section>` : ""}<p>See archive.json for profile, saved emoji images, connection/group references, reactions, and provenance. Reference IDs do not reveal unavailable private context.</p></html>`,
     ),
   };
   if (archive.archive_set) {
@@ -163,6 +169,32 @@ export function unpackArchive(bytes: Uint8Array): {
     !Array.isArray(archive.groups)
   )
     throw new Error("This archive uses an unsupported schema.");
+  for (const key of ["photos", "albums", "attachment_dates"] as const)
+    if (archive[key] !== undefined && !Array.isArray(archive[key]))
+      throw new Error("An optional photo collection is malformed.");
+  const validDay = (value: unknown) => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0,10) === value;
+  for (const photo of archive.photos || []) {
+    if (!photo || typeof photo.id !== "string" || !validDay(photo.photo_date) ||
+        !Number.isFinite(Date.parse(photo.created_at)) ||
+        (photo.expires_at != null && !Number.isFinite(Date.parse(photo.expires_at))) ||
+        !photo.payload || !Array.isArray(photo.payload.media) || photo.payload.media.length !== 1 ||
+        typeof photo.payload.media[0]?.id !== "string" ||
+        !Array.isArray(photo.album_ids) || photo.album_ids.some((id: unknown) => typeof id !== "string"))
+      throw new Error("An independent photo is malformed.");
+    const media=photo.payload.media[0];
+    if ((media.alt !== undefined && (typeof media.alt !== "string" || media.alt.length > 5000)) ||
+        (media.name !== undefined && typeof media.name !== "string") ||
+        (media.tags !== undefined && (!Array.isArray(media.tags) || media.tags.some((tag: Json) => !tag || typeof tag.id !== "string" || !["member","child"].includes(tag.kind) || typeof tag.label !== "string"))))
+      throw new Error("An independent photo has malformed caption or tags.");
+  }
+  for (const album of archive.albums || [])
+    if (!album || typeof album.id !== "string" || !Number.isFinite(Date.parse(album.created_at)) ||
+        !album.payload || typeof album.payload.name !== "string" || !album.payload.name.trim() || album.payload.name.length > 200 ||
+        (album.payload.description !== undefined && (typeof album.payload.description !== "string" || album.payload.description.length > 5000)))
+      throw new Error("An album is malformed.");
+  for (const date of archive.attachment_dates || [])
+    if (!date || typeof date.media_id !== "string" || typeof date.post_id !== "string" || !validDay(date.photo_date))
+      throw new Error("An attachment photo date is malformed.");
   for (const entry of [
     ...archive.posts,
     ...archive.comments,

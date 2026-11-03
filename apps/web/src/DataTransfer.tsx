@@ -1,3 +1,6 @@
+import {importPhotoCollections} from "./photo-import";
+import {openPhoto,type PhotoRow} from "./photo-record";
+import {verifyAttachmentDate,signAttachmentDate} from "./attachment-photo-date";
 import { validatedMedia, isVideo } from "./video";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -55,6 +58,9 @@ const SECTIONS = [
   "media",
   "connections",
   "groups",
+  "photos",
+  "albums",
+  "attachment_dates",
 ];
 const canonicalDate = (value: unknown) =>
   value ? new Date(String(value)).toISOString() : null;
@@ -66,7 +72,7 @@ type Reference = {
     | "comment"
     | "post_reaction"
     | "comment_reaction"
-    | "media";
+    | "media" | "photo" | "album" | "attachment_date";
   id: string;
   revision: number;
   expires_at: string | null;
@@ -76,6 +82,8 @@ type ImportPlan = {
   owner: string;
   parts: PlannedPart[];
   entries: Json[];
+  photos: Json[];
+  albums: Json[];
   media: Map<string, { part: number; record: Json }>;
   profile: Json | null;
   emojiLibrary: EmojiLibrary | null;
@@ -218,13 +226,13 @@ export function DataTransfer() {
         return {
           kind,
           id: String(
-            row.export_id || row.id || row.member_id || row.envelope.context.id,
+            row.export_id || row.id || row.media_id || row.member_id || row.envelope?.context.id,
           ),
-          revision: row.envelope.context.revision,
+          revision: row.revision ?? row.envelope.context.revision,
           expires_at: canonicalDate(
             row.effective_expires_at ||
               row.expires_at ||
-              row.envelope.context.expiresAt,
+              row.envelope?.context.expiresAt,
           ),
         };
       }
@@ -281,6 +289,18 @@ export function DataTransfer() {
                   archive.emojiLibrary = library.payload;
                   refs.push(reference("emoji_library", row));
                 }
+              } else if(section==="photos"){
+                if(row.grants?.length!==1)throw Error("The photo original is unavailable. Restore it before exporting.");
+                const payload=await openPhoto(vault,row as PhotoRow,row.grants[0]);
+                const entry={id:row.id,photo_date:row.photo_date,created_at:canonicalDate(row.created_at),expires_at:canonicalDate(row.expires_at),payload,album_ids:row.album_ids||[]};
+                await room(JSON.stringify(entry).length*3+1024);(archive.photos||=[]).push(entry);refs.push(reference("photo",row));
+              } else if(section==="albums"){
+                const payload=await vault.open(row);const entry={id:row.id,created_at:canonicalDate(row.created_at),payload};
+                await room(JSON.stringify(entry).length*3+1024);(archive.albums||=[]).push(entry);refs.push(reference("album",row));
+              } else if(section==="attachment_dates"){
+                await verifyAttachmentDate(vault,row as any,row.media_id,row.post_id,vault.member.id,row.photo_date);
+                const entry={media_id:row.media_id,post_id:row.post_id,photo_date:row.photo_date};
+                await room(JSON.stringify(entry).length*3+1024);(archive.attachment_dates||=[]).push(entry);refs.push(reference("attachment_date",row));
               } else if (section === "connections" || section === "groups") {
                 await room(JSON.stringify(row).length * 3 + 512);
                 archive[section].push(row);
@@ -294,7 +314,7 @@ export function DataTransfer() {
                     "A photo changed or expired during export. Start a fresh export.",
                   );
                 const envelope = (await response.json()) as EncryptedEnvelope;
-                const payload = await vault.open({ envelope, id: row.id });
+                const payload = await vault.open({ envelope, id: row.id,author_key:row.author_key });
                 if (
                   (!isVideo(payload.mime) && payload.mime !== "image/jpeg") ||
                   typeof payload.bytes !== "string"
@@ -478,9 +498,24 @@ export function DataTransfer() {
           if (profile[slot] && !photoAvailable(profile[slot].id))
             delete profile[slot];
       }
+      const photos = parts.flatMap(p => p.archive.photos || []).filter(p => (!p.expires_at || Date.parse(p.expires_at)>Date.now()) && photoAvailable(p.payload.media[0].id));
+      const albums = parts.flatMap(p => p.archive.albums || []);
+      for (const photo of photos) {
+        const record=media.get(photo.payload.media[0].id)!.record;
+        if (photo.payload.photoProof?.statement?.sha256 !== record.sha256)
+          throw new Error("An independent photo does not match its archived source checksum.");
+      }
+      const dates=parts.flatMap(p => p.archive.attachment_dates || []);
+      if (new Set(dates.map(d => d.media_id)).size !== dates.length)
+        throw new Error("This archive repeats an attachment photo date.");
+      for (const collection of [photos, albums])
+        if (new Set(collection.map(item => item.id)).size !== collection.length)
+          throw new Error("This archive repeats a photo or album identity.");
       const referencedMedia = new Set<string>(
         entries.flatMap((e) => (e.payload.media || []).map((m: Json) => m.id)),
       );
+      // Expired logical photos must not reappear through the orphan-media fallback.
+      for (const part of parts) for (const photo of part.archive.photos || []) referencedMedia.add(photo.payload.media[0].id);
       for (const slot of ["avatar", "cover", "background"])
         if (profile?.[slot]) referencedMedia.add(profile[slot].id);
       for (const { record } of media.values()) {
@@ -540,6 +575,8 @@ export function DataTransfer() {
         owner,
         parts,
         entries,
+        photos,
+        albums,
         media,
         profile,
         emojiLibrary,
@@ -635,6 +672,8 @@ export function DataTransfer() {
         });
         return meta;
       }
+      await importPhotoCollections(vault, source, plan.albums, plan.photos, loadPhoto, ensureContinue, setProgress);
+      const attachmentDates = new Map(plan.parts.flatMap(p => p.archive.attachment_dates || []).map(d => [d.media_id,d]));
       let importedCount = 0;
       for (
         let batchStart = 0;
@@ -651,7 +690,8 @@ export function DataTransfer() {
           );
           const id = crypto.randomUUID();
           const media = [];
-          for (const photo of entry.payload.media || [])
+          const photo_dates = [];
+          for (const photo of entry.payload.media || []) {
             media.push(
               await uploadPhoto(
                 photo,
@@ -660,6 +700,10 @@ export function DataTransfer() {
                 canonicalDate(entry.expires_at),
               ),
             );
+            const date = attachmentDates.get(photo.id);
+            if (date && date.post_id === entry.id && entry.journal_kind === "post")
+              photo_dates.push(await signAttachmentDate(vault,media[media.length-1].id,id,date.photo_date,1));
+          }
           const originalPayload = { ...entry.payload };
           delete originalPayload.reactionSecret;
           const payload = {
@@ -693,6 +737,7 @@ export function DataTransfer() {
           batch.push({
             envelope,
             source_id: `${source}:${entry.journal_kind}:${entry.id}`,
+            photo_dates,
             media_ids: media.map((m) => m.id),
           });
         }
@@ -757,7 +802,7 @@ export function DataTransfer() {
         <h2>Export your data</h2>
         <p>
           Export your own posts, comments, reactions, saved emoji images,
-          photos, profile, and minimal connection/group references. Other
+          photos with their dates, owned albums, profile, and minimal connection/group references. Other
           people’s private content is not included.
         </p>
         <label className="check-field">
@@ -875,7 +920,7 @@ export function DataTransfer() {
                 entries and {plan.expiredPhotos} expired photos skipped.
               </p>
               <p>
-                Posts begin as “Only me.” Your comments and reactions become
+                Photos and posts begin as “Only me.” Your owned albums are restored privately, without members or roles; only your own photos are added. Your comments and reactions become
                 private journal entries with their original text or choice,
                 timestamps, expiry, and context references. Other people’s
                 threads are not recreated. Unattached or group-owned photos are
