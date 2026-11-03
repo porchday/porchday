@@ -78,9 +78,45 @@ describe('bounded journal transport recovery',()=>{
   const io=resilientJournalIO(store,db,{report:()=>{throw Error('metrics failed');},sleep:async()=>{},random:()=>0});
   expect(await io.store.get('control.json')).not.toBeNull();expect(calls).toBe(2);
  });
+ it.each([9000,120001])('reproduces a delayed checkpoint read at %i ms against the stale-intent guard',async elapsed=>{
+  vi.useFakeTimers({toFake:['Date']});const start=Date.parse('2026-11-03T13:02:37.705Z');vi.setSystemTime(start);
+  try{
+   const {store,db}=await setup(),intent=await beginPrivacyIntent(store,db),get=store.get.bind(store);
+   // Auth work has returned after its acknowledged COMMIT. The first read in
+   // completion's checkpoint is control.json, before any receipt can be made.
+   let rejectRead!:(error:Error)=>void,entered!:()=>void;
+   const blocked=new Promise<void>(resolve=>{entered=resolve;});let first=true;
+   store.get=async key=>{if(first&&key==='control.json'){first=false;entered();return new Promise((_,reject)=>{rejectRead=reject;});}return get(key);};
+   const codes:string[]=[],delays:number[]=[];
+   const io=resilientJournalIO(store,db,{report:c=>codes.push(c),now:()=>Date.now(),random:()=>0,sleep:async ms=>{delays.push(ms);vi.setSystemTime(Date.now()+ms);}});
+   const completion=completePrivacyIntent(io.store,io.db,intent).then(()=>({ok:true,error:''}),error=>({ok:false,error:error.message}));
+   await blocked;vi.setSystemTime(start+elapsed);
+   // Independent requests remain able to read the same storage and decide
+   // that the unfinished operation has exceeded its 120-second horizon.
+   if(elapsed>120000)await expect(assertJournalReadable(store,db)).rejects.toThrow('RESTORE_QUARANTINED');
+   else await expect(assertJournalReadable(store,db)).resolves.toBeDefined();
+   rejectRead(Error('synthetic delayed R2 read failure'));
+   const result=await completion,control=(await readJournalControl(store)).value;
+   expect(codes).toEqual(elapsed>10000?['journal_io_exhausted']:['journal_r2_read_retry']);expect(delays).toEqual(elapsed>10000?[]:[1000]);
+   expect(result.ok).toBe(elapsed<120000);
+   if(elapsed>120000){expect(result.error).toBe('JOURNAL_STORE_READ_FAILED');expect(control.mode).toBe('quarantine');expect(control.pending).toEqual([intent]);expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(false);}
+   else{expect(control.mode).toBe('active');expect(control.pending).toEqual([]);expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(true);}
+  }finally{vi.useRealTimers();}
+ });
  it('stops starting retries after the elapsed budget without turning a failure into success',async()=>{
   const {store,io,advance,delays}=await setup();let calls=0;
   store.get=async()=>{calls++;advance(10001);throw Error('slow failed read');};
-  await expect(io.store.get('control.json')).rejects.toThrow();expect(calls).toBe(2);expect(delays).toEqual([1000]);
+  await expect(io.store.get('control.json')).rejects.toThrow();expect(calls).toBe(1);expect(delays).toEqual([]);
  });
+});
+
+it('bounds the initial R2 call without retrying a still-running operation',async()=>{
+ vi.useFakeTimers();try{
+  const {store,db}=await setup(),get=vi.fn(()=>new Promise<null>(()=>{}));store.get=get;
+  const codes:string[]=[];const io=resilientJournalIO(store,db,{report:c=>codes.push(c)});
+  const failed=expect(io.store.get('control.json')).rejects.toThrow('JOURNAL_IO_DEADLINE');
+  await vi.advanceTimersByTimeAsync(5000);await failed;
+  await expect(io.store.get('control.json')).rejects.toThrow('JOURNAL_IO_DEADLINE');
+  expect(get).toHaveBeenCalledTimes(1);expect(codes).toEqual(['journal_io_deadline','journal_io_deadline']);
+ }finally{vi.useRealTimers();}
 });

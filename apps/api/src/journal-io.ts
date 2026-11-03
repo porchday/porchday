@@ -1,6 +1,7 @@
+import {journalDeadline,JournalDeadlineError} from './journal-deadline';
 import type {JournalDatabase,JournalStore} from './privacy-journal';
 
-export const JOURNAL_IO_CODES=['journal_r2_read_retry','journal_r2_write_retry','journal_db_capacity_retry','journal_db_connection_retry','journal_io_exhausted'] as const;
+export const JOURNAL_IO_CODES=['journal_r2_read_retry','journal_r2_write_retry','journal_db_capacity_retry','journal_db_connection_retry','journal_io_exhausted','journal_io_deadline'] as const;
 type Code=typeof JOURNAL_IO_CODES[number];
 type Options={report:(code:Code)=>void;sleep?:(ms:number)=>Promise<void>;now?:()=>number;random?:()=>number};
 
@@ -12,17 +13,20 @@ type Options={report:(code:Code)=>void;sleep?:(ms:number)=>Promise<void>;now?:()
  */
 export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options:Options){
  const sleep=options.sleep??(ms=>new Promise(resolve=>setTimeout(resolve,ms))),now=options.now??Date.now,random=options.random??Math.random;
+ const deadline=journalDeadline({attemptMs:5000,totalMs:30000});
  let retries=0,firstFailure:number|undefined;
  const report=(code:Code)=>{try{options.report(code);}catch{/* Telemetry cannot affect durability. */}};
  async function retry<T>(operation:()=>Promise<T>,classify:(error:unknown)=>Code|undefined):Promise<T>{
   for(;;){
+   const started=now();
    try{return await operation();}
    catch(error){
+    if(error instanceof JournalDeadlineError){report('journal_io_deadline');throw error;}
     const code=classify(error);if(!code)throw error;
-    firstFailure??=now();
+    firstFailure??=started;
     const delay=1000*2**retries+Math.floor(random()*250);
     if(retries>=3||now()-firstFailure+delay>10000){report('journal_io_exhausted');throw error;}
-    retries++;report(code);await sleep(delay);
+    retries++;report(code);await deadline.run(async scope=>{await sleep(delay);scope.assertOpen();});
    }
   }
  }
@@ -36,15 +40,15 @@ export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options
   store:{
    async get(key){
     // Include reading the body; it may fail after the object lookup succeeds.
-    return retry(async()=>{const object=await store.get(key);if(!object)return null;const text=await object.text();return {etag:object.etag,text:async()=>text};},()=> 'journal_r2_read_retry');
+    return retry(()=>deadline.run(async scope=>{const object=await store.get(key);scope.assertOpen();if(!object)return null;const text=await object.text();scope.assertOpen();return {etag:object.etag,text:async()=>text};}),()=> 'journal_r2_read_retry');
    },
    async put(key,value,condition){
-    if(!condition?.onlyIf?.etagMatches&&condition?.onlyIf?.etagDoesNotMatch!=='*')return store.put(key,value,condition);
+    if(!condition?.onlyIf?.etagMatches&&condition?.onlyIf?.etagDoesNotMatch!=='*')return deadline.run(()=>store.put(key,value,condition));
     // Clone the condition once so a caller cannot change it between attempts.
     const pinned={onlyIf:{...condition.onlyIf}};
-    return retry(()=>store.put(key,value,pinned),()=> 'journal_r2_write_retry');
+    return retry(()=>deadline.run(()=>store.put(key,value,pinned)),()=> 'journal_r2_write_retry');
    },
   } satisfies JournalStore,
-  db:{status:()=>retry(()=>db.status(),databaseFailure),page:(after)=>retry(()=>db.page(after),databaseFailure)} satisfies JournalDatabase,
+  db:{status:()=>retry(()=>deadline.run(()=>db.status()),databaseFailure),page:(after)=>retry(()=>deadline.run(()=>db.page(after)),databaseFailure)} satisfies JournalDatabase,
  };
 }
