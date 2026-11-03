@@ -7,7 +7,7 @@ import {mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {ProcessJournalStore} from './fixtures/commit-process-store';
-import {initializePrivacyJournal,readJournalControl,checkpointJournal,assertJournalReadable,type JournalDatabase} from '../src/privacy-journal';
+import {initializePrivacyJournal,readJournalControl,checkpointJournal,assertJournalReadable,prepareAuthPrivacyIntent,type JournalDatabase} from '../src/privacy-journal';
 import {provePrivacyCommits} from '../src/privacy-commit-proof';
 
 const url=process.env.PRIVACY_COMMIT_TEST_DATABASE_URL;
@@ -40,6 +40,62 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
   const connection=new URL(url);connection.username='porchday_commit_auth_test';connection.password='local-commit-proof-only';auth=postgres(connection.href,{max:2,prepare:false,onnotice:()=>{}});
  },30000);
  afterAll(async()=>{await auth?.end();await owner?.end();});
+ describe('prepared operation admission',()=>{
+  async function prepare(operation:string){await owner`select app.prepare_privacy_operation(${operation}::uuid,${digest},${generation}::uuid)`;}
+  async function expire(operation:string){await owner`update app.privacy_operation_admissions set expires_at=clock_timestamp()-interval '1 second' where operation_id=${operation}::uuid`;}
+  async function abandon(operation:string){return (await owner`select app.abandon_privacy_operation(${operation}::uuid,${digest},${generation}::uuid) as n`)[0].n;}
+  it('never abandons an unexpired preparation',async()=>{const op=randomUUID();await prepare(op);expect(await abandon(op)).toBeNull();});
+  it('fences expired preparation and prevents delayed SQL work from starting',async()=>{
+   const op=randomUUID(),id=await fixture();await prepare(op);await expire(op);const n=await abandon(op);expect(Number(n)).toBeGreaterThan(0);
+   await expect(auth.begin(async tx=>{await tx`select app.claim_privacy_operation(${op}::uuid,${digest},${generation}::uuid)`;await tx`update public.commit_fixture set value=1 where id=${id}`;})).rejects.toThrow('PRIVACY_OPERATION_NOT_PREPARED');
+   expect(await value(id)).toBe(0);expect(String(await abandon(op))).toBe(String(n));
+  });
+  it('requires claim and completion in the same transaction',async()=>{
+   const op=randomUUID();await prepare(op);
+   await expect(auth`select app.finish_privacy_operation(${op}::uuid,${digest},${generation}::uuid)`).rejects.toThrow('PRIVACY_OPERATION_NOT_CLAIMED');
+   await expect(auth`select app.claim_privacy_operation(${op}::uuid,${digest},${generation}::uuid)`).rejects.toThrow('PRIVACY_OPERATION_TERMINAL_REQUIRED');
+   await expect(auth`select app.finish_privacy_operation(${op}::uuid,${digest},${generation}::uuid)`).rejects.toThrow('PRIVACY_OPERATION_NOT_CLAIMED');
+   await expire(op);expect(Number(await abandon(op))).toBeGreaterThan(0);
+  });
+  it('never cancels a running transaction even after preparation expiry',async()=>{
+   const op=randomUUID(),id=await fixture();await prepare(op);
+   let ready!:()=>void,release!:()=>void;const entered=new Promise<void>(r=>{ready=r;}),hold=new Promise<void>(r=>{release=r;});
+   const work=owner.begin(async tx=>{await tx`select app.claim_privacy_operation(${op}::uuid,${digest},${generation}::uuid)`;await tx`update app.privacy_operation_admissions set expires_at=clock_timestamp()-interval '1 second' where operation_id=${op}::uuid`;ready();await hold;await tx`update public.commit_fixture set value=1 where id=${id}`;return tx`select app.finish_privacy_operation(${op}::uuid,${digest},${generation}::uuid)`;});
+   // Runtime roles cannot directly alter admission rows; use the owner for this
+   // concurrency fixture while retaining the production function lock protocol.
+   await entered;try{expect(await abandon(op)).toBeNull();}finally{release();}await work;expect(await value(id)).toBe(1);
+  });
+  it('can abandon an acknowledged rolled-back claim without replaying work',async()=>{
+   const op=randomUUID(),id=await fixture();await prepare(op);
+   await expect(auth.begin(async tx=>{await tx`select app.claim_privacy_operation(${op}::uuid,${digest},${generation}::uuid)`;await tx`update public.commit_fixture set value=1 where id=${id}`;throw Error('rollback');})).rejects.toThrow('rollback');
+   await expire(op);expect(Number(await abandon(op))).toBeGreaterThan(0);expect(await value(id)).toBe(0);
+  });
+ });
+ it.each([false,true])('recovers abandoned preparation after storage returns (lost registration reply: %s)',async lostReply=>{
+  const directory=await mkdtemp(join(tmpdir(),'porchday-admission-')),store=new ProcessJournalStore(directory);
+  const db:JournalDatabase={
+   status:async()=> (await owner`select app.safety_status() as value`)[0].value,
+   page:async after=>(await owner`select app.safety_page(${after}::bigint,200) as value`)[0].value,
+   prepareAuth:async scope=>{await owner`select app.prepare_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid)`;},
+   recoverAuth:async scope=>(await owner`select app.recover_privacy_operation(${scope.operationId}::uuid,${scope.scopeSha256},${scope.generation}::uuid) as value`)[0].value,
+  };
+  try{
+   await initializePrivacyJournal(store,db);const initial=await readJournalControl(store);await store.put('control.json',JSON.stringify({...initial.value,mode:'active',reason:null}),{onlyIf:{etagMatches:initial.etag}});
+   if(lostReply)store.afterPut=async(key,text)=>{if(key==='control.json'&&JSON.parse(text).pending.length)throw Error('registration reply lost');};
+   if(lostReply)await expect(prepareAuthPrivacyIntent(store,db)).rejects.toThrow('registration reply lost');else await prepareAuthPrivacyIntent(store,db);
+   store.afterPut=undefined;const pending=(await readJournalControl(store)).value.pending;expect(pending).toHaveLength(1);
+   const op=pending[0].id;const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+600001);
+   try{
+    // Elapsed application time cannot cancel the still-unexpired SQL fence.
+    await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('JOURNAL_RECOVERY_PENDING');expect((await readJournalControl(store)).value.mode).toBe('active');
+    await owner`update app.privacy_operation_admissions set expires_at=clock_timestamp()-interval '1 second' where operation_id=${op}::uuid`;
+    await expect(assertJournalReadable(store,db,undefined,true)).resolves.toBeDefined();
+    const current=(await readJournalControl(store)).value;expect(current.mode).toBe('active');expect(current.pending).toHaveLength(0);expect(await store.get('receipts/'+op+'.json')).not.toBeNull();
+    const row=(await owner`select * from app.privacy_operation_admissions where operation_id=${op}::uuid`)[0];
+    await expect(auth`select app.claim_privacy_operation(${op}::uuid,${row.scope_sha256},${generation}::uuid)`).rejects.toThrow('PRIVACY_OPERATION_NOT_PREPARED');
+   }finally{clock.mockRestore();}
+  }finally{await rm(directory,{recursive:true,force:true});}
+ });
  it('preserves every installed photo/child restore handler and an already prepared marker reader',async()=>{
   const definition=async()=>String((await owner`select pg_get_functiondef('app.replay_safety_batch(jsonb)'::regprocedure) as definition`)[0].definition);
   const after=await definition(),actions=(text:string)=>text.slice(text.indexOf("  CASE d->>'action'"),text.indexOf('  END CASE;')+'  END CASE;'.length);
