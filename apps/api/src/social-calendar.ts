@@ -151,9 +151,9 @@ export function registerCalendarRoutes(
     return c.json(
       await tx(c, async (db) => {
         const rows =
-          await db`select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true
+          await db`select p.*,app.author_category(p.author_id) as author_category,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true
     where p.group_id is null and p.created_at>=${start}::timestamptz and p.created_at<${end}::timestamptz
-    and p.author_id=any(array(select app.actor() union all select member_b from app.connections where member_a=app.actor() union all select member_a from app.connections where member_b=app.actor()))
+
     and not exists(select from app.mutes where target=p.author_id)
     ${afterAt ? db`and(p.created_at,p.id)<(${afterAt}::timestamptz,${afterId!}::uuid)` : db``}
     order by p.created_at desc,p.id desc limit 51`;
