@@ -526,7 +526,7 @@ export function Composer({
             </select>
           </label>
         )}
-        {(audience==="community"||audience==="extended_family")&&<span>Current circle only; new connections do not receive this history automatically.</span>}
+        {(audience==="community"||audience==="extended_family")&&<span>People in your current circle can see its shared history. Direct connection history choices do not change circle access.</span>}
         {audience === "friends" && <span>Excludes family connections</span>}
         {timer && <span>· disappears {localDate(deadline(timer)!)}</span>}
         {mode==="post"&&<span className="character-count">{text.length}/5,000</span>}

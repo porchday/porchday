@@ -103,7 +103,7 @@ Encrypted audience enforcement must support these semantics. Track access proven
 
 Community means friends/family of friends/family; Extended family means family of family. For both concepts, a family edge exists only when both people label that relationship as family. Extended family requires mutual-family edges on both hops. Use Community for the sketch's “extended friends” wording.
 
-Before generating grants or filtering categories, resolve whether these circles include direct connections, how overlaps are deduplicated, and how relationship changes affect history. Existing consent and restrictive history-sharing choices remain binding. A mention or tag never expands access. Typed mentions in posts, photo captions and comments and opt-in mention push remain separate linked workstreams.
+These circles include qualifying direct connections and deduplicate overlapping paths. Circle history follows current graph eligibility, independently of direct connection history preferences. Blocks and current eligibility remain binding. A mention or tag never expands access. Typed mentions in posts, photo captions and comments and opt-in mention push remain separate linked workstreams.
 
 ## Open decisions before implementation
 
