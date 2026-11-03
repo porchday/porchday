@@ -34,7 +34,7 @@ describe('hosted backup monitor',()=>{
   const f=fixture([false,false]);expect((await runBackup(config,f.options)).healthy).toBe(false);expect(f.writes()).toBe(1);
   const next=fixture([false,false],f.comments);await runBackup(config,next.options);expect(next.writes()).toBe(0);
  });
- it('requires two fresh successes before reporting recovery',async()=>{
+ it('requires a full healthy stability window before reporting recovery',async()=>{
   const f=fixture([true,true],[{id:1,body:alertBody(event,'github-backup'),user:bot}]);
   await runBackup(config,f.options);expect(f.writes()).toBe(1);expect(f.comments[1].body).toContain('checks recovered');
   const failed=fixture([true,false],[{id:1,body:alertBody(event,'github-backup'),user:bot}]);
@@ -46,7 +46,7 @@ describe('hosted backup monitor',()=>{
  it('retains observations when the GitHub state API is unavailable',async()=>{
   const f=fixture([false,true]);
   const result=await runBackup(config,{...f.options,transport:async()=>{throw Error('SECRET_RESPONSE');}});
-  expect(result).toEqual({healthy:false,notificationsDelivered:false});expect(f.observations).toHaveLength(2);
+  expect(result).toEqual({healthy:false,notificationsDelivered:false});expect(f.observations).toHaveLength(8);
   expect(JSON.stringify(result)).not.toContain('SECRET_RESPONSE');
  });
  it('reports a prior execution gap and recovery even when the next application checks pass',async()=>{

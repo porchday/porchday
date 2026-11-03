@@ -18,6 +18,7 @@
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261025.1",
     "@types/node": "^24.0.0",
+    "@types/ws": "^8.18.2",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",
     "esbuild": "0.28.2",
@@ -25,7 +26,8 @@
     "tsx": "^4.23.15",
     "typescript": "^5.9.3",
     "vitest": "5.0.5",
-    "wrangler": "4.152.0"
+    "wrangler": "4.152.0",
+    "ws": "^8.22.1"
   },
   "overrides": {
     "undici": "7.30.1"

@@ -6,7 +6,7 @@ import {probe,validateProbeConfig,type ProbeConfig,type Observation} from './ext
 import {advance,initialState} from './external-monitor-alerts.ts';
 import {deliver,latestHostedEvent,previousHostedExecutionFailed,ghTransport,type GitHubTransport} from './external-monitor-github.ts';
 
-/** Two separate observations permit verified recovery without overlapping journeys. */
+/** Healthy checks remain brief; an open incident needs a full stability window. */
 export async function runBackup(config:ProbeConfig&{issue:number},options:{
  transport?:GitHubTransport;probe?:typeof probe;sleep?:(ms:number)=>Promise<unknown>;now?:()=>number;
  previousExecutionFailed?:boolean;
@@ -22,7 +22,7 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
   state.incident=true;
   state.pending.push({id:randomUUID(),kind:'outage',at:new Date(now()).toISOString(),failedChecks:['backup_execution']});
  }
- for(let sample=0;sample<2;sample++){
+ for(let sample=0;sample<2||(state.incident&&sample<8);sample++){
   const started=now(),observation=await (options.probe??probe)(config);
   options.observe(observation);allHealthy=allHealthy&&observation.healthy;
   state=advance(state,observation,randomUUID());
@@ -32,7 +32,7 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
     catch{break;}
    }
   }
-  if(sample===0)await (options.sleep??sleep)(Math.max(0,20000-(now()-started)));
+  if(sample===0||(state.incident&&sample<7))await (options.sleep??sleep)(Math.max(0,20000-(now()-started)));
  }
  return {healthy:allHealthy,notificationsDelivered:stateAvailable&&state.pending.length===0};
 }

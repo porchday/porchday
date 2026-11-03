@@ -1,6 +1,6 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {randomUUID} from 'node:crypto';
-import {assertJournalReadable,beginPrivacyIntent,checkpointJournal,completePrivacyIntent,initializePrivacyJournal,provePrivacyReceipts,readJournalControl,sha256,type JournalDatabase,type JournalEvent,type JournalStore} from '../src/privacy-journal';
+import {assertJournalReadable,beginPrivacyIntent,checkpointJournal,completePrivacyIntent,initializePrivacyJournal,provePrivacyReceipts,publishAuthPrivacyCommitScope,readJournalControl,sha256,type JournalDatabase,type JournalEvent,type JournalStore} from '../src/privacy-journal';
 
 class Store implements JournalStore{
   rows=new Map<string,{text:string;etag:string}>();serial=0;reads:string[]=[];writes:string[]=[];
@@ -155,5 +155,61 @@ describe('Active stale-intent receipt reconciliation',()=>{
     store.put=async(key,text,options)=>{const result=await put(key,text,options);if(key==='control.json'&&result&&!lost){lost=true;throw Error('lost successful CAS response');}return result;};
     await expect(assertJournalReadable(store,db)).rejects.toThrow('lost successful CAS response');
     expect((await assertJournalReadable(store,db)).value).toMatchObject({mode:'active',pending:[]});
+  });
+});
+
+
+describe('Independent auth commit recovery',()=>{
+  beforeEach(()=>{vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(start);});
+  afterEach(()=>vi.useRealTimers());
+  async function committed(){
+    const {store,db}=await setup(),intent=await beginPrivacyIntent(store,db),scope=await publishAuthPrivacyCommitScope(store,db,intent);
+    db.events.push({sequence:'1',id:randomUUID(),occurred_at:new Date().toISOString(),decision:{kind:'privacy_operation_committed',operation_id:intent.id,scope_sha256:scope.scopeSha256}});
+    return {store,db,intent};
+  }
+  it('exports committed history and recovers without replaying SQL work',async()=>{
+    const {store,db,intent}=await committed(),events=JSON.stringify(db.events);vi.setSystemTime(start+120001);
+    expect((await assertJournalReadable(store,db,undefined,true)).value).toMatchObject({mode:'active',sequence:'1',pending:[]});
+    expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(true);expect(JSON.stringify(db.events)).toBe(events);
+  });
+  it('keeps recovery disabled unless explicitly enabled',async()=>{
+    const {store,db,intent}=await committed();vi.setSystemTime(start+120001);
+    await expect(assertJournalReadable(store,db)).rejects.toThrow('RESTORE_QUARANTINED');
+    expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(false);
+  });
+  it('retires proven commits but quarantines remaining uncertainty',async()=>{
+    const {store,db,intent}=await committed(),unknown=await beginPrivacyIntent(store,db);vi.setSystemTime(start+120001);
+    await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('RESTORE_QUARANTINED');
+    expect((await readJournalControl(store)).value).toMatchObject({mode:'quarantine',pending:[unknown]});
+    expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(true);expect(store.rows.has(`receipts/${unknown.id}.json`)).toBe(false);
+  });
+  it.each(['generation','rollback','quarantine'])('refuses SQL %s during independent proof before writing a receipt',async fault=>{
+    const {store,db,intent}=await committed();await checkpointJournal(store,db);const get=store.get.bind(store);
+    store.get=async key=>{const result=await get(key);if(key.startsWith('batches/')){if(fault==='generation')db.generation=randomUUID();if(fault==='rollback')db.events=[];if(fault==='quarantine')db.quarantined=true;}return result;};
+    vi.setSystemTime(start+120001);await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow(/DATABASE_ROLLBACK_DETECTED|RESTORE_QUARANTINED/);
+    expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(false);expect((await readJournalControl(store)).value.pending).toEqual([intent]);
+  });
+  it.each(['registration','quarantine'])('preserves concurrent %s during receipt publication',async race=>{
+    const {store,db,intent}=await committed(),put=store.put.bind(store);vi.setSystemTime(start+120001);
+    const added={id:randomUUID(),started_at:new Date().toISOString()};let raced=false;
+    store.put=async(key,text,options)=>{
+      if(key.startsWith('receipts/')&&!raced){raced=true;const current=await readJournalControl(store);await put('control.json',JSON.stringify(race==='registration'?{...current.value,pending:[...current.value.pending,added]}:{...current.value,mode:'quarantine',reason:'operator'}),{onlyIf:{etagMatches:current.etag}});}
+      return put(key,text,options);
+    };
+    if(race==='registration')expect((await assertJournalReadable(store,db,undefined,true)).value).toMatchObject({mode:'active',pending:[added]});
+    else {await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('RESTORE_QUARANTINED');expect((await readJournalControl(store)).value).toMatchObject({mode:'quarantine',reason:'operator',pending:[intent]});}
+    expect(raced).toBe(true);
+  });
+  it('reconciles a lost successful receipt response on the next read',async()=>{
+    const {store,db,intent}=await committed(),put=store.put.bind(store),events=JSON.stringify(db.events);let lost=false;
+    store.put=async(key,text,options)=>{const result=await put(key,text,options);if(key.startsWith('receipts/')&&result&&!lost){lost=true;throw Error('lost receipt response');}return result;};
+    vi.setSystemTime(start+120001);await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('lost receipt response');
+    expect((await readJournalControl(store)).value.pending).toEqual([intent]);
+    expect((await assertJournalReadable(store,db,undefined,true)).value).toMatchObject({mode:'active',pending:[]});expect(JSON.stringify(db.events)).toBe(events);
+  });
+  it('bounds repeated retirement conflicts',async()=>{
+    const {store,db}=await committed();await checkpointJournal(store,db);const put=store.put.bind(store);let attempts=0;
+    store.put=async(key,text,options)=>{if(key==='control.json'){attempts++;return null;}return put(key,text,options);};
+    vi.setSystemTime(start+120001);await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('JOURNAL_BUSY');expect(attempts).toBe(8);
   });
 });
