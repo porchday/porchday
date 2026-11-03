@@ -1,6 +1,14 @@
 # Moving the primary website to porchday.org
 
-The public cutover to [porchday.org](https://porchday.org) completed on October 26, 2026. Both `.org` and `.com` apex domains and their `www` aliases are attached to the existing production Worker. Public `.com` navigation forwards to `.org`; existing-device account and API access on `.com` remains available. [Issue #17](https://github.com/porchday/porchday/issues/17) records the completed public migration and dated verification evidence. Remaining member-device acceptance is tracked in [issue #7](https://github.com/porchday/porchday/issues/7). This is a completed public-address change, not retirement of the legacy origin.
+The public cutover to [porchday.org](https://porchday.org) completed on October 26, 2026. Both `.org` and `.com` apex domains and their `www` aliases are attached to the existing production Worker. Public `.com` navigation forwards to `.org`; existing-device account and API access on `.com` remains available. [Issue #17](https://github.com/porchday/porchday/issues/17) records the completed public migration and dated verification evidence. Remaining member-device acceptance is tracked in [issue #7](https://github.com/porchday/porchday/issues/7). The November 2 follow-up below retires legacy website navigation after owner-confirmed member migration.
+
+## November 2 retirement of legacy website navigation
+
+The owner confirmed that everyone who needed the browser migration has migrated and requested automatic forwarding. All `.com` website GET/HEAD routes now forward to the same path and query on `.org`, including `/`, `/login`, `/app/*`, recovery pages and staff pages. The redirect leaves fragments absent so browsers preserve invitation/recovery fragments. Responses remain 307 with `no-store` to permit safe rollback. New web shells also redirect at startup and SPA navigation goes directly to `.org`; no browser keys or local data are deleted. The obsolete link back to the old browser and transition notice have been removed.
+
+Same-origin legacy API callbacks, static assets, health and association endpoints remain compatible. API requests and mutation bodies are not redirected across origins. Staging/status/operator subdomains and the verified email sender are unchanged. The retained API is compatibility for older clients, not a second navigable website. Native delivery and notification acceptance remain separately tracked in #7/#49/#114.
+
+The following sections record the original October 26 transition and its historical acceptance. Their requirement to keep the legacy website navigable is superseded by the owner's November 2 confirmation; API and data protection requirements remain applicable.
 
 ## Domain behavior
 

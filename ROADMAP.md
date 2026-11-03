@@ -16,6 +16,8 @@ Last reviewed: **November 2, 2026**. The original November 1 inventory covered 4
 
 The owner’s explicit order below takes precedence over sorting by label alone; P1 reliability work remains visible in the remaining queue and can preempt on an active incident or release dependency. When proposing changes to that order, compare: current member harm; dependencies unlocked; strength of evidence; and the effort to reach the next verifiable result. Prefer a bounded reproduction or acceptance check over a speculative rewrite. When changing rank, record those reasons and any effort estimate in the issue. Do not invent numerical scores, reach estimates or delivery dates without evidence.
 
+Owner follow-up November 2: retire legacy `.com` website navigation after confirmed member migration; redirect app/login routes to `.org` while preserving API compatibility. Tracked in [#17](https://github.com/porchday/porchday/issues/17).
+
 ## Execution queue
 
 Ranks continue across the sections below. This is an order for selecting work, not a promise to finish every item before taking any lower-ranked verification step.
