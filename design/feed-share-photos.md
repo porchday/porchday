@@ -1,6 +1,6 @@
 # Feed Share Photos and social albums
 
-Status: proposed product design, updated November 2, 2026. This captures the owner's sketch and subsequent interactive mockup decisions. It defines the intended experience, not shipped behavior. [ROADMAP.md](../ROADMAP.md) remains the priority order; issues retain delivery and acceptance evidence.
+Status: implemented and deployed for web/PWA November 2, 2026. [Release evidence](../docs/evidence/social-albums-release-2026-11-02.md) records verification and native/device limitations. This captures the owner's sketch, subsequent mockup decisions and final implementation contract. [ROADMAP.md](../ROADMAP.md) remains the priority order; issues retain delivery and acceptance evidence.
 
 Porchday separates reading updates, sharing something new, and browsing photos. Photos become independent objects with editable dates. Albums are social spaces with per-person roles, and contribute access to photos without taking away access those photos already had.
 
@@ -75,13 +75,13 @@ Album discovery is distinct from author filtering in Feed. The Feed author-filte
 
 Albums are collaborative from the start. An album-admin can add people and assign each one a role:
 
-| Role | Proposed capabilities |
+| Role | Capabilities |
 | --- | --- |
 | Read-only | View the album and its photos. |
 | Add | View and contribute photos. |
 | Album-admin | Manage album details, membership, member roles and which photos belong in the album. |
 
-The creator initially becomes an album-admin. The proposed editing boundary is that contributors edit their own photos; album-admins may remove another person's photo from the album without deleting its original object. Role names and social membership are owner decisions; detailed edit/delete/ownership rules need implementation review.
+The creator initially becomes an album-admin. The editing boundary is that contributors edit their own photos; album-admins may remove another person's photo from the album without deleting its original object. Ownership and deletion boundaries are specified below.
 
 An album shows an Add photos button for Add and Album-admin members. It opens **Share → Photos Only** with the destination album preselected. The Share screen identifies the album and inherited audience before confirmation; after success, return to the album. Read-only members do not receive a working contribution action. Authorization must be enforced by the service as well as the UI.
 
@@ -95,7 +95,7 @@ Example: a photo already shared with Friends & family is added to an album conta
 
 Removing a photo from an album, removing a member or deleting an album removes only the corresponding album access path. A remaining direct grant or another album membership can still permit access. Revocation cannot recall plaintext or keys already downloaded. The product should explain retained access instead of promising that album removal makes a previously shared photo private.
 
-Adding existing photos can broaden their audience. Show that change before confirmation. The exact authority required to add someone else's photo to a new album must be settled before implementing redistribution; an Add role alone must not be assumed to authorize resharing every photo a member can read.
+Adding existing photos can broaden their audience. Show that change before confirmation. Only the owner may add a photo to another album. An album-admin may refresh grants for existing album photos, preserving the owner proof and other access paths.
 
 Encrypted audience enforcement must support these semantics. Track access provenance so removing one grant does not destroy another. Never obtain the union by making plaintext public or weakening existing authorization. Concurrent role changes, upload retries and album removal must not leave unintended grants.
 
@@ -105,16 +105,13 @@ Community means friends/family of friends/family; Extended family means family o
 
 These circles include qualifying direct connections and deduplicate overlapping paths. Circle history follows current graph eligibility, independently of direct connection history preferences. Blocks and current eligibility remain binding. A mention or tag never expands access. Typed mentions in posts, photo captions and comments and opt-in mention push remain separate linked workstreams.
 
-## Open decisions before implementation
+## Resolved implementation choices and scope
 
-- Photo dates: date-only versus timestamp, timezone behavior, missing dates, import metadata defaults, and which date a Feed calendar uses for photo-containing posts.
-- Album ownership: last-admin removal, transfer, creator account deletion, album deletion, and retention of contributed originals.
-- Contribution rights: adding existing photos owned by others, moving versus copying album membership, reordering, cover selection and who may edit captions/tags.
-- Membership changes: invitation/acceptance flow, whether new readers receive all existing album history, blocks within an album, and restricted-history compatibility.
-- Interaction: album search/filtering, album comments/reactions versus photo comments/reactions, and read-only contributor prompts.
-- Drafts and recovery: cross-tab attachment reuse, interrupted upload recovery, state persistence, export/import and old-client compatibility.
+Photo dates are date-only calendar metadata. Posts keep their original chronology. Only photo owners can add their photos to another album; admins may redistribute existing album photos to current members while preserving owner signatures. The owner transfers ownership before leaving; album deletion removes only its grants. New album members receive history through an unlocked authorized admin, with explicit retry for unavailable keys or interrupted work.
 
-These are unresolved choices, not authorization to invent broader access or silently change existing content.
+Post / Photos Only switching preserves the mounted composer's text and selected media. This is not persistent draft autosave across navigation or devices. Imports restore owned photos and albums privately, preserving dates, expiry and source associations without reconstructing sharing consent. Broader album search, custom cover/reordering, album comments/reactions, cross-device filter preferences and persistent draft storage are not part of this release.
+
+Native clients guard unsupported album/photo archives and direct people to web data tools. Native album screens, native distribution and physical-device acceptance remain separate workstreams (#49/#114/#108).
 
 ## Delivery and acceptance
 
@@ -146,7 +143,11 @@ This proposal supersedes earlier mockup labels and defaults where they differ: I
 
 November 2 refinement: Albums replaces the Photos navigation destination and has no general photo browser. Feed owns Posts / Photos browsing through top tabs instead of a dropdown. This supersedes the earlier Grid / Calendar / Albums proposal.
 
-## Implementation decisions recorded November 2
+## Implementation history recorded November 2
+
+The checkpoints below document incremental development. Their “pending”, “outstanding” and “not completed” statements describe that checkpoint, not current release status. Final staging and production acceptance passed for encrypted API access, hosted upload/edit/history/roles, archive restoration and cleanup; see the release evidence above. Physical-device checks, native UI parity and broader performance work remain separate and are not implied by these acceptance runs.
+
+### Album ownership and roles
 
 Album roles are represented as `read`, `add`, and `admin`. The creator is initially the owner and an album-admin. The owner must transfer ownership to another active album-admin before leaving; ordinary admins cannot remove or demote the owner. Only the owner deletes the album. All album members may inspect the membership list, excluding blocked identities; only admins change others’ roles. Removing a member or downgrading their role records a restrictive recovery decision so an older database backup cannot revive that permission.
 
@@ -236,4 +237,4 @@ New direct connections default to sharing all past and future content, with an e
 
 Community and Extended family are functions of the current connection graph, not separately created connections. Per-friend history preferences do not change their membership or restrict the history of content explicitly shared to those circle audiences. Current eligible circle members receive earlier circle content through author-device encryption catch-up. Blocks, expiration, deletion, mutual-family requirements and current graph eligibility still apply. The service cannot re-encrypt content without an unlocked authorized device, so delivery can be pending while its author is offline. Album history remains governed by album membership.
 
-This supersedes the earlier blanket “new paths never receive older content” assumption. Post and standalone-photo catch-up now use this policy. Signed/encrypted API tests verify both circle audiences across future-only edges, direct full-history defaults, explicit future-only exclusions, and unauthorized refresh denial. The unlocked web client shares earlier standalone photos with progress and explicit retry after an unconfirmed failure. Hosted acceptance and production promotion remain pending.
+This supersedes the earlier blanket “new paths never receive older content” assumption. Post and standalone-photo catch-up now use this policy. Signed/encrypted API tests verify both circle audiences across future-only edges, direct full-history defaults, explicit future-only exclusions, and unauthorized refresh denial. The unlocked web client shares earlier standalone photos with progress and explicit retry after an unconfirmed failure. Final hosted acceptance and production promotion passed; see the release evidence above.
