@@ -41,6 +41,17 @@ for flag in ['CONTENT_WRITES_PAUSED','MEDIA_UPLOADS_PAUSED','SOCIAL_INVITATIONS_
  if type(value) is not bool:
   raise SystemExit(flag.lower()+' must be a JSON boolean in infra/resources.json.')
  base['vars'][flag]='true' if value else 'false'
+# Reader and writer admission is explicit and must survive config regeneration.
+for flag in ['PRIVACY_COMMIT_RECOVERY_V1','PRIVACY_COMMIT_WRITER_V1','JOURNAL_LATENCY_RECOVERY_V1','JOURNAL_LATENCY_WRITER_V1']:
+ value=env.get(flag.lower(),False)
+ if type(value) is not bool:raise SystemExit(flag.lower()+' must be a JSON boolean in infra/resources.json.')
+ base['vars'][flag]='true' if value else 'false'
+if base['vars']['PRIVACY_COMMIT_WRITER_V1']=='true' and base['vars']['PRIVACY_COMMIT_RECOVERY_V1']!='true':
+ raise SystemExit('Privacy commit writer requires the recovery reader; preserve the admitted reader during rollback.')
+if base['vars']['JOURNAL_LATENCY_RECOVERY_V1']=='true' and base['vars']['PRIVACY_COMMIT_RECOVERY_V1']!='true':
+ raise SystemExit('Journal latency recovery requires the privacy commit reader.')
+if base['vars']['JOURNAL_LATENCY_WRITER_V1']=='true' and (base['vars']['JOURNAL_LATENCY_RECOVERY_V1']!='true' or base['vars']['PRIVACY_COMMIT_WRITER_V1']!='true'):
+ raise SystemExit('Journal latency writer requires latency recovery and privacy commit writer; preserve recovery during rollback.')
 # Builder chat ships paused; only an explicit reviewed false opens it.
 builder_paused=env.get('builder_chat_paused',True)
 if type(builder_paused) is not bool:raise SystemExit('builder_chat_paused must be a JSON boolean in infra/resources.json.')

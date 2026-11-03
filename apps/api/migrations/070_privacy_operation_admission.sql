@@ -5,6 +5,7 @@ CREATE TABLE app.privacy_operation_admissions (
  operation_id uuid PRIMARY KEY,
  scope_sha256 text NOT NULL CHECK(scope_sha256 ~ '^[a-f0-9]{64}$'),
  generation uuid NOT NULL,
+ operation_kind text NOT NULL DEFAULT 'auth' CHECK(operation_kind IN('auth','multi')),
  expires_at timestamptz NOT NULL,
  claimed_xid xid8,
  terminal_sequence bigint
@@ -12,19 +13,19 @@ CREATE TABLE app.privacy_operation_admissions (
 ALTER TABLE app.privacy_operation_admissions ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON app.privacy_operation_admissions FROM PUBLIC;
 
-CREATE FUNCTION app.prepare_privacy_operation(operation uuid,scope_hash text,expected_generation uuid) RETURNS void
+CREATE FUNCTION app.prepare_privacy_operation(operation uuid,scope_hash text,expected_generation uuid,kind text DEFAULT 'auth') RETURNS void
 LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
 DECLARE state app.safety_journal_state; existing app.privacy_operation_admissions;
 BEGIN
- IF operation IS NULL OR scope_hash IS NULL OR scope_hash !~ '^[a-f0-9]{64}$' OR expected_generation IS NULL
+ IF kind IS NULL OR kind NOT IN('auth','multi') OR operation IS NULL OR scope_hash IS NULL OR scope_hash !~ '^[a-f0-9]{64}$' OR expected_generation IS NULL
   THEN RAISE EXCEPTION 'INVALID_PRIVACY_COMMIT_SCOPE'; END IF;
  SELECT * INTO state FROM app.safety_journal_state WHERE id;
- IF state.restore_quarantined OR current_setting('app.restore_replay',true)='on' THEN RAISE EXCEPTION 'RESTORE_QUARANTINED'; END IF;
+ IF NOT FOUND OR state.restore_quarantined OR current_setting('app.restore_replay',true)='on' THEN RAISE EXCEPTION 'RESTORE_QUARANTINED'; END IF;
  IF state.generation<>expected_generation THEN RAISE EXCEPTION 'DATABASE_ROLLBACK_DETECTED'; END IF;
- INSERT INTO app.privacy_operation_admissions(operation_id,scope_sha256,generation,expires_at)
- VALUES(operation,scope_hash,expected_generation,clock_timestamp()+interval '3 minutes') ON CONFLICT DO NOTHING;
+ INSERT INTO app.privacy_operation_admissions(operation_id,scope_sha256,generation,expires_at,operation_kind)
+ VALUES(operation,scope_hash,expected_generation,clock_timestamp()+interval '3 minutes',kind) ON CONFLICT DO NOTHING;
  SELECT * INTO existing FROM app.privacy_operation_admissions WHERE operation_id=operation;
- IF existing.scope_sha256<>scope_hash OR existing.generation<>expected_generation
+ IF existing.operation_kind<>kind OR existing.scope_sha256<>scope_hash OR existing.generation<>expected_generation
   OR existing.terminal_sequence IS NOT NULL OR existing.claimed_xid IS NOT NULL
   OR existing.expires_at<=clock_timestamp() OR EXISTS(SELECT FROM app.privacy_operation_commits WHERE operation_id=operation)
  THEN RAISE EXCEPTION 'PRIVACY_OPERATION_NOT_PREPARED'; END IF;
@@ -35,12 +36,12 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
 DECLARE prepared app.privacy_operation_admissions; state app.safety_journal_state;
 BEGIN
  SELECT * INTO prepared FROM app.privacy_operation_admissions WHERE operation_id=operation FOR UPDATE;
- IF NOT FOUND OR prepared.scope_sha256 IS DISTINCT FROM scope_hash OR prepared.generation IS DISTINCT FROM expected_generation
+ IF NOT FOUND OR prepared.operation_kind<>'auth' OR prepared.scope_sha256 IS DISTINCT FROM scope_hash OR prepared.generation IS DISTINCT FROM expected_generation
   OR prepared.terminal_sequence IS NOT NULL OR prepared.claimed_xid IS NOT NULL
   OR prepared.expires_at<=clock_timestamp() OR EXISTS(SELECT FROM app.privacy_operation_commits WHERE operation_id=operation)
  THEN RAISE EXCEPTION 'PRIVACY_OPERATION_NOT_PREPARED'; END IF;
  SELECT * INTO state FROM app.safety_journal_state WHERE id;
- IF state.restore_quarantined OR current_setting('app.restore_replay',true)='on' THEN RAISE EXCEPTION 'RESTORE_QUARANTINED'; END IF;
+ IF NOT FOUND OR state.restore_quarantined OR current_setting('app.restore_replay',true)='on' THEN RAISE EXCEPTION 'RESTORE_QUARANTINED'; END IF;
  IF state.generation<>expected_generation THEN RAISE EXCEPTION 'DATABASE_ROLLBACK_DETECTED'; END IF;
  UPDATE app.privacy_operation_admissions SET claimed_xid=pg_current_xact_id() WHERE operation_id=operation;
 END $$;
@@ -50,7 +51,7 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
 DECLARE prepared app.privacy_operation_admissions; n bigint;
 BEGIN
  SELECT * INTO prepared FROM app.privacy_operation_admissions WHERE operation_id=operation FOR UPDATE;
- IF NOT FOUND OR prepared.scope_sha256 IS DISTINCT FROM scope_hash OR prepared.generation IS DISTINCT FROM expected_generation
+ IF NOT FOUND OR prepared.operation_kind<>'auth' OR prepared.scope_sha256 IS DISTINCT FROM scope_hash OR prepared.generation IS DISTINCT FROM expected_generation
   OR prepared.terminal_sequence IS NOT NULL OR prepared.claimed_xid IS DISTINCT FROM pg_current_xact_id()
  THEN RAISE EXCEPTION 'PRIVACY_OPERATION_NOT_CLAIMED'; END IF;
  n:=app.complete_privacy_transaction(operation,scope_hash,expected_generation);
@@ -76,8 +77,8 @@ BEGIN
  UPDATE app.privacy_operation_admissions SET terminal_sequence=n WHERE operation_id=operation;
  RETURN n;
 END $$;
-REVOKE ALL ON FUNCTION app.prepare_privacy_operation(uuid,text,uuid),app.claim_privacy_operation(uuid,text,uuid),app.finish_privacy_operation(uuid,text,uuid),app.abandon_privacy_operation(uuid,text,uuid) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION app.prepare_privacy_operation(uuid,text,uuid),app.abandon_privacy_operation(uuid,text,uuid) TO porchday_jobs;
+REVOKE ALL ON FUNCTION app.prepare_privacy_operation(uuid,text,uuid,text),app.claim_privacy_operation(uuid,text,uuid),app.finish_privacy_operation(uuid,text,uuid),app.abandon_privacy_operation(uuid,text,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.prepare_privacy_operation(uuid,text,uuid,text),app.abandon_privacy_operation(uuid,text,uuid) TO porchday_jobs;
 GRANT EXECUTE ON FUNCTION app.claim_privacy_operation(uuid,text,uuid),app.finish_privacy_operation(uuid,text,uuid) TO porchday_auth;
 
 -- A caller cannot commit the claim separately and leave a permanent execution
@@ -106,3 +107,35 @@ BEGIN
 END $$;
 REVOKE ALL ON FUNCTION app.recover_privacy_operation(uuid,text,uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.recover_privacy_operation(uuid,text,uuid) TO porchday_jobs;
+
+-- Each transaction of a multi-step operation holds a shared row lock. Sealing
+-- takes an exclusive lock; it cannot pass an in-flight commit, and subsequent
+-- transactions cannot start. Partial completed work remains in safety history.
+CREATE FUNCTION app.enter_privacy_operation(operation uuid,scope_hash text,expected_generation uuid) RETURNS void
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+DECLARE prepared app.privacy_operation_admissions; state app.safety_journal_state;
+BEGIN
+ SELECT * INTO prepared FROM app.privacy_operation_admissions WHERE operation_id=operation FOR SHARE;
+ IF NOT FOUND OR prepared.operation_kind<>'multi' OR prepared.scope_sha256 IS DISTINCT FROM scope_hash
+  OR prepared.generation IS DISTINCT FROM expected_generation OR prepared.terminal_sequence IS NOT NULL
+  OR prepared.expires_at<=clock_timestamp() OR EXISTS(SELECT FROM app.privacy_operation_commits WHERE operation_id=operation)
+ THEN RAISE EXCEPTION 'PRIVACY_OPERATION_NOT_PREPARED'; END IF;
+ SELECT * INTO state FROM app.safety_journal_state WHERE id;
+ IF NOT FOUND OR state.restore_quarantined OR current_setting('app.restore_replay',true)='on' THEN RAISE EXCEPTION 'RESTORE_QUARANTINED'; END IF;
+ IF state.generation<>expected_generation THEN RAISE EXCEPTION 'DATABASE_ROLLBACK_DETECTED'; END IF;
+END $$;
+CREATE FUNCTION app.seal_privacy_operation(operation uuid,scope_hash text,expected_generation uuid) RETURNS bigint
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+DECLARE prepared app.privacy_operation_admissions; n bigint;
+BEGIN
+ SELECT * INTO prepared FROM app.privacy_operation_admissions WHERE operation_id=operation FOR UPDATE;
+ IF NOT FOUND OR prepared.operation_kind<>'multi' OR prepared.scope_sha256 IS DISTINCT FROM scope_hash
+  OR prepared.generation IS DISTINCT FROM expected_generation THEN RAISE EXCEPTION 'INVALID_PRIVACY_COMMIT_SCOPE'; END IF;
+ IF prepared.terminal_sequence IS NOT NULL THEN RETURN prepared.terminal_sequence; END IF;
+ n:=app.complete_privacy_transaction(operation,scope_hash,expected_generation);
+ UPDATE app.privacy_operation_admissions SET terminal_sequence=n WHERE operation_id=operation;
+ RETURN n;
+END $$;
+REVOKE ALL ON FUNCTION app.enter_privacy_operation(uuid,text,uuid),app.seal_privacy_operation(uuid,text,uuid) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.enter_privacy_operation(uuid,text,uuid) TO porchday_auth,porchday_social,porchday_jobs;
+GRANT EXECUTE ON FUNCTION app.seal_privacy_operation(uuid,text,uuid) TO porchday_jobs;
