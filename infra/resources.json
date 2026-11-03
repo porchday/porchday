@@ -57,7 +57,9 @@
       },
       "app_url": "https://staging.porchday.com",
       "edge_frontend": true,
-      "traces_d1_database_id": "c481c657-d9ce-4bc9-b786-c6d15845df3f"
+      "traces_d1_database_id": "c481c657-d9ce-4bc9-b786-c6d15845df3f",
+      "privacy_commit_recovery_v1": true,
+      "privacy_commit_writer_v1": true
     },
     "production": {
       "bucket": "porchday-production-media",
@@ -115,7 +117,9 @@
       "legacy_app_url": "https://porchday.com",
       "builder_chat_paused": false,
       "edge_frontend": false,
-      "traces_d1_database_id": "e2999366-1369-4cdf-ae61-4906e3987375"
+      "traces_d1_database_id": "e2999366-1369-4cdf-ae61-4906e3987375",
+      "privacy_commit_recovery_v1": true,
+      "privacy_commit_writer_v1": true
     }
   },
   "staff_access_identity_provider_id": "76862f58-8faf-4670-9040-15cec794b211",

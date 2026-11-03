@@ -26,7 +26,9 @@
     "MEDIA_BACKUP_ENABLED": "true",
     "VAPID_SUBJECT": "https://porchday.com/contact",
     "STAFF_ACCESS_ISSUER": "https://porchday-staff.cloudflareaccess.com",
-    "STAFF_ACCESS_AUDIENCE": "0b856c380fb554c3df663c3485183de5947e957279e87602dbc30ab81cb040a7"
+    "STAFF_ACCESS_AUDIENCE": "0b856c380fb554c3df663c3485183de5947e957279e87602dbc30ab81cb040a7",
+    "PRIVACY_COMMIT_RECOVERY_V1": "true",
+    "PRIVACY_COMMIT_WRITER_V1": "true"
   },
   "hyperdrive": [
     {
