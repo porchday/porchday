@@ -1,4 +1,4 @@
-import {importPhotoCollections} from "./photo-import";
+import {importPhotoCollections,importedIdentity,restorePhotoSources} from "./photo-import";
 import {openPhoto,type PhotoRow} from "./photo-record";
 import {verifyAttachmentDate,signAttachmentDate} from "./attachment-photo-date";
 import { validatedMedia, isVideo } from "./video";
@@ -292,7 +292,7 @@ export function DataTransfer() {
               } else if(section==="photos"){
                 if(row.grants?.length!==1)throw Error("The photo original is unavailable. Restore it before exporting.");
                 const payload=await openPhoto(vault,row as PhotoRow,row.grants[0]);
-                const entry={id:row.id,photo_date:row.photo_date,created_at:canonicalDate(row.created_at),expires_at:canonicalDate(row.expires_at),payload,album_ids:row.album_ids||[]};
+                const entry={id:row.id,photo_date:row.photo_date,created_at:canonicalDate(row.created_at),expires_at:canonicalDate(row.expires_at),payload,album_ids:row.album_ids||[],source_media_id:row.source_media_id||null,source_post_id:row.source_post_id||null};
                 await room(JSON.stringify(entry).length*3+1024);(archive.photos||=[]).push(entry);refs.push(reference("photo",row));
               } else if(section==="albums"){
                 const payload=await vault.open(row);const entry={id:row.id,created_at:canonicalDate(row.created_at),payload};
@@ -504,6 +504,9 @@ export function DataTransfer() {
         const record=media.get(photo.payload.media[0].id)!.record;
         if (photo.payload.photoProof?.statement?.sha256 !== record.sha256)
           throw new Error("An independent photo does not match its archived source checksum.");
+        const sourceMedia=photo.source_media_id?media.get(photo.source_media_id)?.record:null;
+        if(sourceMedia&&(sourceMedia.sha256!==record.sha256 || (sourceMedia.expires_at&&(!photo.expires_at||Date.parse(photo.expires_at)>Date.parse(sourceMedia.expires_at)))))
+          throw new Error("An adopted photo does not match its original attachment or expiry.");
       }
       const dates=parts.flatMap(p => p.archive.attachment_dates || []);
       if (new Set(dates.map(d => d.media_id)).size !== dates.length)
@@ -688,8 +691,8 @@ export function DataTransfer() {
           setProgress(
             `Importing your data (${importedCount + batch.length + 1}/${plan.entries.length})…`,
           );
-          const id = crypto.randomUUID();
-          const media = [];
+          const id = await importedIdentity(vault.member.id,source,entry.journal_kind,entry.id);
+          const media: MediaPayload[] = [];
           const photo_dates = [];
           for (const photo of entry.payload.media || []) {
             media.push(
@@ -719,6 +722,7 @@ export function DataTransfer() {
               kind: entry.journal_kind,
               source_id: entry.id,
               source_member_id: source,
+              source_media: (entry.payload.media || []).map((old: Json,index: number)=>({source_id:old.id,media_id:media[index].id})),
               parent_id: entry.parent_id || null,
               original_audience: entry.audience,
               original_group_id: entry.group_id,
@@ -749,6 +753,7 @@ export function DataTransfer() {
           importedCount += (result.imported || []).length;
         }
       }
+      await restorePhotoSources(vault,source,plan.photos,ensureContinue);
       if (replaceProfile && plan.profile) {
         const profile = { ...plan.profile };
         const attachments: { id: string; slot: string }[] = [];
@@ -789,7 +794,7 @@ export function DataTransfer() {
       }
       setPlan(null);
       setProgress(
-        `Imported ${importedCount} new private entries. Previously imported entries were skipped. No connections or group memberships were created.`,
+        `Imported ${importedCount} new private entries. Photo and album restoration is complete; existing items were reconciled and expired items skipped. No connections or group memberships were created.`,
       );
     }, "Your data was re-encrypted for this account before upload.");
   }
@@ -915,7 +920,8 @@ export function DataTransfer() {
               <h3>Review your import</h3>
               <p>
                 {plan.entries.length} unexpired authored entries ·{" "}
-                {plan.media.size - plan.expiredPhotos} unexpired photos ·{" "}
+                {plan.photos.length} independent photos · {plan.albums.length} albums ·{" "}
+                {plan.media.size - plan.expiredPhotos} unexpired media files ·{" "}
                 {plan.parts.length} archive parts · {plan.expired} expired
                 entries and {plan.expiredPhotos} expired photos skipped.
               </p>

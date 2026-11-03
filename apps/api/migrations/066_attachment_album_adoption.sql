@@ -3,7 +3,7 @@
 -- independent, with the original deadline, until the owner deletes the photo.
 ALTER TABLE app.photos ADD COLUMN source_media_id uuid UNIQUE;
 ALTER TABLE app.photos ADD COLUMN source_post_id uuid;
-ALTER TABLE app.photos ADD CONSTRAINT photo_source_identity CHECK(source_media_id IS NULL OR (source_media_id=id AND source_post_id IS NOT NULL));
+ALTER TABLE app.photos ADD CONSTRAINT photo_source_identity CHECK((source_media_id IS NULL)=(source_post_id IS NULL));
 CREATE FUNCTION app.link_photo_source(p uuid,media uuid) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
 DECLARE photo app.photos;source app.media_assets;original app.posts;deadline timestamptz;
 BEGIN
@@ -12,7 +12,7 @@ BEGIN
  SELECT * INTO photo FROM app.photos WHERE id=p FOR UPDATE;
  SELECT * INTO source FROM app.media_assets WHERE id=media FOR UPDATE;
  SELECT * INTO original FROM app.posts WHERE id=source.post_id;
- IF photo.id IS NULL OR photo.owner_id<>app.actor() OR p<>media OR photo.source_media_id IS NOT NULL
+ IF photo.id IS NULL OR photo.owner_id<>app.actor() OR photo.source_media_id IS NOT NULL
  OR source.id IS NULL OR source.owner_id<>app.actor() OR source.state<>'attached' OR original.author_id IS DISTINCT FROM app.actor()
  OR NOT app.can_media(media) THEN RAISE EXCEPTION 'FORBIDDEN';END IF;
  deadline:=app.media_deadline(media);

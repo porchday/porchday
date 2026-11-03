@@ -2,6 +2,10 @@ import { beforeAll, afterAll, describe, it, expect } from "vitest";
 import { readFile, readdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import postgres, { type Sql, type TransactionSql } from "postgres";
+// Exercise the preserved release schema as well as the full migration chain.
+const schemaProfile=process.env.PHOTO_TEST_SCHEMA;
+if(schemaProfile&&schemaProfile!=="without-052-057")throw Error("Unknown photo test schema profile");
+const includeMigration=(name:string)=>name.endsWith(".sql")&&!(schemaProfile==="without-052-057"&&["052_group_invitation_roster.sql","057_privacy_transaction_commits.sql"].includes(name));
 const base = process.env.TEST_DATABASE_URL;
 const suite = base ? describe : describe.skip;
 let admin: Sql, db: Sql, database: string;
@@ -83,7 +87,7 @@ suite("Independent photo sharing paths",()=>{
     await admin.unsafe("CREATE DATABASE "+database);
     url.pathname="/"+database;
     db=postgres(url.href,{max:3,prepare:false,onnotice:()=>{}});
-    for(const file of (await readdir(new URL("../migrations/",import.meta.url))).filter(n=>n.endsWith(".sql")).sort()) {
+    for(const file of (await readdir(new URL("../migrations/",import.meta.url))).filter(includeMigration).sort()) {
       await db.unsafe(await readFile(new URL("../migrations/"+file,import.meta.url),"utf8"));
     }
   },60000);

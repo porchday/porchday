@@ -15,6 +15,10 @@ import { createSocialRoutes } from "../src/social";
 import { withMember } from "../src/db";
 import type { Env, Variables } from "../src/types";
 
+// Exercise the preserved release schema as well as the full migration chain.
+const schemaProfile=process.env.PHOTO_TEST_SCHEMA;
+if(schemaProfile&&schemaProfile!=="without-052-057")throw Error("Unknown photo test schema profile");
+const includeMigration=(name:string)=>name.endsWith(".sql")&&!(schemaProfile==="without-052-057"&&["052_group_invitation_roster.sql","057_privacy_transaction_commits.sql"].includes(name));
 const base = process.env.TEST_DATABASE_URL,
   suite = base ? describe : describe.skip;
 const objects=new Map<string,{bytes:Uint8Array;etag:string}>();
@@ -131,7 +135,7 @@ suite("Encrypted independent photo API",()=>{
     for (const file of (
       await readdir(new URL("../migrations/", import.meta.url))
     )
-      .filter((n) => n.endsWith(".sql"))
+      .filter(includeMigration)
       .sort())
       await db.unsafe(
         await readFile(
@@ -358,6 +362,27 @@ suite("Encrypted independent photo API",()=>{
     expect(await db`select id from app.media_assets where id=${source.media_id}`).toHaveLength(0);
     const retained=await call(owner.id,"/photos/"+source.media_id);expect(retained.status).toBe(200);expect(retained.data.photo.expires_at).toBe(deadline);
     expect((await app.request(`https://local.test/media/${valid.media_id}/bytes`,{headers:{"x-member":owner.id}},env)).status).toBe(200);
+  });
+  it("restores an imported source association with independent destination IDs and idempotent retries",async()=>{
+    const owner=await person(),other=await person(),photo=await publish(owner),postId=randomUUID();
+    const source=await uploadGrant(owner,postId);
+    const envelope=await seal(owner,{text:"Imported post",media:[{id:source.media_id,mime:"image/jpeg"}]},1,{id:postId,kind:"post"});
+    expect((await call(owner.id,"/imports","POST",{id:randomUUID(),posts:[{envelope,source_id:"source-post-"+postId,media_ids:[source.media_id]}]})).status).toBe(201);
+    const proof=await signStatement({v:1,purpose:"porchday-attachment-date",mediaId:source.media_id,postId,ownerId:owner.id,deviceId:owner.deviceId,date:"2026-10-31",revision:1},owner.key);
+    const body={media_id:source.media_id,source_date:proof};
+    expect((await call(other.id,`/photos/${photo.id}/source`,"POST",body)).status).toBe(404);
+    const first=await call(owner.id,`/photos/${photo.id}/source`,"POST",body);expect(first.status,JSON.stringify(first.data)).toBe(200);
+    expect((await call(owner.id,`/photos/${photo.id}/source`,"POST",body)).status).toBe(200);
+    const restored=(await call(owner.id,`/photos/${photo.id}`)).data.photo;
+    expect(restored.source_media_id).toBe(source.media_id);expect(restored.source_post_id).toBe(postId);expect(restored.id).not.toBe(source.media_id);
+    expect((await call(owner.id,"/photo-feed")).data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
+    const duplicate=await publish(owner);
+    const nextProof=await signStatement({...proof.statement,revision:2},owner.key);
+    expect((await call(owner.id,`/photos/${duplicate.id}/source`,"POST",{...body,source_date:nextProof})).status).toBe(409);
+    expect((await call(owner.id,`/media/${source.media_id}/photo-date`)).data.date.revision).toBe(1);
+    const job=await call(owner.id,"/exports","POST",{});
+    const exported=(await call(owner.id,`/exports/${job.data.id}?section=photos`)).data.photos.find((p:any)=>p.id===photo.id);
+    expect(exported.source_media_id).toBe(source.media_id);expect(exported.source_post_id).toBe(postId);
   });
   it("imports attachment dates atomically and exports only owned date records",async()=>{
     const owner=await person(),outsider=await person();

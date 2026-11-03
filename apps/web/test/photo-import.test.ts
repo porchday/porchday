@@ -5,7 +5,8 @@ vi.mock("../src/photo-album",()=>({addPhotoToAlbum:vi.fn()}));
 import {get,post,ApiError} from "../src/api";
 import {publishPhoto} from "../src/photo-publish";
 import {addPhotoToAlbum} from "../src/photo-album";
-import {importPhotoCollections,importedIdentity} from "../src/photo-import";
+import {importPhotoCollections,importedIdentity,restorePhotoSources} from "../src/photo-import";
+vi.mock("../src/attachment-photo-date",()=>({signAttachmentDate:vi.fn(async(_vault,mediaId,postId,date,revision)=>({statement:{mediaId,postId,date,revision},signature:"synthetic"}))}));
 const vault={member:{id:"owner"},seal:vi.fn(async(payload,context)=>({payload,context})),open:vi.fn(async row=>row.payload)} as any;
 const album={id:"old-album",payload:{name:"Family",description:"Memories"}};
 const photo={id:"old-photo",photo_date:"2001-02-03",expires_at:null,album_ids:["old-album","someone-elses-album"],payload:{media:[{id:"old-media",name:"day.jpg",alt:"caption"}]}};
@@ -38,4 +39,31 @@ describe("private photo collection import",()=>{
   await importPhotoCollections(vault,"source",[],[{...photo,expires_at:"2000-01-01T00:00:00Z"}],load,()=>{},()=>{});
   expect(load).not.toHaveBeenCalled();expect(publishPhoto).not.toHaveBeenCalled();
  });
+ it("rejoins restored source attachments after a lost link response without rewriting the post",async()=>{
+  const imported=await importedIdentity("owner","source","photo",photo.id),postId=await importedIdentity("owner","source","post","source-post");
+  let linked=false;
+  vi.mocked(get).mockImplementation(async path=>{
+    if(path==="/posts/"+postId)return {post:{author_id:"owner",media:[{id:"new-media"}],payload:{provenance:{source_member_id:"source",source_id:"source-post",source_media:[{source_id:"old-source",media_id:"new-media"}]}}}};
+    if(path==="/photos/"+imported)return {photo:{photo_date:photo.photo_date,...(linked?{source_media_id:"new-media",source_post_id:postId}:{})}};
+    if(path==="/media/new-media/photo-date")return {date:{revision:1}};
+    throw Error("Unexpected read "+path);
+  });
+  vi.mocked(post).mockImplementation(async()=>{linked=true;throw Error("Lost response");});
+  const restored={...photo,source_media_id:"old-source",source_post_id:"source-post"};
+  await restorePhotoSources(vault,"source",[restored],()=>{});
+  expect(post).toHaveBeenCalledWith("/photos/"+imported+"/source",{media_id:"new-media",source_date:{statement:{mediaId:"new-media",postId,date:photo.photo_date,revision:2},signature:"synthetic"}});
+  await restorePhotoSources(vault,"source",[restored],()=>{});
+  expect(post).toHaveBeenCalledTimes(1);
+ });
+ it("retains independent photos when their original post was not in the archive",async()=>{
+  await restorePhotoSources(vault,"source",[{...photo,source_media_id:"old-source",source_post_id:"removed-post"}],()=>{});
+  expect(post).not.toHaveBeenCalled();
+ });
+ it("accepts an already restored source association only when its imported provenance matches",async()=>{
+  const postId=await importedIdentity("owner","source","post","old-post");
+  vi.mocked(get).mockImplementation(async path=>path.startsWith("/photos/")?{photo:{owner_id:"owner",source_media_id:"new-media",source_post_id:postId}}:{post:{payload:{provenance:{source_member_id:"source",source_id:"old-post",source_media:[{source_id:"old-source",media_id:"new-media"}]}}}});
+  await importPhotoCollections(vault,"source",[],[{...photo,album_ids:[],source_media_id:"old-source",source_post_id:"old-post"}],load,()=>{},()=>{});
+  expect(publishPhoto).toHaveBeenCalledWith(vault,expect.objectContaining({existingSource:{mediaId:"new-media",postId}}),"only_me","2090-01-01T00:00:00.000Z",null);
+ });
+
 });

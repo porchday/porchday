@@ -181,6 +181,9 @@ export function unpackArchive(bytes: Uint8Array): {
         typeof photo.payload.media[0]?.id !== "string" ||
         !Array.isArray(photo.album_ids) || photo.album_ids.some((id: unknown) => typeof id !== "string"))
       throw new Error("An independent photo is malformed.");
+    if ((photo.source_media_id != null || photo.source_post_id != null) &&
+        (typeof photo.source_media_id !== "string" || typeof photo.source_post_id !== "string"))
+      throw new Error("An independent photo has malformed source references.");
     const media=photo.payload.media[0];
     if ((media.alt !== undefined && (typeof media.alt !== "string" || media.alt.length > 5000)) ||
         (media.name !== undefined && typeof media.name !== "string") ||

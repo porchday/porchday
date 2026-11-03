@@ -55,7 +55,7 @@ export interface ArchiveManifestV1 {
   comments: AuthoredEntryV1[];
   reactions: AuthoredEntryV1[];
   media: PhotoV1[];
-  photos?: { id: UUID; photo_date: string; created_at: Timestamp; expires_at: Deadline; payload: JsonObject; album_ids: UUID[] }[];
+  photos?: { id: UUID; photo_date: string; created_at: Timestamp; expires_at: Deadline; payload: JsonObject; album_ids: UUID[]; source_media_id?: UUID | null; source_post_id?: UUID | null }[];
   albums?: { id: UUID; created_at: Timestamp; payload: JsonObject }[];
   attachment_dates?: { media_id: UUID; post_id: UUID; photo_date: string }[];
   connections: { member_id: UUID; kind: "friend" | "family" }[];

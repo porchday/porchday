@@ -19,7 +19,8 @@ export async function adoptAttachment(vault:ReturnType<typeof useVault>,postId:s
   if(original.author_id!==vault.member.id||!original.media.some((m:any)=>m.id===mediaId))throw Error("Only the owner can add an attached photo to an album.");
   const content=await vault.open(original),metadata=content.media?.find(m=>m.id===mediaId);
   if(!metadata)throw Error("This photo is not in the signed post.");
-  const {date}=await get(`/media/${mediaId}/photo-date`);
+  const {date,photo_id}=await get(`/media/${mediaId}/photo-date`);
+  if(photo_id){const {photo}=await get("/photos/"+photo_id);if(photo.owner_id!==vault.member.id||photo.source_media_id!==mediaId||photo.source_post_id!==postId)throw Error("This photo identity has a different source.");await addPhotoToAlbum(vault,photo_id,albumId);return;}
   if(date?.photo_date){await verifyAttachmentDate(vault,date,mediaId,postId,vault.member.id,date.photo_date);day=date.photo_date;}
   const envelope=await get<EncryptedEnvelope>(`/media/${mediaId}/bytes`);
   if(envelope.context.parentId!==postId||envelope.context.kind!=="media"||envelope.context.authorId!==vault.member.id)throw Error("This photo does not belong to the original post.");

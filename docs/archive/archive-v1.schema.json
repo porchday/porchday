@@ -191,6 +191,18 @@
             "items": {
               "type": "string"
             }
+          },
+          "source_media_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_post_id": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       }

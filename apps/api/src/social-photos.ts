@@ -105,6 +105,18 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
       return {id:b.id,revision:1};
     }),201);
   });
+  app.post("/photos/:id/source",async c=>{
+    const photoId=id(c.req.param("id")),b=await body(c,z.object({media_id:z.string().uuid(),source_date:attachmentDateProof}).strict(),40000);
+    return c.json(await tx(c,async db=>{
+      await writeAllowed(db);await db`select app.lock_epoch()`;
+      const photo=await requirePhoto(db,photoId);
+      if(photo.owner_id!==c.get("memberId"))fail("FORBIDDEN",403);
+      if(photo.source_media_id){if(photo.source_media_id!==b.media_id)fail("SOURCE_PHOTO_CHANGED",409);return {ok:true};}
+      if(b.source_date.statement.mediaId!==b.media_id||b.source_date.statement.date!==photo.photo_date)fail("ENVELOPE_CONTEXT");
+      await setAttachmentDate(db,c.get("memberId"),b.source_date,fail);
+      await db`select app.link_photo_source(${photoId},${b.media_id})`;return {ok:true};
+    }));
+  });
   app.post("/photos/:id/grants",async c=>{
     const photoId=id(c.req.param("id")),b=await body(c,grantSchema,600000);
     return c.json(await tx(c,async db=>{

@@ -5,7 +5,7 @@ import { bytesToBase64, canonicalJson, type Audience } from "@porchday/crypto";
 import { ApiError, get, post, request, type MediaPayload } from "./api";
 import type { PersonTag } from "./PeopleTags";
 import type { useVault } from "./vault";
-export type PhotoDraft={id:string;name:string;alt:string;blob:Blob;width:number;height:number;mime?:string;poster?:string;tags?:PersonTag[];photoDate?:string;source?:{postId:string;revision:number}};
+export type PhotoDraft={id:string;name:string;alt:string;blob:Blob;width:number;height:number;mime?:string;poster?:string;tags?:PersonTag[];photoDate?:string;source?:{postId:string;revision:number};existingSource?:{mediaId:string;postId:string}};
 export function localPhotoDate(date=new Date()) {
   return `${date.getFullYear().toString().padStart(4,"0")}-${(date.getMonth()+1).toString().padStart(2,"0")}-${date.getDate().toString().padStart(2,"0")}`;
 }
@@ -17,7 +17,8 @@ export async function publishPhoto(vault:ReturnType<typeof useVault>,photo:Photo
   async function existing(){
     try{
       const result=await get("/photos/"+photo.id);
-      if((result.photo.source_media_id||null)!==(photo.source?photo.id:null))throw Error("This photo identity belongs to a different source.");
+      if((result.photo.source_media_id||null)!==(photo.source?photo.id:photo.existingSource?.mediaId||null))throw Error("This photo identity belongs to a different source.");
+      if(photo.existingSource&&result.photo.source_post_id!==photo.existingSource.postId)throw Error("This photo identity belongs to a different source post.");
       if(result.photo.owner_id!==vault.member.id)throw Error("This photo identity is already in use.");
       if(!result.photo.grants.some((g:any)=>g.album_id===null&&g.audience===audience)||Boolean(album)!==result.photo.grants.some((g:any)=>g.album_id===album&&album!==null))throw Error("This photo was already shared with a different audience. Open it in Feed → Photos to review its sharing.");
       const grant=result.photo.grants.find((g:any)=>g.album_id===album)||result.photo.grants[0];
