@@ -3,7 +3,7 @@ import type {JournalDatabase,JournalStore} from './privacy-journal';
 
 export const JOURNAL_IO_CODES=['journal_r2_read_retry','journal_r2_write_retry','journal_db_capacity_retry','journal_db_connection_retry','journal_io_exhausted','journal_io_deadline'] as const;
 type Code=typeof JOURNAL_IO_CODES[number];
-type Options={report:(code:Code)=>void;sleep?:(ms:number)=>Promise<void>;now?:()=>number;random?:()=>number};
+type Options={deadlineEnabled?:boolean;report:(code:Code)=>void;sleep?:(ms:number)=>Promise<void>;now?:()=>number;random?:()=>number};
 
 /** Retry transport operations, never application work or safety decisions.
  * One small budget is shared across a request's journal resources. Conditional
@@ -13,7 +13,7 @@ type Options={report:(code:Code)=>void;sleep?:(ms:number)=>Promise<void>;now?:()
  */
 export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options:Options){
  const sleep=options.sleep??(ms=>new Promise(resolve=>setTimeout(resolve,ms))),now=options.now??Date.now,random=options.random??Math.random;
- const deadline=journalDeadline({attemptMs:5000,totalMs:30000});
+ const deadline=options.deadlineEnabled===false?{run:<T>(work:(scope:{assertOpen:()=>void})=>Promise<T>)=>work({assertOpen:()=>{}})}:journalDeadline({attemptMs:5000,totalMs:30000});
  let retries=0,firstFailure:number|undefined;
  const report=(code:Code)=>{try{options.report(code);}catch{/* Telemetry cannot affect durability. */}};
  async function retry<T>(operation:()=>Promise<T>,classify:(error:unknown)=>Code|undefined):Promise<T>{
@@ -49,6 +49,11 @@ export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options
     return retry(()=>deadline.run(()=>store.put(key,value,pinned)),()=> 'journal_r2_write_retry');
    },
   } satisfies JournalStore,
-  db:{status:()=>retry(()=>deadline.run(()=>db.status()),databaseFailure),page:(after)=>retry(()=>deadline.run(()=>db.page(after)),databaseFailure)} satisfies JournalDatabase,
+  db:{
+   // Preparation/recovery can commit metadata. Bound waiting without replaying
+   // an uncertain database mutation; later recovery uses its exact identity.
+   ...(db.prepareAuth?{prepareAuth:(scope:Parameters<NonNullable<JournalDatabase['prepareAuth']>>[0])=>deadline.run(()=>db.prepareAuth!(scope))}:{}),
+   ...(db.recoverAuth?{recoverAuth:(scope:Parameters<NonNullable<JournalDatabase['recoverAuth']>>[0])=>deadline.run(()=>db.recoverAuth!(scope))}:{}),
+   status:()=>retry(()=>deadline.run(()=>db.status()),databaseFailure),page:(after)=>retry(()=>deadline.run(()=>db.page(after)),databaseFailure)} satisfies JournalDatabase,
  };
 }

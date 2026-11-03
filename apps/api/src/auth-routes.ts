@@ -397,6 +397,11 @@ authRoutes.all("/*", async (c) => {
         await measureJournalPhase(logoutTiming,'work_begin',async()=>{
           await client.query("BEGIN");
           transaction = true;
+          if(commitScope?.admission){
+            await client.query("SET LOCAL transaction_timeout='30s'");
+            await client.query("SET LOCAL statement_timeout='10s'");
+            await client.query('SELECT app.claim_privacy_operation($1::uuid,$2,$3::uuid)',[commitScope.operationId,commitScope.scopeSha256,commitScope.generation]);
+          }
           await client.query("SET LOCAL lock_timeout='10s'");
         });
         if (memberToLock && uuid.test(memberToLock))
@@ -578,7 +583,7 @@ authRoutes.all("/*", async (c) => {
         };
         const response = await measureJournalPhase(logoutTiming,'work_handler',handle);
         if(commitScope)await pool.query(
-          'SELECT app.complete_privacy_transaction($1::uuid,$2,$3::uuid)',
+          commitScope.admission?'SELECT app.finish_privacy_operation($1::uuid,$2,$3::uuid)':'SELECT app.complete_privacy_transaction($1::uuid,$2,$3::uuid)',
           [commitScope.operationId,commitScope.scopeSha256,commitScope.generation],
         );
         // The journal wrapper observes the committed database cursor. No R2
