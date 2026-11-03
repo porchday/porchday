@@ -1,3 +1,6 @@
+import {attachmentDateProof,setAttachmentDate} from "./attachment-photo-dates";
+import { registerPhotoRoutes, photoGrantSnapshot, photoRefreshSnapshot } from "./social-photos";
+import { registerAlbumRoutes, albumSnapshot } from "./social-albums";
 import {registerCalendarRoutes} from './social-calendar.js';
 import {readMemberBootstrap} from './member-bootstrap';
 import {phaseTiming} from './request-timing';
@@ -70,8 +73,12 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
     allowPast?: boolean;
     historyPostId?: string;
     historySourceRevision?: number;
+    photoGrantId?: string;
+    photoRefreshId?: string;
+    albumChange?: { memberId: string; role: "read" | "add" | "admin" | null };
 } = {}) {
     const e = envelope.context;
+    if (e.audience === "album" && !["album", "media", "photo"].includes(kind)) fail("ENVELOPE_CONTEXT");
     if ((kind === 'report') !== (e.audience === 'moderators'))
         fail('ENVELOPE_CONTEXT');
     if (e.authorId !== member || e.kind !== kind)
@@ -89,10 +96,18 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
         fail('DEVICE_NOT_TRUSTED', 403);
     if (options.historyPostId) {
         const source = await requirePost(db, options.historyPostId, true);
-        if (source.author_id !== member || source.group_id !== null || !['connections','friends','family'].includes(source.audience) || e.audience !== source.audience || e.groupId !== null || (kind === 'post' ? e.id !== source.id : kind !== 'media' || e.parentId !== source.id)) fail('ENVELOPE_CONTEXT');
+        if (source.author_id !== member || source.group_id !== null || !['connections','friends','family','community','extended_family'].includes(source.audience) || e.audience !== source.audience || e.groupId !== null || (kind === 'post' ? e.id !== source.id : kind !== 'media' || e.parentId !== source.id)) fail('ENVELOPE_CONTEXT');
         if (options.historySourceRevision !== undefined && source.envelope.context.revision !== options.historySourceRevision) fail('REVISION_CHANGED',409);
     }
-    const s = await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
+    if (e.photoDate !== undefined && kind !== "photo") fail("ENVELOPE_CONTEXT");
+    if(options.photoRefreshId){
+      const [grant]=await db`select * from app.photo_grants where id=${options.photoRefreshId}`;
+      if(!grant||e.audience!==grant.audience||e.groupId!==grant.album_id||e.parentId!==grant.photo_id||!["photo","media"].includes(kind)||(kind==="photo"&&e.id!==grant.id))fail("ENVELOPE_CONTEXT");
+    }
+    const s = options.photoRefreshId ? await photoRefreshSnapshot(db,options.photoRefreshId) : options.photoGrantId ? await photoGrantSnapshot(db, options.photoGrantId) : e.audience === "album"
+      ? await albumSnapshot(db, e.groupId!, options.albumChange)
+      : await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
+    if(s.devices.length>4000)fail("AUDIENCE_TOO_LARGE",413);
     if (s.pending_members.length)
         fail('KEY_SETUP_REQUIRED', 409, { pending_members: s.pending_members });
     if (!options.skipEpoch && e.epoch !== s.epoch)
@@ -134,7 +149,7 @@ export function createSocialRoutes() {
         const code = (err as {
             code?: string;
         }).code;
-        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED','REACTION_LIMIT','REACTION_STORAGE_LIMIT'];
+        const known = ['CONNECTION_LIMIT', 'AUDIENCE_CHANGED', 'TRANSFER_REQUIRED', 'OWNED_GROUPS', 'GROUP_LIMIT', 'EXPIRY_CANNOT_EXTEND', 'CONTENT_DELETED','EXPORT_INVALIDATED','MEDIA_NOT_READY','MEDIA_AUDIENCE_MISMATCH','MEDIA_ATTACHMENT_CHANGED','REVISION_CHANGED','REACTION_LIMIT','REACTION_STORAGE_LIMIT','MEDIA_QUOTA','PHOTO_GRANT_LIMIT','PHOTO_DATE_REQUIRES_ALL_PATHS','SOURCE_EXPIRY_CHANGED','SOURCE_PHOTO_CHANGED','ALBUM_OWNER_REQUIRED','ALBUM_ADMIN_REQUIRED','ALBUM_MEMBER_LIMIT','ALBUM_AUDIENCE_BLOCKED','ACCOUNT_UNAVAILABLE'];
         if (known.includes(err.message))
             return c.json({ error: { code: err.message, message: err.message.toLowerCase().replaceAll('_', ' ') } }, 409);
         if (code === '23505')
@@ -151,6 +166,8 @@ export function createSocialRoutes() {
         if (!allowed)
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
+    registerPhotoRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
+    registerAlbumRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerCalendarRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerEmojiRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     app.get('/me', async c => c.json(await readMemberBootstrap(c.env,c.get('memberId'),c.req.query('bootstrap')==='1',phaseTiming(c))));
@@ -171,7 +188,7 @@ export function createSocialRoutes() {
             return {ok: true};
         }));
     });
-    app.get('/audiences', async (c) => { return c.json(await tx(c, db => snapshot(db, z.enum(['only_me', 'connections', 'friends', 'family', 'group', 'moderators']).parse(c.req.query('audience') ?? 'connections'), c.req.query('group_id') ? id(c.req.query('group_id')) : null, c.req.query('post_id') ? id(c.req.query('post_id')) : null))); });
+    app.get('/audiences', async (c) => { return c.json(await tx(c, db => snapshot(db, z.enum(['only_me', 'connections', 'friends', 'family', 'extended_family', 'community', 'group', 'moderators']).parse(c.req.query('audience') ?? 'connections'), c.req.query('group_id') ? id(c.req.query('group_id')) : null, c.req.query('post_id') ? id(c.req.query('post_id')) : null))); });
     app.get('/devices', async (c) => c.json({ items: await tx(c, db => db `select id,member_id,public_key,fingerprint,created_at,revoked_at from app.device_keys order by created_at`) }));
     app.get('/devices/:id', async (c) => c.json(await tx(c, async (db) => { const [d] = await db `select * from app.author_key(${id(c.req.param('id'))})`; if (!d)
         fail('NOT_FOUND', 404); return d; })));
@@ -248,11 +265,11 @@ export function createSocialRoutes() {
         fail('NOT_FOUND', 404); return r; })); });
     app.put('/keys/backup', async (c) => { recent(c); const b = await body(c, z.object({ envelope: backupSchema })); await checkBackup(b.envelope); return c.json(await tx(c, async (db) => { const [recovery] = await db `select public_key from app.recovery_keys where member_id=${c.get('memberId')}`; if (!recovery || b.envelope.recovery.public_key !== recovery.public_key)
         fail('BACKUP_KEY_MISMATCH'); await db `update app.encrypted_key_backups set envelope=${db.json(b.envelope)},updated_at=now() where member_id=${c.get('memberId')}`; return { ok: true }; })); });
-    app.get('/connections', async (c) => c.json(await tx(c, async (db) => { const items = await db `select id,member_a,member_b,accepted_at,case when member_a=app.actor() then kind_a else kind_b end as kind,case when member_a=app.actor() then history_a else history_b end as own_history,case when member_a=app.actor() then history_b else history_a end as peer_history from app.connections order by accepted_at desc`; const requests = await db `select id,sender,recipient,state,created_at,history,case when sender=app.actor() then kind else null end as kind from app.connection_requests where state='pending' order by created_at desc`; const ids = [...new Set([...items.flatMap(r => [r.member_a, r.member_b]), ...requests.flatMap(r => [r.sender, r.recipient])])]; const handles = ids.length ? await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(ids)}))::uuid[])` : []; return { items, requests, handles, limit: 300 }; })));
-    app.post('/connections/requests', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), kind: z.enum(['friend', 'family']), history: historyMode.default('future'), id: uuid.optional() })); return c.json(await tx(c, async (db) => { await writeAllowed(db); const [target] = await db `select * from app.lookup_handle(${b.handle})`; if (!target || target.id === c.get('memberId'))
+    app.get('/connections', async (c) => c.json(await tx(c, async (db) => { const items = await db `select id,member_a,member_b,accepted_at,(kind_a='family' and kind_b='family') as mutual_family,case when member_a=app.actor() then kind_a else kind_b end as kind,case when member_a=app.actor() then history_a else history_b end as own_history,case when member_a=app.actor() then history_b else history_a end as peer_history from app.connections order by accepted_at desc`; const requests = await db `select id,sender,recipient,state,created_at,history,case when sender=app.actor() then kind else null end as kind from app.connection_requests where state='pending' order by created_at desc`; const ids = [...new Set([...items.flatMap(r => [r.member_a, r.member_b]), ...requests.flatMap(r => [r.sender, r.recipient])])]; const handles = ids.length ? await db `select * from app.member_handles(array(select jsonb_array_elements_text(${db.json(ids)}))::uuid[])` : []; return { items, requests, handles, limit: 300 }; })));
+    app.post('/connections/requests', async (c) => { const b = await body(c, z.object({ handle: z.string().regex(/^[a-z0-9_]{3,24}$/), kind: z.enum(['friend', 'family']), history: historyMode.default('full'), id: uuid.optional() })); return c.json(await tx(c, async (db) => { await writeAllowed(db); const [target] = await db `select * from app.lookup_handle(${b.handle})`; if (!target || target.id === c.get('memberId'))
         fail('NOT_FOUND', 404); const [{ count }] = await db `select count(*)::int count from app.connection_requests where sender=${c.get('memberId')} and created_at>now()-interval '1 day'`; if (count >= 30)
         fail('REQUEST_LIMIT', 429); const requestId = b.id ?? crypto.randomUUID(); await db `insert into app.connection_requests(id,sender,recipient,kind,history) values(${requestId},${c.get('memberId')},${target.id},${b.kind},${b.history})`; await db `select app.notify(${target.id},'connection_request',null,null,null,${'request:' + requestId})`; return { id: requestId }; }), 201); });
-    app.post('/connections/requests/:id/accept', async (c) => { const b=await body(c,z.object({history:historyMode.default('future'),kind:z.enum(['friend','family']).default('friend')}).strict(),1024,true); return c.json(await tx(c,async db=>{const [r]=await db`select app.accept_connection_with_preferences(${id(c.req.param('id'))},${b.history},${b.kind}) as id`;return r;})); });
+    app.post('/connections/requests/:id/accept', async (c) => { const b=await body(c,z.object({history:historyMode.default('full'),kind:z.enum(['friend','family']).default('friend')}).strict(),1024,true); return c.json(await tx(c,async db=>{const [r]=await db`select app.accept_connection_with_preferences(${id(c.req.param('id'))},${b.history},${b.kind}) as id`;return r;})); });
     app.post('/connections/requests/:id/decline', async (c) => c.json(await tx(c, async (db) => { await db `update app.connection_requests set state=case when sender=${c.get('memberId')} then 'cancelled' else 'declined' end where id=${id(c.req.param('id'))} and state='pending'`; return { ok: true }; })));
     app.delete('/connections/:id', async (c) => c.json(await tx(c, async (db) => { await db `select app.change_connection(${id(c.req.param('id'))},null,true)`; return { ok: true }; })));
     app.put('/connections/:id/kind', async (c) => { const b = await body(c, z.object({ kind: z.enum(['friend', 'family']) })); return c.json(await tx(c, async (db) => { await db `select app.change_connection(${id(c.req.param('id'))},${b.kind},false)`; return { ok: true }; })); });
@@ -266,20 +283,16 @@ export function createSocialRoutes() {
     app.get('/feed', async (c) => {
         const after = cursor(c.req.query('cursor'));
         return c.json(await tx(c, async (db) => page(await db`
-            select p.*,h.handle as author_handle from app.posts p
+            select p.*,app.author_category(p.author_id) as author_category,h.handle as author_handle from app.posts p
             left join lateral app.member_handles(array[p.author_id]) h on true
-            where p.group_id is null and p.author_id=any(array(
-                select app.actor() union all
-                select member_b from app.connections where member_a=app.actor() union all
-                select member_a from app.connections where member_b=app.actor()
-            )) and not exists(select from app.mutes where target=p.author_id)
+            where p.group_id is null and not exists(select from app.mutes where target=p.author_id)
             ${after ? db`and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db``}
             order by p.created_at desc,p.id desc limit 31
         `)));
     });
     app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.author_id=${id(c.req.param('id'))} and p.group_id is null ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.post('/posts', async (c) => {
-        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]), on_behalf_of: uuid.nullable().default(null) }));
+        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]), photo_dates:z.array(attachmentDateProof).max(10).default([]), on_behalf_of: uuid.nullable().default(null) }));
         return c.json(await tx(c, async (db) => {
             const e = b.envelope.context;
             id(e.id);
@@ -287,6 +300,7 @@ export function createSocialRoutes() {
             if (existing) {
                 if (canonicalJson(existing.envelope) !== canonicalJson(b.envelope) || existing.on_behalf_of !== b.on_behalf_of)
                     fail('CONFLICT', 409);
+                for(const proof of b.photo_dates){const [saved]=await db`select proof from app.attachment_photo_dates where media_id=${proof.statement.mediaId}`;if(canonicalJson(saved?.proof??null)!==canonicalJson(proof))fail('CONFLICT',409);}
                 return { id: e.id };
             }
             if (e.parentId !== null)
@@ -298,6 +312,8 @@ export function createSocialRoutes() {
                 await db `insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
             if(b.on_behalf_of)await db`update app.posts set on_behalf_of=${b.on_behalf_of} where id=${e.id}`;
             await attachMedia(db, c.get('memberId'), e.id, b.media_ids);
+            if(new Set(b.photo_dates.map(p=>p.statement.mediaId)).size!==b.photo_dates.length)fail('ENVELOPE_CONTEXT');
+            for(const proof of b.photo_dates){if(proof.statement.postId!==e.id||!b.media_ids.includes(proof.statement.mediaId))fail('ENVELOPE_CONTEXT');await setAttachmentDate(db,c.get('memberId'),proof,fail);}
             return { id: e.id };
         }), 201);
     });
@@ -308,7 +324,7 @@ export function createSocialRoutes() {
         return c.json(await tx(c,async db=>{
             await db`select app.lock_epoch()`;
             const rows=await db`select p.* from app.posts p where p.author_id=app.actor()
-                and p.group_id is null and p.audience in('connections','friends','family')
+                and p.group_id is null and p.audience in('connections','friends','family','community','extended_family')
                 ${after?db`and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)`:db``}
                 and exists(select from app.history_audience_devices(p.id) d where
                     not exists(select from app.post_recipients r where r.post_id=p.id and r.device_id=d.id and r.member_id=d.member_id)
@@ -328,7 +344,7 @@ export function createSocialRoutes() {
             await writeAllowed(db);
             const source=await requirePost(db,id(c.req.param('id')),true),e=b.envelope.context,old=source.envelope.context;
             if(source.author_id!==c.get('memberId'))fail('FORBIDDEN',403);
-            if(source.group_id!==null||!['connections','friends','family'].includes(source.audience)
+            if(source.group_id!==null||!['connections','friends','family','community','extended_family'].includes(source.audience)
                 ||e.id!==source.id||e.authorId!==old.authorId||e.createdAt!==old.createdAt
                 ||e.audience!==old.audience||e.groupId!==old.groupId||e.parentId!==old.parentId
                 ||e.revision!==b.source_revision+1)fail('ENVELOPE_CONTEXT');
@@ -516,7 +532,7 @@ export function createSocialRoutes() {
             fail('ENVELOPE_CONTEXT');
     } await db `insert into app.reports(id,reporter,target_member,target_id,reason,evidence_envelope,evidence_disclosed) values(${reportId},${c.get('memberId')},${b.target_member},${b.target_id},${b.reason},${b.evidence_envelope ? db.json(b.evidence_envelope) : null},${b.evidence_disclosed})`; return { id: reportId }; }), 201); });
     registerExportRoutes(app, { tx, recent, fail, id });
-    app.post('/imports', async (c) => { recent(c); const b = await body(c, z.object({ id: uuid, profile: envelopeBody.optional(), posts: z.array(envelopeBody.extend({ source_id: z.string().max(200), media_ids: z.array(uuid).max(10).default([]) })).max(50) })); return c.json(await tx(c, async (db) => { await writeAllowed(db); if (b.profile) {
+    app.post('/imports', async (c) => { recent(c); const b = await body(c, z.object({ id: uuid, profile: envelopeBody.optional(), posts: z.array(envelopeBody.extend({ source_id: z.string().max(200), photo_dates:z.array(attachmentDateProof).max(10).default([]), media_ids: z.array(uuid).max(10).default([]) })).max(50) })); return c.json(await tx(c, async (db) => { await writeAllowed(db); if (b.profile) {
         await checkEnvelope(db, c.get('memberId'), b.profile.envelope, 'profile', { allowPast: true });
         if (b.profile.envelope.context.id !== c.get('memberId'))
             fail('ENVELOPE_CONTEXT');
@@ -533,6 +549,8 @@ export function createSocialRoutes() {
         const inserted = await db `insert into app.posts(id,author_id,audience,envelope,epoch,created_at,expires_at,import_source) values(${e.id},${c.get('memberId')},'only_me',${db.json(item.envelope)},${e.epoch},${e.createdAt},${e.expiresAt},${item.source_id}) on conflict do nothing`;
         if (inserted.count === 1) {
             await attachMedia(db, c.get('memberId'), e.id, item.media_ids);
+            if(new Set(item.photo_dates.map(p=>p.statement.mediaId)).size!==item.photo_dates.length)fail('ENVELOPE_CONTEXT');
+            for(const proof of item.photo_dates){if(proof.statement.postId!==e.id||!item.media_ids.includes(proof.statement.mediaId))fail('ENVELOPE_CONTEXT');await setAttachmentDate(db,c.get('memberId'),proof,fail);}
             for (const r of item.envelope.recipients)
                 await db `insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
             imported.push(e.id);

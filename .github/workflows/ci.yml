@@ -43,6 +43,10 @@ jobs:
       - run: npm run typecheck
       - run: node scripts/prepare-test-databases.ts
       - run: npm test
+      - name: Verify photo migrations with the preserved production schema
+        run: npx vitest run apps/api/test/independent-photos.database.test.ts apps/api/test/independent-photos.http.test.ts
+        env:
+          PHOTO_TEST_SCHEMA: without-052-057
       - run: npx playwright install --with-deps chromium
       - run: node scripts/check-photo-calendar.mjs
       - run: npm run build

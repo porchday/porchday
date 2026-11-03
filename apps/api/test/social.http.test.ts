@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
 import { Hono } from 'hono';
 import postgres, { type Sql } from 'postgres';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { randomUUID, createHash } from 'node:crypto';
 import { generateDeviceKeys, unlockPrivateKey, encryptObject, decryptObject, signStatement, authorizeDevice, createReactionSecret, reactionTag, type UnlockedPrivateKey, type ContentContext } from '@porchday/crypto';
 import { createSocialRoutes } from '../src/social';
@@ -13,6 +13,9 @@ import { requestTimingMiddleware } from '../src/request-timing';
 const url = process.env.SOCIAL_HTTP_DATABASE_URL;
 const suite = url ? describe : describe.skip;
 let sql: Sql;
+let admin: Sql;
+let databaseName: string;
+let isolatedDatabaseUrl: string;
 let app: Hono<{
     Bindings: Env;
     Variables: Variables;
@@ -36,14 +39,26 @@ const memoryBucket={
 async function request(member: string, path: string, method = 'GET', value?: unknown) { const init: RequestInit = { method, headers: { 'x-test-member': member, ...(value ? { 'content-type': 'application/json' } : {}) }, ...(value ? { body: JSON.stringify(value) } : {}) }; const response = await app.request('https://porchday.test' + path, init, env); const data = await response.json(); if (response.status >= 500)
     throw Error(JSON.stringify({ path, status: response.status, data })); return { status: response.status, data }; }
 async function person() { const id = randomUUID(), deviceId = randomUUID(); await sql `insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`; await sql `insert into app.profiles(member_id,handle) values(${id},${'t_' + id.replaceAll('-', '').slice(0, 20)})`; const keys = await generateDeviceKeys(id, deviceId); const recovery = await generateDeviceKeys(id, 'recovery', keys.recoverySecret); const { status } = await request(id, '/devices', 'POST', { id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, authorization: { type: 'initial' }, recovery_public_key: recovery.publicKey, backup: { v: 1, devices: [{ id: deviceId, public_key: keys.publicKey, fingerprint: keys.fingerprint, encrypted_private_key: keys.encryptedPrivateKey }], recovery: { public_key: recovery.publicKey, fingerprint: recovery.fingerprint, encrypted_private_key: recovery.encryptedPrivateKey } } }); expect(status).toBe(201); return { id, deviceId, key: await unlockPrivateKey(keys.encryptedPrivateKey, keys.recoverySecret), publicKey: keys.publicKey }; }
-async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST', {kind})).status).toBe(200); }
+async function connection(a: Person, b: Person, kind: 'friend' | 'family' = 'friend', history: 'full' | 'future' | null = 'future') { const [r] = await sql `select handle from app.profiles where member_id=${b.id}`; const create = await request(a.id, '/connections/requests', 'POST', { handle: r.handle, kind, ...(history ? {history} : {}) }); expect(create.status).toBe(201); expect((await request(b.id, `/connections/requests/${create.data.id}/accept`, 'POST', {kind, ...(history ? {history} : {})})).status).toBe(200); }
 async function seal(a: Person, payload: unknown, override: Partial<ContentContext> = {}, postId?: string) { const audience = override.audience ?? 'connections'; const snap = await request(a.id, `/audiences?audience=${audience}${override.groupId ? '&group_id=' + override.groupId : ''}${postId ? '&post_id=' + postId : ''}`); expect(snap.status).toBe(200); const context: ContentContext = { id: randomUUID(), kind: 'post', authorId: a.id, authorDeviceId: a.deviceId, audience, parentId: null, groupId: null, epoch: snap.data.epoch, createdAt: new Date().toISOString(), expiresAt: null, revision: 1, ...override, epoch: snap.data.epoch }; return encryptObject({ context, payload, signingKey: a.key, recipients: snap.data.devices.map((d: any) => ({ memberId: d.member_id, deviceId: d.id, publicKey: d.public_key })) }); }
 suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
-    beforeAll(async () => { if (!url || !new URL(url).pathname.includes('test'))
-        throw Error('Only disposable test database'); sql = postgres(url, { prepare: false, max: 4, onnotice: () => { } }); await sql `drop schema if exists app cascade`; for (const name of ['001_social.sql', '002_social_functions_roles.sql', '003_device_trust.sql', '005_social_hardening.sql', '006_integrations.sql', '008_revocation_deletion.sql', '009_runtime_locks.sql', '010_social_integrity.sql', '011_lock_order.sql', '012_integration_clients.sql', '013_audience_members.sql', '016_group_signatures.sql', '017_private_media_storage.sql', '018_paged_exports.sql', '019_export_validation.sql', '021_social_history.sql', '022_suspended_data_rights.sql','023_paged_integrations.sql', '026_bounded_export_windows.sql'])
-        await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); for (const name of ['034_feed_candidates.sql', '035_surface_media_removal.sql', '036_media_raw_digest.sql', '037_media_upload_cleanup.sql', '038_integration_expiry_limits.sql', '041_deletion_pass_health.sql', '043_friends_audience.sql']) await sql.unsafe(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')); await sql.unsafe(`CREATE TABLE app.test_history_journal(decision jsonb NOT NULL); CREATE FUNCTION app.append_safety_decision(decision jsonb) RETURNS void LANGUAGE sql SECURITY DEFINER SET search_path=pg_catalog,app AS $$ INSERT INTO app.test_history_journal VALUES(decision) $$;`); for (const name of ['045_emoji_library.sql','046_connection_history.sql','047_independent_connection_labels.sql','059_photo_calendar.sql']) await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8')); await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(url); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
-    afterAll(async () => { if (sql)
-        await sql.end(); });
+    beforeAll(async () => {
+        if (!url || !new URL(url).pathname.includes('test') || !['localhost','127.0.0.1'].includes(new URL(url).hostname))
+            throw Error('Only disposable loopback test databases');
+        const adminUrl=new URL(url);adminUrl.pathname="/postgres";
+        admin=postgres(adminUrl.href,{prepare:false,max:1,onnotice:()=>{}});
+        databaseName='porchday_social_http_test_'+randomUUID().replaceAll('-','');
+        await admin.unsafe('CREATE DATABASE '+databaseName);
+        const isolated=new URL(url);isolated.pathname='/'+databaseName;isolatedDatabaseUrl=isolated.href;
+        sql=postgres(isolated.href,{prepare:false,max:4,onnotice:()=>{}});
+        for (const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())
+            await sql.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+        await sql.unsafe('CREATE VIEW app.test_history_journal AS SELECT decision FROM app.safety_journal');
+        await sql.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_http_runtime') THEN CREATE ROLE porchday_http_runtime LOGIN PASSWORD 'porchday-test-social' IN ROLE porchday_social; END IF; END $$"); const runtime = new URL(isolated); runtime.username = 'porchday_http_runtime'; runtime.password = 'porchday-test-social'; env = { HYPERDRIVE_SOCIAL: { connectionString: runtime.href }, MEDIA: memoryBucket } as unknown as Env; app = new Hono(); app.route('/integration/v1', createIntegrationTokenRoutes()); app.route('/integration', createIntegrationTokenRoutes()); app.use('*', async (c, next) => { c.set('memberId', c.req.header('x-test-member')!); c.set('authTime', Date.now()); await next(); }); app.route('/', createSocialRoutes()); app.route('/', createIntegrationConsentRoutes()); }, 30000);
+    afterAll(async () => {
+        if(sql)await sql.end();
+        if(admin){if(databaseName)await admin.unsafe('DROP DATABASE IF EXISTS '+databaseName+' WITH (FORCE)');await admin.end();}
+    });
     it('bootstraps only the same authorized roster as devices, preserving the ordinary me shape', async () => {
         const viewer = await person(), unrelated = await person();
         const ordinary = (await request(viewer.id, '/me')).data;
@@ -99,21 +114,21 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         ]);
         expect((await request(viewer.id, '/groups/' + group.context.id + '/posts')).data.items).toEqual([]);
     }, 60000);
-    it('keeps labels private and directional across requests, acceptance, audiences and immediate changes', async()=>{
+    it('keeps raw labels directional while exposing the mutual-family summary across changes', async()=>{
         const a=await person(),b=await person(),outsider=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
         const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'family',history:'full'});
         expect(pending.status).toBe(201);
         expect((await request(a.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id)).toMatchObject({kind:'family'});
         expect((await request(b.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id)).toMatchObject({kind:null});
-        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST');
+        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{history:'future'});
         expect(accepted.status).toBe(200);const edge=accepted.data.id;
         const own=async(p:Person)=>(await request(p.id,'/connections')).data.items.find((r:any)=>r.id===edge);
         const aEdge=await own(a),bEdge=await own(b);
-        expect(aEdge).toMatchObject({kind:'family',own_history:'full',peer_history:'future'});
-        expect(bEdge).toMatchObject({kind:'friend',own_history:'future',peer_history:'full'});
+        expect(aEdge).toMatchObject({kind:'family',mutual_family:false,own_history:'full',peer_history:'future'});
+        expect(bEdge).toMatchObject({kind:'friend',mutual_family:false,own_history:'future',peer_history:'full'});
         for(const row of [aEdge,bEdge]) {
-            expect(Object.keys(row).sort()).toEqual(['id','member_a','member_b','accepted_at','kind','own_history','peer_history'].sort());
+            expect(Object.keys(row).sort()).toEqual(['id','member_a','member_b','accepted_at','kind','mutual_family','own_history','peer_history'].sort());
         }
         expect((await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'family',history:'full'})).status).toBe(200);
         expect(await own(b)).toMatchObject({kind:'friend',own_history:'future'});
@@ -125,6 +140,7 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(a.id,'/posts/'+reverse.context.id)).status).toBe(200);
         const stale=await seal(b,{text:'Old friends snapshot'},{audience:'friends'});
         expect((await request(b.id,'/connections/'+edge+'/kind','PUT',{kind:'family'})).status).toBe(200);
+        expect((await own(a)).mutual_family).toBe(true);expect((await own(b)).mutual_family).toBe(true);
         expect((await request(b.id,'/posts','POST',{envelope:stale})).status).toBe(409);
         expect((await request(a.id,'/posts/'+reverse.context.id)).status).toBe(404);
         expect((await request(b.id,'/posts/'+family.context.id)).status).toBe(200);
@@ -142,19 +158,19 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
     it('lets an accepting member choose Family independently of the sender’s Friend label',async()=>{
         const a=await person(),b=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
-        const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend'});
+        const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend',history:'future'});
         const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{kind:'family',history:'full'});
         expect(accepted.status).toBe(200);
         expect((await request(a.id,'/connections')).data.items.find((r:any)=>r.id===accepted.data.id)).toMatchObject({kind:'friend',own_history:'future'});
         expect((await request(b.id,'/connections')).data.items.find((r:any)=>r.id===accepted.data.id)).toMatchObject({kind:'family',own_history:'full'});
     },60000);
-    it('keeps history consent directional, defaults old clients to future, and resets it on reconnect', async()=>{
+    it('keeps explicit history consent directional and defaults new connections to full history', async()=>{
         const a=await person(),b=await person(),outsider=await person();
         const [profile]=await sql`select handle from app.profiles where member_id=${b.id}`;
         const pending=await request(a.id,'/connections/requests','POST',{handle:profile.handle,kind:'friend',history:'full'});
         expect(pending.status).toBe(201);
         expect((await request(b.id,'/connections')).data.requests.find((r:any)=>r.id===pending.data.id).history).toBe('full');
-        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST');
+        const accepted=await request(b.id,'/connections/requests/'+pending.data.id+'/accept','POST',{history:'future'});
         expect(accepted.status).toBe(200);const edge=accepted.data.id;
         const own=async(p:Person)=>(await request(p.id,'/connections')).data.items.find((r:any)=>r.id===edge);
         expect(await own(a)).toMatchObject({own_history:'full',peer_history:'future'});
@@ -169,8 +185,8 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect(await own(a)).toMatchObject({own_history:'future',peer_history:'full'});
         expect((await sql`select decision from app.test_history_journal where decision->>'action'='connection' and decision->>'a'=${[a.id,b.id].sort()[0]} and decision->>'b'=${[a.id,b.id].sort()[1]}`)).toHaveLength(1);
         expect((await request(a.id,'/connections/'+edge,'DELETE')).status).toBe(200);
-        await connection(a,b);
-        expect((await request(a.id,'/connections')).data.items[0]).toMatchObject({own_history:'future',peer_history:'future'});
+        await connection(a,b,'friend',null);
+        expect((await request(a.id,'/connections')).data.items[0]).toMatchObject({own_history:'full',peer_history:'full'});
     },60000);
     it('refreshes author-signed history and immutable photos only for consented audiences, retaining original dates and hiding old children',async()=>{
         const owner=await person(),oldFriend=await person(),full=await person(),future=await person(),relative=await person(),outsider=await person();
@@ -238,6 +254,38 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(owner.id,'/blocks/'+full.id,'DELETE')).status).toBe(200);
         await connection(owner,full);
         expect((await request(owner.id,'/posts/'+postId+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===full.id)).toBe(false);
+    },90000);
+    it('shares old circle posts by the current graph independently of direct future-only history choices',async()=>{
+        for(const audience of ['community','extended_family'] as const){
+            const owner=await person(),bridge=await person(),newcomer=await person(),outsider=await person();
+            await connection(owner,bridge,'family','future');
+            const payload={text:'Circle history before the second hop'};
+            const original=await seal(owner,payload,{audience});
+            expect((await request(owner.id,'/posts','POST',{envelope:original})).status).toBe(201);
+            await connection(bridge,newcomer,'family','future');
+            // The author must first encrypt history to the newly eligible device.
+            expect((await request(newcomer.id,'/posts/'+original.context.id)).status).toBe(404);
+            expect((await request(owner.id,'/posts/audience-refresh')).data.items.map((p:any)=>p.id)).toContain(original.context.id);
+            const snap=(await request(owner.id,'/posts/'+original.context.id+'/audience-refresh/audience')).data;
+            expect(snap.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,bridge.id,newcomer.id].sort());
+            const envelope=await encryptObject({context:{...original.context,epoch:snap.epoch,revision:2},payload,signingKey:owner.key,recipients:snap.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+            const lifecycle=await signStatement({purpose:'porchday-lifecycle',id:original.context.id,revision:2,expiresAt:null},owner.key);
+            expect((await request(owner.id,'/posts/'+original.context.id+'/audience-refresh','POST',{envelope,lifecycle,source_revision:1,source_expires_at:null,source_media_ids:[],media_ids:[]})).status).toBe(200);
+            const detail=await request(newcomer.id,'/posts/'+original.context.id);
+            expect(detail.status).toBe(200);
+            expect(await decryptObject({envelope:detail.data.post.envelope,expectedContext:envelope.context,privateKey:newcomer.key,authorPublicKey:owner.publicKey})).toEqual(payload);
+            expect((await request(outsider.id,'/posts/'+original.context.id)).status).toBe(404);
+            if(audience==='extended_family'){
+                const edge=(await request(bridge.id,'/connections')).data.items.find((r:any)=>[r.member_a,r.member_b].includes(newcomer.id));
+                expect((await request(bridge.id,'/connections/'+edge.id+'/kind','PUT',{kind:'friend'})).status).toBe(200);
+                expect((await request(newcomer.id,'/posts/'+original.context.id)).status).toBe(404);
+                expect((await request(owner.id,'/posts/'+original.context.id+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===newcomer.id)).toBe(false);
+            }else{
+                expect((await request(owner.id,'/blocks/'+newcomer.id,'PUT')).status).toBe(200);
+                expect((await request(newcomer.id,'/posts/'+original.context.id)).status).toBe(404);
+                expect((await request(owner.id,'/posts/'+original.context.id+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===newcomer.id)).toBe(false);
+            }
+        }
     },90000);
     it('rejects stale history snapshots, source revisions and expired posts without changing their grants',async()=>{
         const a=await person(),b=await person();
@@ -356,7 +404,7 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         const envelope=await seal(a,{mime:'image/jpeg',bytes:'c2FtcGxl',alt:'Deleted stream fixture'},{id:mediaId,kind:'media',parentId:a.id});
         const bytes=new TextEncoder().encode(JSON.stringify(envelope)),key='media/'+a.id+'/'+mediaId;
         expect((await request(a.id,'/media','POST',{id:mediaId,envelope,byte_size:bytes.length})).status).toBe(201);
-        const jobs={HYPERDRIVE_JOBS:{connectionString:url!},MEDIA:memoryBucket} as unknown as Env;
+        const jobs={HYPERDRIVE_JOBS:{connectionString:isolatedDatabaseUrl},MEDIA:memoryBucket} as unknown as Env;
         const intercepted=vi.spyOn(memoryBucket,'put').mockImplementation(async(k,body)=>{
             const buffered=await new Response(body).arrayBuffer();
             await sql`delete from app.media_assets where id=${mediaId}`;
