@@ -36,6 +36,14 @@ describe('HTTP privacy operations retain one awaited durability lifecycle',()=>{
   });
   env={ENVIRONMENT:'production',RECOVERY_JOURNAL:store,HYPERDRIVE_JOBS:{connectionString:'synthetic-not-connected'}} as unknown as Env;
  });
+ it('preserves legacy waiting while only the admission recovery reader is enabled',async()=>{
+  vi.useFakeTimers();env.JOURNAL_LATENCY_RECOVERY_V1='true';env.JOURNAL_LATENCY_WRITER_V1='false';env.PRIVACY_COMMIT_RECOVERY_V1='true';
+  try{
+   const result=withHttpPrivacyJournal({env,executionCtx:execution()},async()=>{await new Promise(resolve=>setTimeout(resolve,35000));return 42;});
+   await vi.advanceTimersByTimeAsync(35001);expect(await result).toBe(42);
+   expect((await readJournalControl(store)).value.pending).toHaveLength(0);
+  }finally{vi.useRealTimers();}
+ });
  it('publishes an exact auth scope before work only with explicit opt-in',async()=>{
   env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';
   await withHttpAuthPrivacyJournal({env,executionCtx:execution()},async scope=>{

@@ -97,15 +97,26 @@ describe('bounded journal transport recovery',()=>{
    else await expect(assertJournalReadable(store,db)).resolves.toBeDefined();
    rejectRead(Error('synthetic delayed R2 read failure'));
    const result=await completion,control=(await readJournalControl(store)).value;
-   expect(codes).toEqual(['journal_r2_read_retry']);expect(delays).toEqual([1000]);
+   expect(codes).toEqual(elapsed>10000?['journal_io_exhausted']:['journal_r2_read_retry']);expect(delays).toEqual(elapsed>10000?[]:[1000]);
    expect(result.ok).toBe(elapsed<120000);
-   if(elapsed>120000){expect(result.error).toBe('RESTORE_QUARANTINED');expect(control.mode).toBe('quarantine');expect(control.pending).toEqual([intent]);expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(false);}
+   if(elapsed>120000){expect(result.error).toBe('JOURNAL_STORE_READ_FAILED');expect(control.mode).toBe('quarantine');expect(control.pending).toEqual([intent]);expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(false);}
    else{expect(control.mode).toBe('active');expect(control.pending).toEqual([]);expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(true);}
   }finally{vi.useRealTimers();}
  });
  it('stops starting retries after the elapsed budget without turning a failure into success',async()=>{
   const {store,io,advance,delays}=await setup();let calls=0;
   store.get=async()=>{calls++;advance(10001);throw Error('slow failed read');};
-  await expect(io.store.get('control.json')).rejects.toThrow();expect(calls).toBe(2);expect(delays).toEqual([1000]);
+  await expect(io.store.get('control.json')).rejects.toThrow();expect(calls).toBe(1);expect(delays).toEqual([]);
  });
+});
+
+it('bounds the initial R2 call without retrying a still-running operation',async()=>{
+ vi.useFakeTimers();try{
+  const {store,db}=await setup(),get=vi.fn(()=>new Promise<null>(()=>{}));store.get=get;
+  const codes:string[]=[];const io=resilientJournalIO(store,db,{report:c=>codes.push(c)});
+  const failed=expect(io.store.get('control.json')).rejects.toThrow('JOURNAL_IO_DEADLINE');
+  await vi.advanceTimersByTimeAsync(5000);await failed;
+  await expect(io.store.get('control.json')).rejects.toThrow('JOURNAL_IO_DEADLINE');
+  expect(get).toHaveBeenCalledTimes(1);expect(codes).toEqual(['journal_io_deadline','journal_io_deadline']);
+ }finally{vi.useRealTimers();}
 });

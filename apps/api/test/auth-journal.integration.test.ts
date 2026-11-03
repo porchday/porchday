@@ -8,9 +8,12 @@ import { Hono } from "hono";
 import { hashPassword } from "better-auth/crypto";
 import { createOTP } from "@better-auth/utils/otp";
 import { base32 } from "@better-auth/utils/base32";
-import { hashToken } from "../src/auth";
+import { hashToken,authPool } from "../src/auth";
 import { authRoutes } from "../src/auth-routes";
 import {
+  assertJournalReadable,
+  withPrivacyJournal,
+  checkpointPrivacyJournal,
   initializePrivacyJournal,
   readJournalControl,
   detectStalePrivacyIntents,
@@ -649,6 +652,50 @@ suite("Authenticated account privacy journal boundary", () => {
       expect(row.value).not.toContain(p.email);
     }
   });
+  it('recovers a partially completed multi-step callback with the latency writer disabled',async()=>{
+    const p=await person(),store=await journal(p.id),old={writer:env.PRIVACY_COMMIT_WRITER_V1,recovery:env.PRIVACY_COMMIT_RECOVERY_V1,latency:env.JOURNAL_LATENCY_RECOVERY_V1,latencyWriter:env.JOURNAL_LATENCY_WRITER_V1};
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';env.JOURNAL_LATENCY_RECOVERY_V1='true';env.JOURNAL_LATENCY_WRITER_V1='true';
+    const pool=authPool(env);
+    try{
+      await expect(withPrivacyJournal(env,async()=>{
+        await pool.query('delete from public.auth_session where "userId"=$1',[p.id]);
+        throw Error('SYNTHETIC_AFTER_FIRST_TRANSACTION');
+      })).rejects.toThrow('SYNTHETIC_AFTER_FIRST_TRANSACTION');
+      expect((await readJournalControl(store)).value.pending).toHaveLength(1);
+      env.JOURNAL_LATENCY_WRITER_V1='false';
+      const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+600001);
+      try{await checkpointPrivacyJournal(env);}finally{clock.mockRestore();}
+      expect((await readJournalControl(store)).value).toMatchObject({mode:'active',pending:[]});
+      expect((await owner.query('select 1 from public.auth_session where "userId"=$1',[p.id])).rowCount).toBe(0);
+    }finally{await pool.end();env.PRIVACY_COMMIT_WRITER_V1=old.writer;env.PRIVACY_COMMIT_RECOVERY_V1=old.recovery;env.JOURNAL_LATENCY_RECOVERY_V1=old.latency;env.JOURNAL_LATENCY_WRITER_V1=old.latencyWriter;}
+  });
+  it.each([false,true])('uses fenced auth admission and recovers a stalled completion read (stall: %s)',async stall=>{
+    const p=await person(),store=await journal(p.id),old={writer:env.PRIVACY_COMMIT_WRITER_V1,recovery:env.PRIVACY_COMMIT_RECOVERY_V1,latency:env.JOURNAL_LATENCY_RECOVERY_V1,latencyWriter:env.JOURNAL_LATENCY_WRITER_V1};
+    env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';env.JOURNAL_LATENCY_RECOVERY_V1='true';env.JOURNAL_LATENCY_WRITER_V1='true';
+    const get=store.get.bind(store);let stalled=false;
+    store.get=async key=>{
+      const object=await get(key);
+      if(stall&&!stalled&&key==='control.json'&&object){
+        const pending=JSON.parse(await object.text()).pending;
+        if(pending.length&&(await owner.query('select 1 from app.privacy_operation_commits where operation_id=$1',[pending[0].id])).rowCount){stalled=true;return new Promise(()=>{});}
+      }
+      return object;
+    };
+    try{
+      const started=performance.now(),result=await call('change-password',{currentPassword:p.password,newPassword:'synthetic-fenced-commit-password'},p.cookie);
+      expect(result.response.status).toBe(stall?503:200);expect(performance.now()-started).toBeLessThan(12000);
+      const control=(await readJournalControl(store)).value;
+      if(stall){
+        expect(stalled).toBe(true);expect(control.pending).toHaveLength(1);
+        const clock=vi.spyOn(Date,'now').mockReturnValue(Date.now()+600001);
+        const db:JournalDatabase={status:async()=>(await owner.query('select app.safety_status() as value')).rows[0].value,page:async after=>(await owner.query('select app.safety_page($1::bigint,200) as value',[after])).rows[0].value};
+        try{await expect(assertJournalReadable(store,db,undefined,true)).resolves.toBeDefined();}finally{clock.mockRestore();}
+      }
+      expect((await readJournalControl(store)).value).toMatchObject({mode:'active',pending:[]});
+      const admission=await owner.query('select 1 from app.privacy_operation_admissions where terminal_sequence is not null and claimed_xid is not null');expect(admission.rowCount).toBeGreaterThan(0);
+      expect((await owner.query('select 1 from public.auth_session where "userId"=$1',[p.id])).rowCount).toBe(0);
+    }finally{env.PRIVACY_COMMIT_WRITER_V1=old.writer;env.PRIVACY_COMMIT_RECOVERY_V1=old.recovery;env.JOURNAL_LATENCY_RECOVERY_V1=old.latency;env.JOURNAL_LATENCY_WRITER_V1=old.latencyWriter;store.get=get;}
+  },15000);
   it('independently proves the atomic auth commit after receipt publication fails',async()=>{
     const p=await person(),store=await journal(p.id),previous=env.PRIVACY_COMMIT_WRITER_V1,previousRecovery=env.PRIVACY_COMMIT_RECOVERY_V1;
     env.PRIVACY_COMMIT_WRITER_V1='true';env.PRIVACY_COMMIT_RECOVERY_V1='true';store.failPrefix='receipts/';
