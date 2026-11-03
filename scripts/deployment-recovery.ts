@@ -42,7 +42,7 @@ export function deploymentPlanHash(plan:DeploymentPlan):string{
   ||(target.frontend?typeof plan.backendVersion!=='string'||!id.test(plan.backendVersion)||typeof plan.backendReaderFloor!=='string'||!id.test(plan.backendReaderFloor):plan.backendVersion!==undefined||plan.backendReaderFloor!==undefined))throw new RecoveryError('DEPLOYMENT_PLAN_OR_ROLLBACK_FLOOR_INVALID');
  return createHash('sha256').update(JSON.stringify({operationId:plan.operationId,worker:plan.worker,candidateVersion:plan.candidateVersion,candidateSource:plan.candidateSource,baselineVersion:plan.baselineVersion,baselineDeploymentId:plan.baselineDeploymentId,compatibleRollbackVersions:[...new Set(plan.compatibleRollbackVersions)].sort(),evidenceDigest:plan.evidenceDigest,...(target.frontend?{backendVersion:plan.backendVersion,backendReaderFloor:plan.backendReaderFloor}:{}),...(plan.assetManifests?{assetManifests:{candidate:plan.assetManifests.candidate,baseline:plan.assetManifests.baseline}}:{})})).digest('hex');
 }
-export const phaseTransitions:Record<Phase,readonly Phase[]>={prepared:['activation-intent'],'activation-intent':['candidate-observed'],'candidate-observed':['complete','rollback-intent'],'rollback-intent':['rolled-back'],complete:[],'rolled-back':[]};
+export const phaseTransitions:Record<Phase,readonly Phase[]>={prepared:['activation-intent'],'activation-intent':['candidate-observed'],'candidate-observed':['complete','rollback-intent'],'rollback-intent':['rolled-back'],complete:['rollback-intent'],'rolled-back':[]};
 export function validateRecoveryState(value:unknown):asserts value is RecoveryState{
  const x=value as RecoveryState;
  if(!x||x.v!==1||!Number.isSafeInteger(x.revision)||x.revision<1||! /^[a-f0-9]{64}$/.test(x.planHash)||!Object.hasOwn(phaseTransitions,x.phase)||Object.keys(x).some(k=>!['v','revision','planHash','phase','candidateDeploymentId','rollbackDeploymentId'].includes(k))||x.candidateDeploymentId!==undefined&&!id.test(x.candidateDeploymentId)||x.rollbackDeploymentId!==undefined&&!id.test(x.rollbackDeploymentId))throw new RecoveryError('DEPLOYMENT_JOURNAL_INVALID');
@@ -82,7 +82,7 @@ export function rollbackOperationId(operationId:string):string{
 }
 
 /** Resume with the same plan/journal after interruption. An existing intent is never sent again. */
-export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>;monitorRecoveryObservation?:boolean;promotionAllowed?:()=>boolean}={}):Promise<RecoveryResult>{
+export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJournal,ports:DeploymentPorts,options:{sleep?:(ms:number)=>Promise<void>;monitorRecoveryObservation?:boolean;promotionAllowed?:()=>boolean;rollbackUnfinalizedComplete?:boolean}={}):Promise<RecoveryResult>{
  if(options.monitorRecoveryObservation!==undefined&&(options.monitorRecoveryObservation!==true||!recoveryTarget(plan.worker).monitor))throw new RecoveryError('DEPLOYMENT_MONITOR_RECOVERY_SCOPE_INVALID');
  const monitorRecoveryObservation=options.monitorRecoveryObservation===true;
  const promotionAllowed=options.promotionAllowed??(()=>true);
@@ -108,7 +108,10 @@ export async function recoverDeployment(plan:DeploymentPlan,journal:RecoveryJour
   if(original(observed))return 'activation-unconfirmed';if(!candidate(observed))return 'concurrent-change';
   await advance('candidate-observed',{candidateDeploymentId:observed.deploymentId});
  }
- if(state!.phase==='candidate-observed'){
+ // An outer continuity failure may arrive after journey completion but before
+ // canonical finalization. Only an owning, unfinalized lease caller may opt in.
+ const lateRollback=state!.phase==='complete'&&options.rollbackUnfinalizedComplete===true&&!promotionAllowed();
+ if(state!.phase==='candidate-observed'||lateRollback){
   const observed=await observe();if(!observed)return 'observation-unavailable';if(!candidate(observed)||observed.deploymentId!==state!.candidateDeploymentId)return 'concurrent-change';
   let health:'healthy'|'unhealthy'|'unknown';try{health=promotionAllowed()?await bounded(monitorRecoveryObservation?120000:45000,signal=>ports.verify(plan.candidateVersion,signal)):'unhealthy';if(!promotionAllowed())health='unhealthy';}catch{health='unknown';}
   if(health!=='healthy'&&health!=='unhealthy')return 'verification-unavailable';

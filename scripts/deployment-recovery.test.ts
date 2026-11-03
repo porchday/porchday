@@ -126,3 +126,28 @@ it('snapshots the recovery budget option before asynchronous authorization',asyn
  f.ports.verify=vi.fn((_version,signal)=>new Promise(resolve=>{const timer=setTimeout(()=>resolve('healthy'),60000);signal.addEventListener('abort',()=>clearTimeout(timer),{once:true});}));
  const pending=recoverDeployment(plan,f.journal,f.ports,options);await vi.advanceTimersByTimeAsync(60001);expect(await pending).toBe('verification-unavailable');expect(f.ports.deploy).toHaveBeenCalledTimes(1);
 });
+
+describe('late continuity failure before finalization',()=>{
+ it('rolls back a completed controller only with explicit unfinalized ownership and a failed gate',async()=>{
+  const f=fixture();expect(await f.run()).toBe('complete');
+  expect(await recoverDeployment(plan,f.journal,f.ports,{promotionAllowed:()=>false})).toBe('complete');
+  expect(f.ports.deploy).toHaveBeenCalledTimes(1);
+  expect(await recoverDeployment(plan,f.journal,f.ports,{promotionAllowed:()=>true,rollbackUnfinalizedComplete:true})).toBe('complete');
+  expect(f.ports.deploy).toHaveBeenCalledTimes(1);
+  expect(await recoverDeployment(plan,f.journal,f.ports,{promotionAllowed:()=>false,rollbackUnfinalizedComplete:true})).toBe('rolled-back');
+  expect(f.ports.deploy).toHaveBeenCalledTimes(2);
+  expect(f.ports.verify).toHaveBeenLastCalledWith(plan.baselineVersion,expect.any(AbortSignal));
+  expect(await f.run()).toBe('rolled-back');expect(f.ports.deploy).toHaveBeenCalledTimes(2);
+ });
+ it('retains completion and sends nothing if rollback authorization fails',async()=>{
+  const f=fixture();await f.run();f.ports.authorize=vi.fn(async()=>{throw Error('FLOOR_CHANGED');});
+  await expect(recoverDeployment(plan,f.journal,f.ports,{promotionAllowed:()=>false,rollbackUnfinalizedComplete:true})).rejects.toThrow('FLOOR_CHANGED');
+  expect(f.journal.state?.phase).toBe('complete');expect(f.ports.deploy).toHaveBeenCalledTimes(1);
+ });
+ it('does not replay an ambiguous late rollback POST',async()=>{
+  const f=fixture();await f.run();const deploy=f.ports.deploy;
+  f.ports.deploy=vi.fn(async(...args)=>{await deploy(...args);throw Error('reply lost');});
+  expect(await recoverDeployment(plan,f.journal,f.ports,{promotionAllowed:()=>false,rollbackUnfinalizedComplete:true})).toBe('rolled-back');
+  expect(await f.run()).toBe('rolled-back');expect(f.ports.deploy).toHaveBeenCalledTimes(1);
+ });
+});
