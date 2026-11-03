@@ -408,6 +408,18 @@ try {
     ),
     false,
   );
+  await page.goto(`http://127.0.0.1:${server.address().port}/share`);
+  await page.getByRole('heading',{name:'Add Photos to this Post',exact:true}).waitFor();
+  await page.addStyleTag({content:await readFile('apps/web/src/retro.css','utf8')});
+  assert.equal(await page.locator('.app-mobile-header').getByRole('link').count(),1);
+  assert((await page.locator('.app-mobile-header').boundingBox()).height<=60);
+  assert((await page.getByRole('heading',{name:'Share',exact:true}).boundingBox()).height<=1);
+  const shortcut=page.getByRole('link',{name:'add photos directly',exact:true});
+  await page.locator('textarea').first().fill('Retained draft');
+  await shortcut.click();
+  await page.getByRole('button',{name:'Post',exact:true}).click();
+  assert.equal(await page.locator('textarea').first().inputValue(),'Retained draft');
+  assert.equal(await page.getByRole('button',{name:'Photos',exact:true}).count(),1);
   assert.deepEqual(errors, []);
   console.log(
     "Chromium calendar swipes/month boundaries, filters/highlights, video validation/upload/click-to-load playback, encrypted tag payload and child settings passed.",
