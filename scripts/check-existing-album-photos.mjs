@@ -7,12 +7,12 @@ const bundle=await build({stdin:{contents:`import React from 'react';import {cre
  const mocks={
  './vault':`export const useVault=()=>({member:{id:'me'}});`,
  './PhotoFeed':`import {useState} from 'react';export function usePhotos(month,enabled,owned){if(!owned)throw Error('Must filter own uploads');const [older,setOlder]=useState(false);return {entries:[{id:'first',kind:'photo',day:'2026-01-01',media:{},photo:{id:'first',grants:[]}},{id:'included',kind:'photo',day:'2025-01-01',media:{},photo:{id:'included',grants:[{album_id:'album'}]}},{id:'broken',kind:'photo',day:'2024-01-01',error:'missing'},...(older?[{id:'old',kind:'attachment',day:'2014-01-01',media:{},post:{id:'post'}}]:[])],next:older?null:'next',loaded:true,busy:false,error:'',load:async()=>setOlder(true)}}`,
- './Social':`import React from 'react';export const EncryptedPhoto=()=> <div className="fixture-photo">Photo</div>;`,
+ './Social':`import React from 'react';export const EncryptedPhoto=()=> <div className="calendar-thumbnail"><figure><img alt="Synthetic photo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='24'%3E%3Crect width='32' height='24' fill='green'/%3E%3C/svg%3E"/></figure></div>;`,
  './photo-album':`export async function addPhotoToAlbum(v,id,album){window.calls.push(id);await new Promise(r=>setTimeout(r,100));}`,
  './photo-adopt':`export async function adoptAttachment(v,post,id,day,album){window.calls.push(id);if(window.fail){window.fail=false;throw Error('Synthetic retry needed')}}`
  };b.onResolve({filter:/^\.\/(vault|PhotoFeed|Social|photo-album|photo-adopt)$/},args=>({path:args.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},args=>({contents:mocks[args.path],loader:'tsx',resolveDir:process.cwd()}));
 }}]});
-const css=await readFile('apps/web/src/styles.css','utf8');
+const css=(await readFile('apps/web/src/styles.css','utf8'))+'\n'+(await readFile('apps/web/src/retro.css','utf8'));
 const server=createServer((req,res)=>{res.setHeader('Content-Type','text/html');res.end(`<html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style></head><body><div id="root"></div><script>${bundle.outputFiles[0].text}</script></body></html>`)});await new Promise(r=>server.listen(0,'127.0.0.1',r));
 const browser=await chromium.launch();
 try{for(const width of [320,390,1200]){
