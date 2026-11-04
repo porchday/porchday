@@ -24,7 +24,7 @@ struct NativeAlbumsView: View {
             if busy { ProgressView() }; if !error.isEmpty { Text(error).foregroundStyle(.red) }
             if next != nil { Button("Load more albums") { Task { await load(more: true) } }.disabled(busy) }
         }.task { await load() }.refreshable { await load() }
-        .sheet(isPresented: $creating) { NavigationStack { Form { TextField("Album name", text: $name); Text("You’ll be the album-admin. Add people after creating it."); Button("Create album") { Task { busy = true; defer { busy = false }; await model.perform { let service = try NativePhotos(model); let context = NativePhotoContract.context(kind: "album", id: UUID().uuidString.lowercased(), parent: nil, audience: "only_me", album: nil, expiry: .null); let envelope = try await service.seal(.object(["name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "description": .string("")]), context: context); _ = try await service.request("/albums", method: "POST", body: .object(["envelope": envelope])); creating = false; name = ""; await load() } } }.disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 100) }.navigationTitle("Create album").toolbar { Button("Cancel") { creating = false }.disabled(busy) } } }
+        .sheet(isPresented: $creating) { NavigationStack { Form { TextField("Album name", text: $name); Text("You’ll be the album-admin. Add people after creating it."); Button("Create album") { Task { busy = true; defer { busy = false }; await model.perform { let service = try NativePhotos(model); let context = NativePhotoContract.context(kind: "album", id: UUID().uuidString.lowercased(), parent: nil, audience: "only_me", album: nil, expiry: .null); let envelope = try await service.seal(.object(["name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "description": .string("")]), context: context); _ = try await service.request("/albums", method: "POST", body: .object(["envelope": envelope])); creating = false; name = ""; await load() } } }.disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 200) }.navigationTitle("Create album").toolbar { Button("Cancel") { creating = false }.disabled(busy) } } }
     }
     private func load(more: Bool = false) async {
         busy = true; defer { busy = false }
@@ -83,7 +83,7 @@ struct NativeAlbumView: View {
                         Button("Add person") { Task { await change(target, role: role) } }.disabled(target.isEmpty)
                         Button("Share existing photos") { Task { await work { try await shareHistory() } } }
                         TextField("Album name", text: $name)
-                        Button("Save name") { Task { await work { try await saveMetadata(content.replacing("name", with: .string(name.trimmingCharacters(in: .whitespacesAndNewlines)))); await load() } } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 100)
+                        Button("Save name") { Task { await work { try await saveMetadata(content.replacing("name", with: .string(name.trimmingCharacters(in: .whitespacesAndNewlines)))); await load() } } }.disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 200)
                     }
                     if owner && model.canWriteSocial {
                         Button("Delete album", role: .destructive) { confirmation = "delete" }

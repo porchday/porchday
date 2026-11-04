@@ -167,9 +167,10 @@ import Porchcrypto
         guard access.writesSocial, let device, !device.revoked, let session = sessions[device.fingerprint] else { throw PorchError.message("Unlock an active device before sharing.") }
         let snapshot = try await social(path)
         guard case .array(let pending) = snapshot["pending_members"], pending.isEmpty,
-              let epoch = snapshot["epoch"].integer else { throw PorchError.message("The audience is not ready. No recipients were omitted.") }
-        let recipients = try snapshot["devices"].array.map(Device.init)
-        guard !recipients.isEmpty, recipients.allSatisfy({ !$0.revoked }), recipients.contains(where: { $0.id == device.id }) else { throw PorchError.message("The audience is unavailable.") }
+              let epoch = snapshot["epoch"].integer, epoch >= 0,
+              case .array(let devices) = snapshot["devices"] else { throw PorchError.message("The audience is not ready. No recipients were omitted.") }
+        let recipients = try devices.map(Device.init)
+        guard !recipients.isEmpty, recipients.count <= 4000, Set(recipients.map(\.id)).count == recipients.count, recipients.allSatisfy({ !$0.revoked }), recipients.contains(where: { $0.id == device.id && $0.memberID == member.id }) else { throw PorchError.message("The audience is unavailable.") }
         for recipient in recipients { try verify(recipient) }
         let bound = context.replacing("authorId", with: .string(member.id)).replacing("authorDeviceId", with: .string(device.id)).replacing("epoch", with: .number(Double(epoch)))
         var error: NSError?
