@@ -306,6 +306,8 @@ struct EditContentView: View {
     var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); PeopleTagPicker(tags: $tags, directory: people);
         ForEach(media.indices, id: \.self) { index in
             TextField("Attachment caption", text: Binding(get: { media[index]["alt"].string ?? "" }, set: { media[index] = media[index].replacing("alt", with: .string($0)) }))
+            let originalCaption = (item.payload?["media"].array ?? []).first { $0["id"] == media[index]["id"] }?["caption"].string ?? ""
+            if !originalCaption.isEmpty { TextField("Additional caption", text: Binding(get: { media[index]["caption"].string ?? "" }, set: { media[index] = media[index].replacing("caption", with: .string($0)) })) }
             PeopleTagPicker(tags: Binding(get: { PersonTag.parse(media[index]["tags"]) }, set: { media[index] = media[index].replacing("tags", with: .array($0.map(\.json))) }), directory: people)
         }; if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; let resolved = NativeMentions.resolve(text, directory: people.people, existing: tags)
             let attachments = media.map { photo in photo.replacing("tags", with: .array(NativeMentions.resolve(NativePhotoContract.captions(photo).joined(separator: " "), directory: people.people, existing: PersonTag.parse(photo["tags"])).map(\.json))) }

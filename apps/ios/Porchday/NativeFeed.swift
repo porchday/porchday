@@ -159,7 +159,7 @@ struct NativePhotoCard: View {
             Form {
                 DatePicker("Photo date", selection: $date, displayedComponents: .date)
                 TextField("Caption", text: $alt)
-                if !caption.isEmpty { TextField("Additional caption", text: $caption) }
+                if !(content["media"].array.first?["caption"].string ?? "").isEmpty { TextField("Additional caption", text: $caption) }
                 PeopleTagPicker(tags: $tags, directory: people)
                 Button("Save photo") { Task { busy = true; defer { busy = false }; await model.perform {
                     let service = try NativePhotos(model)
