@@ -16,6 +16,13 @@ enum NativePhotoContract {
         guard revision > 0, hash.count == 64, hash.allSatisfy({ $0.isHexDigit && !$0.isUppercase }) else { throw PorchError.message("Invalid photo proof.") }
         return .object(["v": .number(1), "purpose": .string("porchday-photo-source"), "photoId": .string(id), "ownerId": .string(owner), "deviceId": .string(device), "revision": .number(Double(revision)), "date": .string(try self.date(date)), "expiresAt": expiry, "sha256": .string(hash), "metadata": metadata(media)])
     }
+    static func captions(_ media: JSON) -> [String] {
+        let alt = media["alt"].string ?? "", legacy = media["caption"].string ?? ""
+        return [alt, legacy == alt ? "" : legacy].filter { !$0.isEmpty }
+    }
+    static func editMetadata(_ media: JSON, alt: String, caption: String, tags: [JSON]) -> JSON {
+        media.replacing("alt", with: .string(alt)).replacing("caption", with: .string(caption)).replacing("tags", with: .array(tags))
+    }
     static func expiry(_ value: JSON) -> JSON { value.string.flatMap(PorchDate.parse).map { .string(PorchDate.string($0)) } ?? .null }
     static func context(kind: String, id: String, parent: String?, audience: String, album: String?, expiry: JSON, date: String? = nil, revision: Int = 1) -> JSON {
         var value: JSON = .object(["id": .string(id), "kind": .string(kind), "parentId": parent.map(JSON.string) ?? .null, "groupId": album.map(JSON.string) ?? .null, "audience": .string(audience), "createdAt": .string(PorchDate.string()), "expiresAt": expiry, "revision": .number(Double(revision))])

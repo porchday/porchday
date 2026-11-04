@@ -96,7 +96,7 @@ struct EncryptedMediaView: View {
                         else { Button(busy ? "Opening video…" : "Play video") { Task { await open() } }.disabled(busy) }
                     }
                     if !error.isEmpty { Text(error).foregroundStyle(.red) }
-                    if !thumbnail, let caption = media["caption"].string, !caption.isEmpty { Text(caption) }
+                    if !thumbnail { ForEach(NativePhotoContract.captions(media), id: \.self) { Text($0) } }
                     if !thumbnail { PeopleTagsView(tags: PersonTag.parse(media["tags"])) }
                 }.onChange(of: expired) { _, expired in if expired { clear() } }
             }.onDisappear { clear() }

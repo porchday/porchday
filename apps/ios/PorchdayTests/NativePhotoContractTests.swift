@@ -24,6 +24,20 @@ final class NativePhotoContractTests: XCTestCase {
         XCTAssertEqual(proof["sha256"].string, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
         XCTAssertNotEqual(proof, proof.replacing("date", with: .string("2024-03-01")))
     }
+    func testWebAndLegacyNativeCaptionsRemainVisibleWithoutDuplicates() {
+        XCTAssertEqual(NativePhotoContract.captions(.object(["alt": .string("Web caption")])), ["Web caption"])
+        XCTAssertEqual(NativePhotoContract.captions(.object(["caption": .string("Native caption")])), ["Native caption"])
+        XCTAssertEqual(NativePhotoContract.captions(.object(["alt": .string("Same"), "caption": .string("Same")])), ["Same"])
+        XCTAssertEqual(NativePhotoContract.captions(.object(["alt": .string("Description"), "caption": .string("Legacy")])), ["Description", "Legacy"])
+    }
+    func testEditingCaptionAndTagsPreservesMediaIdentityAndFormat() {
+        let original: JSON = .object(["id": .string("grant-specific-media"), "mime": .string("image/jpeg"), "width": .number(16), "alt": .string("Old caption"), "poster": .string("poster")])
+        let edited = NativePhotoContract.editMetadata(original, alt: "New caption", caption: "Legacy caption", tags: [])
+        XCTAssertEqual(edited["id"], original["id"]); XCTAssertEqual(edited["mime"], original["mime"])
+        XCTAssertEqual(edited["width"], original["width"]); XCTAssertEqual(edited["poster"], original["poster"])
+        XCTAssertEqual(edited["alt"].string, "New caption"); XCTAssertEqual(edited["caption"].string, "Legacy caption")
+        XCTAssertNotEqual(NativePhotoContract.metadata(original), NativePhotoContract.metadata(edited))
+    }
     func testAttachmentExportReferenceRetainsEffectiveDeadline() {
         let row: JSON = .object(["media_id": .string("media"), "revision": .number(2), "effective_expires_at": .string("2027-01-01T00:00:00.000Z"), "expires_at": .string("2028-01-01T00:00:00.000Z")])
         let reference = NativeArchiveIdentity.reference(row, kind: "attachment_date")

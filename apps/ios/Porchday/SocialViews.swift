@@ -176,7 +176,7 @@ struct ComposerView: View {
         if post == nil && !photosOnly { Section { Picker("Posting on behalf of", selection: $onBehalf) { Text("Myself").tag(""); ForEach(people.children.filter { $0.raw["can_post"].boolean }) { Text($0.name).tag($0.id) } }; Text("You remain the author. Posting on a child’s behalf tags them without expanding the audience.").font(.caption) } }
         if shareTabs && !photosOnly { Section { Text("Add Photos to this Post").font(.headline); HStack(spacing: 0) { Text("(Skip the post and "); Button("add photos directly") { photosOnly = true }.buttonStyle(.plain); Text(")") }.font(.caption) } }
         if photosOnly { Section { Picker("Album", selection: $album) { Text("No album").tag(""); ForEach(albums) { Text($0.name).tag($0.id) } }; Text("Album access adds to the audience you choose below.").font(.caption) } }
-        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .any(of: [.images, .videos])) { Label("Add photos or videos", systemImage: "photo.on.rectangle") }; Button("Add video from Files") { videoFilePicker = true }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if photosOnly { TextField("Photo date (YYYY-MM-DD)", text: $photo.photoDate) }; if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Description (alt text)", text: $photo.alt); TextField("Caption", text: $photo.caption); PeopleTagPicker(tags: $photo.tags, directory: people) } } } }
+        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .any(of: [.images, .videos])) { Label("Add photos or videos", systemImage: "photo.on.rectangle") }; Button("Add video from Files") { videoFilePicker = true }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if photosOnly { TextField("Photo date (YYYY-MM-DD)", text: $photo.photoDate) }; if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Caption", text: $photo.alt); if !photo.caption.isEmpty { TextField("Additional caption", text: $photo.caption) }; PeopleTagPicker(tags: $photo.tags, directory: people) } } } }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
@@ -234,7 +234,7 @@ struct ComposerView: View {
         if photosOnly {
             let service = try NativePhotos(model), expiry = try deadlineContext.deadline(for: timerChoice, now: Date())
             for var photo in photos where !completedPhotos.contains(photo.id) {
-                photo.tags = NativeMentions.resolve(photo.caption, directory: people.people, existing: photo.tags)
+                photo.tags = NativeMentions.resolve(photo.alt + " " + photo.caption, directory: people.people, existing: photo.tags)
                 try await service.publish(photo, date: photo.photoDate, audience: audience, album: album.isEmpty ? nil : album, expiry: expiry)
                 completedPhotos.insert(photo.id)
             }
@@ -247,7 +247,7 @@ struct ComposerView: View {
         var media: [JSON] = []
         for var photo in photos {
             try checkSession()
-            photo.tags = NativeMentions.resolve(photo.caption, directory: people.people, existing: photo.tags)
+            photo.tags = NativeMentions.resolve(photo.alt + " " + photo.caption, directory: people.people, existing: photo.tags)
             media.append(try await model.uploadSurfacePhoto(photo, audience: share, parent: id, group: group, expiry: expiry))
         }
         try checkSession()
@@ -305,9 +305,9 @@ struct EditContentView: View {
     @StateObject private var people = PeopleDirectory()
     var body: some View { Form { TextEditor(text: $text).frame(minHeight: 150); PeopleTagPicker(tags: $tags, directory: people);
         ForEach(media.indices, id: \.self) { index in
-            TextField("Attachment caption", text: Binding(get: { media[index]["caption"].string ?? "" }, set: { media[index] = media[index].replacing("caption", with: .string($0)) }))
+            TextField("Attachment caption", text: Binding(get: { media[index]["alt"].string ?? "" }, set: { media[index] = media[index].replacing("alt", with: .string($0)) }))
             PeopleTagPicker(tags: Binding(get: { PersonTag.parse(media[index]["tags"]) }, set: { media[index] = media[index].replacing("tags", with: .array($0.map(\.json))) }), directory: people)
         }; if let expiry = item.expiry { Text("Current deadline: \(expiry.formatted()). It can only be shortened.") }; Picker("Shorter timeout", selection: $timer) { Text("Keep current timeout").tag(0); Text("One hour from now").tag(3600) }; Button("Save changes") { Task { await model.perform { guard let member = model.member, var payload = item.payload else { return }; let resolved = NativeMentions.resolve(text, directory: people.people, existing: tags)
-            let attachments = media.map { photo in photo.replacing("tags", with: .array(NativeMentions.resolve(photo["caption"].string ?? "", directory: people.people, existing: PersonTag.parse(photo["tags"])).map(\.json))) }
+            let attachments = media.map { photo in photo.replacing("tags", with: .array(NativeMentions.resolve(NativePhotoContract.captions(photo).joined(separator: " "), directory: people.people, existing: PersonTag.parse(photo["tags"])).map(\.json))) }
             payload = payload.replacing("text", with: .string(text)).replacing("tags", with: .array(resolved.map(\.json))).replacing("media", with: .array(attachments)); let context = item.context.replacing("revision", with: .number(Double((item.context["revision"].integer ?? 1) + 1))); let deadline = PorchDate.deadline(seconds: timer, parent: item.expiry); let envelope = try await vault.seal(payload, member: member, kind: item.context["kind"].string ?? "post", audience: item.context["audience"].string ?? "connections", id: item.id, group: item.context["groupId"].string, parent: item.context["parentId"].string, post: postID, expiry: deadline, original: context); let proof = try vault.sign(.object(["purpose": .string("porchday-lifecycle"), "id": .string(item.id), "revision": envelope["context"]["revision"], "expiresAt": envelope["context"]["expiresAt"]])); _ = try await model.api.social("/\(item.isComment ? "comments" : "posts")/\(item.id)", method: "PUT", body: .object(["envelope": envelope, "lifecycle": proof])); submitted(); dismiss() } } }.disabled(text.count > 5000 || !model.canWriteSocial) }.disabled(!model.canWriteSocial).navigationTitle(item.isComment ? "Edit comment" : "Edit post").task { text = item.text; tags = PersonTag.parse(item.payload?["tags"] ?? .null); media = item.payload?["media"].array ?? [] }.toolbar { Button("Cancel") { dismiss() } } }
 }

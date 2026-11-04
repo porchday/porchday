@@ -86,7 +86,10 @@ struct NativeActivityCard: View {
     @EnvironmentObject var model: AppModel
     @State private var editingDate = false
     var body: some View {
-        if entry.raw["kind"].string == "photo" { NativePhotoCard(photo: entry.raw["photo"], changed: changed) }
+        if entry.raw["kind"].string == "photo" { VStack(alignment: .leading) {
+            HStack { MemberAvatarView(memberID: entry.raw["author_id"].string ?? "", name: entry.raw["author_handle"].string ?? "Member"); Text("@" + (entry.raw["author_handle"].string ?? "member")).font(.headline) }
+            NativePhotoCard(photo: entry.raw["photo"], changed: changed)
+        } }
         else if let post = entry.post {
             if entry.raw["kind"].string == "post" { NavigationLink { PostDetailView(id: post.id) } label: { MomentCard(item: post) } }
             else { VStack(alignment: .leading) { Text(post.authorHandle); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; Text(entry.day).font(.caption); if post.authorID == model.member?.id && model.canWriteSocial { Button("Change photo date") { editingDate = true }.sheet(isPresented: $editingDate) { NavigationStack { NativeAttachmentDateEditor(media: entry.raw["id"].string!, post: post.id, originalDay: entry.day, saved: changed) } } }; NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
@@ -105,6 +108,10 @@ struct NativePhotoCard: View {
     @State private var file: PrivateMediaFile?
     @State private var error = ""
     @State private var date = Date()
+    @State private var alt = ""
+    @State private var caption = ""
+    @State private var tags: [PersonTag] = []
+    @StateObject private var people = PeopleDirectory()
     @State private var editing = false
     @State private var removing: String?
     @State private var removed = false
@@ -121,13 +128,13 @@ struct NativePhotoCard: View {
                     else if let player { VideoPlayer(player: player).frame(minHeight: 220) }
                     else if let webM { LocalWebMPlayer(decoder: webM).frame(minHeight: 220) }
                     else if error.isEmpty { ProgressView("Opening photo…") }
-                    Text(content["media"].array.first?["caption"].string ?? "")
+                    ForEach(NativePhotoContract.captions(content["media"].array.first ?? .null), id: \.self) { Text($0) }
                     PeopleTagsView(tags: PersonTag.parse(content["media"].array.first?["tags"] ?? .null))
                     Text(row["photo_date"].string ?? "").font(.caption)
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Retry photo") { Task { await load() } } }
                     if model.canWriteSocial {
                         if row["owner_id"].string == model.member?.id {
-                            Button("Change photo date") { editing = true }
+                            Button("Edit photo") { editing = true }
                             Button("Delete photo", role: .destructive) { removing = "delete" }
                         }
                         if let album, row["owner_id"].string == model.member?.id || album["role"].string == "admin" {
@@ -148,12 +155,29 @@ struct NativePhotoCard: View {
                 _ = try await service.request(path, method: "DELETE"); removed = true; player?.pause(); webM?.stop(); file = nil; image = nil; content = .null; changed()
             } } }
         }
-        .sheet(isPresented: $editing) { NavigationStack { Form { DatePicker("Photo date", selection: $date, displayedComponents: .date); Button("Save date") { Task { busy = true; defer { busy = false }; await model.perform { let service = try NativePhotos(model); try await service.updateDate(row, date: PhotoCalendar.day(date)); current = try await service.photo(row["id"].string!); editing = false; changed(); await load() } } }.disabled(busy) }.navigationTitle("Photo date").toolbar { Button("Cancel") { editing = false }.disabled(busy) } } }
+        .sheet(isPresented: $editing) { NavigationStack {
+            Form {
+                DatePicker("Photo date", selection: $date, displayedComponents: .date)
+                TextField("Caption", text: $alt)
+                if !caption.isEmpty { TextField("Additional caption", text: $caption) }
+                PeopleTagPicker(tags: $tags, directory: people)
+                Button("Save photo") { Task { busy = true; defer { busy = false }; await model.perform {
+                    let service = try NativePhotos(model)
+                    let selected = NativeMentions.resolve(alt + " " + caption, directory: people.people, existing: tags)
+                    let metadata: JSON = .object(["alt": .string(alt), "caption": .string(caption), "tags": .array(selected.map(\.json))])
+                    try await service.updateDate(row, date: PhotoCalendar.day(date), metadata: metadata)
+                    current = try await service.photo(row["id"].string!); editing = false; changed(); await load()
+                } } }.disabled(busy || alt.count > 5000 || caption.count > 5000)
+            }.navigationTitle("Edit photo").task { await people.load(model) }.toolbar { Button("Cancel") { editing = false }.disabled(busy) }
+        } }
     }
+
     private func load() async {
         do {
             let service = try NativePhotos(model), opened = try await service.read(row); try service.check(); content = opened.content
-            let mime = content["media"].array[0]["mime"].string ?? "image/jpeg"
+            let media = content["media"].array[0]
+            alt = media["alt"].string ?? ""; caption = media["caption"].string ?? ""; tags = PersonTag.parse(media["tags"])
+            let mime = media["mime"].string ?? "image/jpeg"
             if mime.hasPrefix("image/") { image = try PhotoPipeline.safelyDecode(opened.bytes) }
             else if mime == "video/webm" { let decoder = LocalWebM(); _ = try await decoder.open(opened.bytes); try service.check(); webM = decoder }
             else { let prepared = try PrivateMediaFile(opened.bytes, ext: VideoContainer.fileExtension(mime)); file = prepared; player = AVPlayer(url: prepared.url) }

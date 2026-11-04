@@ -90,7 +90,7 @@ import Foundation
         if row["grants"].array.contains(where: { $0["album_id"].string == album }) { return }
         let opened = try await read(row), media = opened.content["media"].array[0].replacing("id", with: .id())
         let context = NativePhotoContract.context(kind: "media", id: media["id"].string!, parent: photoID, audience: "album", album: album, expiry: NativePhotoContract.expiry(row["expires_at"]))
-        try await upload(opened.payload.replacing("id", with: media["id"]), context: context, privateOnly: privateOnly)
+        try await upload(JSON.object(opened.payload.object.merging(media.object, uniquingKeysWith: { _, current in current })), context: context, privateOnly: privateOnly)
         let envelope = try await seal(opened.content.replacing("media", with: .array([media])), context: NativePhotoContract.context(kind: "photo", id: UUID().uuidString.lowercased(), parent: photoID, audience: "album", album: album, expiry: NativePhotoContract.expiry(row["expires_at"]), date: row["photo_date"].string, revision: row["revision"].integer ?? 1))
         if privateOnly && envelope["recipients"].array.contains(where: { $0["memberId"].string != member.id }) { throw PorchError.message("This imported album is now shared. Import stopped before adding private photos.") }
         do { _ = try await request("/photos/" + photoID + "/grants", method: "POST", body: .object(["envelope": envelope, "media_id": media["id"]])) }
@@ -123,14 +123,16 @@ import Foundation
         guard record["media_id"].string == media, record["photo_date"].string == day else { throw PorchError.message("Photo date mismatch.") }
         try await model.vault.verifySigned(record["proof"], owner: owner, expected: expected)
     }
-    func updateDate(_ row: JSON, date: String) async throws {
+    func updateDate(_ row: JSON, date: String, metadata: JSON? = nil) async throws {
         guard row["owner_id"].string == member.id else { throw PorchError.message("Only the owner can change the photo date.") }
         var envelopes: [JSON] = []
         for grant in row["grants"].array {
-            let content = try await open(row, grant: grant), media = content["media"].array[0]
+            let content = try await open(row, grant: grant)
+            var media = content["media"].array[0]
+            if let metadata { media = NativePhotoContract.editMetadata(media, alt: metadata["alt"].string ?? "", caption: metadata["caption"].string ?? "", tags: metadata["tags"].array) }
             let statement = try NativePhotoContract.statement(id: row["id"].string!, owner: member.id, device: model.vault.device!.id, revision: (row["revision"].integer ?? 0) + 1, date: date, expiry: NativePhotoContract.expiry(row["expires_at"]), hash: content["photoProof"]["statement"]["sha256"].string!, media: media)
             let context = grant["envelope"]["context"].replacing("photoDate", with: .string(date)).replacing("revision", with: .number(Double((row["revision"].integer ?? 0) + 1)))
-            envelopes.append(try await seal(content.replacing("photoProof", with: model.vault.sign(statement)), context: context, snapshot: "/photos/" + row["id"].string! + "/grants/" + grant["id"].string! + "/audience"))
+            envelopes.append(try await seal(content.replacing("media", with: .array([media])).replacing("photoProof", with: model.vault.sign(statement)), context: context, snapshot: "/photos/" + row["id"].string! + "/grants/" + grant["id"].string! + "/audience"))
         }
         var body: JSON = .object(["photo_date": .string(date), "expected_revision": row["revision"], "envelopes": .array(envelopes)])
         if let media = row["source_media_id"].string, let post = row["source_post_id"].string {
@@ -144,7 +146,7 @@ import Foundation
         let path = "/photos/" + photo["id"].string! + "/grants/" + grant["id"].string! + "/refresh-audience"
         var fields = grant["envelope"]["context"].object; fields.removeValue(forKey: "photoDate")
         let context = JSON.object(fields).replacing("id", with: media["id"]).replacing("kind", with: .string("media")).replacing("createdAt", with: .string(PorchDate.string()))
-        try await upload(opened.payload.replacing("id", with: media["id"]), context: context, snapshot: path, refreshID: grant["id"].string)
+        try await upload(JSON.object(opened.payload.object.merging(media.object, uniquingKeysWith: { _, current in current })), context: context, snapshot: path, refreshID: grant["id"].string)
         let envelope = try await seal(opened.content.replacing("media", with: .array([media])), context: grant["envelope"]["context"], snapshot: path)
         do { _ = try await request("/photos/" + photo["id"].string! + "/grants/" + grant["id"].string! + "/refresh", method: "POST", body: .object(["envelope": envelope, "media_id": media["id"], "expected_media_id": grant["media_id"], "expected_revision": photo["revision"]])) }
         catch { let latest = try await self.photo(photo["id"].string!); if latest["grants"].array.contains(where: { $0["id"] == grant["id"] && $0["media_id"] == media["id"] }) { return }; throw error }
