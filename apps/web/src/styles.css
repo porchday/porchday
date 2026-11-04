@@ -4859,3 +4859,8 @@ button.trace-row:focus-visible {
 .existing-photo-choice .calendar-thumbnail figure { margin: 0; height: 100%; }
 .existing-photo-choice .calendar-thumbnail img { height: 100%; object-fit: contain; }
 .existing-photo-choice label { margin-top: 8px; }
+.feed-filter-selects { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 12px; }
+.feed-filter-selects label { display: flex; flex: 1 1 180px; flex-direction: column; gap: 4px; min-width: 0; }
+.feed-filter-selects select { width: 100%; }
+.activity-feed { display: grid; gap: 16px; }
+.calendar-post-preview { display: block; overflow: hidden; font-size: .7rem; line-height: 1.25; overflow-wrap: anywhere; }

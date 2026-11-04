@@ -200,7 +200,7 @@ try {
   const monthKeys = await page.locator('[data-calendar-month]').evaluateAll(elements => elements.map(e => e.dataset.calendarMonth));
   assert.equal(monthKeys.at(-1), firstMonth);
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-  assert(Math.abs((await preservedMonth.boundingBox()).y-previousTop)<3,"loading an older month preserves the reading anchor");
+  assert(Math.abs((await preservedMonth.boundingBox()).y-previousTop)<3,`loading an older month preserves the reading anchor: before=${previousTop}, after=${(await preservedMonth.boundingBox()).y}`);
   await page.locator('[data-calendar-month]').first().getByRole('img',{name:'Synthetic photo',exact:true}).waitFor();
   await page.locator('[data-calendar-month]').first().locator('.loading').waitFor({state:'hidden'});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));

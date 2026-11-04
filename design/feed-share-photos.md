@@ -1,5 +1,7 @@
 # Feed Share Photos and social albums
 
+The [November 4 unified Feed design](unified-feed.md) supersedes this document’s Feed tabs and author-checkbox controls.
+
 Status: implemented and deployed for web/PWA November 2, 2026. [Release evidence](../docs/evidence/social-albums-release-2026-11-02.md) records verification and native/device limitations. This captures the owner's sketch, subsequent mockup decisions and final implementation contract. [ROADMAP.md](../ROADMAP.md) remains the priority order; issues retain delivery and acceptance evidence.
 
 Porchday separates reading updates, sharing something new, and browsing photos. Photos become independent objects with editable dates. Albums are social spaces with per-person roles, and contribute access to photos without taking away access those photos already had.

@@ -151,7 +151,7 @@ export function registerCalendarRoutes(
     return c.json(
       await tx(c, async (db) => {
         const rows =
-          await db`select p.*,app.author_category(p.author_id) as author_category,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true
+          await db`with extended_family as materialized (select member_id from app.audience_devices('extended_family') union select member_id from app.pending_audience_members('extended_family')) select p.*,app.author_category(p.author_id) as author_category,exists(select 1 from extended_family ef where ef.member_id=p.author_id) as author_in_extended_family,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true
     where p.group_id is null and p.created_at>=${start}::timestamptz and p.created_at<${end}::timestamptz
 
     and not exists(select from app.mutes where target=p.author_id)
