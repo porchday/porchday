@@ -24,6 +24,29 @@ final class NativePhotoContractTests: XCTestCase {
         XCTAssertEqual(proof["sha256"].string, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
         XCTAssertNotEqual(proof, proof.replacing("date", with: .string("2024-03-01")))
     }
+    func testArchiveIdentityMatchesWebImporterAndIsAccountScoped() throws {
+        XCTAssertEqual(try NativeArchiveIdentity.id(owner: "owner", source: "source", kind: "photo", id: "id"), "04a099e7-eef6-544c-a940-8c476e51e182")
+        XCTAssertNotEqual(try NativeArchiveIdentity.id(owner: "other", source: "source", kind: "photo", id: "id"), try NativeArchiveIdentity.id(owner: "owner", source: "source", kind: "photo", id: "id"))
+    }
+    @MainActor func testPhotoAlbumArchiveRoundTripAndMissingMediaFailsClosed() throws {
+        let owner = UUID().uuidString.lowercased(), photo = UUID().uuidString.lowercased(), album = UUID().uuidString.lowercased(), media = UUID().uuidString.lowercased()
+        let bytes = Data([1,2,3]), path = "photos/" + media + ".jpg"
+        let record: JSON = .object(["id": .string(photo), "created_at": .string(PorchDate.string()), "photo_date": .string("2024-02-29"), "expires_at": .null, "album_ids": .array([.string(album)]), "payload": .object(["media": .array([.object(["id": .string(media)])])])])
+        let manifest: JSON = .object(["format": .string("porchday-archive"), "version": .number(1), "member_id": .string(owner), "photos": .array([record]), "albums": .array([.object(["id": .string(album), "created_at": .string(PorchDate.string()), "payload": .object(["name": .string("Our album")])])]), "attachment_dates": .array([]), "media": .array([.object(["id": .string(media), "path": .string(path), "mime": .string("image/jpeg"), "sha256": .string(PortableArchive.digest(bytes))])])])
+        let archive = PortableArchive(manifest: manifest, files: [path: bytes])
+        let reopened = try PortableArchive.read(archive.zip())
+        XCTAssertEqual(reopened.manifest, manifest)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".zip")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try archive.zip().write(to: url)
+        let selection = try ArchiveSelection.load(urls: [url], secret: "")
+        defer { try? FileManager.default.removeItem(at: selection.urls[0].deletingLastPathComponent()) }
+        XCTAssertEqual(selection.orphanPhotoIDs, [])
+        XCTAssertEqual(try selection.collection("photos"), [record])
+        try PortableArchive(manifest: manifest.replacing("media", with: .array([])), files: [:]).zip().write(to: url)
+        XCTAssertThrowsError(try ArchiveSelection.load(urls: [url], secret: ""))
+        XCTAssertThrowsError(try PortableArchive.requireSupportedCollections(manifest.replacing("photos", with: .array([record.replacing("photo_date", with: .string("2024-02-30"))]))))
+    }
     @MainActor func testInvitationHistoryIsExplicitInBothDirections() async throws {
         let member = try Member(.object(["id": .string("member"), "handle": .string("person"), "status": .string("active")]))
         for history in ConnectionHistory.allCases {

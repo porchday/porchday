@@ -234,7 +234,7 @@ func validateContext(raw json.RawMessage) (*context, error) {
 	if err := dec.Decode(&c); err != nil {
 		return nil, err
 	}
-	if !idPattern.MatchString(c.ID) || !idPattern.MatchString(c.AuthorID) || !idPattern.MatchString(c.AuthorDeviceID) || c.Epoch < 0 || c.Revision < 1 {
+	if !idPattern.MatchString(c.ID) || !idPattern.MatchString(c.AuthorID) || !idPattern.MatchString(c.AuthorDeviceID) || c.Epoch < 0 || c.Revision < 1 || c.Epoch > 9007199254740991 || c.Revision > 9007199254740991 {
 		return nil, errors.New("invalid content context")
 	}
 	if c.ParentID != nil && !idPattern.MatchString(*c.ParentID) || c.GroupID != nil && !idPattern.MatchString(*c.GroupID) {
@@ -242,6 +242,13 @@ func validateContext(raw json.RawMessage) (*context, error) {
 	}
 	if !strings.Contains("|post|comment|reaction|profile|group|media|report|export|album|photo|", "|"+c.Kind+"|") || !strings.Contains("|connections|friends|family|extended_family|community|only_me|group|moderators|album|", "|"+c.Audience+"|") {
 		return nil, errors.New("invalid context kind or audience")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	if value, exists := fields["photoDate"]; exists && (c.Kind != "photo" || string(value) == "null") {
+		return nil, errors.New("invalid photo date field")
 	}
 	if c.Kind == "photo" && c.PhotoDate == nil {
 		return nil, errors.New("photo date required")

@@ -41,8 +41,9 @@ import Foundation
             } catch { last = error }
         }; throw last
     }
-    func upload(_ payload: JSON, context: JSON, snapshot: String? = nil, refreshID: String? = nil) async throws {
+    func upload(_ payload: JSON, context: JSON, snapshot: String? = nil, refreshID: String? = nil, privateOnly: Bool = false) async throws {
         let envelope = try await seal(payload, context: context, snapshot: snapshot), bytes = try JSONEncoder().encode(envelope)
+        if privateOnly && envelope["recipients"].array.contains(where: { $0["memberId"].string != member.id }) { throw PorchError.message("This imported album is now shared. Import stopped before adding private photos.") }
         guard bytes.count <= 22_020_096 else { throw PorchError.message("This encrypted photo is too large for its audience.") }
         var body: JSON = .object(["id": context["id"], "envelope": envelope, "byte_size": .number(Double(bytes.count))])
         if let refreshID { body = body.replacing("photo_refresh_id", with: .string(refreshID)) }
@@ -51,14 +52,16 @@ import Foundation
         try check(); _ = try await model.api.bytes(path, method: "PUT", body: bytes); try check()
     }
     func photo(_ id: String) async throws -> JSON { try await request("/photos/" + id)["photo"] }
-    func publish(_ draft: PreparedPhoto, date: String, audience: String, album: String?, expiry: Date?, id: String? = nil, source: JSON? = nil) async throws {
+    func publish(_ draft: PreparedPhoto, date: String, audience: String, album: String?, expiry: Date?, id: String? = nil, source: JSON? = nil, existingSource: JSON? = nil) async throws {
         let id = id ?? draft.id, day = try NativePhotoContract.date(date), deadline: JSON = expiry.map { .string(PorchDate.string($0)) } ?? .null
         func existing() async throws -> Bool {
             do {
                 let row = try await photo(id), opened = try await read(row)
-                guard row["owner_id"].string == member.id, row["photo_date"].string == day, NativePhotoContract.expiry(row["expires_at"]) == deadline,
+                guard row["owner_id"].string == member.id, row["source_media_id"] == (existingSource?["media_id"] ?? (source == nil ? .null : .string(id))), row["source_post_id"] == (existingSource?["post_id"] ?? source?["statement"]["postId"] ?? .null), row["photo_date"].string == day, NativePhotoContract.expiry(row["expires_at"]) == deadline,
                       NativePhotoContract.hash(draft.bytes) == opened.content["photoProof"]["statement"]["sha256"].string,
                       opened.content["media"].array.first?["alt"].string == draft.alt,
+                      opened.content["media"].array.first?["caption"].string == draft.caption,
+                      opened.content["media"].array.first?["tags"].array == draft.tags.map(\.json),
                       row["grants"].array.contains(where: { $0["album_id"] == .null && $0["audience"].string == audience }),
                       album == nil || row["grants"].array.contains(where: { $0["album_id"].string == album }) else { throw PorchError.message("This photo was already shared with different settings. Review it before trying again.") }
                 return true
@@ -79,14 +82,15 @@ import Foundation
         if let source { body = body.replacing("source_media_id", with: .string(id)).replacing("source_date", with: source) }
         do { _ = try await request("/photos", method: "POST", body: body) } catch { if try await existing() { return }; throw error }
     }
-    func add(_ photoID: String, to album: String) async throws {
+    func add(_ photoID: String, to album: String, privateOnly: Bool = false) async throws {
         let row = try await photo(photoID)
         guard row["owner_id"].string == member.id else { throw PorchError.message("Only your own uploads can be added.") }
         if row["grants"].array.contains(where: { $0["album_id"].string == album }) { return }
         let opened = try await read(row), media = opened.content["media"].array[0].replacing("id", with: .id())
         let context = NativePhotoContract.context(kind: "media", id: media["id"].string!, parent: photoID, audience: "album", album: album, expiry: NativePhotoContract.expiry(row["expires_at"]))
-        try await upload(opened.payload.replacing("id", with: media["id"]), context: context)
+        try await upload(opened.payload.replacing("id", with: media["id"]), context: context, privateOnly: privateOnly)
         let envelope = try await seal(opened.content.replacing("media", with: .array([media])), context: NativePhotoContract.context(kind: "photo", id: UUID().uuidString.lowercased(), parent: photoID, audience: "album", album: album, expiry: NativePhotoContract.expiry(row["expires_at"]), date: row["photo_date"].string, revision: row["revision"].integer ?? 1))
+        if privateOnly && envelope["recipients"].array.contains(where: { $0["memberId"].string != member.id }) { throw PorchError.message("This imported album is now shared. Import stopped before adding private photos.") }
         do { _ = try await request("/photos/" + photoID + "/grants", method: "POST", body: .object(["envelope": envelope, "media_id": media["id"]])) }
         catch { let latest = try await photo(photoID); if latest["grants"].array.contains(where: { $0["album_id"].string == album }) { return }; throw error }
     }
@@ -140,6 +144,7 @@ import Foundation
         let context = JSON.object(fields).replacing("id", with: media["id"]).replacing("kind", with: .string("media")).replacing("createdAt", with: .string(PorchDate.string()))
         try await upload(opened.payload.replacing("id", with: media["id"]), context: context, snapshot: path, refreshID: grant["id"].string)
         let envelope = try await seal(opened.content.replacing("media", with: .array([media])), context: grant["envelope"]["context"], snapshot: path)
-        _ = try await request("/photos/" + photo["id"].string! + "/grants/" + grant["id"].string! + "/refresh", method: "POST", body: .object(["envelope": envelope, "media_id": media["id"], "expected_media_id": grant["media_id"], "expected_revision": photo["revision"]]))
+        do { _ = try await request("/photos/" + photo["id"].string! + "/grants/" + grant["id"].string! + "/refresh", method: "POST", body: .object(["envelope": envelope, "media_id": media["id"], "expected_media_id": grant["media_id"], "expected_revision": photo["revision"]])) }
+        catch { let latest = try await self.photo(photo["id"].string!); if latest["grants"].array.contains(where: { $0["id"] == grant["id"] && $0["media_id"] == media["id"] }) { return }; throw error }
     }
 }

@@ -202,7 +202,7 @@ struct ComposerView: View {
                         Text(error).foregroundStyle(.red).accessibilityIdentifier("composer-expiration-error")
                     }
                     Button(busy ? "Encrypting and sharing…" : post == nil ? (photosOnly ? "Share photos" : "Share post") : "Comment") { Task { await submit() } }
-                        .disabled(!model.canWriteSocial || busy || parentUnavailable || deadlineContext.validationMessage(for: timerChoice, now: timeline.date) != nil || text.count > 5000 || (photosOnly ? photos.isEmpty : (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty)))
+                        .disabled(!model.canWriteSocial || busy || parentUnavailable || deadlineContext.validationMessage(for: timerChoice, now: timeline.date) != nil || (!photosOnly && text.count > 5000) || (photosOnly ? photos.isEmpty : (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty)))
                 }
             }
         }

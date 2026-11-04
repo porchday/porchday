@@ -22,7 +22,7 @@ struct NativeActivity: Identifiable {
             let service = try NativePhotos(model)
             var fields = ["content": content, "order": month == nil ? "shared" : "date", "timezone": TimeZone.current.identifier]
             if let month { fields["month"] = month }; if owned { fields["owner"] = "me" }
-            if more, next != .null { fields["after"] = try next.serialized() }
+            if more, next != .null { guard let cursor = next.string else { throw PorchError.message("The activity cursor is invalid.") }; fields["after"] = cursor }
             let result = try await service.request("/photo-feed?" + NativePhotos.query(fields))
             var decoded: [NativeActivity] = []
             for raw in result["items"].array {
@@ -82,16 +82,20 @@ struct NativeFeedView: View {
 }
 struct NativeActivityCard: View {
     let entry: NativeActivity
+    @EnvironmentObject var model: AppModel
+    @State private var editingDate = false
     var body: some View {
         if entry.raw["kind"].string == "photo" { NativePhotoCard(photo: entry.raw["photo"]) }
         else if let post = entry.post {
             if entry.raw["kind"].string == "post" { NavigationLink { PostDetailView(id: post.id) } label: { MomentCard(item: post) } }
-            else { VStack(alignment: .leading) { Text(post.authorHandle); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; Text(entry.day).font(.caption); NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
+            else { VStack(alignment: .leading) { Text(post.authorHandle); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; Text(entry.day).font(.caption); if post.authorID == model.member?.id && model.canWriteSocial { Button("Change photo date") { editingDate = true }.sheet(isPresented: $editingDate) { NavigationStack { NativeAttachmentDateEditor(media: entry.raw["id"].string!, post: post.id, originalDay: entry.day) } } }; NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
         }
     }
 }
 struct NativePhotoCard: View {
     let photo: JSON
+    var album: JSON? = nil
+    var changed: () -> Void = {}
     @EnvironmentObject var model: AppModel
     @State private var image: PlatformImage?
     @State private var content: JSON = .null
@@ -101,12 +105,15 @@ struct NativePhotoCard: View {
     @State private var error = ""
     @State private var date = Date()
     @State private var editing = false
+    @State private var removing: String?
+    @State private var removed = false
     @State private var busy = false
     @State private var current: JSON = .null
     private var row: JSON { current == .null ? photo : current }
     var body: some View {
         TimelineView(.periodic(from: .now, by: 1)) { clock in
-            if row["expires_at"].string.flatMap(PorchDate.parse).map({ $0 <= clock.date }) == true { Text("This photo has expired.") }
+            if removed { Text("Photo removed.") }
+            else if row["expires_at"].string.flatMap(PorchDate.parse).map({ $0 <= clock.date }) == true { Text("This photo has expired.") }
             else {
                 VStack(alignment: .leading) {
                     if let image { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 420).accessibilityLabel(content["media"].array.first?["alt"].string ?? "Photo") }
@@ -117,11 +124,30 @@ struct NativePhotoCard: View {
                     PeopleTagsView(tags: PersonTag.parse(content["media"].array.first?["tags"] ?? .null))
                     Text(row["photo_date"].string ?? "").font(.caption)
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Retry photo") { Task { await load() } } }
-                    if row["owner_id"].string == model.member?.id && model.canWriteSocial { Button("Change photo date") { editing = true } }
+                    if model.canWriteSocial {
+                        if row["owner_id"].string == model.member?.id {
+                            Button("Change photo date") { editing = true }
+                            Button("Delete photo", role: .destructive) { removing = "delete" }
+                        }
+                        if let album, row["owner_id"].string == model.member?.id || album["role"].string == "admin" {
+                            Button("Remove from album", role: .destructive) { removing = "album" }
+                        }
+                    }
                 }
             }
-        }.task(id: photo) { await load() }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
-        .sheet(isPresented: $editing) { NavigationStack { Form { DatePicker("Photo date", selection: $date, displayedComponents: .date); Button("Save date") { Task { busy = true; defer { busy = false }; await model.perform { let service = try NativePhotos(model); try await service.updateDate(row, date: PhotoCalendar.day(date)); current = try await service.photo(row["id"].string!); editing = false; await load() } } }.disabled(busy) }.navigationTitle("Photo date").toolbar { Button("Cancel") { editing = false }.disabled(busy) } } }
+        }.task(id: photo) { await load() }.task(id: row["expires_at"]) { if let expiry = row["expires_at"].string.flatMap(PorchDate.parse) { try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))); if !Task.isCancelled { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil; content = .null } } }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
+        .confirmationDialog(removing == "delete" ? "Delete this photo and its original post attachment? Saved copies cannot be recalled." : "Remove this album’s access? Other audiences keep access.", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+            Button("Confirm", role: .destructive) { let action = removing; removing = nil; Task { busy = true; defer { busy = false }; await model.perform {
+                let service = try NativePhotos(model)
+                var path = "/photos/" + (row["id"].string ?? "")
+                if action == "album" {
+                    guard let album, let grant = row["grants"].array.first(where: { $0["album_id"] == album["id"] }), let id = grant["id"].string else { throw PorchError.message("Reload the album before removing this photo.") }
+                    path += "/grants/" + id
+                }
+                _ = try await service.request(path, method: "DELETE"); removed = true; player?.pause(); webM?.stop(); file = nil; image = nil; content = .null; changed()
+            } } }
+        }
+        .sheet(isPresented: $editing) { NavigationStack { Form { DatePicker("Photo date", selection: $date, displayedComponents: .date); Button("Save date") { Task { busy = true; defer { busy = false }; await model.perform { let service = try NativePhotos(model); try await service.updateDate(row, date: PhotoCalendar.day(date)); current = try await service.photo(row["id"].string!); editing = false; changed(); await load() } } }.disabled(busy) }.navigationTitle("Photo date").toolbar { Button("Cancel") { editing = false }.disabled(busy) } } }
     }
     private func load() async {
         do {
@@ -132,5 +158,27 @@ struct NativePhotoCard: View {
             else { let prepared = try PrivateMediaFile(opened.bytes, ext: VideoContainer.fileExtension(mime)); file = prepared; player = AVPlayer(url: prepared.url) }
             let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.calendar = PhotoCalendar.calendar; date = formatter.date(from: row["photo_date"].string ?? "") ?? Date(); error = ""
         } catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+    }
+}
+
+struct NativeAttachmentDateEditor: View {
+    let media: String
+    let post: String
+    let originalDay: String
+    @EnvironmentObject var model: AppModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var day = ""
+    @State private var busy = false
+    var body: some View {
+        Form {
+            TextField("Photo date (YYYY-MM-DD)", text: $day)
+            Text("The post date stays unchanged.").font(.caption)
+            Button("Save date") { Task { busy = true; defer { busy = false }; await model.perform {
+                let service = try NativePhotos(model), date = try NativePhotoContract.date(day), info = try await service.request("/media/" + media + "/photo-date")
+                if let id = info["photo_id"].string { let row = try await service.photo(id); try await service.updateDate(row, date: date) }
+                else { let proof = try service.attachmentProof(media: media, post: post, date: date, revision: (info["date"]["revision"].integer ?? 0) + 1); _ = try await service.request("/media/" + media + "/photo-date", method: "PUT", body: proof) }
+                dismiss()
+            } } }.disabled(busy)
+        }.navigationTitle("Photo date").task { day = originalDay }.toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
     }
 }
