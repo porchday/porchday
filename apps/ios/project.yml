@@ -87,6 +87,7 @@ targets:
       - PorchdayTests/CryptoVaultAccessTests.swift
       - PorchdayTests/HistoricalPostSharingTests.swift
       - PorchdayTests/PlatformInvitationTests.swift
+      - PorchdayTests/SharingAudienceTests.swift
       - PorchdayTests/RecipientKeyVerificationTests.swift
       - path: ../../packages/crypto/test/fixtures/openpgp-v1.json
         buildPhase: resources
