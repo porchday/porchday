@@ -109,3 +109,7 @@ For incidents and restores, use the [incident guide](docs/incident-response.md),
 The shared corn logo source is `apps/web/public/icon.svg`. With Playwright Chromium installed, `node apps/web/scripts/generate-icons.mjs` regenerates the website, PWA and native artwork. Inspect the results before committing.
 
 The web build gives installed-app icons content-based URLs while preserving PWA identity. Apply Porchday's **Update now** if offered, close and reopen the installed app, and use Chrome's **⋮ → Review app update** when offered. Do not clear site data or reinstall solely to refresh artwork; see [Chrome's update behavior](https://developer.chrome.com/blog/improvements-to-web-app-updates).
+
+## Native parity before production
+
+Every forward production release must satisfy the [iOS/macOS parity checklist](docs/native-parity.md). Review equivalent behavior across web, iOS and macOS, and run both native workflows on the exact candidate commit. The production activation CLI rejects pending capability checks, failed or skipped required native build/test steps, and CI from a different source. Update private release-tool pins to include this gate before any forward production activation. Emergency recovery and rollback remain available. Build verification is separate from signed distribution and physical-device acceptance.

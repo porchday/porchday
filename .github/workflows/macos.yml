@@ -1,5 +1,6 @@
 name: Verify native macOS
 on:
+  push:
   pull_request:
     paths: ['apps/ios/**', 'apps/macos/**', 'packages/crypto/**', '.github/workflows/macos.yml']
   workflow_dispatch:

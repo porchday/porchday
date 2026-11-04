@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "id": "navigation",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#navigation"
+      ]
+    },
+    {
+      "id": "feed",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#feed"
+      ]
+    },
+    {
+      "id": "albums",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#albums"
+      ]
+    },
+    {
+      "id": "photo-sharing",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#photo-sharing"
+      ]
+    },
+    {
+      "id": "photo-dates",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#photo-dates"
+      ]
+    },
+    {
+      "id": "audiences",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#audiences"
+      ]
+    },
+    {
+      "id": "invitations",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#invitations"
+      ]
+    },
+    {
+      "id": "history",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#history"
+      ]
+    },
+    {
+      "id": "portability",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#portability"
+      ]
+    },
+    {
+      "id": "notifications",
+      "ios": "pending",
+      "macos": "pending",
+      "evidence": [
+        "docs/native-parity.md#notifications"
+      ]
+    }
+  ]
+}
