@@ -9,11 +9,38 @@ struct PortableArchive {
     static let partBudget = 20 * 1024 * 1024
     static func requireSupportedCollections(_ manifest: JSON) throws {
         for section in ["photos", "albums", "attachment_dates"] {
-            if case .null = manifest[section] { continue }
-            if case .array(let entries) = manifest[section], entries.isEmpty { continue }
-            throw PorchError.message("This archive contains photo dates or albums that this native version cannot restore completely. Open Porchday in your browser and use Settings → Your data to preserve them.")
+            if manifest[section] == .null { continue }
+            guard case .array = manifest[section] else { throw PorchError.message("Malformed archive photo collection.") }
+        }
+        for row in manifest["photos"].array {
+            guard row["id"].string.flatMap(UUID.init(uuidString:)) != nil,
+                  row["created_at"].string.flatMap(PorchDate.parse) != nil,
+                  row["expires_at"] == .null || row["expires_at"].string.flatMap(PorchDate.parse) != nil,
+                  row["payload"]["media"].array.count == 1,
+                  row["payload"]["media"].array[0]["id"].string != nil,
+                  case .array(let albums) = row["album_ids"], albums.allSatisfy({ $0.string != nil }),
+                  (row["source_media_id"] == .null && row["source_post_id"] == .null) || (row["source_media_id"].string != nil && row["source_post_id"].string != nil)
+            else { throw PorchError.message("Malformed archived photo.") }
+            _ = try NativePhotoContract.date(row["photo_date"].string ?? "")
+            let media = row["payload"]["media"].array[0]
+            for field in ["alt", "caption"] { if media[field] != .null { guard let text = media[field].string, text.count <= 5000 else { throw PorchError.message("Malformed archived photo caption.") } } }
+            if media["tags"] != .null {
+                guard case .array(let tags) = media["tags"], tags.count <= 30, PersonTag.parse(media["tags"]).count == tags.count else { throw PorchError.message("Malformed archived photo tags.") }
+            }
+        }
+        for row in manifest["albums"].array {
+            guard row["id"].string.flatMap(UUID.init(uuidString:)) != nil,
+                  row["created_at"].string.flatMap(PorchDate.parse) != nil,
+                  let name = row["payload"]["name"].string, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, name.count <= 200,
+                  row["payload"]["description"] == .null || (row["payload"]["description"].string != nil && row["payload"]["description"].string!.count <= 5000)
+            else { throw PorchError.message("Malformed archived album.") }
+        }
+        for row in manifest["attachment_dates"].array {
+            guard row["media_id"].string != nil, row["post_id"].string != nil else { throw PorchError.message("Malformed archived photo date.") }
+            _ = try NativePhotoContract.date(row["photo_date"].string ?? "")
         }
     }
+
     static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     func zip() throws -> Data {
         let archive = try Archive(accessMode: .create)
@@ -54,6 +81,7 @@ struct PortableArchive {
         guard manifest["format"].string == "porchday-archive", manifest["version"].integer == 1, let source = manifest["member_id"].string, UUID(uuidString: source) != nil else { throw PorchError.message("Unsupported archive schema.") }
         if manifest["emojiLibrary"] != .null { _ = try EmojiLibraryPayload.parse(manifest["emojiLibrary"]) }
         for photo in manifest["media"].array { guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID)." + (try mediaExtension(photo["mime"].string ?? "")), let bytes = files[path], digest(bytes) == photo["sha256"].string, photo["expires_at"] == .null || photo["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("A photo is missing or failed its checksum.") } }
+        try requireSupportedCollections(manifest)
         return PortableArchive(manifest: manifest, files: files)
     }
     static func mediaExtension(_ mime: String) throws -> String {
@@ -75,6 +103,7 @@ struct PortableArchive {
     let photoCount:Int
     private let photos:[String:Int]
     let orphanPhotoIDs:[String]
+    func collection(_ name: String) throws -> [JSON] { try urls.indices.flatMap { try part($0).manifest[name].array } }
     func part(_ index:Int) throws -> PortableArchive { try Self.read(url:urls[index],secret:secret) }
     func photo(_ id:String) throws -> (JSON,Data) { guard let index=photos[id] else { throw PorchError.message("A referenced photo is missing from the selected archive parts.") };let archive=try part(index);guard let meta=archive.manifest["media"].array.first(where:{$0["id"].string==id}),let path=meta["path"].string,let data=archive.files[path] else { throw PorchError.message("An archive photo is missing.") };return(meta,data) }
     private static func read(url:URL,secret:String) throws -> PortableArchive { let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size>0,size<=PortableArchive.limit+1024*1024 else { throw PorchError.message("An archive part exceeds the safety limit.") };let data=try Data(contentsOf:url);return try PortableArchive.read(url.pathExtension.lowercased()=="pgp" ? CryptoVault.unarchive(data,secret:secret) : data) }
@@ -96,7 +125,10 @@ struct PortableArchive {
             let target=directory.appendingPathComponent("part-\(index)."+(url.pathExtension.lowercased()=="pgp" ? "pgp":"zip"));try FileManager.default.copyItem(at:url,to:target)
             try SecureTemporaryFiles.protect(target)
             staged.append((index,target))
-            for section in ["posts","comments","reactions"] { for row in archive.manifest[section].array { guard let id=row["id"].string,let created=row["created_at"].string.flatMap(PorchDate.parse),created<=Date(),row["expires_at"] == .null || row["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("Archive contains invalid record identity or timestamps.") };let unique=section+":"+id+":"+(row["parent_id"].string ?? "");guard recordIDs.insert(unique).inserted else { throw PorchError.message("Duplicate record across archive parts.") };entryCount += 1;for photo in row["payload"]["media"].array { if let id=photo["id"].string { references.insert(id) } } } }
+            for section in ["posts","comments","reactions","photos","albums"] { for row in archive.manifest[section].array { guard let id=row["id"].string,let created=row["created_at"].string.flatMap(PorchDate.parse),created<=Date(),row["expires_at"] == .null || row["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("Archive contains invalid record identity or timestamps.") };let unique=section+":"+id+":"+(row["parent_id"].string ?? "");guard recordIDs.insert(unique).inserted else { throw PorchError.message("Duplicate record across archive parts.") };entryCount += 1;for photo in row["payload"]["media"].array { if let id=photo["id"].string { references.insert(id) } } } }
+            for date in archive.manifest["attachment_dates"].array {
+                guard let id = date["media_id"].string, recordIDs.insert("attachment_date:" + id).inserted else { throw PorchError.message("Duplicate attachment date across archive parts.") }
+            }
             if archive.manifest["profile"] != .null {
                 profileCount += 1
                 for slot in ["avatar","cover","background"] { if let id=archive.manifest["profile"][slot]["id"].string { references.insert(id) } }
@@ -117,7 +149,7 @@ struct PortableArchive {
         let secret=plaintext ? nil:try CryptoVault.randomSecret(),setID=UUID().uuidString.lowercased(),date=PorchDate.string()
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-export-"+setID,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         var urls:[URL]=[],partNumber=1,files:[String:Data]=[:],refs:[JSON]=[],allRefs:[JSON]=[],size=0
-        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"emojiLibrary":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([]),"children":.array([])]
+        let base:[String:JSON]=["format":.string("porchday-archive"),"version":.number(1),"member_id":.string(member.id),"handle":.string(member.handle),"generated_at":.string(date),"profile":.null,"emojiLibrary":.null,"posts":.array([]),"comments":.array([]),"reactions":.array([]),"media":.array([]),"connections":.array([]),"groups":.array([]),"children":.array([]),"photos":.array([]),"albums":.array([]),"attachment_dates":.array([])]
         var manifest=base
         func flush(final:Bool) async throws {
             if !final && size==0 { return }
@@ -136,13 +168,8 @@ struct PortableArchive {
             if let reference { refs.append(reference);allRefs.append(reference) };if let photo { files[photo.0]=photo.1 };size += added
         }
         do {
-            // Do not produce an apparently complete archive while omitting
-            // collections this native version does not yet understand.
-            for section in ["photos", "albums", "attachment_dates"] where job["sections"].array.contains(.string(section)) {
-                let page = try await api.social("/exports/" + jobID + "?section=" + section)
-                try PortableArchive.requireSupportedCollections(page)
-            }
-            for section in ["profile","emoji_library","posts","comments","post_reactions","comment_reactions","media","connections","groups"] {
+            let photoService = try NativePhotos(self)
+            for section in ["profile","emoji_library","posts","comments","post_reactions","comment_reactions","media","connections","groups","photos","albums","attachment_dates"] {
                 var cursor:String?=nil
                 repeat {
                     try Task.checkCancellation();progress("Preparing \(section.replacingOccurrences(of:"_",with:" "))…")
@@ -151,6 +178,25 @@ struct PortableArchive {
                     let rows=["profile","emoji_library"].contains(section) ? (page[section] == .null ? []:[page[section]]) : page[section].array
                     for row in rows {
                         if section=="connections" || section=="groups" { try await append(row,section:section);continue }
+                        if ["photos", "albums", "attachment_dates"].contains(section) {
+                            let kind = section == "photos" ? "photo" : section == "albums" ? "album" : "attachment_date"
+                            let reference = NativeArchiveIdentity.reference(row, kind: kind)
+                            if section == "photos" {
+                                guard row["owner_id"].string == member.id, row["grants"].array.count == 1 else { throw PorchError.message("Restore the original photo keys before exporting.") }
+                                guard let created = row["created_at"].string.flatMap(PorchDate.parse) else { throw PorchError.message("Invalid exported photo timestamp.") }
+                                let payload = try await photoService.open(row, grant: row["grants"].array[0])
+                                let entry: JSON = .object(["id": row["id"], "photo_date": row["photo_date"], "created_at": .string(PorchDate.string(created)), "expires_at": NativePhotoContract.expiry(row["expires_at"]), "payload": payload, "album_ids": row["album_ids"], "source_media_id": row["source_media_id"], "source_post_id": row["source_post_id"]])
+                                try await append(entry, section: section, reference: reference)
+                            } else if section == "albums" {
+                                guard row["owner_id"].string == member.id else { throw PorchError.message("Export contained another person's album.") }
+                                let payload = try await vault.open(row)
+                                try await append(.object(["id": row["id"], "created_at": row["created_at"], "payload": payload]), section: section, reference: reference)
+                            } else {
+                                try await photoService.verifyAttachment(row, media: row["media_id"].string ?? "", post: row["post_id"].string ?? "", owner: member.id, day: row["photo_date"].string ?? "")
+                                try await append(.object(["media_id": row["media_id"], "post_id": row["post_id"], "photo_date": row["photo_date"]]), section: section, reference: reference)
+                            }
+                            continue
+                        }
                         let context=row["envelope"]["context"],deadline=PorchDate.minimum([row["effective_expires_at"],row["expires_at"],context["expiresAt"]])
                         if deadline.map({$0<=Date()})==true { continue }
                         guard context["authorId"].string==member.id || (section=="profile" && row["envelope"] == .null) else { throw PorchError.message("Export contained another person's contribution.") }
@@ -199,19 +245,30 @@ struct PortableArchive {
     func importOwned(_ selection: ArchiveSelection) async throws -> Int {
         guard let member else { throw PorchError.message("Sign in first.") }
         let sourceID=selection.memberID,jobID=UUID().uuidString.lowercased(),librarySession=try ReactionSession(self)
-        var imported=0
+        let photos = try selection.collection("photos"), albums = try selection.collection("albums"), dates = try selection.collection("attachment_dates")
+        let photoService = try NativePhotos(self)
+        var imported = try await photoService.importCollections(selection, albums: albums, photos: photos)
         func importEntry(_ kind:String,_ row:JSON) async throws {
             try Task.checkCancellation()
             let expiry=row["expires_at"].string.flatMap(PorchDate.parse);if expiry.map({$0<=Date()})==true { return }
             guard let oldID=row["id"].string,let created=row["created_at"].string.flatMap(PorchDate.parse),created<=Date() else { throw PorchError.message("Invalid archive timestamp or identity.") }
-            let newID=UUID().uuidString.lowercased();var payload=row["payload"],media:[JSON]=[]
-            for photo in payload["media"].array { guard let id=photo["id"].string else { throw PorchError.message("Invalid photo reference.") };let (metadata,_)=try selection.photo(id);if try PortableArchive.photoDeadline(metadata,parent:expiry).map({$0<=Date()})==true { continue };media.append(try await importPhoto(selection,id:id,parent:newID,expiry:expiry)) }
+            let newID = try NativeArchiveIdentity.id(owner: member.id, source: sourceID, kind: kind, id: oldID); var payload=row["payload"],media:[JSON]=[], mappings:[JSON]=[], proofs:[JSON]=[]
+            for photo in payload["media"].array {
+                guard let id = photo["id"].string else { throw PorchError.message("Invalid photo reference.") }
+                let (metadata, _) = try selection.photo(id)
+                if try PortableArchive.photoDeadline(metadata, parent: expiry).map({ $0 <= Date() }) == true { continue }
+                let uploaded = try await importPhoto(selection, id: id, parent: newID, expiry: expiry)
+                media.append(uploaded); mappings.append(.object(["source_id": .string(id), "media_id": uploaded["id"]]))
+                if kind == "post", let date = dates.first(where: { $0["media_id"].string == id && $0["post_id"].string == oldID }) {
+                    proofs.append(try photoService.attachmentProof(media: uploaded["id"].string!, post: newID, date: date["photo_date"].string!, revision: 1))
+                }
+            }
             if kind=="reaction" { let reaction=try ReactionValue.parse(payload);payload=payload.replacing("text",with:.string("Imported reaction: "+(reaction.unicode ?? reaction.label))) }
-            let provenance:JSON = .object(["kind":.string(kind),"member_id":.string(sourceID),"source_id":.string(oldID),"parent_id":row["parent_id"],"original_audience":row["audience"],"original_group_id":row["group_id"],"prior_provenance":payload["provenance"]])
+            let provenance:JSON = .object(["kind":.string(kind),"member_id":.string(sourceID),"source_member_id":.string(sourceID),"source_media":.array(mappings),"source_id":.string(oldID),"parent_id":row["parent_id"],"original_audience":row["audience"],"original_group_id":row["group_id"],"prior_provenance":payload["provenance"]])
             payload=payload.replacing("media",with:.array(media)).replacing("reactionSecret",with:.string(try CryptoVault.randomSecret())).replacing("provenance",with:provenance)
             let original:JSON = .object(["id":.string(newID),"kind":.string("post"),"createdAt":.string(PorchDate.string(created)),"revision":.number(1)])
             let envelope=try await vault.seal(payload,member:member,kind:"post",audience:"only_me",id:newID,expiry:expiry,original:original)
-            let result=try await api.social("/imports",method:"POST",body:.object(["id":.string(jobID),"posts":.array([.object(["envelope":envelope,"source_id":.string("\(sourceID):\(kind):\(oldID)"),"media_ids":.array(media.map{$0["id"]})])])]))
+            let result=try await api.social("/imports",method:"POST",body:.object(["id":.string(jobID),"posts":.array([.object(["envelope":envelope,"source_id":.string("\(sourceID):\(kind):\(oldID)"),"photo_dates":.array(proofs),"media_ids":.array(media.map{$0["id"]})])])]))
             imported += result["imported"].array.count
         }
         for partIndex in selection.urls.indices {
@@ -231,6 +288,7 @@ struct PortableArchive {
             let (meta,_)=try selection.photo(id),row:JSON = .object(["id":.string(id),"created_at":meta["created_at"] == .null ? .string(PorchDate.string()):meta["created_at"],"expires_at":meta["expires_at"],"audience":.string("only_me"),"parent_id":meta["post_id"] == .null ? meta["group_id"]:meta["post_id"],"group_id":meta["group_id"],"payload":.object(["text":.string("Imported photo"),"media":.array([meta])])])
             try await importEntry("photo",row)
         }
+        try await photoService.restoreSources(selection.memberID, photos: photos)
         return imported
     }
 }

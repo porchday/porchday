@@ -172,6 +172,20 @@ import Combine
                         break
                     }
                 } while cursor != nil
+                let photos = try NativePhotos(self)
+                var after: String?, photoCount = 0
+                repeat {
+                    try check()
+                    let page = try await photos.request("/photos/history-refresh" + (after.map { "?" + NativePhotos.query(["after": $0]) } ?? ""))
+                    for photo in page["items"].array {
+                        for grant in photo["grants"].array where grant["album_id"] == .null {
+                            try check(); try await photos.refresh(photo, grant: grant)
+                        }
+                        photoCount += 1; self.historySharingVersion += 1
+                    }
+                    after = page["next"].string
+                    if photoCount >= 20 && after != nil { self.historySharingNeedsRetry = true; self.historySharingNotice = "Earlier photos were shared. Continue to check for more."; break }
+                } while after != nil
             } catch is CancellationError { /* Resume from a fresh source on a later foreground. */ }
             catch {
                 guard !Task.isCancelled, self.member?.id == member.id, self.authenticationGeneration == generation else { return }

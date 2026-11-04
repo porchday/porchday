@@ -660,3 +660,7 @@ watcher depends on this Mac's power, network and logged-in user LaunchAgent cont
 The existing production availability monitor remains separate, and outside-host
 coverage is still needed for Mac failures. These checks do not establish the
 monthly 99.99% availability objective.
+
+## Native parity before production
+
+Every forward production release must satisfy the [iOS/macOS parity checklist](native-parity.md). Review equivalent behavior across web, iOS and macOS, and run both native workflows on the exact candidate commit. The production activation CLI rejects pending capability checks, failed or skipped required native build/test steps, and CI from a different source. Update private release-tool pins to include this gate before any forward production activation. Emergency recovery and rollback remain available. Build verification is separate from signed distribution and physical-device acceptance.

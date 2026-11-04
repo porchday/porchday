@@ -52,14 +52,15 @@ struct MainTabs: View {
     @EnvironmentObject var model: AppModel
     @State private var builderAvailable = false
     @State private var destination: String? = "feed"
+    @State private var shareAlbum: String?
     var body: some View {
         Group {
             #if os(macOS)
             NavigationSplitView {
                 List(selection: $destination) {
-                    Label("Feed", systemImage: "house").tag("feed")
+                    Label("Feed", systemImage: "rectangle.stack").tag("feed")
                     Label("Share", systemImage: "plus.square").tag("share")
-                    Label("Photos", systemImage: "calendar").tag("photos")
+                    Label("Albums", systemImage: "rectangle.stack.badge.person.crop").tag("albums")
                     Label("Connections", systemImage: "person.2").tag("connections")
                     Label("More", systemImage: "ellipsis").tag("menu")
                     Label("Groups", systemImage: "person.3").tag("groups")
@@ -72,9 +73,9 @@ struct MainTabs: View {
                 .frame(minWidth: 800, minHeight: 600)
             #else
             TabView(selection: $destination) {
-                NavigationStack { screen("feed") }.tabItem { Label("Feed", systemImage: "house") }.tag(Optional("feed"))
+                NavigationStack { screen("feed") }.tabItem { Label("Feed", systemImage: "rectangle.stack") }.tag(Optional("feed"))
                 NavigationStack { screen("share") }.tabItem { Label("Share", systemImage: "plus.square") }.tag(Optional("share"))
-                NavigationStack { screen("photos") }.tabItem { Label("Photos", systemImage: "calendar") }.tag(Optional("photos"))
+                NavigationStack { screen("albums") }.tabItem { Label("Albums", systemImage: "rectangle.stack.badge.person.crop") }.tag(Optional("albums"))
                 NavigationStack { screen("connections") }.tabItem { Label("Connections", systemImage: "person.2") }.tag(Optional("connections"))
                 NavigationStack { moreMenu }.tabItem { Label("More", systemImage: "ellipsis") }.tag(Optional("menu"))
             }
@@ -94,12 +95,13 @@ struct MainTabs: View {
                 NavigationLink("Builder chat") { screen("builder") }
             }
             NavigationLink { screen("settings") } label: { Label("Settings", systemImage: "gearshape") }
+            Button("Log out") { Task { await model.signOut() } }
         }.navigationTitle("More")
     }
     @ViewBuilder private func screen(_ destination: String) -> some View {
         switch destination {
-        case "share": ComposerView { self.destination = "feed" }
-        case "photos": PhotosCalendarView()
+        case "share": ComposerView(initialAlbum: shareAlbum, shareTabs: true) { shareAlbum = nil; self.destination = "feed" }.id(shareAlbum)
+        case "albums": NativeAlbumsView { id in shareAlbum = id; self.destination = "share" }
         case "menu": AnyView(moreMenu)
         case "notifications": NotificationsView()
         case "connections": ConnectionsView()
@@ -108,7 +110,7 @@ struct MainTabs: View {
         case "builder": BuilderChatView()
         case "features": BuilderChatView(features: true)
         case "settings": SettingsView()
-        default: FeedView(title: "Feed", endpoint: "/feed")
+        default: NativeFeedView()
         }
     }
 }

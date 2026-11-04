@@ -13,3 +13,7 @@ The old `org.porchday.macos` WebKit preview is retired. Its browser storage is n
 native Keychain storage. Do not delete an installed preview's data until native
 sign-in and encrypted history recovery have been verified with your recovery secret.
 Historical preview commits and receipts remain history, not the current app.
+
+## Native parity before production
+
+Every forward production release must satisfy the [iOS/macOS parity checklist](../../docs/native-parity.md). Review equivalent behavior across web, iOS and macOS, and run both native workflows on the exact candidate commit. The production activation CLI rejects pending capability checks, failed or skipped required native build/test steps, and CI from a different source. Update private release-tool pins to include this gate before any forward production activation. Emergency recovery and rollback remain available. Build verification is separate from signed distribution and physical-device acceptance.

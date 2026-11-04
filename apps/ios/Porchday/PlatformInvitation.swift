@@ -7,6 +7,7 @@ struct SentPlatformInvitation: Identifiable {
     let expires: Date
     let status: String
     let kind: String?
+    let history: ConnectionHistory
     var statusLabel: String { ["pending": "Pending", "joined": "Joined", "expired": "Expired", "revoked": "Revoked"][status] ?? "Pending" }
     init(_ raw: JSON) throws {
         guard let id = raw["id"].string, UUID(uuidString: id) != nil, let email = raw["email"].string,
@@ -15,7 +16,7 @@ struct SentPlatformInvitation: Identifiable {
               let status = raw["status"].string, ["pending", "joined", "expired", "revoked"].contains(status) else {
             throw PorchError.message("Could not load your invitations.")
         }
-        self.id = id; self.email = email; self.requested = requested; self.expires = expires; self.status = status; self.kind = raw["kind"].string
+        self.id = id; self.email = email; self.requested = requested; self.expires = expires; self.status = status; self.kind = raw["kind"].string; self.history = ConnectionHistory.persisted(raw["history"])
     }
 }
 
@@ -39,14 +40,14 @@ enum PlatformInvitation {
     }
 
     /// A generic acknowledgement deliberately does not reveal account existence or delivery.
-    @MainActor static func send(email: String, member: Member, kind: String = "friend",
+    @MainActor static func send(email: String, member: Member, kind: String = "friend", history: ConnectionHistory = .full,
         request: (String, JSON) async throws -> JSON
     ) async throws -> String {
         try member.access.requireSocialWrite()
         let email = try normalizedEmail(email)
         guard ["friend", "family"].contains(kind) else { throw PorchError.message("Choose Friend or Family.") }
         do {
-            let response = try await request("/platform-invitations", .object(["email": .string(email), "kind": .string(kind)]))
+            let response = try await request("/platform-invitations", .object(["email": .string(email), "kind": .string(kind), "history": .string(history.rawValue)]))
             guard response["accepted"] == .bool(true) else { throw PorchError.message(unconfirmedNotice) }
             return acceptedNotice
         } catch let PorchError.api(code, _, _) {
