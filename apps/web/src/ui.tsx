@@ -69,6 +69,7 @@ export function Icon({
       </>
     ),
     comment: <path d="M21 11a9 9 0 0 1-9 9H3l2-5a9 9 0 1 1 16-4Z" />,
+    code: <path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18" />,
     plus: <path d="M12 4v16M4 12h16" />,
     check: <path d="m4 12 5 5L20 6" />,
     close: <path d="m5 5 14 14M5 19 19 5" />,

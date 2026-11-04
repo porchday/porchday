@@ -61,9 +61,11 @@ struct MainTabs: View {
                     Label("Share", systemImage: "plus.square").tag("share")
                     Label("Photos", systemImage: "calendar").tag("photos")
                     Label("Connections", systemImage: "person.2").tag("connections")
-                    Label("My wall", systemImage: "person.crop.rectangle").tag("wall")
+                    Label("More", systemImage: "ellipsis").tag("menu")
                     Label("Groups", systemImage: "person.3").tag("groups")
-                    if builderAvailable { Label("Builder chat", systemImage: "bubble.left.and.bubble.right").tag("builder"); Label("Feature additions", systemImage: "lightbulb").tag("features") }
+                    Label("Notifications", systemImage: "bell").tag("notifications")
+                    Label("My wall", systemImage: "person.crop.rectangle").tag("wall")
+                    if builderAvailable { Label("Feature additions", systemImage: "chevron.left.forwardslash.chevron.right").tag("features") }
                     Label("Settings", systemImage: "gearshape").tag("settings")
                 }.navigationTitle("Porchday").navigationSplitViewColumnWidth(min: 180, ideal: 220)
             } detail: { NavigationStack { screen(destination ?? "feed") } }
@@ -74,12 +76,7 @@ struct MainTabs: View {
                 NavigationStack { screen("share") }.tabItem { Label("Share", systemImage: "plus.square") }.tag(Optional("share"))
                 NavigationStack { screen("photos") }.tabItem { Label("Photos", systemImage: "calendar") }.tag(Optional("photos"))
                 NavigationStack { screen("connections") }.tabItem { Label("Connections", systemImage: "person.2") }.tag(Optional("connections"))
-                NavigationStack { List {
-                    NavigationLink("My wall") { screen("wall") }
-                    NavigationLink("Groups") { screen("groups") }
-                    if builderAvailable { NavigationLink("Builder chat") { screen("builder") }; NavigationLink("Feature additions") { screen("features") } }
-                    NavigationLink { screen("settings") } label: { Label("Settings", systemImage: "gearshape") }
-                }.navigationTitle("Menu") }.tabItem { Label("Menu", systemImage: "ellipsis") }.tag(Optional("menu"))
+                NavigationStack { moreMenu }.tabItem { Label("More", systemImage: "ellipsis") }.tag(Optional("menu"))
             }
             #endif
         }
@@ -87,10 +84,24 @@ struct MainTabs: View {
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
     }
+    private var moreMenu: some View {
+        List {
+            NavigationLink("Groups") { screen("groups") }
+            NavigationLink("Notifications") { screen("notifications") }
+            NavigationLink("My wall") { screen("wall") }
+            if builderAvailable {
+                NavigationLink { screen("features") } label: { Label("Feature additions", systemImage: "chevron.left.forwardslash.chevron.right") }
+                NavigationLink("Builder chat") { screen("builder") }
+            }
+            NavigationLink { screen("settings") } label: { Label("Settings", systemImage: "gearshape") }
+        }.navigationTitle("More")
+    }
     @ViewBuilder private func screen(_ destination: String) -> some View {
         switch destination {
         case "share": ComposerView { self.destination = "feed" }
         case "photos": PhotosCalendarView()
+        case "menu": AnyView(moreMenu)
+        case "notifications": NotificationsView()
         case "connections": ConnectionsView()
         case "wall": ProfileView(memberID: member.id, handle: member.handle)
         case "groups": GroupsView()
