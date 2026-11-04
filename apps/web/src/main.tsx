@@ -336,15 +336,20 @@ function OfflineScreen({ onRetry }: { onRetry: () => Promise<void> }) {
     </main>
   );
 }
-const links = [
+const primaryLinks = [
   ["/", "feed", "Feed"],
-  ["/wall", "wall", "My wall"],
+  ["/share", "plus", "Share"],
+  ["/albums", "album", "Albums"],
   ["/connections", "people", "Connections"],
+  ["/menu", "more", "More"],
+];
+const secondaryLinks = [
   ["/groups", "group", "Groups"],
   ["/notifications", "bell", "Notifications"],
-  ["/settings/profile", "settings", "Settings"],
+  ["/wall", "wall", "My wall"],
 ];
-const builderChatLink = ["/builder-chat", "comment", "Builder chat"];
+const featureLink = ["/features", "code", "Feature additions"];
+const settingsLink = ["/settings/profile", "settings", "Settings"];
 function AppShell({
   path,
   routeKey,
@@ -369,7 +374,7 @@ function AppShell({
   useEffect(() => {
     if (vault.member.status !== "suspended") builderChatAvailable().then(setBuilderChat);
   }, []);
-  const sidebarLinks = vault.member.status === "suspended" ? [links[5]] : builderChat ? [...links.slice(0, 5), builderChatLink, ["/features", "plus", "Feature additions"], links[5]] : links;
+  const sidebarLinks = vault.member.status === "suspended" ? [settingsLink] : [...primaryLinks, ...secondaryLinks, ...(builderChat ? [featureLink] : []), settingsLink];
   async function logout() {
     if (hasPendingSaves()) return;
     await vault.clear();
@@ -400,7 +405,7 @@ function AppShell({
   else if (path.startsWith("/albums/")) content = <AlbumDetail key={path.split("/")[2]} id={path.split("/")[2]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
   else if (path === "/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
   else if (path === "/share") content = <><div className="page-heading mobile-tab-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
-  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/wall">My wall</a><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/features">Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button onClick={logout}><Icon name="logout"/>Log out</Button></section>;
+  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features"><Icon name="code"/>Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button onClick={logout}><Icon name="logout"/>Log out</Button></section>;
   else if (path.startsWith("/post/"))
     content = <Feed singleId={path.split("/")[2]} />;
   else if (path.startsWith("/wall"))
@@ -442,7 +447,7 @@ function AppShell({
       <aside className="sidebar">
         <Logo href="/" />
         <nav aria-label="Your Porchday">
-          {[...sidebarLinks, ...(vault.member.status === "suspended" ? [] : [["/share", "plus", "Share"], ["/albums", "album", "Albums"]])].map(
+          {sidebarLinks.map(
             ([href, icon, name]) => {
               const active =
                 href === "/"
@@ -523,8 +528,8 @@ function AppShell({
       </aside>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {(vault.member.status === "suspended"
-          ? [links[5]]
-          : [links[0], ["/share", "plus", "Share"], ["/albums", "album", "Albums"], links[2], ["/menu", "more", "More"]]
+          ? [settingsLink]
+          : primaryLinks
         ).map(([href, icon, name]) => (
           <a
             key={href}
