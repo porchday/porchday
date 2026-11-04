@@ -140,3 +140,51 @@ func TestNativeRejectsWrongSecretsAndBinding(t *testing.T) {
 		t.Fatal("closed key accepted")
 	}
 }
+
+func TestPhotoAndAlbumContextParity(t *testing.T) {
+	f := loadFixture(t)
+	alice, bob := session(t, f.Alice), session(t, f.Bob)
+	var original envelope
+	if err := json.Unmarshal(f.Envelope, &original); err != nil {
+		t.Fatal(err)
+	}
+	var base map[string]any
+	if err := json.Unmarshal(original.Context, &base); err != nil {
+		t.Fatal(err)
+	}
+	recipients, _ := json.Marshal([]recipient{{MemberID: original.Recipients[0].MemberID, DeviceID: original.Recipients[0].DeviceID, PublicKey: f.Alice.PublicKey}, {MemberID: original.Recipients[1].MemberID, DeviceID: original.Recipients[1].DeviceID, PublicKey: f.Bob.PublicKey}})
+	for _, kind := range []string{"album", "photo", "post"} {
+		for _, audience := range []string{"community", "extended_family", "album"} {
+			base["kind"], base["audience"] = kind, audience
+			delete(base, "photoDate")
+			if kind == "photo" {
+				base["photoDate"] = "2024-02-29"
+			}
+			context, _ := json.Marshal(base)
+			encrypted, err := alice.Encrypt(string(context), string(f.Payload), string(recipients))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err = bob.Decrypt(encrypted, string(context), f.Alice.PublicKey); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	base["kind"] = "photo"
+	for _, date := range []any{nil, "2023-02-29", "2024-02-30", "0000-01-01", "2024-2-01"} {
+		if date == nil {
+			delete(base, "photoDate")
+		} else {
+			base["photoDate"] = date
+		}
+		raw, _ := json.Marshal(base)
+		if _, err := validateContext(raw); err == nil {
+			t.Fatalf("accepted invalid date %v", date)
+		}
+	}
+	base["kind"], base["photoDate"] = "post", "2024-02-29"
+	raw, _ := json.Marshal(base)
+	if _, err := validateContext(raw); err == nil {
+		t.Fatal("post accepted custom date")
+	}
+}

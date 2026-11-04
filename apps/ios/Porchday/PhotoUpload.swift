@@ -1,7 +1,7 @@
 import Foundation
 
 /// Editors keep selection identity stable across separate upload attempts.
-struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); let bytes: Data; let width: Int; let height: Int; var alt = ""; var mime = "image/jpeg"; var poster = ""; var caption = ""; var tags: [PersonTag] = [] }
+struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); let bytes: Data; let width: Int; let height: Int; var alt = ""; var mime = "image/jpeg"; var poster = ""; var caption = ""; var tags: [PersonTag] = []; var photoDate = PhotoCalendar.day(Date()) }
 
 @MainActor enum PhotoUpload {
     /// A manual retry can follow a committed reservation or a partly uploaded

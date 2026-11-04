@@ -14,7 +14,7 @@ final class PlatformInvitationTests: XCTestCase {
         }
         XCTAssertEqual(requests.count, 1)
         XCTAssertEqual(requests.first?.0, "/platform-invitations")
-        XCTAssertEqual(requests.first?.1, .object(["email": .string("person+invite@example.test"), "kind": .string("friend")]))
+        XCTAssertEqual(requests.first?.1, .object(["email": .string("person+invite@example.test"), "kind": .string("friend"), "history": .string("full")]))
         XCTAssertEqual(notice, PlatformInvitation.acceptedNotice)
         XCTAssertFalse(notice.contains("delivered"))
     }
