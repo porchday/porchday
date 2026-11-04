@@ -1,6 +1,10 @@
 import Foundation
 
 enum NativeArchiveIdentity {
+    static func reference(_ row: JSON, kind: String) -> JSON {
+        let deadline = PorchDate.minimum([row["effective_expires_at"], row["expires_at"], row["envelope"]["context"]["expiresAt"]])
+        return .object(["kind": .string(kind), "id": row["export_id"] != .null ? row["export_id"] : (row["id"] != .null ? row["id"] : row["media_id"]), "revision": row["revision"] != .null ? row["revision"] : row["envelope"]["context"]["revision"], "expires_at": deadline.map { .string(PorchDate.string($0)) } ?? .null])
+    }
     /// Matches the web importer so retries across platforms address the same records.
     static func id(owner: String, source: String, kind: String, id: String) throws -> String {
         let input = JSON.array(["porchday-import-v1", owner, source, kind, id].map(JSON.string))

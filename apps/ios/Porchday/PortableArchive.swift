@@ -180,11 +180,12 @@ struct PortableArchive {
                         if section=="connections" || section=="groups" { try await append(row,section:section);continue }
                         if ["photos", "albums", "attachment_dates"].contains(section) {
                             let kind = section == "photos" ? "photo" : section == "albums" ? "album" : "attachment_date"
-                            let reference: JSON = .object(["kind": .string(kind), "id": row["export_id"] != .null ? row["export_id"] : (row["id"] != .null ? row["id"] : row["media_id"]), "revision": row["revision"], "expires_at": NativePhotoContract.expiry(row["expires_at"])])
+                            let reference = NativeArchiveIdentity.reference(row, kind: kind)
                             if section == "photos" {
                                 guard row["owner_id"].string == member.id, row["grants"].array.count == 1 else { throw PorchError.message("Restore the original photo keys before exporting.") }
+                                guard let created = row["created_at"].string.flatMap(PorchDate.parse) else { throw PorchError.message("Invalid exported photo timestamp.") }
                                 let payload = try await photoService.open(row, grant: row["grants"].array[0])
-                                let entry: JSON = .object(["id": row["id"], "photo_date": row["photo_date"], "created_at": .string(PorchDate.string(row["created_at"].string.flatMap(PorchDate.parse) ?? Date())), "expires_at": NativePhotoContract.expiry(row["expires_at"]), "payload": payload, "album_ids": row["album_ids"], "source_media_id": row["source_media_id"], "source_post_id": row["source_post_id"]])
+                                let entry: JSON = .object(["id": row["id"], "photo_date": row["photo_date"], "created_at": .string(PorchDate.string(created)), "expires_at": NativePhotoContract.expiry(row["expires_at"]), "payload": payload, "album_ids": row["album_ids"], "source_media_id": row["source_media_id"], "source_post_id": row["source_post_id"]])
                                 try await append(entry, section: section, reference: reference)
                             } else if section == "albums" {
                                 guard row["owner_id"].string == member.id else { throw PorchError.message("Export contained another person's album.") }

@@ -24,6 +24,13 @@ final class NativePhotoContractTests: XCTestCase {
         XCTAssertEqual(proof["sha256"].string, "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
         XCTAssertNotEqual(proof, proof.replacing("date", with: .string("2024-03-01")))
     }
+    func testAttachmentExportReferenceRetainsEffectiveDeadline() {
+        let row: JSON = .object(["media_id": .string("media"), "revision": .number(2), "effective_expires_at": .string("2027-01-01T00:00:00.000Z"), "expires_at": .string("2028-01-01T00:00:00.000Z")])
+        let reference = NativeArchiveIdentity.reference(row, kind: "attachment_date")
+        XCTAssertEqual(reference["id"].string, "media")
+        XCTAssertEqual(reference["expires_at"].string, "2027-01-01T00:00:00.000Z")
+        XCTAssertEqual(reference["revision"].integer, 2)
+    }
     func testArchiveIdentityMatchesWebImporterAndIsAccountScoped() throws {
         XCTAssertEqual(try NativeArchiveIdentity.id(owner: "owner", source: "source", kind: "photo", id: "id"), "04a099e7-eef6-544c-a940-8c476e51e182")
         XCTAssertNotEqual(try NativeArchiveIdentity.id(owner: "other", source: "source", kind: "photo", id: "id"), try NativeArchiveIdentity.id(owner: "owner", source: "source", kind: "photo", id: "id"))
