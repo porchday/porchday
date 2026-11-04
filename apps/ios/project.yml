@@ -82,6 +82,14 @@ targets:
     deploymentTarget: '14.0'
     sources:
       - PorchdayTests/AppleParityTests.swift
+      - PorchdayTests/NativePhotoContractTests.swift
+      - PorchdayTests/PorchdayTests.swift
+      - PorchdayTests/CryptoVaultAccessTests.swift
+      - PorchdayTests/HistoricalPostSharingTests.swift
+      - PorchdayTests/PlatformInvitationTests.swift
+      - PorchdayTests/RecipientKeyVerificationTests.swift
+      - path: ../../packages/crypto/test/fixtures/openpgp-v1.json
+        buildPhase: resources
     settings:
       base:
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Porchday.app/Contents/MacOS/Porchday"
