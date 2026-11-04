@@ -8,7 +8,7 @@ Owner follow-up November 3: #123 adds an album picker for any available past upl
 
 Owner follow-up November 4: [unified Feed design](design/unified-feed.md) replaces content tabs and author checkboxes with Show/From dropdowns. Default Everything includes directly shared photos alongside posts; Friends & Family includes own activity. **Delivered to staging and production (November 4)** under #124; see [release verification](docs/evidence/unified-feed-release-2026-11-04.md).
 
-Owner bug follow-up November 4: #123 corrects confusing existing-photo picker completion: explicit progress, automatic close after full success, and retained selections after partial failure. Implementation verified locally; production verification pending.
+Owner bug follow-up November 4: #123 corrects confusing existing-photo picker completion: explicit progress, automatic close after full success, and retained selections after partial failure. **Delivered to staging and production (November 4)**; see [completion-fix verification](docs/evidence/album-picker-completion-2026-11-04.md).
 
 ## How to choose the next task
 
