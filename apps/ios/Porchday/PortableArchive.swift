@@ -22,6 +22,11 @@ struct PortableArchive {
                   (row["source_media_id"] == .null && row["source_post_id"] == .null) || (row["source_media_id"].string != nil && row["source_post_id"].string != nil)
             else { throw PorchError.message("Malformed archived photo.") }
             _ = try NativePhotoContract.date(row["photo_date"].string ?? "")
+            let media = row["payload"]["media"].array[0]
+            for field in ["alt", "caption"] { if media[field] != .null { guard let text = media[field].string, text.count <= 5000 else { throw PorchError.message("Malformed archived photo caption.") } } }
+            if media["tags"] != .null {
+                guard case .array(let tags) = media["tags"], tags.count <= 30, PersonTag.parse(media["tags"]).count == tags.count else { throw PorchError.message("Malformed archived photo tags.") }
+            }
         }
         for row in manifest["albums"].array {
             guard row["id"].string.flatMap(UUID.init(uuidString:)) != nil,
@@ -121,6 +126,9 @@ struct PortableArchive {
             try SecureTemporaryFiles.protect(target)
             staged.append((index,target))
             for section in ["posts","comments","reactions","photos","albums"] { for row in archive.manifest[section].array { guard let id=row["id"].string,let created=row["created_at"].string.flatMap(PorchDate.parse),created<=Date(),row["expires_at"] == .null || row["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("Archive contains invalid record identity or timestamps.") };let unique=section+":"+id+":"+(row["parent_id"].string ?? "");guard recordIDs.insert(unique).inserted else { throw PorchError.message("Duplicate record across archive parts.") };entryCount += 1;for photo in row["payload"]["media"].array { if let id=photo["id"].string { references.insert(id) } } } }
+            for date in archive.manifest["attachment_dates"].array {
+                guard let id = date["media_id"].string, recordIDs.insert("attachment_date:" + id).inserted else { throw PorchError.message("Duplicate attachment date across archive parts.") }
+            }
             if archive.manifest["profile"] != .null {
                 profileCount += 1
                 for slot in ["avatar","cover","background"] { if let id=archive.manifest["profile"][slot]["id"].string { references.insert(id) } }

@@ -37,6 +37,8 @@ import Foundation
                 guard envelope["context"]["parentId"] == photo["id"], envelope["context"]["kind"].string == "media" else { throw PorchError.message("Photo bytes belong to different content.") }
                 let payload = try await model.vault.open(.object(["id": media["id"], "envelope": envelope]))
                 guard payload["mime"] == media["mime"], let bytes = payload["bytes"].string.flatMap({ Data(base64Encoded: $0) }), NativePhotoContract.hash(bytes) == content["photoProof"]["statement"]["sha256"].string else { throw PorchError.message("Photo bytes do not match the owner signature.") }
+                if media["mime"].string == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(bytes) }
+                else { guard let mime = media["mime"].string, try VideoContainer.mime(bytes) == mime else { throw PorchError.message("Photo format does not match its signed metadata.") }; _ = try await VideoPipeline.prepare(bytes) }
                 try check(); return (content, payload, bytes)
             } catch { last = error }
         }; throw last
@@ -60,7 +62,7 @@ import Foundation
                 guard row["owner_id"].string == member.id, row["source_media_id"] == (existingSource?["media_id"] ?? (source == nil ? .null : .string(id))), row["source_post_id"] == (existingSource?["post_id"] ?? source?["statement"]["postId"] ?? .null), row["photo_date"].string == day, NativePhotoContract.expiry(row["expires_at"]) == deadline,
                       NativePhotoContract.hash(draft.bytes) == opened.content["photoProof"]["statement"]["sha256"].string,
                       opened.content["media"].array.first?["alt"].string == draft.alt,
-                      opened.content["media"].array.first?["caption"].string == draft.caption,
+                      (opened.content["media"].array.first?["caption"].string ?? "") == draft.caption,
                       opened.content["media"].array.first?["tags"].array == draft.tags.map(\.json),
                       row["grants"].array.contains(where: { $0["album_id"] == .null && $0["audience"].string == audience }),
                       album == nil || row["grants"].array.contains(where: { $0["album_id"].string == album }) else { throw PorchError.message("This photo was already shared with different settings. Review it before trying again.") }
