@@ -153,6 +153,7 @@ func TestPhotoAndAlbumContextParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	recipients, _ := json.Marshal([]recipient{{MemberID: original.Recipients[0].MemberID, DeviceID: original.Recipients[0].DeviceID, PublicKey: f.Alice.PublicKey}, {MemberID: original.Recipients[1].MemberID, DeviceID: original.Recipients[1].DeviceID, PublicKey: f.Bob.PublicKey}})
+	var envelopes []json.RawMessage
 	for _, kind := range []string{"album", "photo", "post"} {
 		for _, audience := range []string{"community", "extended_family", "album"} {
 			base["kind"], base["audience"] = kind, audience
@@ -165,9 +166,43 @@ func TestPhotoAndAlbumContextParity(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			envelopes = append(envelopes, json.RawMessage(encrypted))
 			if _, err = bob.Decrypt(encrypted, string(context), f.Alice.PublicKey); err != nil {
 				t.Fatal(err)
 			}
+		}
+	}
+	// Verify the actual OpenPGP.js decoder and reverse-direction encoder for every
+	// new kind/audience pair, rather than relying only on a native round trip.
+	directory := t.TempDir()
+	input, output := filepath.Join(directory, "input.json"), filepath.Join(directory, "output.json")
+	packed, _ := json.Marshal(map[string]any{"alice": f.Alice, "bob": f.Bob, "recipients": json.RawMessage(recipients), "payload": f.Payload, "envelopes": envelopes})
+	if err := os.WriteFile(input, packed, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("node", "../test/photo-native-interop.ts", input, output)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("photo/album JS interoperability failed: %s", out)
+	}
+	reversed, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var results []json.RawMessage
+	if err := json.Unmarshal(reversed, &results); err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != len(envelopes) {
+		t.Fatal("missing reverse interop cases")
+	}
+	for _, raw := range results {
+		var env envelope
+		if err := json.Unmarshal(raw, &env); err != nil {
+			t.Fatal(err)
+		}
+		payload, err := bob.Decrypt(string(raw), string(env.Context), f.Alice.PublicKey)
+		if err != nil || !equalJSON([]byte(payload), f.Payload) {
+			t.Fatal("JavaScript photo/album decode mismatch", err)
 		}
 	}
 	base["kind"] = "photo"
@@ -186,5 +221,24 @@ func TestPhotoAndAlbumContextParity(t *testing.T) {
 	raw, _ := json.Marshal(base)
 	if _, err := validateContext(raw); err == nil {
 		t.Fatal("post accepted custom date")
+	}
+}
+
+func TestNativeRejectsNullPhotoDateAndUnsafeInteger(t *testing.T) {
+	f := loadFixture(t)
+	var env envelope
+	_ = json.Unmarshal(f.Envelope, &env)
+	var c map[string]any
+	_ = json.Unmarshal(env.Context, &c)
+	c["photoDate"] = nil
+	raw, _ := json.Marshal(c)
+	if _, err := validateContext(raw); err == nil {
+		t.Fatal("accepted null custom date on post")
+	}
+	delete(c, "photoDate")
+	c["revision"] = int64(9007199254740992)
+	raw, _ = json.Marshal(c)
+	if _, err := validateContext(raw); err == nil {
+		t.Fatal("accepted unsafe revision")
 	}
 }
