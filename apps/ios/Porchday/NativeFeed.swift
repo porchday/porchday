@@ -68,27 +68,28 @@ struct NativeFeedView: View {
                 }
                 Button("Later month", systemImage: "arrow.down") { month = PhotoCalendar.calendar.date(byAdding: .month, value: 1, to: month)! }
             } else {
-                ForEach(visible) { NativeActivityCard(entry: $0) }
+                ForEach(visible) { NativeActivityCard(entry: $0, changed: { Task { await load() } }) }
             }
             if store.busy { ProgressView("Opening activity…") }
             if !store.error.isEmpty { Text(store.error).foregroundStyle(.red); Button("Retry") { Task { await load() } } }
             if !store.busy && store.error.isEmpty && visible.isEmpty { Text("No matching activity loaded.") }
-            if store.next != .null { Button("Load more") { Task { await load(more: true) } }.disabled(store.busy) }
+            if store.next != .null { Button("Load more") { Task { await load(more: true) } }.disabled(store.busy).onAppear { if !calendar { Task { await load(more: true) } } } }
         }.task(id: filterKey) { await load() }.refreshable { await load() }
         .onChange(of: model.historySharingVersion) { _, _ in Task { await load() } }
-        .sheet(isPresented: Binding(get: { selectedDay != nil }, set: { if !$0 { selectedDay = nil } })) { NavigationStack { List { ForEach(visible.filter { $0.day == selectedDay }) { NativeActivityCard(entry: $0) }; if store.next != .null { Button("Load more in this month") { Task { await load(more: true) } }.disabled(store.busy) } }.navigationTitle(selectedDay ?? "Day").toolbar { Button("Done") { selectedDay = nil } } } }
+        .sheet(isPresented: Binding(get: { selectedDay != nil }, set: { if !$0 { selectedDay = nil } })) { NavigationStack { List { ForEach(visible.filter { $0.day == selectedDay }) { NativeActivityCard(entry: $0, changed: { Task { await load() } }) }; if store.next != .null { Button("Load more in this month") { Task { await load(more: true) } }.disabled(store.busy) } }.navigationTitle(selectedDay ?? "Day").toolbar { Button("Done") { selectedDay = nil } } } }
     }
     private func load(more: Bool = false) async { await store.load(model, content: content, month: monthKey, more: more) }
 }
 struct NativeActivityCard: View {
     let entry: NativeActivity
+    var changed: () -> Void = {}
     @EnvironmentObject var model: AppModel
     @State private var editingDate = false
     var body: some View {
-        if entry.raw["kind"].string == "photo" { NativePhotoCard(photo: entry.raw["photo"]) }
+        if entry.raw["kind"].string == "photo" { NativePhotoCard(photo: entry.raw["photo"], changed: changed) }
         else if let post = entry.post {
             if entry.raw["kind"].string == "post" { NavigationLink { PostDetailView(id: post.id) } label: { MomentCard(item: post) } }
-            else { VStack(alignment: .leading) { Text(post.authorHandle); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; Text(entry.day).font(.caption); if post.authorID == model.member?.id && model.canWriteSocial { Button("Change photo date") { editingDate = true }.sheet(isPresented: $editingDate) { NavigationStack { NativeAttachmentDateEditor(media: entry.raw["id"].string!, post: post.id, originalDay: entry.day) } } }; NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
+            else { VStack(alignment: .leading) { Text(post.authorHandle); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; Text(entry.day).font(.caption); if post.authorID == model.member?.id && model.canWriteSocial { Button("Change photo date") { editingDate = true }.sheet(isPresented: $editingDate) { NavigationStack { NativeAttachmentDateEditor(media: entry.raw["id"].string!, post: post.id, originalDay: entry.day, saved: changed) } } }; NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
         }
     }
 }
@@ -165,6 +166,7 @@ struct NativeAttachmentDateEditor: View {
     let media: String
     let post: String
     let originalDay: String
+    var saved: () -> Void = {}
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @State private var day = ""
@@ -177,7 +179,7 @@ struct NativeAttachmentDateEditor: View {
                 let service = try NativePhotos(model), date = try NativePhotoContract.date(day), info = try await service.request("/media/" + media + "/photo-date")
                 if let id = info["photo_id"].string { let row = try await service.photo(id); try await service.updateDate(row, date: date) }
                 else { let proof = try service.attachmentProof(media: media, post: post, date: date, revision: (info["date"]["revision"].integer ?? 0) + 1); _ = try await service.request("/media/" + media + "/photo-date", method: "PUT", body: proof) }
-                dismiss()
+                saved(); dismiss()
             } } }.disabled(busy)
         }.navigationTitle("Photo date").task { day = originalDay }.toolbar { Button("Cancel") { dismiss() }.disabled(busy) }
     }
