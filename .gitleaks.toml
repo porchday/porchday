@@ -91,3 +91,11 @@ paths = ["(?:^|/)scripts/monitor-config\\.test\\.ts$"]
 regexes = [
   "^private-health-capability-1234567890$",
 ]
+
+[[allowlists]]
+description = "Exact verified public Git source revisions in the November 3 release report; these are commit IDs, not credentials."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['(?:^|/)docs/evidence/mobile-album-picker-release-2026-11-03\.md$']
+regexes = ['^Frontend\ source:\ `9fcc6a0e84a3549903cdef80de49705cac1a4c33`\.\ Production\ API\ source:\ `f66c399224c652c57115c6045e15fb348d4bf368`\.\ Staging\ API\ source:\ `a8ef16aee99014877f57c77aaa0c17ea69d96197`\.$']
