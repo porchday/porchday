@@ -1,6 +1,6 @@
 # Unified Feed and simple filters
 
-Status: owner-approved design, November 4, 2026. Implementation and production verification are tracked in #124. This supersedes the Feed content tabs and author checkboxes in feed-share-photos.md; Share keeps its Post / Photos creation tabs.
+Status: owner-approved design, November 4, 2026. Implemented in PR #144 and verified on staging and production; see [release evidence](../docs/evidence/unified-feed-release-2026-11-04.md). Tracked in #124. This supersedes the Feed content tabs and author checkboxes in feed-share-photos.md; Share keeps its Post / Photos creation tabs.
 
 ## Experience
 
