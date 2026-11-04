@@ -324,12 +324,35 @@ suite("Encrypted independent photo API",()=>{
     expect(owned.data.items.every((entry:any)=>entry.author_id===owner.id)).toBe(true);
     expect((await call(reader.id,"/photo-feed?owner=me")).data.items).toHaveLength(0);
     expect((await call(reader.id,"/photo-feed?owner="+owner.id)).status).toBe(400);
+    const mixed=await call(reader.id,"/photo-feed?content=everything&order=shared");
+    expect(mixed.status,JSON.stringify(mixed.data)).toBe(200);
+    expect(mixed.data.items.map((e:any)=>e.kind)).toEqual(["photo","post"]);
+    expect(mixed.data.items.map((e:any)=>e.id)).toEqual([independent.id,postId]);
+    expect((await call(reader.id,"/photo-feed?content=posts")).data.items.map((e:any)=>e.id)).toEqual([postId]);
+    expect((await call(reader.id,"/photo-feed?content=everything&month=2026-10&timezone=America%2FLos_Angeles")).data.items).toHaveLength(2);
+    expect((await call(outsider.id,"/photo-feed?content=everything")).data.items).toHaveLength(0);
+    expect((await call(reader.id,"/photo-feed?content=invalid")).status).toBe(400);
+    expect((await call(reader.id,"/photo-feed?order=invalid")).status).toBe(400);
     const utc=await call(reader.id,"/photo-feed?month=2026-10&timezone=UTC");expect(utc.data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
     expect((await call(outsider.id,"/photo-feed")).data.items).toHaveLength(0);
     await db`insert into app.mutes(actor,target) values(${reader.id},${owner.id})`;
     expect((await call(reader.id,"/photo-feed")).data.items).toHaveLength(0);
+    expect((await call(reader.id,"/photo-feed?content=everything")).data.items).toHaveLength(0);
     expect((await call(reader.id,"/photo-feed?timezone=not-a-zone")).status).toBe(400);
     expect((await call(reader.id,"/photo-feed?after=invalid")).status).toBe(400);
+  });
+  it("paginates mixed publication timestamps without losing microseconds or same-ID kinds",async()=>{
+    const owner=await person(),ids:string[]=[];
+    // Narrow SQL fixtures exercise cursor precision independently of ciphertext validation.
+    for(let i=0;i<34;i++){const id=randomUUID();ids.push(id);await db`insert into app.photos(id,owner_id,photo_date,created_at) values(${id},${owner.id},'2000-01-01',${"2026-11-01T00:00:00."+String(100+i).padStart(6,"0")+"Z"}::text::timestamptz)`;}
+    const postId=randomUUID();await db`insert into app.photos(id,owner_id,photo_date,created_at) values(${postId},${owner.id},'2000-01-01','2026-11-01T00:00:00.000Z')`;
+    const envelope=await seal(owner,{text:"Tie"},1,{id:postId,kind:"post",createdAt:"2026-11-01T00:00:00.000Z"});
+    await db`insert into app.posts(id,author_id,audience,envelope,epoch,created_at) values(${postId},${owner.id},'only_me',${db.json(envelope)},${envelope.context.epoch},${envelope.context.createdAt})`;
+    for(const r of envelope.recipients)await db`insert into app.post_recipients(post_id,device_id,member_id) values(${postId},${r.deviceId},${r.memberId})`;
+    const first=await call(owner.id,"/photo-feed?content=everything&order=shared");expect(first.status,JSON.stringify(first.data)).toBe(200);expect(first.data.items).toHaveLength(30);
+    const second=await call(owner.id,"/photo-feed?content=everything&order=shared&after="+encodeURIComponent(first.data.next));expect(second.status,JSON.stringify(second.data)).toBe(200);expect(second.data.items).toHaveLength(6);expect(second.data.next).toBeNull();
+    const all=[...first.data.items,...second.data.items];expect(new Set(all.map((e:any)=>e.kind+e.id)).size).toBe(36);expect(all.filter((e:any)=>e.kind==="photo").map((e:any)=>e.id)).toEqual([...ids].reverse().concat(postId));expect(all.slice(-2).map((e:any)=>e.kind)).toEqual(["post","photo"]);
+    expect((await call(owner.id,"/photo-feed?content=everything&order=shared&month=2000-01")).data.items.every((e:any)=>e.kind==="photo")).toBe(true);
   });
   it("adopts a post attachment into an album while preserving original readers, one calendar identity and atomic dates",async()=>{
     const owner=await person(),reader=await person(),albumReader=await person(),outsider=await person();await connect(owner,reader);
@@ -357,6 +380,12 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(reader.id,"/photo-feed")).data.items.map((e:any)=>e.kind)).toEqual(["attachment"]);
     expect((await call(owner.id,"/photo-feed")).data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
     expect((await call(albumReader.id,"/photo-feed")).data.items.map((e:any)=>e.kind)).toEqual(["photo"]);
+    expect((await call(owner.id,"/photo-feed?content=everything")).data.items.map((e:any)=>e.kind)).toEqual(["post"]);
+    expect((await call(reader.id,"/photo-feed?content=everything")).data.items.map((e:any)=>e.kind)).toEqual(["post"]);
+    const albumActivity=(await call(albumReader.id,"/photo-feed?content=everything")).data.items;
+    expect(albumActivity.map((e:any)=>e.kind)).toEqual(["photo"]);
+    expect(albumActivity[0].post).toBeNull();
+
     expect((await call(outsider.id,"/photo-feed")).data.items).toHaveLength(0);
     const envelopes=[];
     for(const grant of [direct,copy]){
@@ -380,6 +409,7 @@ suite("Encrypted independent photo API",()=>{
     expect(await db`select id from app.media_assets where id=${source.media_id}`).toHaveLength(0);
     expect((await call(reader.id,"/posts/"+postId)).status).toBe(200);
     expect((await call(reader.id,"/photo-feed")).data.items).toHaveLength(0);
+    expect((await call(reader.id,"/photo-feed?content=everything")).data.items.map((e:any)=>e.kind)).toEqual(["post"]);
   });
   it("refuses adoption that extends the original post deadline and retains adopted copies after post removal",async()=>{
     const owner=await person(),postId=randomUUID(),deadline=new Date(Date.now()+3600000).toISOString(),later=new Date(Date.now()+7200000).toISOString();

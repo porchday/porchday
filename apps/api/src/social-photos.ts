@@ -52,28 +52,34 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
   });
   app.get("/photo-feed",async c=>c.json(await tx(c,async db=>{
     const owner=c.req.query("owner");if(owner&&owner!=="me")fail("INVALID_OWNER");
+    const content=c.req.query("content")||"photos",order=c.req.query("order")||"date";
+    if(!["everything","posts","photos"].includes(content)||!["date","shared"].includes(order))fail("INVALID_FEED_FILTER");
     const timezone=c.req.query("timezone")||"UTC";
     const [zone]=await db`select name from pg_timezone_names where name=${timezone}`;
     if(!zone)fail("INVALID_TIMEZONE");
     const month=c.req.query("month");if(month&&(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month.slice(0,4)<"0001"))fail("INVALID_MONTH");
-    let cursor:{day:string;id:string;kind:string}|null=null;
-    if(c.req.query("after")){try{cursor=z.object({day,id:z.string().uuid(),kind:z.enum(["photo","attachment"])}).strict().parse(JSON.parse(c.req.query("after")!));}catch{fail("INVALID_CURSOR");}}
-    const rows=await db`with candidates as (
-      select 'photo'::text as kind,p.id,p.photo_date as day,p.owner_id as author_id,to_jsonb(p)||jsonb_build_object('photo_date',p.photo_date::text) as photo,null::jsonb as post,null::jsonb as attachment_date
-      from app.photos p
+    let cursor:{day?:string;at?:string;id:string;kind:string}|null=null;
+    if(c.req.query("after")){try{cursor=z.object({...order==="shared"?{at:z.string().datetime({offset:true})}:{day},id:z.string().uuid(),kind:z.enum(["photo","attachment","post"])}).strict().parse(JSON.parse(c.req.query("after")!));}catch{fail("INVALID_CURSOR");}}
+    const rows=await db`with extended_family as materialized (select member_id from app.audience_devices('extended_family') union select member_id from app.pending_audience_members('extended_family')), candidates as (
+      select 'photo'::text as kind,p.id,p.photo_date as day,p.owner_id as author_id,to_jsonb(p)||jsonb_build_object('photo_date',p.photo_date::text) as photo,null::jsonb as post,null::jsonb as attachment_date,coalesce(source.created_at,p.created_at) as shared_at
+      from app.photos p left join app.posts source on source.id=p.source_post_id
+      where ${content!=="posts"} and (${content==="photos"} or source.id is null or source.group_id is not null)
       union all
-      select 'attachment'::text,m.id,coalesce(d.photo_date,(p.created_at at time zone ${timezone})::date),p.author_id,null::jsonb,to_jsonb(p),to_jsonb(d)
+      select 'attachment'::text,m.id,coalesce(d.photo_date,(p.created_at at time zone ${timezone})::date),p.author_id,null::jsonb,to_jsonb(p),to_jsonb(d),p.created_at
       from app.media_assets m join app.posts p on p.id=m.post_id left join app.attachment_photo_dates d on d.media_id=m.id
-      where (p.group_id is null ${owner==="me"?db`or p.author_id=${c.get("memberId")}`:db``}) and m.state='attached' and not exists(select 1 from app.photos adopted where adopted.source_media_id=m.id) and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
-    ) select c.*,app.author_category(c.author_id) as author_category,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
+      where ${content==="photos"} and (p.group_id is null ${owner==="me"?db`or p.author_id=${c.get("memberId")}`:db``}) and m.state='attached' and not exists(select 1 from app.photos adopted where adopted.source_media_id=m.id) and(app.media_deadline(m.id) is null or app.media_deadline(m.id)>statement_timestamp())
+      union all
+      select 'post'::text,p.id,(p.created_at at time zone ${timezone})::date,p.author_id,null::jsonb,to_jsonb(p),null::jsonb,p.created_at
+      from app.posts p where ${content!=="photos"} and p.group_id is null
+    ) select c.*,to_char(c.shared_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as shared_at,app.author_category(c.author_id) as author_category,exists(select 1 from extended_family ef where ef.member_id=c.author_id) as author_in_extended_family,c.day::text as day,h.handle as author_handle from candidates c left join lateral app.member_handles(array[c.author_id]) h on true
     where true ${owner==="me"?db`and c.author_id=${c.get("memberId")}`:db``}
       and not exists(select 1 from app.mutes where target=c.author_id)
-      ${cursor?db`and(c.day,c.id,c.kind)<(${cursor.day}::date,${cursor.id}::uuid,${cursor.kind})`:db``}
+      ${cursor?(order==="shared"?db`and(c.shared_at,c.id,c.kind)<(${cursor.at!}::text::timestamptz,${cursor.id}::uuid,${cursor.kind})`:db`and(c.day,c.id,c.kind)<(${cursor.day!}::date,${cursor.id}::uuid,${cursor.kind})`):db``}
       ${month?db`and c.day>=${month+"-01"}::date and c.day<(${month+"-01"}::date+interval '1 month')`:db``}
-    order by c.day desc,c.id desc,c.kind desc limit 31`;
+    ${order==="shared"?db`order by c.shared_at desc,c.id desc,c.kind desc`:db`order by c.day desc,c.id desc,c.kind desc`} limit 31`;
     const selected=rows.slice(0,30),ids=selected.filter(r=>r.kind==="photo").map(r=>r.id);
     const visibleGrants=ids.length?await db`select * from app.photo_grants where photo_id in ${db(ids)} order by id`:[];
-    return {items:selected.map(row=>({...row,...(row.photo?{photo:{...row.photo,grants:visibleGrants.filter(g=>g.photo_id===row.id)}}:{})})),next:rows.length>30?JSON.stringify({day:selected[29].day,id:selected[29].id,kind:selected[29].kind}):null};
+    return {items:selected.map(row=>({...row,...(row.photo?{photo:{...row.photo,grants:visibleGrants.filter(g=>g.photo_id===row.id)}}:{})})),next:rows.length>30?JSON.stringify({...order==="shared"?{at:selected[29].shared_at}:{day:selected[29].day},id:selected[29].id,kind:selected[29].kind}):null};
   })));
   app.get("/photos",async c=>c.json(await tx(c,async db=>{
     const album=c.req.query("album")?id(c.req.query("album")):null;
@@ -82,7 +88,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
     const month=c.req.query("month");if(month&&(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month.slice(0,4)<"0001"))fail("INVALID_MONTH");
     const rows=await db`select p.*,p.photo_date::text as photo_date from app.photos p where true
       ${album?db`and exists(select 1 from app.photo_grants g where g.photo_id=p.id and g.album_id=${album})`:db``}
-      ${cursor?db`and (p.photo_date,p.id)<(${cursor.day}::date,${cursor.id}::uuid)`:db``}
+      ${cursor?db`and (p.photo_date,p.id)<(${cursor.day!}::date,${cursor.id}::uuid)`:db``}
       ${month?db`and p.photo_date>=${month+"-01"}::date and p.photo_date<(${month+"-01"}::date+interval '1 month')`:db``}
       order by p.photo_date desc,p.id desc limit 31`;
     const selected=rows.slice(0,30);
