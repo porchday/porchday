@@ -1,11 +1,20 @@
 import {execFile} from 'node:child_process';
 import {isAbsolute} from 'node:path';
 export const parityCapabilities = ['navigation','feed','albums','photo-sharing','photo-dates','audiences','invitations','history','portability','notifications'] as const;
-type Matrix = {version:1; capabilities:Array<{id:string;ios:'verified'|'pending';macos:'verified'|'pending';evidence:string[]}>};
+type Matrix = {version:1|2; capabilities:Array<{id:string;ios:'verified'|'pending';macos:'verified'|'pending';evidence:string[];implementation?:{ios:'implemented'|'pending';macos:'implemented'|'pending'};followUpIssues?:string[]}>};
 export function validateNativeParity(input:unknown):Matrix {
  const m=input as Matrix;
- if(!m||m.version!==1||!Array.isArray(m.capabilities)||m.capabilities.length!==parityCapabilities.length||new Set(m.capabilities.map(x=>x.id)).size!==parityCapabilities.length)throw Error('NATIVE_PARITY_MATRIX_INVALID');
- for(const id of parityCapabilities){const row=m.capabilities.find(x=>x.id===id);if(!row||!Array.isArray(row.evidence)||!row.evidence.length||row.evidence.some(x=>typeof x!=='string'||!x.trim()))throw Error('NATIVE_PARITY_EVIDENCE_MISSING:'+id);if(row.ios!=='verified'||row.macos!=='verified')throw Error('NATIVE_PARITY_PENDING:'+id);}
+ if(!m||![1,2].includes(m.version)||!Array.isArray(m.capabilities)||m.capabilities.length!==parityCapabilities.length||new Set(m.capabilities.map(x=>x.id)).size!==parityCapabilities.length)throw Error('NATIVE_PARITY_MATRIX_INVALID');
+ for(const id of parityCapabilities){
+  const row=m.capabilities.find(x=>x.id===id);
+  if(!row||!Array.isArray(row.evidence)||!row.evidence.length||row.evidence.some(x=>typeof x!=='string'||!x.trim()))throw Error('NATIVE_PARITY_EVIDENCE_MISSING:'+id);
+  if(!['verified','pending'].includes(row.ios)||!['verified','pending'].includes(row.macos))throw Error('NATIVE_PARITY_STATUS_INVALID:'+id);
+  if(m.version===1){if(row.ios!=='verified'||row.macos!=='verified')throw Error('NATIVE_PARITY_PENDING:'+id);continue;}
+  // Implementation parity and exact-source automated tests still gate releases.
+  // Hosted-native and physical-device acceptance is tracked separately, not waived as passed.
+  if(row.implementation?.ios!=='implemented'||row.implementation?.macos!=='implemented')throw Error('NATIVE_PARITY_IMPLEMENTATION_PENDING:'+id);
+  if((row.ios==='pending'||row.macos==='pending')&&(!Array.isArray(row.followUpIssues)||!row.followUpIssues.length||row.followUpIssues.some(x=>typeof x!=='string'||!/^https:\/\/github\.com\/porchday\/porchday\/issues\/[1-9][0-9]*$/.test(x))))throw Error('NATIVE_PARITY_FOLLOW_UP_MISSING:'+id);
+ }
  return m;
 }
 function command(binary:string,args:string[],workspace:string,signal:AbortSignal):Promise<string>{return new Promise((resolve,reject)=>execFile(binary,args,{cwd:workspace,encoding:'utf8',timeout:15000,maxBuffer:4*1024*1024,signal},(error,out)=>error?reject(Error('NATIVE_PARITY_READ_FAILED')):resolve(out)));}
@@ -21,7 +30,8 @@ export function validateNativeJobs(jobs:any,run:any,source:string,file:string,jo
  for(const name of required){const steps=job.steps?.filter((s:any)=>s.name===name);if(steps?.length!==1||steps[0].status!=='completed'||steps[0].conclusion!=='success')throw Error('NATIVE_PARITY_CI_STEP_NOT_VERIFIED');}
 }
 /** Read-only, exact candidate-source gate. A green compiler does not replace the
- * reviewed capability matrix. Old recovery intents bypass only this new gate so
+ * reviewed implementation matrix. Manual acceptance can remain pending with tracked
+ * follow-ups. Old recovery intents bypass only this new gate so
  * an outage rollback cannot be prevented by missing feature work. */
 export async function verifyProductionNativeParity(workspace:string,source:string,signal:AbortSignal){
  if(!isAbsolute(workspace)||! /^[a-f0-9]{40}$/.test(source))throw Error('NATIVE_PARITY_INPUT_INVALID');
