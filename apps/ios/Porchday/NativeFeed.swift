@@ -86,20 +86,19 @@ struct NativeActivityCard: View {
     @EnvironmentObject var model: AppModel
     @State private var editingDate = false
     var body: some View {
-        if entry.raw["kind"].string == "photo" { VStack(alignment: .leading) {
-            HStack { MemberAvatarView(memberID: entry.raw["author_id"].string ?? "", name: entry.raw["author_handle"].string ?? "Member"); Text("@" + (entry.raw["author_handle"].string ?? "member")).font(.headline) }
-            Label("Photo", systemImage: "photo").font(.caption).foregroundStyle(.secondary)
-            NativePhotoCard(photo: entry.raw["photo"], changed: changed)
-        } }
+        if entry.raw["kind"].string == "photo" {
+            NativePhotoCard(photo: entry.raw["photo"], feedAuthor: entry.raw["author_handle"].string ?? "member", changed: changed)
+        }
         else if let post = entry.post {
             if entry.raw["kind"].string == "post" { NavigationLink { PostDetailView(id: post.id) } label: { MomentCard(item: post) } }
-            else { VStack(alignment: .leading) { Text(post.authorHandle); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; Text(entry.day).font(.caption); if post.authorID == model.member?.id && model.canWriteSocial { Button("Change photo date") { editingDate = true }.sheet(isPresented: $editingDate) { NavigationStack { NativeAttachmentDateEditor(media: entry.raw["id"].string!, post: post.id, originalDay: entry.day, saved: changed) } } }; NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
+            else { VStack(alignment: .leading) { ActivityAuthorView(memberID: post.authorID, handle: post.authorHandle, photoDay: entry.day); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; if post.authorID == model.member?.id && model.canWriteSocial { Button("Change photo date") { editingDate = true }.sheet(isPresented: $editingDate) { NavigationStack { NativeAttachmentDateEditor(media: entry.raw["id"].string!, post: post.id, originalDay: entry.day, saved: changed) } } }; NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
         }
     }
 }
 struct NativePhotoCard: View {
     let photo: JSON
     var album: JSON? = nil
+    var feedAuthor: String? = nil
     var changed: () -> Void = {}
     @EnvironmentObject var model: AppModel
     @State private var image: PlatformImage?
@@ -124,14 +123,15 @@ struct NativePhotoCard: View {
             if removed { Text("Photo removed.") }
             else if row["expires_at"].string.flatMap(PorchDate.parse).map({ $0 <= clock.date }) == true { Text("This photo has expired.") }
             else {
-                VStack(alignment: .leading) {
-                    if let image { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 420).accessibilityLabel(content["media"].array.first?["alt"].string ?? "Photo") }
+                VStack(alignment: .leading, spacing: 10) {
+                    if let feedAuthor { ActivityAuthorView(memberID: row["owner_id"].string ?? "", handle: feedAuthor, photoDay: row["photo_date"].string, sharing: "Shared photo") }
+                    if let image { ViewablePhoto(image: image, caption: content["media"].array.first?["alt"].string ?? "", expiresAt: row["expires_at"].string.flatMap(PorchDate.parse)).frame(maxHeight: 420) }
                     else if let player { VideoPlayer(player: player).frame(minHeight: 220) }
                     else if let webM { LocalWebMPlayer(decoder: webM).frame(minHeight: 220) }
                     else if error.isEmpty { ProgressView("Opening photo…") }
                     ForEach(NativePhotoContract.captions(content["media"].array.first ?? .null), id: \.self) { Text($0) }
                     PeopleTagsView(tags: PersonTag.parse(content["media"].array.first?["tags"] ?? .null))
-                    Text(row["photo_date"].string ?? "").font(.caption)
+                    if feedAuthor == nil { Text(row["photo_date"].string ?? "").font(.caption) }
                     if content != .null { NativePhotoInteractions(photo: row) }
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Retry photo") { Task { await load() } } }
                     if model.canWriteSocial {
