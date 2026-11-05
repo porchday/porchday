@@ -27,7 +27,9 @@ suite('PostgreSQL invariants under actual non-owner runtime role', () => {
             const [edge]=await admin`insert into app.connections(member_a,member_b,kind,proposed_kind,proposed_by,history_a,history_b) values(${a},${b},${kind},${kind==='friend'?'family':'friend'},${a},'full','future') returning id,kind,member_a,member_b`;
             migrated.push(edge as any);
         }
-        await admin.unsafe(await readFile(new URL('../migrations/047_independent_connection_labels.sql',import.meta.url),'utf8')); }, 30000);
+        await admin.unsafe(await readFile(new URL('../migrations/047_independent_connection_labels.sql',import.meta.url),'utf8'));
+        // This fixture intentionally loads only the social schema; invitation-trigger coverage uses the full migration suite.
+        await admin.unsafe((await readFile(new URL('../migrations/072_connection_limit_150.sql',import.meta.url),'utf8')).split('-- Invitation signup')[0]); }, 30000);
     afterAll(async () => { if (admin)
         await admin.end(); });
     it('backfills only accepted labels in both directions and preserves independent history choices', async () => {
@@ -118,22 +120,34 @@ suite('PostgreSQL invariants under actual non-owner runtime role', () => {
         const [role] = await admin `select rolsuper,rolbypassrls from pg_roles where rolname='porchday_social'`;
         expect(role).toMatchObject({ rolsuper: false, rolbypassrls: false });
     });
-    it('serializes both endpoints at the 300-person cap, including family requests', async () => {
+    it('serializes both endpoints at the 150-person cap, including family requests', async () => {
         const center = await member();
-        const peers = await Promise.all(Array.from({ length: 301 }, () => member()));
-        for (const peer of peers.slice(0, 299))
+        const peers = await Promise.all(Array.from({ length: 151 }, () => member()));
+        for (const peer of peers.slice(0, 149))
             await connect(center, peer);
-        const requests = await Promise.all(peers.slice(299).map(async (sender) => { const id = randomUUID(); await admin `insert into app.connection_requests(id,sender,recipient,kind) values(${id},${sender},${center},'family')`; return id; }));
+        const requests = await Promise.all(peers.slice(149).map(async (sender) => { const id = randomUUID(); await admin `insert into app.connection_requests(id,sender,recipient,kind) values(${id},${sender},${center},'family')`; return id; }));
         const results = await Promise.allSettled(requests.map(r => actor(center, db => db `select app.accept_connection(${r})`)));
         expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
         expect(results.filter(r => r.status === 'rejected')).toHaveLength(1);
         const [count] = await admin `select count(*)::int n from app.connections where ${center} in(member_a,member_b)`;
-        expect(count.n).toBe(300);
-        await expect(actor(center, db => db `insert into app.connections(member_a,member_b,kind) values(${[center, peers[300]].sort()[0]},${[center, peers[300]].sort()[1]},'friend')`)).rejects.toMatchObject({ code: '42501' });
+        expect(count.n).toBe(150);
+        await expect(actor(center, db => db `insert into app.connections(member_a,member_b,kind) values(${[center, peers[150]].sort()[0]},${[center, peers[150]].sort()[1]},'friend')`)).rejects.toMatchObject({ code: '42501' });
         const other = await member();
         const request = randomUUID();
         await admin `insert into app.connection_requests(id,sender,recipient,kind) values(${request},${center},${other},'friend')`;
         await expect(actor(other, db => db `select app.accept_connection(${request})`)).rejects.toThrow('CONNECTION_LIMIT');
+        // A lower cap must not discard old pairs or break an accepted-request retry.
+        await connect(center, await member());
+        await admin.unsafe((await readFile(new URL('../migrations/072_connection_limit_150.sql',import.meta.url),'utf8')).split('-- Invitation signup')[0]);
+        expect((await admin`select count(*)::int n from app.connections where ${center} in(member_a,member_b)`)[0].n).toBe(151);
+        const accepted=requests[results.findIndex(r=>r.status==='fulfilled')];
+        await actor(center,db=>db`select app.accept_connection(${accepted})`);
+        await expect(actor(other,db=>db`select app.accept_connection(${request})`)).rejects.toThrow('CONNECTION_LIMIT');
+        const edges=await actor(center,db=>db`select id from app.connections where ${center} in(member_a,member_b) and member_a<>${other} and member_b<>${other} limit 2`) as {id:string}[];
+        for(const edge of edges)await actor(center,db=>db`select app.change_connection(${edge.id},'friend',true)`);
+        await actor(other,db=>db`select app.accept_connection(${request})`);
+        expect((await admin`select count(*)::int n from app.connections where ${center} in(member_a,member_b)`)[0].n).toBe(150);
+
     }, 30000);
     it('changes only the actor’s label immediately, is idempotent, and frees slots on removal', async () => {
         const a = await member(), b = await member(), outsider = await member();

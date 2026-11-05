@@ -14,7 +14,7 @@ struct ConnectionsView: View {
     init(initialHandle: String = "") { _handle = State(initialValue: initialHandle) }
     var body: some View { List {
         Section {
-            Text("\(data["items"].array.count) of 300 friends, including family").font(.headline)
+            Text("\(data["items"].array.count) of 150 friends, including family").font(.headline)
             TextField("Find an exact @handle", text: $handle).porchCapitalization(.never).autocorrectionDisabled()
             ConnectionLabelPicker(selection: $kind)
             HistorySharingPicker(selection: $requestHistory)
@@ -23,7 +23,7 @@ struct ConnectionsView: View {
                     "handle": .string(handle.lowercased().trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "@", with: "")),
                     "kind": .string(kind), "history": .string(requestHistory.rawValue)]))
                 handle = ""; requestHistory = .newConnectionDefault; await refresh()
-            } } }.disabled(handle.isEmpty || data["items"].array.count >= 300 || !model.canWriteSocial)
+            } } }.disabled(handle.isEmpty || data["items"].array.count >= 150 || !model.canWriteSocial)
             Text("Your label controls whether this person can see your friends-only or family-only posts. Each person chooses their own label.").font(.caption).foregroundStyle(.secondary)
             Text("Earlier posts are shared from an unlocked device, within their original audience and timers.").font(.caption).foregroundStyle(.secondary)
         }
@@ -48,7 +48,7 @@ struct ConnectionsView: View {
                         HistorySharingPicker(selection: Binding(get: { acceptanceHistory[requestID] ?? .newConnectionDefault }, set: { acceptanceHistory[requestID] = $0 }))
                         Button("Accept") { Task {
                             await action("/connections/requests/\(requestID)/accept", body: .object(["kind": .string(acceptanceKind[requestID] ?? "friend"), "history": .string((acceptanceHistory[requestID] ?? .newConnectionDefault).rawValue)]), shareHistory: true)
-                        } }.disabled(data["items"].array.count >= 300 || !model.canWriteSocial)
+                        } }.disabled(data["items"].array.count >= 150 || !model.canWriteSocial)
                     } else {
                         Text("Your label: " + (request["kind"].string == "family" ? "Family" : "Friend")).font(.caption)
                         Text("Your posts: " + ConnectionHistory.persisted(request["history"]).title).font(.caption)
@@ -201,7 +201,7 @@ struct GroupsView: View {
     @State private var name = ""
     @State private var description = ""
     var body: some View { List {
-        Section { Text("Group membership is separate from your 300 connections.").font(.footnote); Button("Create a named group") { create = true }.disabled(!model.canWriteSocial) }
+        Section { Text("Group membership is separate from your 150 connections.").font(.footnote); Button("Create a named group") { create = true }.disabled(!model.canWriteSocial) }
         Section("Your groups") { ForEach(groups, id: \.id) { group in NavigationLink(group.name) { GroupView(id: group.id, title: group.name) } } }
         Section("Invitations") { ForEach(Array(invitations.enumerated()), id: \.offset) { _, invitation in Button("Accept private group invitation") { Task { await model.perform { _ = try await model.api.social("/group-invitations/\(invitation["id"].string ?? "")/accept", method: "POST", body: .object([:])); await refresh() } } }.disabled(!model.canWriteSocial) } }
     }.navigationTitle("Groups").task { await refresh() }.refreshable { await refresh() }

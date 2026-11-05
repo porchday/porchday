@@ -34,7 +34,7 @@ export async function readMemberBootstrap(env: Pick<Env,'HYPERDRIVE_SOCIAL'>, me
       ...device,created_at:new Date(device.created_at).toISOString(),revoked_at:device.revoked_at?new Date(device.revoked_at).toISOString():null,
     }));
     if (!bootstrap && member) delete member.startup_devices;
-    return {...member,connection_limit:300};
+    return {...member,connection_limit:150};
   } catch(error) {
     // Never retry a query or return data after an uncertain commit/rollback.
     if(client)try{await client.query('ROLLBACK');}catch{}

@@ -113,7 +113,7 @@ export function Connections() {
       <div className="page-heading">
         <h1 className="mobile-tab-title">Connections</h1>
         <p>
-          Up to 300 mutual connections, including family.
+          Up to 150 mutual connections, including family.
         </p>
       </div>
       <section className="panel">
@@ -136,7 +136,7 @@ export function Connections() {
             variant="primary"
             busy={action.busy}
             disabled={
-              list.length >= 300 || vault.member.status === "restricted"
+              list.length >= 150 || vault.member.status === "restricted"
             }
           >
             Send request <Icon name="arrow" size={16} />
@@ -177,7 +177,7 @@ export function Connections() {
                     variant="primary compact"
                     aria-label={`Accept connection request from @${label(r.sender)}`}
                     busy={action.busy}
-                    disabled={list.length >= 300 || vault.member.status === "restricted"}
+                    disabled={list.length >= 150 || vault.member.status === "restricted"}
                     onClick={() =>
                       respond(r.id, "accept", `Connected with @${label(r.sender)}.`)
                     }
@@ -203,7 +203,7 @@ export function Connections() {
       <section className="panel">
         <div className="section-title">
           <h2 ref={peopleHeading} tabIndex={-1}>Your connections</h2>
-          <span className="count-badge">{list.length} / 300</span>
+          <span className="count-badge">{list.length} / 150</span>
         </div>
         <div className="tabs" role="group" aria-label="Connection filter">
           {["all", "friend", "family"].map((f) => (

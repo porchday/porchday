@@ -6,7 +6,7 @@ Tracked in [issue #25](https://github.com/porchday/porchday/issues/25). The frie
 
 When sending a connection request, choose your label for that person. When accepting a request, choose your own label for its sender; the default is Friend. The labels do not need to match. Each person also makes their own full-history or future-only choice, as described in [history sharing](friend-history-sharing.md).
 
-Connections shows **Your label** and lets you change it immediately without a proposal or approval. Your labels determine the audiences of your own posts. If you label someone Family, your family-only posts can include them; their label for you has no effect on access to your posts. Friends-only excludes the people you label Family, while Friends & family includes both. Existing acceptance, blocks and the combined 300-person limit still apply.
+Connections shows **Your label** and lets you change it immediately without a proposal or approval. Your labels determine the audiences of your own posts. If you label someone Family, your family-only posts can include them; their label for you has no effect on access to your posts. Friends-only excludes the people you label Family, while Friends & family includes both. Existing acceptance, blocks and the combined 150-person limit still apply.
 
 ## Migration and compatibility
 
@@ -37,7 +37,7 @@ disconnect later. Existing members still use normal connection requests.
 Migration `058_invitation_connections.sql` is additive. Invitations without a
 label, including those created by older clients, retain admission-only behavior.
 Verification creates the relationship transactionally, respecting blocks, member
-status and the 300-person limit. Once checked, re-verification cannot restore a
+status and the 150-person limit. Once checked, re-verification cannot restore a
 removed connection or overwrite preferences. An unavailable or blocked inviter
 cannot gain access through signup.
 
