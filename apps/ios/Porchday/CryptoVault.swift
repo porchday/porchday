@@ -40,10 +40,15 @@ import Porchcrypto
         var value: [String: JSON] = ["public_key": keys["publicKey"], "fingerprint": keys["fingerprint"], "encrypted_private_key": keys["encryptedPrivateKey"]]
         if let id { value["id"] = .string(id) }; return .object(value)
     }
-    func load(member: Member) async throws {
+    func load(member: Member, startupDevices: [JSON]? = nil, isCurrent: () -> Bool = { true }) async throws {
+        guard isCurrent() else { throw CancellationError() }
         access = member.access
         guard access.managesData else { clear(); throw PorchError.message("Account data is unavailable while ownership is under review.") }
-        let result = try await social("/devices"); devices = try result["items"].array.map(Device.init)
+        let rows: [JSON]
+        if let startupDevices { rows = startupDevices }
+        else { rows = try await social("/devices")["items"].array }
+        guard isCurrent() else { throw CancellationError() }
+        devices = try rows.map(Device.init)
         if let current = device, let refreshed = availableDevice(member: member, preferredID: current.id) { device = refreshed; return }
         for session in sessions.values { session.close() }; sessions = [:]; device = nil
         guard let data = try readStored("device:\(member.id)"), let saved = try? JSONDecoder().decode(JSON.self, from: data), let activeID = saved["active"].string else { return }
@@ -130,7 +135,9 @@ import Porchcrypto
     }
     func audience(_ audience: String, group: String? = nil, post: String? = nil) async throws -> (Int, [Device]) {
         var params = URLComponents(); params.queryItems = post.map { [URLQueryItem(name: "post_id", value: $0)] } ?? [URLQueryItem(name: "audience", value: audience)] + (group.map { [URLQueryItem(name: "group_id", value: $0)] } ?? [])
-        let result = try await social("/audiences?" + (params.percentEncodedQuery ?? ""))
+        let path = audience == "album" ? "/albums/" + (group ?? "") + "/audience" : "/audiences?" + (params.percentEncodedQuery ?? "")
+        let result = try await social(path)
+        guard result["pending_members"].array.isEmpty else { throw PorchError.message("Someone in this audience has not set up encryption. Try again after their keys are ready.") }
         let devices = try (result["devices"].array.isEmpty ? result["items"].array : result["devices"].array).map(Device.init)
         for device in devices { try verify(device) }; guard let epoch = result["epoch"].integer else { throw PorchError.message("The sharing audience is unavailable.") }; return (epoch, devices)
     }
@@ -139,7 +146,7 @@ import Porchcrypto
         let epoch: Int, recipients: [Device]
         if let historySnapshot {
             guard ["post", "media"].contains(kind), group == nil,
-                  ["connections", "friends", "family"].contains(audience),
+                  ["connections", "friends", "family", "community", "extended_family"].contains(audience),
                   let value = historySnapshot["epoch"].integer, value >= 0,
                   case .array(let pending) = historySnapshot["pending_members"], pending.isEmpty,
                   case .array(let devices) = historySnapshot["devices"] else { throw PorchError.message("The history-sharing audience is unavailable.") }
@@ -154,6 +161,30 @@ import Porchcrypto
         context["parentId"] = parent.map(JSON.string) ?? .null; context["groupId"] = group.map(JSON.string) ?? .null; context["epoch"] = .number(Double(epoch)); context["expiresAt"] = expiry.map { .string(PorchDate.string($0)) } ?? .null
         var error: NSError?; let encrypted = session.encrypt(try JSON.object(context).serialized(), payloadJSON: try payload.serialized(), recipientsJSON: try JSON.array(recipients.map(\.recipient)).serialized(), error: &error)
         if let error { throw error }; return try .parse(encrypted)
+    }
+    func sealSnapshot(_ payload: JSON, member: Member, context: JSON, path: String) async throws -> JSON {
+        try member.access.requireSocialWrite()
+        guard access.writesSocial, let device, !device.revoked, let session = sessions[device.fingerprint] else { throw PorchError.message("Unlock an active device before sharing.") }
+        let snapshot = try await social(path)
+        guard case .array(let pending) = snapshot["pending_members"], pending.isEmpty,
+              let epoch = snapshot["epoch"].integer, epoch >= 0,
+              case .array(let devices) = snapshot["devices"] else { throw PorchError.message("The audience is not ready. No recipients were omitted.") }
+        let recipients = try devices.map(Device.init)
+        guard !recipients.isEmpty, recipients.count <= 4000, Set(recipients.map(\.id)).count == recipients.count, recipients.allSatisfy({ !$0.revoked }), recipients.contains(where: { $0.id == device.id && $0.memberID == member.id }) else { throw PorchError.message("The audience is unavailable.") }
+        for recipient in recipients { try verify(recipient) }
+        let bound = context.replacing("authorId", with: .string(member.id)).replacing("authorDeviceId", with: .string(device.id)).replacing("epoch", with: .number(Double(epoch)))
+        var error: NSError?
+        let encrypted = session.encrypt(try bound.serialized(), payloadJSON: try payload.serialized(), recipientsJSON: try JSON.array(recipients.map(\.recipient)).serialized(), error: &error)
+        if let error { throw error }; return try .parse(encrypted)
+    }
+    func verifySigned(_ proof: JSON, owner: String, expected: JSON) async throws {
+        guard proof["statement"] == expected, let id = expected["deviceId"].string else { throw PorchError.message("Signed photo metadata does not match.") }
+        let device = try Device(try await social("/devices/" + id))
+        guard device.memberID == owner else { throw PorchError.message("Photo owner does not match its signing key.") }
+        try verify(device)
+        var error: NSError?
+        _ = PorchcryptoVerifyStatement(try proof.serialized(), device.publicKey, &error)
+        if let error { throw error }
     }
     func open(_ row: JSON) async throws -> JSON {
         let envelope = row["envelope"] == .null ? row : row["envelope"], context = envelope["context"]

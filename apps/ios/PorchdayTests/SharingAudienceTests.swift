@@ -4,8 +4,8 @@ import Porchcrypto
 
 final class SharingAudienceTests: XCTestCase {
     func testAudiencePickerPreservesExistingValuesAndPlacesFriendsAboveFamily() {
-        XCTAssertEqual(SharingAudience.allCases.map(\.rawValue), ["connections", "friends", "family", "only_me"])
-        XCTAssertEqual(SharingAudience.allCases.map(\.label), ["Friends & family", "Friends only", "Family only", "Only me"])
+        XCTAssertEqual(SharingAudience.allCases.map(\.rawValue), ["connections", "friends", "family", "extended_family", "community", "only_me"])
+        XCTAssertEqual(SharingAudience.allCases.map(\.label), ["Friends & family", "Friends only", "Family only", "Extended family", "Community", "Only me"])
     }
 
     func testFriendsOnlyContextEncryptsAndAuthenticatesWithoutChangingConnectionsMeaning() throws {
@@ -23,7 +23,7 @@ final class SharingAudienceTests: XCTestCase {
             .object(["memberId": bobRecipient["memberId"], "deviceId": bobRecipient["deviceId"], "publicKey": bob["publicKey"]])
         ])
         let payload: JSON = .object(["text": .string("Synthetic friends-only post")])
-        for audience in [SharingAudience.friends, .connections, .family] {
+        for audience in [SharingAudience.friends, .connections, .family, .extendedFamily, .community] {
             let context = fixture["envelope"]["context"].replacing("id", with: .id()).replacing("audience", with: .string(audience.rawValue))
                 .replacing("createdAt", with: .string(PorchDate.string())).replacing("expiresAt", with: .null)
             error = nil

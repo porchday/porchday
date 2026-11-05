@@ -127,8 +127,8 @@ describe("PWA privacy boundaries", () => {
     await installed;
     expect(addAll).toHaveBeenCalledWith(expect.arrayContaining(["/app-shell"]));
     expect(addAll.mock.calls[0][0]).not.toContain("/");
-    expect(addAll.mock.calls[0][0].some(path => path.startsWith("/api/") || path === "/app")).toBe(false);
-    const request = { url: "https://porchday.com/app", method: "GET", mode: "navigate" };
+    expect(addAll.mock.calls[0][0].some(path => path.startsWith("/api/") || path === "/")).toBe(false);
+    const request = { url: "https://porchday.com/", method: "GET", mode: "navigate" };
     let response!: Promise<Response>;
     const offlineShell = new Response("public shell only");
     network.mockRejectedValueOnce(new Error("offline"));
@@ -185,7 +185,7 @@ describe("PWA privacy boundaries", () => {
     const manifest = JSON.parse(
       readFileSync("apps/web/public/manifest.webmanifest", "utf8"),
     );
-    expect(manifest.start_url).toBe("/app");
+    expect(manifest.start_url).toBe("/");
     expect(manifest.display).toBe("standalone");
     for (const icon of manifest.icons) {
       const file = readFileSync("apps/web/public" + icon.src);
@@ -243,7 +243,7 @@ describe("PWA privacy boundaries", () => {
       "Porchday",
       expect.objectContaining({
         body: "You have a new update.",
-        data: { url: "/app" },
+        data: { url: "/" },
       }),
     );
     expect(data.text).not.toHaveBeenCalled();

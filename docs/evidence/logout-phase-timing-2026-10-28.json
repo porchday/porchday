@@ -1,0 +1,303 @@
+{
+  "v": 1,
+  "at": "2026-10-28T22:03:57.657683+00:00",
+  "source": "533b6e0ddd0596fe23f1303d9e398757901fe73b",
+  "baseSource": "005454607c98ffdb7c430a947bedb4586a14a45b",
+  "implementationPullRequest": 57,
+  "ci": {
+    "run": 40774643320,
+    "tests": 759,
+    "suites": 104,
+    "secretScan": 40774643331
+  },
+  "runtime": {
+    "staging": "068e9b73-5294-4cbb-8c5c-b8bfcc9d8017",
+    "production": "6e038c7e-d1a6-4a76-9215-fda394fe073e"
+  },
+  "staging": {
+    "before": {
+      "observations": 1,
+      "passed": 1,
+      "firstAt": "2026-10-28T21:51:33.652Z",
+      "lastAt": "2026-10-28T21:51:33.652Z",
+      "journeyMinMs": 3966,
+      "journeyMaxMs": 3966,
+      "logoutMinMs": 1892,
+      "logoutMaxMs": 1892,
+      "revocationStatuses": [
+        401
+      ]
+    },
+    "after": {
+      "observations": 8,
+      "passed": 8,
+      "firstAt": "2026-10-28T21:52:30.949Z",
+      "lastAt": "2026-10-28T21:54:50.962Z",
+      "journeyMinMs": 3210,
+      "journeyMaxMs": 4660,
+      "logoutMinMs": 1904,
+      "logoutMaxMs": 2498,
+      "revocationStatuses": [
+        401
+      ]
+    },
+    "concurrent": {
+      "clients": 2,
+      "passed": true
+    },
+    "sustained": {
+      "observations": 8,
+      "passed": 8,
+      "firstAt": "2026-10-28T21:55:52.758Z",
+      "lastAt": "2026-10-28T21:58:12.771Z",
+      "journeyMinMs": 3055,
+      "journeyMaxMs": 4053,
+      "logoutMinMs": 1842,
+      "logoutMaxMs": 2574,
+      "revocationStatuses": [
+        401
+      ]
+    },
+    "journal": {
+      "at": "2026-10-28T21:57:36.516Z",
+      "readOnly": true,
+      "journalMode": "active",
+      "pendingCount": 0,
+      "oldestPendingSeconds": 0,
+      "databaseQuarantined": false,
+      "generationMatches": true,
+      "sequenceAtLeastCheckpoint": true
+    },
+    "fixtureRemoved": true,
+    "sampledPhases": {
+      "environment": "staging",
+      "view": "logout-phases",
+      "data": [
+        {
+          "phase": "checkpoint",
+          "observed_points": 1,
+          "events": 3,
+          "mean_ms": 191,
+          "p50_ms": 191,
+          "p95_ms": 191
+        },
+        {
+          "phase": "close",
+          "observed_points": 3,
+          "events": 7,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0
+        },
+        {
+          "phase": "database_status",
+          "observed_points": 12,
+          "events": 24,
+          "mean_ms": 17.458333333333332,
+          "p50_ms": 16,
+          "p95_ms": 25
+        },
+        {
+          "phase": "guard",
+          "observed_points": 3,
+          "events": 7,
+          "mean_ms": 82,
+          "p50_ms": 68,
+          "p95_ms": 120
+        },
+        {
+          "phase": "r2_read",
+          "observed_points": 18,
+          "events": 43,
+          "mean_ms": 105.86046511627907,
+          "p50_ms": 106,
+          "p95_ms": 191
+        },
+        {
+          "phase": "r2_write",
+          "observed_points": 16,
+          "events": 34,
+          "mean_ms": 306.5882352941176,
+          "p50_ms": 257,
+          "p95_ms": 678
+        },
+        {
+          "phase": "receipt",
+          "observed_points": 4,
+          "events": 11,
+          "mean_ms": 259.90909090909093,
+          "p50_ms": 265,
+          "p95_ms": 306
+        },
+        {
+          "phase": "registration",
+          "observed_points": 5,
+          "events": 9,
+          "mean_ms": 738.7777777777778,
+          "p50_ms": 631,
+          "p95_ms": 1011
+        },
+        {
+          "phase": "retirement",
+          "observed_points": 1,
+          "events": 2,
+          "mean_ms": 437,
+          "p50_ms": 437,
+          "p95_ms": 437
+        },
+        {
+          "phase": "work",
+          "observed_points": 1,
+          "events": 3,
+          "mean_ms": 219,
+          "p50_ms": 219,
+          "p95_ms": 219
+        }
+      ],
+      "queriedAt": "2026-10-28T21:55:42.748113+00:00"
+    }
+  },
+  "production": {
+    "before": {
+      "observations": 2,
+      "passed": 2,
+      "firstAt": "2026-10-28T21:56:34.370Z",
+      "lastAt": "2026-10-28T21:56:54.373Z",
+      "journeyMinMs": 5448,
+      "journeyMaxMs": 6896,
+      "logoutMinMs": 3548,
+      "logoutMaxMs": 3676,
+      "revocationStatuses": [
+        401
+      ]
+    },
+    "after": {
+      "observations": 8,
+      "passed": 8,
+      "firstAt": "2026-10-28T21:59:45.240Z",
+      "lastAt": "2026-10-28T22:02:05.255Z",
+      "journeyMinMs": 4411,
+      "journeyMaxMs": 6029,
+      "logoutMinMs": 2393,
+      "logoutMaxMs": 3412,
+      "revocationStatuses": [
+        401
+      ]
+    },
+    "journal": {
+      "at": "2026-10-28T22:02:31.702Z",
+      "readOnly": true,
+      "journalMode": "active",
+      "pendingCount": 0,
+      "oldestPendingSeconds": 0,
+      "databaseQuarantined": false,
+      "generationMatches": true,
+      "sequenceAtLeastCheckpoint": true
+    },
+    "fixtureRemoved": true,
+    "sampledPhases": {
+      "environment": "production",
+      "view": "logout-phases",
+      "data": [
+        {
+          "phase": "checkpoint",
+          "observed_points": 3,
+          "events": 7,
+          "mean_ms": 215,
+          "p50_ms": 214,
+          "p95_ms": 245
+        },
+        {
+          "phase": "close",
+          "observed_points": 1,
+          "events": 1,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0
+        },
+        {
+          "phase": "database_status",
+          "observed_points": 5,
+          "events": 11,
+          "mean_ms": 43.81818181818182,
+          "p50_ms": 43,
+          "p95_ms": 54
+        },
+        {
+          "phase": "guard",
+          "observed_points": 2,
+          "events": 4,
+          "mean_ms": 100,
+          "p50_ms": 83,
+          "p95_ms": 117
+        },
+        {
+          "phase": "r2_read",
+          "observed_points": 5,
+          "events": 8,
+          "mean_ms": 119.5,
+          "p50_ms": 117,
+          "p95_ms": 159
+        },
+        {
+          "phase": "r2_write",
+          "observed_points": 5,
+          "events": 13,
+          "mean_ms": 347,
+          "p50_ms": 316,
+          "p95_ms": 546
+        },
+        {
+          "phase": "receipt",
+          "observed_points": 2,
+          "events": 4,
+          "mean_ms": 297.75,
+          "p50_ms": 316,
+          "p95_ms": 316
+        },
+        {
+          "phase": "registration",
+          "observed_points": 1,
+          "events": 2,
+          "mean_ms": 570,
+          "p50_ms": 570,
+          "p95_ms": 570
+        },
+        {
+          "phase": "retirement",
+          "observed_points": 2,
+          "events": 5,
+          "mean_ms": 410.2,
+          "p50_ms": 405,
+          "p95_ms": 418
+        },
+        {
+          "phase": "work",
+          "observed_points": 3,
+          "events": 6,
+          "mean_ms": 725.3333333333334,
+          "p50_ms": 719,
+          "p95_ms": 749
+        }
+      ],
+      "queriedAt": "2026-10-28T22:01:03.423523+00:00"
+    }
+  },
+  "publicAssetsPreservedPerEnvironment": 24,
+  "schemaMigrationsUnchanged": 52,
+  "topologyQueuesPoolConfigurationChanged": false,
+  "diagnosticFlag": "LOGOUT_PHASE_TIMING=true",
+  "diagnosticScope": "POST /api/auth/sign-out only; aggregate phases without identifiers or request correlation",
+  "nestedPhaseDurationsOverlap": true,
+  "rollback": {
+    "staging": "62910232-094e-494e-b52b-84c3a1d7f01f",
+    "production": "44afbb8d-3133-4aac-8663-efd6fb5feb47",
+    "automaticRollbackExercised": false
+  },
+  "canonicalDeploymentRecordVerified": true,
+  "deploymentLockReleased": true,
+  "latencyRootCauseEstablished": false,
+  "latencyCorrectionVerified": false,
+  "durableAutomaticRecoveryComplete": false,
+  "monthlySloAchieved": false
+}

@@ -107,7 +107,7 @@ export function IntegrationConsent() {
               >
                 Allow selected access
               </Button>
-              <a href="/app/settings/data" className="button quiet">
+              <a href="/settings/data" className="button quiet">
                 Cancel
               </a>
             </div>
@@ -115,7 +115,7 @@ export function IntegrationConsent() {
         ) : action.busy ? (
           <Loading text="Checking this app’s request…" />
         ) : (
-          <a href="/app/settings/data" className="button outline">
+          <a href="/settings/data" className="button outline">
             Back to My data
           </a>
         )}

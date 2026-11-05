@@ -1,59 +1,28 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { LegacyDomainNotice, PreviousDomainUnlockHint } from "../src/DomainMigration";
-import { needsDomainNavigation } from "../src/domain-navigation";
+import { canonicalPath } from "../src/routes";
+import { afterEach, expect, it, vi } from "vitest";
+import { canonicalNavigation, needsDomainNavigation } from "../src/domain-navigation";
 import { navigate } from "../src/ui";
 afterEach(() => vi.unstubAllGlobals());
-
-describe("domain migration guidance", () => {
-  it("keeps the legacy tab open and explains how to retain access to encrypted history", () => {
-    const html = renderToStaticMarkup(createElement(LegacyDomainNotice, { origin: "https://porchday.com", path: "/app/settings/security" }));
-    expect(html).toContain('href="https://porchday.org/app" target="_blank" rel="noopener noreferrer"');
-    expect(html).toContain("saved encryption recovery secret");
-    expect(html).toContain("Keep this browser’s data and the old installed app");
-    expect(html).toContain("separate app");
-    expect(html).not.toContain("?token=");
-  });
-  it("shows guidance only for the exact legacy account origin, without affecting staging or new accounts", () => {
-    for (const origin of ["https://porchday.org", "https://staging.porchday.com", "https://porchday.com.evil.example", "http://porchday.com", "https://porchday.com:444"]) {
-      expect(renderToStaticMarkup(createElement(LegacyDomainNotice, { origin, path: "/login" }))).toBe("");
-    }
-    for (const path of ["/", "/join", "/about", "/staff", "/application", "/api/v1/me"]) {
-      expect(renderToStaticMarkup(createElement(LegacyDomainNotice, { origin: "https://porchday.com", path }))).toBe("");
-    }
-  });
-  it("offers a fixed old-origin recovery link without copying route tokens or opening a signing channel", () => {
-    const html = renderToStaticMarkup(createElement(PreviousDomainUnlockHint, { origin: "https://porchday.org" }));
-    expect(html).toContain('href="https://porchday.com/app" target="_blank" rel="noopener noreferrer"');
-    expect(html).toContain("original browser");
-    expect(html).toContain("until your history opens here");
-    expect(html).not.toContain("password reset");
-    for (const origin of ["https://porchday.com", "https://staging.porchday.com", "https://porchday.org.evil.example"]) {
-      expect(renderToStaticMarkup(createElement(PreviousDomainUnlockHint, { origin }))).toBe("");
-    }
-  });
+it("redirects legacy website routes while retaining paths, queries and fragments", () => {
+  for (const path of ["/", "/app", "/app/albums", "/login", "/reset?token=synthetic", "/join#invite=synthetic", "//untrusted.example/path"]) {
+    const url = new URL("https://porchday.com" + path);
+    const target = canonicalNavigation(url)!;
+    expect(new URL(target).origin).toBe("https://porchday.org");
+    expect(target).toBe("https://porchday.org" + canonicalPath(url.pathname) + url.search + url.hash);
+    expect(needsDomainNavigation(url, "https://porchday.com")).toBe(true);
+  }
 });
-
-describe("explicit navigation from the legacy site", () => {
-  it("uses the server redirect for public navigation and preserves query strings and fragments", () => {
-    const assign = vi.fn();
-    const pushState = vi.fn();
-    vi.stubGlobal("location", { origin: "https://porchday.com", href: "https://porchday.com/login", assign });
-    vi.stubGlobal("history", { pushState });
-    navigate("/join?source=invitation#invite=synthetic-private-code");
-    expect(assign).toHaveBeenCalledWith("https://porchday.com/join?source=invitation#invite=synthetic-private-code");
-    expect(pushState).not.toHaveBeenCalled();
-    navigate("/");
-    expect(assign).toHaveBeenLastCalledWith("https://porchday.com/");
-  });
-  it("does not redirect private, recovery or unknown paths, staging, or unrelated origins", () => {
-    for (const path of ["/app", "/app/post/id", "/login", "/reset?token=synthetic", "/recovery", "/staff", "/unknown", "/join/extra", "/app-shell.html"]) {
-      expect(needsDomainNavigation(new URL(path, "https://porchday.com"), "https://porchday.com")).toBe(false);
-    }
-    for (const origin of ["https://porchday.org", "https://staging.porchday.com", "https://porchday.com.evil.example", "http://porchday.com"]) {
-      expect(needsDomainNavigation(new URL("/", origin), origin)).toBe(false);
-    }
-    expect(needsDomainNavigation(new URL("https://other.example/join"), "https://porchday.com")).toBe(false);
-  });
+it("does not redirect canonical, staging or unrelated origins", () => {
+  for (const origin of ["https://porchday.org", "https://staging.porchday.com", "https://porchday.com.evil.example", "http://porchday.com", "https://porchday.com:444"]) {
+    expect(canonicalNavigation(new URL(origin + "/login"))).toBeNull();
+    expect(needsDomainNavigation(new URL(origin + "/login"), origin)).toBe(false);
+  }
+});
+it("bypasses the legacy SPA and service worker on explicit navigation", () => {
+  const assign = vi.fn(), pushState = vi.fn();
+  vi.stubGlobal("location", { origin: "https://porchday.com", href: "https://porchday.com/login", assign });
+  vi.stubGlobal("history", { pushState });
+  navigate("/join?source=invitation#invite=synthetic");
+  expect(assign).toHaveBeenCalledWith("https://porchday.org/join?source=invitation#invite=synthetic");
+  expect(pushState).not.toHaveBeenCalled();
 });

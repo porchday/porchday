@@ -1,0 +1,96 @@
+{
+  "date": "2026-10-29",
+  "backendSource": "41ef26805cb38043c78b5ccef4e1cce631729c72",
+  "edgeRuntimeSource": "005454607c98ffdb7c430a947bedb4586a14a45b",
+  "baselineAssetSource": "b2b3a069a44e8b9d41feb266671863c23bafa310",
+  "featureAssetSource": "d6fd3faca61d2d5c350d62f4e8ad5bcd50cc8f32",
+  "acceptance": {
+    "at": "2026-10-29T18:40:44.007Z",
+    "passed": true,
+    "environment": "staging",
+    "runtimeSource": "41ef26805cb38043c78b5ccef4e1cce631729c72",
+    "remainingFixtureRows": 0,
+    "providerUnchangedAfterActivation": true,
+    "browserVerified": true,
+    "oldBrowserPreserved": true,
+    "featureAssetSource": "d6fd3faca61d2d5c350d62f4e8ad5bcd50cc8f32",
+    "version": "aeffcd40-8e36-4510-a687-a9a8a67580c2",
+    "nativeVerified": false
+  },
+  "continuity": {
+    "at": "2026-10-29T18:40:28.217Z",
+    "status": "complete",
+    "samples": 13,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "maxStartGapMs": 2004.2371669999993
+  },
+  "oldBrowser": {
+    "samples": 13,
+    "allPassed": true,
+    "coexistingWithNewFeature": {
+      "at": "2026-10-29T18:40:35.734Z",
+      "documentRetained": true,
+      "groupVisible": true,
+      "unsentFormRetained": true,
+      "pageErrors": 0,
+      "passed": true
+    },
+    "coldLazyModule": {
+      "at": "2026-10-29T18:40:30.359Z",
+      "passed": true,
+      "checks": [
+        {
+          "path": "/assets/TraceInspector-DpIta2v8.js",
+          "loaded": true,
+          "exactBytes": true
+        }
+      ]
+    }
+  },
+  "featureChecks": {
+    "at": "2026-10-29T18:40:39.803Z",
+    "passed": true,
+    "checks": [
+      "encrypted_group_created",
+      "pending_owner_roster_recipient_and_inviter",
+      "invitation_accepted",
+      "accepted_owner_roster",
+      "recipient_group_read",
+      "nonowner_denied_before_and_after_acceptance"
+    ],
+    "browserVerified": true,
+    "nativeVerified": false
+  },
+  "cleanup": {
+    "at": "2026-10-29T18:40:42.493Z",
+    "remainingFixtureRows": 0
+  },
+  "priorUiTransition": {
+    "samples": 14,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "unauthenticatedOpenTabAndColdLazyPassed": true
+  },
+  "priorAttempts": [
+    {
+      "result": "failed before activation",
+      "cause": "Browser response body reread after navigation; reproduced locally, fixed by retaining verified bytes.",
+      "fixturesReconciled": true,
+      "providerUnchanged": true
+    },
+    {
+      "result": "freshness preflight rejected before fixture creation or activation",
+      "cause": "Original rejected health response was not retained; exact reason within freshness predicate is unknown.",
+      "reconciled": true,
+      "subsequentReadHealthy": true
+    }
+  ],
+  "limitations": [
+    "Service workers were blocked.",
+    "New feature page shared the existing browser context and session; not fresh-device onboarding.",
+    "Unconfirmed background profile setup warning observed; cause unverified.",
+    "Physical native devices and production feature rollout not verified.",
+    "No monthly availability claim."
+  ]
+}

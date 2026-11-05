@@ -1,0 +1,159 @@
+{
+  "scope": "staging code activation, legacy transaction subphase ingestion, and restoration",
+  "source": "6373a6c789e05c9774ce0c59a17c56fd2676fa56",
+  "stagingVersion": "6b3c5098-1b98-4d00-b01d-b3a920acfb0e",
+  "baseline": "774ea8a2-0aa3-430e-b56e-3eaf0e75c43b",
+  "at": "2026-10-29T18:59:52.867Z",
+  "passed": true,
+  "continuity": {
+    "status": "complete",
+    "samples": 11,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "maxStartGapMs": 2012.1395830000001
+  },
+  "remainingFixtureRows": 0,
+  "stagingWriterEnabled": true,
+  "stagingCleanupEnabled": true,
+  "productionChanged": false,
+  "validation": {
+    "diagnosticBranch": "a4d5a0f353e3703cf6b95a6dcafc0f2df9bd9340",
+    "diagnosticDatabaseTests": 895,
+    "cryptoTests": 22,
+    "mainAlignedFocusedTests": 36,
+    "apiTypecheck": "passed",
+    "exactSourcePushCi": 40935043885,
+    "exactSourcePrCi": 40935050768,
+    "ciConclusion": "success"
+  },
+  "legacyRehearsal": {
+    "inactiveCandidate": "e03216d6-beda-42e3-8f02-d44aad2be757",
+    "preflightFailure": "PRODUCTION_PROBE_NOT_READY",
+    "fixturesCreated": false,
+    "activationDispatched": false,
+    "reconciled": true,
+    "freshAcceptance": {
+      "at": "2026-10-29T19:10:14.674Z",
+      "passed": true,
+      "environment": "staging",
+      "version": "e03216d6-beda-42e3-8f02-d44aad2be757",
+      "runtimeSource": "6373a6c789e05c9774ce0c59a17c56fd2676fa56",
+      "checks": [
+        "existing_allowed_session_and_revoked_cookie_across_code_activation",
+        "existing_session_reads_and_denial_observed_across_code_activation"
+      ],
+      "candidate": "e03216d6-beda-42e3-8f02-d44aad2be757",
+      "baseline": "6b3c5098-1b98-4d00-b01d-b3a920acfb0e",
+      "remainingFixtureRows": 0,
+      "stagingWriterEnabled": false,
+      "stagingCleanupEnabled": true,
+      "productionWriterEnabled": false,
+      "productionCleanupEnabled": false,
+      "candidateVerifiedAndCleanupInventoryUnchanged": true,
+      "continuity": {
+        "status": "complete",
+        "samples": 12,
+        "failedSamples": 0,
+        "postCommandSamples": 2,
+        "maxStartGapMs": 2003.2528329999986
+      }
+    },
+    "ingestion": {
+      "at": "2026-10-29T19:13:35.984933+00:00",
+      "passed": true,
+      "source": "6373a6c789e05c9774ce0c59a17c56fd2676fa56",
+      "expectedSuccessPhases": [
+        "work_begin",
+        "work_pool_acquire",
+        "work_identity_lock",
+        "work_reauthorization",
+        "work_handler",
+        "work_commit"
+      ],
+      "observedPhases": [
+        {
+          "phase": "work_begin",
+          "observed_points": 1,
+          "events": 4,
+          "mean_ms": 23,
+          "p50_ms": 23,
+          "p95_ms": 23
+        },
+        {
+          "phase": "work_commit",
+          "observed_points": 3,
+          "events": 5,
+          "mean_ms": 13,
+          "p50_ms": 14,
+          "p95_ms": 14
+        },
+        {
+          "phase": "work_handler",
+          "observed_points": 2,
+          "events": 4,
+          "mean_ms": 178.75,
+          "p50_ms": 183,
+          "p95_ms": 183
+        },
+        {
+          "phase": "work_identity_lock",
+          "observed_points": 2,
+          "events": 2,
+          "mean_ms": 13,
+          "p50_ms": 11,
+          "p95_ms": 15
+        },
+        {
+          "phase": "work_pool_acquire",
+          "observed_points": 2,
+          "events": 5,
+          "mean_ms": 0,
+          "p50_ms": 0,
+          "p95_ms": 0
+        },
+        {
+          "phase": "work_reauthorization",
+          "observed_points": 1,
+          "events": 3,
+          "mean_ms": 169,
+          "p50_ms": 169,
+          "p95_ms": 169
+        }
+      ],
+      "scope": "Sampled aggregate ingestion across the bounded staging legacy configuration window; not correlated request durations. No hosted rollback failure injected.",
+      "hostedRollbackPhaseVerified": false
+    }
+  },
+  "limitations": [
+    "No production latency fix demonstrated.",
+    "Sampled phase aggregates do not correlate an individual request.",
+    "Hosted rollback-phase failure injection was not performed; local failure tests cover this path.",
+    "Healthy staging continuity does not establish monthly availability."
+  ],
+  "restoration": {
+    "at": "2026-10-29T19:12:28.841Z",
+    "passed": true,
+    "environment": "staging",
+    "version": "40443794-69fe-4ffa-92d5-06e9d811905f",
+    "runtimeSource": "6373a6c789e05c9774ce0c59a17c56fd2676fa56",
+    "checks": [
+      "existing_allowed_session_and_revoked_cookie_across_code_activation",
+      "existing_session_reads_and_denial_observed_across_code_activation"
+    ],
+    "candidate": "40443794-69fe-4ffa-92d5-06e9d811905f",
+    "baseline": "e03216d6-beda-42e3-8f02-d44aad2be757",
+    "remainingFixtureRows": 0,
+    "stagingWriterEnabled": true,
+    "stagingCleanupEnabled": true,
+    "productionWriterEnabled": false,
+    "productionCleanupEnabled": false,
+    "candidateVerifiedAndCleanupInventoryUnchanged": true,
+    "continuity": {
+      "status": "complete",
+      "samples": 14,
+      "failedSamples": 0,
+      "postCommandSamples": 2,
+      "maxStartGapMs": 2003.8968750000004
+    }
+  }
+}

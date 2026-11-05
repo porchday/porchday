@@ -24,6 +24,17 @@ const parts = [1, 2].map(n => unpackArchive(fixture(`multipart/porchday-syntheti
 const cryptoInterface: ArchiveEncryption = { encryptArchive, decryptArchive };
 
 describe("portable archive contract and fictional examples", () => {
+  it("retains circle audience labels as source provenance",()=>{
+    for(const audience of ["community","extended_family"]){const archive=structuredClone(single.archive);archive.posts[0].audience=audience;expect(validate(archive),JSON.stringify(validate.errors)).toBe(true);expect(unpackArchive(packArchive(archive,single.files)).archive.posts[0].audience).toBe(audience);}
+  });
+  it("accepts 4K video metadata while retaining JPEG dimension limits", () => {
+    const archive = structuredClone(single.archive);
+    archive.media[0] = { ...archive.media[0], mime: "video/mp4", path: archive.media[0].path.replace(/jpg$/, "mp4"), width: 3840, height: 2160 };
+    expect(validate(archive), JSON.stringify(validate.errors)).toBe(true);
+    archive.media[0].mime = "image/jpeg";
+    archive.media[0].path = archive.media[0].path.replace(/mp4$/, "jpg");
+    expect(validate(archive)).toBe(false);
+  });
   it("accepts real keyed reaction IDs and preserves Unicode/custom payloads and the personal collection", () => {
     const vectors = JSON.parse(readFileSync(new URL("../packages/crypto/test/fixtures/reactions-v1.json", import.meta.url), "utf8")).vectors;
     const unicode = vectors.find((v: any) => v.payload.unicode);

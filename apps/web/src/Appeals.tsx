@@ -74,7 +74,7 @@ export function Appeals({ onLogout }: { onLogout: () => Promise<void> }) {
           <a href="/stolen-account" className="button outline">
             My account was stolen
           </a>
-          <a href="/app" className="button quiet">
+          <a href="/" className="button quiet">
             Return to Porchday
           </a>
           <Button variant="quiet" onClick={onLogout}>

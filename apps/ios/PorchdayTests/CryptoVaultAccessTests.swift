@@ -12,6 +12,7 @@ final class CryptoVaultAccessTests: XCTestCase {
         var requests: [(String, String)] = []
         var stored: [String: Data] = [:]
         var failStorage = false
+        var photoSnapshot: JSON = .null
         var secret: String { json["bob"]["recoverySecret"].string! }
         init(status: String, revoked: Bool = false) throws {
             let url = try XCTUnwrap(Bundle(for: CryptoVaultAccessTests.self).url(forResource: "openpgp-v1", withExtension: "json"))
@@ -30,6 +31,7 @@ final class CryptoVaultAccessTests: XCTestCase {
             CryptoVault(request: { [self] path, method, _ in
                 requests.append((path, method))
                 guard method == "GET" else { throw PorchError.message("Synthetic enrollment boundary") }
+                if path == "/albums/synthetic/audience" { return photoSnapshot }
                 if path == "/devices" { return .object(["items": .array(roster)]) }
                 if path == "/keys/backup" { return .object(["envelope": .object(["v": .number(1), "devices": .array(entries)])]) }
                 if path == "/devices/" + json["envelope"]["context"]["authorDeviceId"].string! {
@@ -43,6 +45,71 @@ final class CryptoVaultAccessTests: XCTestCase {
                 stored[account] = data
             })
         }
+    }
+
+    @MainActor func testAlbumSnapshotsNeverOmitUnkeyedRevokedOrDuplicateRecipients() async throws {
+        let fixture = try Fixture(status: "restricted"), vault = fixture.vault()
+        try await vault.load(member: fixture.member); try await vault.unlock(member: fixture.member, secret: fixture.secret)
+        let member = try Member(fixture.member.raw.replacing("status", with: .string("active")))
+        try await vault.load(member: member)
+        let context = NativePhotoContract.context(kind: "photo", id: "synthetic-photo-grant", parent: "synthetic-photo", audience: "album", album: "synthetic", expiry: .null, date: "2024-02-29")
+        let valid: JSON = .object(["epoch": .number(1), "pending_members": .array([]), "devices": .array(fixture.roster)])
+        fixture.photoSnapshot = valid
+        let envelope = try await vault.sealSnapshot(.object(["text": .string("synthetic")]), member: member, context: context, path: "/albums/synthetic/audience")
+        XCTAssertEqual(envelope["context"]["photoDate"].string, "2024-02-29")
+        XCTAssertEqual(envelope["recipients"].array.count, fixture.roster.count)
+        for invalid in [
+            valid.replacing("pending_members", with: .array([.string("unkeyed")])),
+            valid.replacing("pending_members", with: .null),
+            valid.replacing("devices", with: .array([])),
+            valid.replacing("devices", with: .array(fixture.roster + fixture.roster)),
+            valid.replacing("devices", with: .array([fixture.roster[0].replacing("revoked_at", with: .string(PorchDate.string()))])),
+            valid.replacing("epoch", with: .number(-1))
+        ] {
+            fixture.photoSnapshot = invalid
+            do { _ = try await vault.sealSnapshot(.object([:]), member: member, context: context, path: "/albums/synthetic/audience"); XCTFail("Unsafe audience must not encrypt") } catch { }
+        }
+        vault.clear()
+    }
+
+    @MainActor func testFreshBootstrapRosterRestoresSavedKeysWithoutDeviceReadAndLaterRefreshChecksRevocation() async throws {
+        let fixture = try Fixture(status: "restricted"), original = fixture.vault()
+        try await original.load(member: fixture.member)
+        try await original.unlock(member: fixture.member, secret: fixture.secret)
+        original.clear(); fixture.requests = []
+        let active = try Member(fixture.member.raw.replacing("status", with: .string("active")))
+        let restored = fixture.vault()
+        try await restored.load(member: active, startupDevices: fixture.roster)
+        XCTAssertTrue(restored.unlocked); XCTAssertTrue(fixture.requests.isEmpty)
+        fixture.roster[0] = fixture.roster[0].replacing("revoked_at", with: .string(PorchDate.string()))
+        try await restored.load(member: active)
+        XCTAssertFalse(restored.unlocked)
+        XCTAssertEqual(fixture.requests.map(\.0), ["/devices"])
+        restored.clear(); fixture.requests = []
+        let revoked = fixture.vault()
+        try await revoked.load(member: active, startupDevices: fixture.roster)
+        XCTAssertFalse(revoked.unlocked); XCTAssertTrue(fixture.requests.isEmpty)
+        revoked.clear()
+    }
+
+    @MainActor func testMalformedBootstrapDeviceFailsWithoutFallbackOrUnlock() async throws {
+        let fixture = try Fixture(status: "active"), vault = fixture.vault()
+        do { try await vault.load(member: fixture.member, startupDevices: [.object([:])]); XCTFail("Incomplete device must fail") }
+        catch { XCTAssertFalse(vault.unlocked); XCTAssertTrue(fixture.requests.isEmpty) }
+        vault.clear()
+    }
+
+    @MainActor func testStaleFallbackReadCannotPublishRosterOrReadSavedKeys() async throws {
+        let fixture = try Fixture(status: "active")
+        var current = true, storageReads = 0
+        let vault = CryptoVault(request: { _, _, _ in
+            current = false // Logout/account change while the response was pending.
+            return .object(["items": .array(fixture.roster)])
+        }, readStored: { _ in storageReads += 1; return nil })
+        do { try await vault.load(member: fixture.member, isCurrent: { current }); XCTFail("Stale response must be canceled") }
+        catch { XCTAssertTrue(error is CancellationError) }
+        XCTAssertTrue(vault.devices.isEmpty); XCTAssertFalse(vault.unlocked); XCTAssertEqual(storageReads, 0)
+        vault.clear()
     }
 
     @MainActor func testFreshRestrictedAndSuspendedRecoveryDecryptsExistingContentWithoutEnrollment() async throws {

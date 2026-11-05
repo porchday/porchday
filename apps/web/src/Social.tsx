@@ -1,3 +1,9 @@
+import {AttachmentDateEditor} from "./AttachmentDateEditor";
+import {signAttachmentDate} from "./attachment-photo-date";
+import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
+import { publishPhoto, localPhotoDate } from "./photo-publish";
+import { matchesAuthor, matchesContent, type AuthorFilter, type FeedContent } from "./feed-filters";
+import { isVideo, VIDEO_ACCEPT, prepareVideo, validatedMedia } from "./video";
 import {TagPicker, Tags, validTags, usePeopleDirectory, type PersonTag} from "./PeopleTags";
 import { useNearViewport } from "./near-viewport";
 import { MemberAvatar } from "./MemberAvatar";
@@ -40,6 +46,7 @@ import {
   Loading,
   Modal,
   useAction,
+  navigateAfterSaves,
 } from "./ui";
 import { useVault } from "./vault";
 import { reshareDeadline, resharePayload } from "./reshare";
@@ -226,6 +233,9 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
   };
 }
 type PendingPhoto = {
+  photoDate?: string;
+  mime?: string;
+  poster?: string;
   tags?: PersonTag[];
   id: string;
   name: string;
@@ -238,43 +248,85 @@ type PendingPhoto = {
 export function Composer({
   onPosted,
   groupId,
+  shareTabs = false,
+  initialAlbum,
 }: {
+  shareTabs?: boolean;
+  initialAlbum?: string;
   onPosted: () => void;
   groupId?: string;
 }) {
   const vault = useVault();
+  const [mode,setMode]=useState<"post"|"photos">(initialAlbum||(shareTabs&&new URLSearchParams(location.search).get("mode")==="photos")?"photos":"post");
+  const [album,setAlbum]=useState(initialAlbum||"");
+  const [albums,setAlbums]=useState<{id:string;name:string;role:string}[]>([]);
+  const [albumsLoaded,setAlbumsLoaded]=useState(false);
+  const [photosShared,setPhotosShared]=useState(0);
   const [text, setText] = useState("");
   const [tags,setTags]=useState<PersonTag[]>([]);
   const [onBehalf,setOnBehalf]=useState("");
   const directory=usePeopleDirectory();
   const [audience, setAudience] = useState<Audience>(
-    groupId ? "group" : "connections",
+    groupId ? "group" : initialAlbum ? "only_me" : "connections",
   );
   const [timer, setTimer] = useState("");
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const draftUrls = useRef(new Set<string>());
+  useEffect(() => {
+    const current = new Set(photos.filter(p => isVideo(p.mime)).map(p => p.preview));
+    for (const url of draftUrls.current) if (!current.has(url)) URL.revokeObjectURL(url);
+    draftUrls.current = current;
+  }, [photos]);
+  useEffect(() => () => { for (const url of draftUrls.current) URL.revokeObjectURL(url); }, []);
   const input = useRef<HTMLInputElement>(null);
   const action = useAction();
+  useEffect(()=>{
+    if(!shareTabs)return;let alive=true;
+    void action.run(async()=>{
+      const found=[];let after:string|null=null;
+      do{const response:Json=await get("/albums"+(after?"?after="+encodeURIComponent(after):""));
+        for(const row of items<any>(response))if(row.role!=="read"){try{const content=await vault.open(row);found.push({id:row.id,name:String(content.name||"Album"),role:row.role});}catch{/* Albums without available keys cannot receive encrypted uploads. */}}
+        after=response.next||null;
+      }while(after&&alive);
+      if(alive){setAlbums(found);setAlbumsLoaded(true);}
+    });return()=>{alive=false;};
+  },[shareTabs,vault.member.id]);
   async function selectPhotos(files: FileList | null) {
     if (!files) return;
     await action.run(async () => {
       if (files.length + photos.length > 10)
-        throw new Error("You can share up to 10 photos in a post.");
+        throw new Error("You can share up to 10 photos or videos at a time.");
       const next: PendingPhoto[] = [];
-      for (const file of Array.from(files)) {
-        const prepared = await preparePhoto(file);
+      try { for (const file of Array.from(files)) {
+        const prepared = file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name)
+          ? await prepareVideo(file) : await preparePhoto(file);
         next.push({
           id: crypto.randomUUID(),
           name: file.name,
           alt: "",
+          photoDate: localPhotoDate(),
           ...prepared,
         });
       }
+      } catch (error) { for (const item of next) if (isVideo(item.mime)) URL.revokeObjectURL(item.preview); throw error; }
       setPhotos([...photos, ...next]);
     });
     if (input.current) input.current.value = "";
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if(mode==="photos"&&shareTabs){
+      if(!photos.length)return;
+      const destination=await action.runSave(async()=>{
+        if(album&&(!albumsLoaded||!albums.some(a=>a.id===album)))throw Error("Select an album where you have Add or Album-admin permission and working encryption keys.");
+        const expiresAt=deadline(timer);setPhotosShared(0);
+        for(const photo of photos){await publishPhoto(vault,photo,audience,expiresAt,album||null);setPhotos(current=>current.filter(p=>p.id!==photo.id));setPhotosShared(count=>count+1);}
+        setTimer("");onPosted();
+        if(album&&!text.trim())return "/albums/"+album;
+      },"Photos shared. Your post draft is preserved.");
+      if(destination)navigateAfterSaves(destination);
+      return;
+    }
     if (!text.trim() && !photos.length) return;
     await action.runSave(async () => {
       const child = onBehalf ? directory.people.find(p => p.kind === "child" && p.id === onBehalf) : null;
@@ -285,12 +337,14 @@ export function Composer({
       const expiresAt = deadline(timer);
       const createdAt = new Date().toISOString();
       const media: MediaPayload[] = [];
+      const photoDates=[];
       for (const photo of photos) {
         const meta = {
           id: crypto.randomUUID(),
           alt: photo.alt,
           tags: photo.tags || [],
-          mime: "image/jpeg",
+          mime: photo.mime || "image/jpeg",
+          ...(photo.poster ? { poster: photo.poster, posterExpiresAt: expiresAt } : {}),
           name: photo.name,
           width: photo.width,
           height: photo.height,
@@ -313,6 +367,7 @@ export function Composer({
           },
         );
         const bytes = new TextEncoder().encode(JSON.stringify(envelope));
+        if (bytes.length > 22_020_096) throw Error("This encrypted attachment is too large for this audience. Choose a smaller file.");
         const upload = await post("/media", {
           id: meta.id,
           envelope,
@@ -324,6 +379,7 @@ export function Composer({
           body: new Blob([bytes]),
         });
         media.push(meta);
+        photoDates.push(await signAttachmentDate(vault,meta.id,id,photo.photoDate||localPhotoDate(),1));
       }
       const envelope = await vault.seal(
         { text: text.trim(), tags:postTags, media, reactionSecret: createReactionSecret() },
@@ -336,7 +392,7 @@ export function Composer({
           expiresAt,
         },
       );
-      await post("/posts", { envelope, media_ids: media.map((p) => p.id), on_behalf_of: onBehalf || null });
+      await post("/posts", { envelope, photo_dates:photoDates, media_ids: media.map((p) => p.id), on_behalf_of: onBehalf || null });
       setText("");
       setTags([]);setOnBehalf("");
       setPhotos([]);
@@ -351,6 +407,9 @@ export function Composer({
       data-unsaved-draft={Boolean(text.trim() || photos.length) || undefined}
       onSubmit={submit}
     >
+      <fieldset disabled={action.busy} className="composer-fields">
+      {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos</button></div>}
+      {mode==="post"&&<>
       <div className="composer-start">
         <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
         <label className="sr-only" htmlFor="post-text">
@@ -369,13 +428,22 @@ export function Composer({
       <p className="muted">Tags do not change who can see this post.</p>
       {<label>Posting on behalf of <select aria-label="Posting on behalf of" onFocus={directory.ensure} value={onBehalf} onChange={e=>{setOnBehalf(e.target.value);const child=directory.people.find(p=>p.kind==="child"&&p.id===e.target.value);if(child&&!tags.some(t=>t.id===child.id))setTags([...tags,child]);}}><option value="">Myself</option>{directory.children.filter(c=>c.can_post).map(c=><option key={c.id} value={c.id}>{c.name} · posted by @{vault.member.handle}</option>)}</select></label>}
       {onBehalf && <p className="muted">The child will be tagged automatically. You remain the author.</p>}
+      </>}
+      {mode==="post"?<><hr className="composer-photo-divider"/><h2 className="composer-photo-heading">Add Photos to this Post</h2>{shareTabs&&<p className="composer-photo-shortcut">(Skip the post and <a href="/share?mode=photos" aria-disabled={action.busy} onClick={event=>{event.preventDefault();if(!action.busy)setMode("photos");}}>add photos directly</a>.)</p>}</>:<>
+        <h2 className="composer-photo-heading">Add photos</h2>
+        <p>Each photo has its own date, caption and audience. No post is created.</p>
+        <label>Album<select value={album} disabled={action.busy||!albumsLoaded} onChange={e=>setAlbum(e.target.value)}><option value="">No album</option>{initialAlbum&&!albums.some(a=>a.id===initialAlbum)&&<option value={initialAlbum}>Selected album (checking access…)</option>}{albums.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
+        {album&&<p>Everyone in {albums.find(a=>a.id===album)?.name||"this album"} can view these photos, in addition to the audience selected below. Future album members may receive album history.</p>}
+        {text.trim()&&<p className="muted">Your post text is saved in the Post tab for this visit.</p>}
+      </>}
       {photos.length > 0 && (
         <div className="photo-editor">
-          {photos.map((photo) => (
+          {photos.map((photo,index) => (
             <div className="photo-draft" key={photo.id}>
-              <img src={photo.preview} alt="Photo preview" />
+              {isVideo(photo.mime) ? <video src={photo.preview} controls playsInline preload="metadata" aria-label="Video preview" /> : <img src={photo.preview} alt="Photo preview" />}
+              <Field type="date" min="0001-01-01" max="9999-12-31" label="Photo date" required value={photo.photoDate||localPhotoDate()} disabled={action.busy} onChange={e=>setPhotos(current=>current.map(p=>p.id===photo.id?{...p,photoDate:e.target.value}:p))}/>
               <Field
-                label="Photo description"
+                label="Photo or video description"
                 value={photo.alt}
                 onChange={(e) =>
                   setPhotos(
@@ -385,9 +453,10 @@ export function Composer({
                   )
                 }
                 maxLength={1000}
-                placeholder="Describe this photo for everyone"
+                placeholder="Describe this photo or video for everyone"
               />
-              <TagPicker label="People in this photo" value={photo.tags||[]} disabled={action.busy} onChange={tags=>setPhotos(photos.map(p=>p.id===photo.id?{...p,tags}:p))}/>
+              <TagPicker label="People in this photo or video" value={photo.tags||[]} disabled={action.busy} onChange={tags=>setPhotos(photos.map(p=>p.id===photo.id?{...p,tags}:p))}/>
+              {photos.length>1&&<div className="album-actions"><Button variant="quiet" disabled={index===0} aria-label={`Move ${photo.name} earlier`} onClick={()=>setPhotos(current=>{const next=[...current];[next[index-1],next[index]]=[next[index],next[index-1]];return next;})}>Move earlier</Button><Button variant="quiet" disabled={index===photos.length-1} aria-label={`Move ${photo.name} later`} onClick={()=>setPhotos(current=>{const next=[...current];[next[index],next[index+1]]=[next[index+1],next[index]];return next;})}>Move later</Button></div>}
               <button
                 type="button"
                 className="icon-button"
@@ -402,14 +471,16 @@ export function Composer({
           ))}
         </div>
       )}
+      {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} photo{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos are still selected.":""}</p>}
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
-      <div className="composer-controls">
+      <div className={"composer-controls"+(mode==="post"?" composer-post-controls":"")}>
         <div className="composer-tools">
           <input
             ref={input}
             type="file"
-            accept={PHOTO_ACCEPT}
+            disabled={action.busy}
+            accept={`${PHOTO_ACCEPT},${VIDEO_ACCEPT}`}
             multiple
             className="sr-only"
             tabIndex={-1}
@@ -421,7 +492,7 @@ export function Composer({
             onClick={() => input.current?.click()}
           >
             <Icon name="photo" size={18} />
-            <span>Photos</span>
+            <span>Photos & videos</span>
           </button>
           <TimerSelect value={timer} onChange={setTimer} />
         </div>
@@ -429,11 +500,12 @@ export function Composer({
           variant="primary compact"
           type="submit"
           busy={action.busy}
-          disabled={!text.trim() && !photos.length}
+          disabled={mode==="photos"?!photos.length:!text.trim()&&!photos.length}
         >
-          Share <Icon name="arrow" size={16} />
+          {mode==="photos"?(album?"Add photos to album":"Add photos"):"Share post"} <Icon name="arrow" size={16} />
         </Button>
       </div>
+      <p className="muted">Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience.</p>
       <div className="composer-privacy">
         <Icon name="lock" size={13} />
         {groupId ? (
@@ -447,16 +519,20 @@ export function Composer({
               onChange={(e) => setAudience(e.target.value as Audience)}
             >
               <option value="connections">Friends & family</option>
-              <option value="friends">Friends only</option>
-              <option value="family">Family only</option>
+              <option value="friends">Friends</option>
+              <option value="family">Family</option>
+              <option value="extended_family">Extended family</option>
+              <option value="community">Community</option>
               <option value="only_me">Only me</option>
             </select>
           </label>
         )}
+        {(audience==="community"||audience==="extended_family")&&<span>People in your current circle can see its shared history. Direct connection history choices do not change circle access.</span>}
         {audience === "friends" && <span>Excludes family connections</span>}
         {timer && <span>· disappears {localDate(deadline(timer)!)}</span>}
-        <span className="character-count">{text.length}/5,000</span>
+        {mode==="post"&&<span className="character-count">{text.length}/5,000</span>}
       </div>
+      </fieldset>
     </form>
   );
 }
@@ -465,12 +541,16 @@ export function Feed({
   groupId,
   singleId,
   canModerate = false,
+  authorFilter, contentFilter = "posts", infinite = false,
 }: {
+  authorFilter?: AuthorFilter; contentFilter?: FeedContent; infinite?: boolean;
   wallId?: string;
   groupId?: string;
   singleId?: string;
   canModerate?: boolean;
 }) {
+  const sentinel = useRef<HTMLDivElement>(null);
+  const loadingMore = useRef(false);
   const [rows, setRows] = useState<SocialObject[]>([]);
   const [singleDetails, setSingleDetails] = useState<Json | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -539,10 +619,21 @@ export function Feed({
       window.removeEventListener("porchday:posts-shared", visible);
     };
   }, [endpoint]);
+  useEffect(() => {
+    if (!infinite || !cursor || action.busy || action.error || !sentinel.current || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(e => e.isIntersecting) || loadingMore.current) return;
+      loadingMore.current = true;
+      observer.disconnect();
+      void load(true).finally(() => { loadingMore.current = false; });
+    }, {rootMargin: "300px"});
+    observer.observe(sentinel.current);
+    return () => observer.disconnect();
+  }, [infinite, cursor, action.busy, action.error]);
   const refresh = () => setVersion((v) => v + 1);
   return (
     <>
-      {!wallId && !singleId && (
+      {groupId && !wallId && !singleId && (
         <Composer onPosted={refresh} groupId={groupId} />
       )}
       <div className="feed-heading">
@@ -564,10 +655,12 @@ export function Feed({
       ) : (
         rows
           .filter(unexpired)
+          .filter(row => !authorFilter || matchesAuthor(row, authorFilter))
           .map((row) => (
             <PostCard
               key={row.id + ":" + row.envelope.context.revision}
               row={row}
+              contentFilter={contentFilter}
               onChange={refresh}
               expanded={!!singleId}
               initialDetails={singleId ? singleDetails : null}
@@ -586,7 +679,7 @@ export function Feed({
             }
             action={
               !groupId && !singleId ? (
-                <a className="button outline compact" href="/app/connections">
+                <a className="button outline compact" href="/connections">
                   Find a friend <Icon name="arrow" size={16} />
                 </a>
               ) : undefined
@@ -598,6 +691,7 @@ export function Feed({
           </Empty>
         </div>
       )}
+      {cursor && <div ref={sentinel} aria-hidden="true" />}
       {cursor && (
         <Button
           variant="outline full"
@@ -624,7 +718,9 @@ export function PostCard({
   onChange,
   expanded = false,
   canModerate = false,
+  contentFilter = "posts",
 }: {
+  contentFilter?: FeedContent;
   row: SocialObject;
   initialDetails?: Json | null;
   onChange: () => void;
@@ -728,7 +824,7 @@ export function PostCard({
   const own = row.author_id === vault.member.id;
   async function remove() {
     if (
-      !confirm("Delete this post and all its comments, reactions, and photos?")
+      !confirm("Delete this post and its comments, reactions, and attachments? Photos added to albums remain available separately. Use Delete photo in Feed → Photos to remove those everywhere.")
     )
       return;
     await action.run(async () => {
@@ -773,6 +869,7 @@ export function PostCard({
       onChange();
     });
   }
+  if (content && !matchesContent(content, contentFilter)) return null;
   if (unavailable)
     return (
       <div className="panel">
@@ -782,7 +879,7 @@ export function PostCard({
   return (
     <article ref={cardRef} className="post-card panel">
       <header className="post-heading">
-        <a href={`/app/wall/${row.author_id}`} className="post-author">
+        <a href={`/wall/${row.author_id}`} className="post-author">
           <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} />
           <div>
             <strong>
@@ -801,7 +898,7 @@ export function PostCard({
                 ? "Only me"
                 : row.group_id
                   ? "Group"
-                  : row.audience === "family"
+                  : row.audience === "community" ? "Community" : row.audience === "extended_family" ? "Extended family" : row.audience === "family"
                     ? "Family"
                     : row.audience === "friends"
                       ? "Friends only"
@@ -863,7 +960,7 @@ export function PostCard({
                 <Icon name="shield" size={16} />
                 Report a concern
               </button>
-              <a href={`/app/post/${row.id}`}>
+              <a href={`/post/${row.id}`}>
                 <Icon name="external" size={16} />
                 Open post
               </a>
@@ -899,8 +996,9 @@ export function PostCard({
           <TagPicker value={editTags} onChange={setEditTags} disabled={action.busy}/>
           {editMedia.map(media=><div key={media.id} className="photo-draft">
             <EncryptedPhoto media={media}/>
-            <Field label="Photo caption" value={media.alt} maxLength={1000} onChange={e=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,alt:e.target.value}:m))}/>
-            <TagPicker label="People in this photo" value={media.tags||[]} disabled={action.busy} onChange={tags=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,tags}:m))}/>
+            <AttachmentDateEditor mediaId={media.id} postId={row.id} createdAt={row.created_at}/>
+            <Field label={isVideo(media.mime) ? "Video caption" : "Photo caption"} value={media.alt} maxLength={1000} onChange={e=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,alt:e.target.value}:m))}/>
+            <TagPicker label="People in this photo or video" value={media.tags||[]} disabled={action.busy} onChange={tags=>setEditMedia(old=>old.map(m=>m.id===media.id?{...m,tags}:m))}/>
           </div>)}
           <TimerSelect
             value={editTimer}
@@ -991,17 +1089,39 @@ export function PostCard({
     </article>
   );
 }
-export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload; thumbnail?:boolean }) {
+export function EncryptedPhoto({ media, thumbnail=false, photoProof }: { media: MediaPayload; thumbnail?:boolean; photoProof?:PhotoProof }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const imageRef = useRef<HTMLImageElement>(null);
+  const video = isVideo(media.mime);
+  const [requested, setRequested] = useState<string | null>(null);
+  const [poster, setPoster] = useState<{ id: string; url: string } | null>(null);
+  useEffect(() => {
+    let alive = true, url = "";
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setPoster(null);
+    const deadline = media.posterExpiresAt === null ? Infinity : Date.parse(media.posterExpiresAt || "");
+    if (near && video && deadline > Date.now() && typeof media.poster === "string" && media.poster.length <= 100000) {
+      void Promise.resolve().then(() => validatedPhoto(base64ToBytes(media.poster!))).then(({ blob }) => {
+        if (alive && deadline > Date.now()) {
+          url = URL.createObjectURL(blob); setPoster({ id: media.id, url });
+          const expire = () => {
+            if (deadline <= Date.now()) { URL.revokeObjectURL(url); url = ""; setPoster(null); }
+            else if (Number.isFinite(deadline)) timer = setTimeout(expire, Math.min(deadline - Date.now(), 2147483647));
+          };
+          expire();
+        }
+      }).catch(() => {});
+    }
+    return () => { alive = false; if (timer) clearTimeout(timer); if (url) URL.revokeObjectURL(url); };
+  }, [media.id, media.poster, media.posterExpiresAt, near, video]);
   const [opened, setOpened] = useState<{ id: string; url: string; expiresAt: number | null } | null>(
     null,
   );
   const [error, setError] = useState("");
   const url = opened?.id === media.id ? opened.url : "";
   useEffect(() => {
-    if (!near) return;
+    if (!near || (video && (thumbnail || requested !== media.id))) return;
     let alive = true;
     let objectUrl = "";
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1014,19 +1134,20 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
       signal: controller.signal,
     })
       .then(async (response) => {
-        if (!response.ok) throw new Error("This photo is no longer available.");
+        if (!response.ok) throw new Error("This attachment is no longer available.");
         const envelope = (await response.json()) as EncryptedEnvelope;
         const payload = await vault.open({ envelope, id: media.id });
-        if (payload.mime !== "image/jpeg" || typeof payload.bytes !== "string")
-          throw new Error("Unsupported photo format.");
+        if (payload.mime !== media.mime || typeof payload.bytes !== "string")
+          throw new Error("Unsupported media format.");
         const bytes = base64ToBytes(payload.bytes);
-        const { blob } = await traced("photo decode", () => validatedPhoto(bytes), { bytes: bytes.length });
+        if(photoProof)await verifyPhotoBytes(photoProof,bytes);
+        const { blob } = await traced("media decode", () => validatedMedia(bytes, media.mime), { bytes: bytes.length });
         if (!alive) return;
         const expiry = envelope.context.expiresAt
           ? Date.parse(envelope.context.expiresAt)
           : null;
         if (expiry !== null && expiry <= Date.now())
-          throw new Error("This photo expired.");
+          throw new Error("This attachment expired.");
         objectUrl = URL.createObjectURL(blob);
         markOnce("photo-decoded");
         setOpened({ id: media.id, url: objectUrl, expiresAt: expiry });
@@ -1037,7 +1158,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
             URL.revokeObjectURL(objectUrl);
             objectUrl = "";
             setOpened(null);
-            setError("This photo expired.");
+            setError("This attachment expired.");
           } else
             expiryTimer = setTimeout(
               checkExpiry,
@@ -1055,7 +1176,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
       if (expiryTimer) clearTimeout(expiryTimer);
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [media.id, near]);
+  }, [media.id, media.mime, near, requested, thumbnail, video, photoProof]);
   useEffect(() => {
     const element = imageRef.current;
     if (!currentTraceId() || !element || !url || !opened) return;
@@ -1065,7 +1186,7 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
   }, [url, opened]);
   return <div ref={photoRef} className={thumbnail ? "calendar-thumbnail" : undefined}>{url ? (
     <figure>
-      <img
+      {video ? <video src={url} controls playsInline preload="metadata" aria-label={media.alt || "Shared video"} width={media.width} height={media.height} /> : <img
         ref={imageRef}
         src={url}
         alt={media.alt || "Shared photo (no description provided)"}
@@ -1073,14 +1194,21 @@ export function EncryptedPhoto({ media, thumbnail=false }: { media: MediaPayload
         decoding="async"
         width={media.width}
         height={media.height}
-      />
+      />}
       {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
       {!thumbnail && <Tags value={media.tags}/>}
+    </figure>
+  ) : video && requested !== media.id ? (
+    <figure>
+      {poster?.id === media.id && <img src={poster.url} alt={media.alt || "Video preview"} />}
+      {thumbnail ? <span className="calendar-video-indicator" aria-label="Video">▶</span> : <Button onClick={() => setRequested(media.id)}>Load video</Button>}
+      {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
+      {!thumbnail && <Tags value={media.tags} />}
     </figure>
   ) : (
     <div className="photo-placeholder">
       <Icon name={error ? "shield" : "photo"} size={24} />
-      <span>{error || (near ? "Opening encrypted photo…" : "Photo loads as you scroll")}</span>
+      <span>{error || (near ? "Opening encrypted media…" : "Media loads as you scroll")}</span>
     </div>
   )}</div>;
 }
@@ -1872,17 +2000,17 @@ function ReshareDialog({
             id: photo.id,
           });
           if (
-            original.mime !== "image/jpeg" ||
+            (!isVideo(original.mime) && original.mime !== "image/jpeg") ||
             typeof original.bytes !== "string"
           )
             throw new Error("An original photo has an unsupported format.");
           const bytes = base64ToBytes(original.bytes);
-          const { width, height } = await validatedPhoto(bytes);
+          const { width, height } = await validatedMedia(bytes, original.mime);
           const photoExpiresAt = preservedPhotoDeadline(
             oldEnvelope.context.expiresAt,
             expiresAt,
           );
-          const item = { ...photo, width, height, id: crypto.randomUUID() };
+          const item = { ...photo, width, height, posterExpiresAt: photoExpiresAt, id: crypto.randomUUID() };
           const envelope = await vault.seal(
             { ...item, bytes: original.bytes },
             {
@@ -1974,7 +2102,9 @@ function ReshareDialog({
             <option value="connections">My current friends & family</option>
             <option value="friends">Friends only</option>
             <option value="family">My current family connections</option>
-            <option value="only_me">Only me</option>
+            <option value="extended_family">Extended family</option>
+              <option value="community">Community</option>
+              <option value="only_me">Only me</option>
             {source.group_id && (
               <option value="group">Current members of this group</option>
             )}

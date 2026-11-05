@@ -1,3 +1,5 @@
+import {PhotoAudienceSharing} from "./PhotoAudienceSharing";
+import { validatedMedia } from "./video";
 import React, {
   createContext,
   useContext,
@@ -40,11 +42,9 @@ import {
 } from "./api";
 import { Alert, Button, Field, Icon, Loading, useAction } from "./ui";
 import { LockedAccount } from "./LockedAccount";
-import { PreviousDomainUnlockHint } from "./DomainMigration";
 import { startInitialProfileSetup,type InitialProfileState } from "./initial-profile-lifecycle";
 import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
 import { preparePostAudienceRefresh, startPostAudienceRefresh, type AudienceRefreshState, type RefreshPost } from "./post-audience-refresh";
-import { validatedPhoto } from "./photo-safety";
 import { markOnce, traced } from "./tracing";
 type BackupDevice = {
   id: string;
@@ -72,7 +72,7 @@ type VaultValue = {
   open: (
     row:
       | SocialObject
-      | { envelope: EncryptedEnvelope; id?: string; author_id?: string },
+      | { envelope: EncryptedEnvelope; id?: string; author_id?: string; author_key?: Device },
   ) => Promise<Content>;
   seal: (
     payload: unknown,
@@ -87,6 +87,10 @@ type VaultValue = {
     groupId?: string | null,
     postId?: string,
   ) => Promise<{ epoch: number; devices: Device[] }>;
+  verifyDevice: (device:Device) => Promise<void>;
+  sealPhotoRefresh: (payload: unknown, context: ContentContext, grantId: string) => Promise<EncryptedEnvelope>;
+  sealPhotoUpdate: (payload: unknown, context: ContentContext) => Promise<EncryptedEnvelope>;
+  sealAlbum: (payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) => Promise<EncryptedEnvelope>;
   clear: () => Promise<void>;
 };
 const Vault = createContext<VaultValue | null>(null);
@@ -461,7 +465,6 @@ export function VaultProvider({
           {devices.length ? (
             <form className="form-stack" onSubmit={unlock}>
               <h2>Unlock this device</h2>
-              <PreviousDomainUnlockHint origin={location.origin} />
               <p>
                 {["restricted", "suspended"].includes(member.status || "")
                   ? "Use your saved recovery secret to read existing encrypted content and export your data. This does not enroll a new device or restore restricted social features."
@@ -592,8 +595,9 @@ export function VaultProvider({
         ? { post_id: postId }
         : { audience, ...(groupId ? { group_id: groupId } : {}) },
     );
-    const r = await request(`/audiences?${qs}`, {signal});
+    const r = await request(audience === "photo" ? `/photos/${postId}/interactions/audience` : audience === "album" ? `/albums/${groupId}/audience` : `/audiences?${qs}`, {signal});
     const list = items<Device>(r);
+    if(list.length>4000)throw Error("This circle has more than 4,000 devices. Choose a smaller audience.");
     if (
       (Array.isArray(r.pending_members) && r.pending_members.length) ||
       (typeof r.pending_members === "number" && r.pending_members > 0)
@@ -643,6 +647,30 @@ export function VaultProvider({
       })),
     });
   }
+  async function sealPhotoRefresh(payload:unknown,context:ContentContext,grantId:string) {
+    requireSealingAuthor(member.status,context.kind,active!.device);
+    const snapshot=await get(`/photos/${context.parentId}/grants/${grantId}/refresh-audience`);
+    if(snapshot.pending_members?.length)throw Error("Someone who can see this photo has not set up encryption yet. Set up their keys and retry sharing album history.");
+    const devices=snapshot.devices as Device[];for(const device of devices)await checkDevice(device);
+    return encryptObject({payload,context:{...context,authorId:member.id,authorDeviceId:active!.device.id,epoch:snapshot.epoch},signingKey:active!.key,recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+  }
+  async function sealPhotoUpdate(payload:unknown,context:ContentContext) {
+    requireSealingAuthor(member.status,"photo",active!.device);
+    const snapshot=await get(`/photos/${context.parentId}/grants/${context.id}/audience`);
+    if(snapshot.pending_members?.length)throw Error("Someone who can see this photo has not set up encryption yet.");
+    const devices=snapshot.devices as Device[];for(const device of devices)await checkDevice(device);
+    return encryptObject({payload,context:{...context,authorId:member.id,authorDeviceId:active!.device.id,epoch:snapshot.epoch},signingKey:active!.key,recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+  }
+  async function sealAlbum(payload: unknown, context: ContentContext, change?: {memberId: string; role: "read" | "add" | "admin" | null}) {
+    requireSealingAuthor(member.status, "album", active!.device);
+    const query = change ? "?" + new URLSearchParams({member_id:change.memberId,role:change.role??"remove"}) : "";
+    const snapshot = await get(`/albums/${context.id}/audience${query}`);
+    if (snapshot.pending_members?.length) throw new Error("Someone in this album has not set up encryption yet. No one will be silently left out.");
+    const devices = snapshot.devices as Device[];
+    for (const device of devices) await checkDevice(device);
+    return encryptObject({payload, context:{...context,kind:"album",audience:"album",groupId:context.id,parentId:null,authorId:member.id,authorDeviceId:active!.device.id,epoch:snapshot.epoch}, signingKey:active!.key,
+      recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+  }
   function open(row: Parameters<typeof openContent>[0]) {
     return traced("decrypt", () => openContent(row)).then((value) => {
       markOnce("first-decrypt");
@@ -652,7 +680,7 @@ export function VaultProvider({
   async function openContent(
     row:
       | SocialObject
-      | { envelope: EncryptedEnvelope; id?: string; author_id?: string },
+      | { envelope: EncryptedEnvelope; id?: string; author_id?: string; author_key?: Device },
   ) {
     const envelope = row.envelope;
     if (!envelope?.context)
@@ -662,6 +690,12 @@ export function VaultProvider({
       throw new Error("Content identity did not match.");
     if (row.author_id && row.author_id !== expected.authorId)
       throw new Error("Content author did not match.");
+    const retained = "author_key" in row ? row.author_key : undefined;
+    if (retained && ["album","photo","media"].includes(expected.kind)) {
+      if (retained.id !== expected.authorDeviceId || retained.member_id !== expected.authorId) throw new Error("Signature identity did not match.");
+      await checkDevice(retained);
+      authorKeys.current.set(expected.authorDeviceId, Promise.resolve(retained));
+    }
     if (!authorKeys.current.has(expected.authorDeviceId)) {
       authorKeys.current.set(
         expected.authorDeviceId,
@@ -709,6 +743,10 @@ export function VaultProvider({
         notifyProfileChanged,
         open,
         seal,
+        sealAlbum,
+        sealPhotoUpdate,
+        sealPhotoRefresh,
+        verifyDevice: checkDevice,
         audience,
         clear: async () => {
           await forgetAllDevices();
@@ -717,6 +755,7 @@ export function VaultProvider({
       }}
     >
       <PostAudienceSharing />
+      <PhotoAudienceSharing />
       {profileSetup?.key===profileContext && profileSetup.state==='unconfirmed' && dismissedProfileSetup!==profileContext && (
         <div className="panel" role="status">
           <p>Background setup hasn’t been confirmed. You can keep using Porchday.</p>
@@ -781,9 +820,9 @@ function PostAudienceSharing() {
         },
         readMedia: (id, signal) => request<EncryptedEnvelope>(`/media/${id}/bytes`, { signal }),
         validatePhoto: async payload => {
-          if (payload.mime !== "image/jpeg" || typeof payload.bytes !== "string")
+          if (typeof payload.mime !== "string" || typeof payload.bytes !== "string")
             throw Error("An earlier photo has an unsupported format.");
-          await validatedPhoto(base64ToBytes(payload.bytes));
+          await validatedMedia(base64ToBytes(payload.bytes), payload.mime);
         },
         upload: async (id, envelope, revision) => {
           if (!current()) throw new DOMException("Sharing stopped.", "AbortError");
@@ -827,7 +866,7 @@ function PostAudienceSharing() {
   }, [context]);
   if (state === "idle") return null;
   return <div className="panel" role="status">
-    <p>{state === "sharing" ? "Sharing earlier posts with the connections you selected…" : "Sharing earlier posts hasn’t finished. Your account is ready to use."}</p>
+    <p>{state === "sharing" ? "Sharing earlier posts with their current audience…" : "Sharing earlier posts hasn’t finished. Your account is ready to use."}</p>
     {state === "unconfirmed" && <Button variant="outline" onClick={() => { void task.current?.retry(); }}>Try sharing again</Button>}
   </div>;
 }

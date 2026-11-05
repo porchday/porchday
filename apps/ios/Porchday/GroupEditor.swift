@@ -26,7 +26,7 @@ struct GroupEditor: View {
                 TextField("Description", text: $description, axis: .vertical)
                 PhotosPicker(selection: $selection, matching: .images) { Label("Choose a group image", systemImage: "photo") }
                 if let photo {
-                    if let image = UIImage(data: photo.bytes) { Image(uiImage: image).resizable().scaledToFit().frame(maxHeight: 180) }
+                    if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 180) }
                     TextField("Photo description", text: Binding(get: { self.photo?.alt ?? "" }, set: { self.photo?.alt = $0 }))
                     Button("Cancel selected photo") { self.photo = nil }
                 } else if currentPayload["image"]["id"].string != nil {

@@ -130,6 +130,142 @@
         }
       ],
       "description": "Optional decrypted owner-only custom emoji collection. Validate PNG bytes/digest and merge by image identity before re-encrypting for the destination owner."
+    },
+    "photos": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "photo_date",
+          "created_at",
+          "expires_at",
+          "payload",
+          "album_ids"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "photo_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expires_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "media"
+            ],
+            "properties": {
+              "media": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "id"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "album_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "source_media_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "source_post_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    "albums": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "created_at",
+          "payload"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "payload": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 200
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 5000
+              }
+            }
+          }
+        }
+      }
+    },
+    "attachment_dates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "media_id",
+          "post_id",
+          "photo_date"
+        ],
+        "properties": {
+          "media_id": {
+            "type": "string"
+          },
+          "post_id": {
+            "type": "string"
+          },
+          "photo_date": {
+            "type": "string",
+            "format": "date"
+          }
+        }
+      }
     }
   },
   "additionalProperties": true,
@@ -230,6 +366,8 @@
         "connections",
         "friends",
         "family",
+        "extended_family",
+        "community",
         "only_me",
         "group",
         "moderators"
@@ -248,7 +386,12 @@
           "type": "string"
         },
         "mime": {
-          "const": "image/jpeg"
+          "enum": [
+            "image/jpeg",
+            "video/mp4",
+            "video/quicktime",
+            "video/webm"
+          ]
         },
         "name": {
           "type": "string"
@@ -256,15 +399,41 @@
         "width": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         },
         "height": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mime": {
+                "const": "image/jpeg"
+              }
+            },
+            "required": [
+              "mime"
+            ]
+          },
+          "then": {
+            "properties": {
+              "width": {
+                "maximum": 2400,
+                "type": "integer"
+              },
+              "height": {
+                "maximum": 2400,
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
     },
     "profile": {
       "type": "object",
@@ -424,10 +593,15 @@
         },
         "path": {
           "type": "string",
-          "pattern": "^photos/[a-fA-F0-9-]{36}\\.jpg$"
+          "pattern": "^photos/[a-fA-F0-9-]{36}\\.(jpg|mp4|mov|webm)$"
         },
         "mime": {
-          "const": "image/jpeg"
+          "enum": [
+            "image/jpeg",
+            "video/mp4",
+            "video/quicktime",
+            "video/webm"
+          ]
         },
         "alt": {
           "type": "string"
@@ -439,12 +613,12 @@
         "width": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         },
         "height": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 2400
+          "maximum": 3840
         },
         "sha256": {
           "type": "string",
@@ -475,7 +649,33 @@
           "$ref": "#/$defs/deadline"
         }
       },
-      "additionalProperties": true
+      "additionalProperties": true,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "mime": {
+                "const": "image/jpeg"
+              }
+            },
+            "required": [
+              "mime"
+            ]
+          },
+          "then": {
+            "properties": {
+              "width": {
+                "maximum": 2400,
+                "type": "integer"
+              },
+              "height": {
+                "maximum": 2400,
+                "type": "integer"
+              }
+            }
+          }
+        }
+      ]
     },
     "connection": {
       "type": "object",

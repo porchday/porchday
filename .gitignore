@@ -31,3 +31,5 @@ xcuserdata/
 apps/ios/build/
 apps/ios/Porchday.xcodeproj/
 packages/crypto/native/build/
+
+apps/macos/build/

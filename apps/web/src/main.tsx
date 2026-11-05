@@ -1,4 +1,6 @@
-import {PhotosCalendar} from "./PhotosCalendar";
+import { isMemberPath } from "./routes";
+import { PhotoCollection } from "./PhotoCollection";
+import { Albums, AlbumDetail } from "./Albums";
 import {PeopleDirectory} from "./PeopleTags";
 import { FeatureAdditions } from "./FeatureAdditions";
 import { hasPendingSaves } from "./pending-saves";
@@ -18,9 +20,10 @@ import {
   useAction,
   PendingSaveStatus,
 } from "./ui";
-import { AuthPage, Landing, Policy, StolenAccount } from "./Public";
+import { AuthPage, Landing, Policy, StolenAccount, InvitedPolicyPage } from "./Public";
 import { VaultProvider, useVault } from "./vault";
-import { Feed } from "./Social";
+import { Feed, Composer } from "./Social";
+import { FeedExperience } from "./FeedExperience";
 import {
   Connections,
   Groups,
@@ -36,7 +39,7 @@ import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
 import { BackgroundControls } from "./BackgroundControls";
 import { ColorSchemeControls } from "./ColorSchemeControls";
-import { LegacyDomainNotice } from "./DomainMigration";
+import { canonicalNavigation } from "./domain-navigation";
 import { initSiteAppearance } from "./site-appearance";
 import { initColorScheme } from "./color-scheme";
 import { BuilderChat, builderChatAvailable } from "./BuilderChat";
@@ -81,7 +84,9 @@ function App() {
   const navigationEpoch = useRef(0);
   const route = useRoute(navigationEpoch);
   const navigationAtRender = navigationEpoch.current;
-  const path = route.split("?")[0];
+  const rawPath = route.split("?")[0];
+  const path = rawPath;
+  const informationPage = ["/about", "/mission", "/principles", "/privacy", "/community", "/accessibility", "/help", "/contact"].includes(path);
   const [member, setMember] = useState<Member | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -116,7 +121,7 @@ function App() {
   }
   useEffect(() => {
     if (
-      (path.startsWith("/app") || path === "/staff/moderation") &&
+      (isMemberPath(path) || path === "/staff/moderation" || informationPage) &&
       !member &&
       !loading &&
       !restricted
@@ -155,7 +160,7 @@ function App() {
     const appWindow = window.matchMedia(
       "(display-mode: standalone), (display-mode: minimal-ui), (display-mode: window-controls-overlay)",
     );
-    const pageTitle = path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Connections" : path.includes("wall") ? "My wall" : path.includes("app") ? "Home" : "Porchday";
+    const pageTitle = path.includes("settings") ? "Settings" : path.includes("groups") ? "Groups" : path.includes("connections") ? "Connections" : path.includes("wall") ? "My wall" : path === "/" ? "Home" : "Porchday";
     const updateTitle = () => {
       // Installed app windows already supply the app name in their chrome.
       const standalone = appWindow.matches || (navigator as Navigator & { standalone?: boolean }).standalone === true;
@@ -212,17 +217,21 @@ function App() {
   let page: React.ReactNode;
   if (deletionCleanupBusy && path !== "/account-deletion")
     page = <main id="main-content" className="narrow-page"><Loading text="Finishing sign-out…" /></main>;
-  else if (!online && ((!member && path.startsWith("/app")) || path === "/staff" || path === "/staff/" || path === "/staff/moderation"))
+  else if (!online && ((!member && isMemberPath(path)) || path === "/staff" || path === "/staff/" || path === "/staff/moderation"))
     page = <OfflineScreen onRetry={retryConnection} />;
   else if (path === "/account-deletion") page = <AccountDeletionReceipt receipt={deletionReceipt} onClose={() => { setDeletionReceipt(null); navigate("/"); }} />;
-  else if (path === "/") page = <Landing />;
+
   else if (path === "/stolen-account") page = <StolenAccount />;
   else if (path === "/recovery") page = <Recovery />;
   else if (path === "/appeals") page = <Appeals onLogout={signOut} />;
   else if (path === "/staff" || path === "/staff/") page = <StaffEntry />;
   else if (["/login", "/join", "/forgot", "/reset", "/verify"].includes(path))
     page = <AuthPage key={route} mode={path.slice(1)} onSignedIn={session} />;
-  else if (path.startsWith("/app") || path === "/staff/moderation") {
+  else if (informationPage) {
+    page = member ? (path === "/about" ? <Landing /> : <Policy page={path === "/mission" ? "about" : path.slice(1)} />)
+      : <InvitedPolicyPage path={path} loading={loading} onSignedIn={session} />;
+  }
+  else if (isMemberPath(path) || path === "/staff/moderation") {
     page = loading ? (
       <main className="narrow-page">
         <Logo />
@@ -254,7 +263,7 @@ function App() {
         </div>
       </>
     );
-  } else page = <Policy page={path.slice(1)} />;
+  } else page = <AuthPage mode="login" onSignedIn={session} />;
   return (
     <>
       <a className="skip-link" href="#main-content">
@@ -297,7 +306,6 @@ function App() {
           </Button>
         </div>
       )}
-      <LegacyDomainNotice origin={location.origin} path={path} />
       {page}
     </>
   );
@@ -328,15 +336,20 @@ function OfflineScreen({ onRetry }: { onRetry: () => Promise<void> }) {
     </main>
   );
 }
-const links = [
-  ["/app", "home", "Home"],
-  ["/app/wall", "wall", "My wall"],
-  ["/app/connections", "people", "Connections"],
-  ["/app/groups", "group", "Groups"],
-  ["/app/notifications", "bell", "Notifications"],
-  ["/app/settings/profile", "settings", "Settings"],
+const primaryLinks = [
+  ["/", "feed", "Feed"],
+  ["/share", "plus", "Share"],
+  ["/albums", "album", "Albums"],
+  ["/connections", "people", "Connections"],
+  ["/menu", "more", "More"],
 ];
-const builderChatLink = ["/app/builder-chat", "comment", "Builder chat"];
+const secondaryLinks = [
+  ["/groups", "group", "Groups"],
+  ["/notifications", "bell", "Notifications"],
+  ["/wall", "wall", "My wall"],
+];
+const featureLink = ["/features", "code", "Feature additions"];
+const settingsLink = ["/settings/profile", "settings", "Settings"];
 function AppShell({
   path,
   routeKey,
@@ -361,7 +374,7 @@ function AppShell({
   useEffect(() => {
     if (vault.member.status !== "suspended") builderChatAvailable().then(setBuilderChat);
   }, []);
-  const sidebarLinks = vault.member.status === "suspended" ? [links[5]] : builderChat ? [...links.slice(0, 5), builderChatLink, ["/app/features", "plus", "Feature additions"], links[5]] : links;
+  const sidebarLinks = vault.member.status === "suspended" ? [settingsLink] : [...primaryLinks, ...secondaryLinks, ...(builderChat ? [featureLink] : []), settingsLink];
   async function logout() {
     if (hasPendingSaves()) return;
     await vault.clear();
@@ -382,40 +395,42 @@ function AppShell({
       </>
     );
   else if (path === "/staff/moderation") content = <StaffConsole initialTab="moderation" />;
-  else if (path === "/app" || path === "/app/")
+  else if (path === "/")
     content = (
       <>
-        <h1 className="sr-only">Home</h1>
-        <Feed />
+        <FeedExperience />
       </>
     );
-  else if (path === "/app/photos") content = <PhotosCalendar />;
-  else if (path === "/app/menu") content = <section className="panel form-stack"><h1>More</h1><a href="/app/wall">My wall</a>{builderChat && <a href="/app/builder-chat">Builder chat</a>}<a href="/app/settings/profile">Settings</a></section>;
-  else if (path.startsWith("/app/post/"))
-    content = <Feed singleId={path.split("/")[3]} />;
-  else if (path.startsWith("/app/wall"))
-    content = <Wall id={path.split("/")[3]} />;
-  else if (path === "/app/connections") content = <Connections />;
-  else if (path === "/app/groups") content = <Groups />;
-  else if (path.startsWith("/app/groups/"))
-    content = <GroupDetail id={path.split("/")[3]} />;
-  else if (path === "/app/notifications") content = <Notifications />;
-  else if (path === "/app/features") content = <FeatureAdditions />;
-  else if (path === "/app/builder-chat") content = <BuilderChat />;
-  else if (path === "/app/performance")
+  else if (path === "/albums") content = <Albums />;
+  else if (path.startsWith("/albums/")) content = <AlbumDetail key={path.split("/")[2]} id={path.split("/")[2]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
+  else if (path === "/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
+  else if (path === "/share") content = <><div className="page-heading mobile-tab-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
+  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features"><Icon name="code"/>Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button onClick={logout}><Icon name="logout"/>Log out</Button></section>;
+  else if (path.startsWith("/post/"))
+    content = <Feed singleId={path.split("/")[2]} />;
+  else if (path.startsWith("/wall"))
+    content = <Wall id={path.split("/")[2]} />;
+  else if (path === "/connections") content = <Connections />;
+  else if (path === "/groups") content = <Groups />;
+  else if (path.startsWith("/groups/"))
+    content = <GroupDetail id={path.split("/")[2]} />;
+  else if (path === "/notifications") content = <Notifications />;
+  else if (path === "/features") content = <FeatureAdditions />;
+  else if (path === "/builder-chat") content = <BuilderChat />;
+  else if (path === "/performance")
     content = <React.Suspense fallback={<Loading />}><TraceInspector /></React.Suspense>;
-  else if (path === "/app/integrations/authorize")
+  else if (path === "/integrations/authorize")
     content = <IntegrationConsent />;
-  else if (path.startsWith("/app/settings"))
+  else if (path.startsWith("/settings"))
     content = (
-      <Settings tab={path.split("/")[3] || "profile"} onLogout={logout} onAccountDeleted={onAccountDeleted} />
+      <Settings tab={path.split("/")[2] || "profile"} onLogout={logout} onAccountDeleted={onAccountDeleted} />
     );
   else
     content = (
       <Empty
         title="Page not found"
         action={
-          <a className="button primary" href="/app">
+          <a className="button primary" href="/">
             Go Home
           </a>
         }
@@ -427,26 +442,16 @@ function AppShell({
     <MemberAvatarProvider><PeopleDirectory>
     <div className="app-layout">
       <header className="app-mobile-header">
-        <Logo small href="/app" />
-        <button className="icon-button" onClick={logout} aria-label="Sign out">
-          <Icon name="logout" />
-        </button>
-        <a
-          href="/app/notifications"
-          className="icon-button"
-          aria-label="Notifications"
-        >
-          <Icon name="bell" />
-        </a>
+        <Logo small href="/" />
       </header>
       <aside className="sidebar">
-        <Logo href="/app" />
+        <Logo href="/" />
         <nav aria-label="Your Porchday">
-          {[...sidebarLinks, ...(vault.member.status === "suspended" ? [] : [["/app/photos", "photo", "Photos"]])].map(
+          {sidebarLinks.map(
             ([href, icon, name]) => {
               const active =
-                href === "/app"
-                  ? path === "/app"
+                href === "/"
+                  ? path === "/"
                   : path.startsWith(href.replace("/profile", ""));
               return (
                 <a
@@ -465,7 +470,7 @@ function AppShell({
         </nav>
         <div className="sidebar-account">
           <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
-          <a href="/app/wall">
+          <a href="/wall">
             <strong>@{vault.member.handle}</strong>
             <small>My profile</small>
           </a>
@@ -516,25 +521,25 @@ function AppShell({
         <section className="rail-card">
           <h2>Connections</h2>
           <p>{count ?? "–"} of 300, including family</p>
-          <a className="text-link" href="/app/connections">
+          <a className="text-link" href="/connections">
             Manage connections <Icon name="arrow" size={15} />
           </a>
         </section>
       </aside>
       <nav className="mobile-nav" aria-label="Mobile navigation">
         {(vault.member.status === "suspended"
-          ? [links[5]]
-          : [links[0], links[2], links[3], ["/app/photos", "photo", "Photos"], ["/app/menu", "more", "More"]]
+          ? [settingsLink]
+          : primaryLinks
         ).map(([href, icon, name]) => (
           <a
             key={href}
             className={
-              (href === "/app" ? path === "/app" : path.startsWith(href))
+              (href === "/" ? path === "/" : path.startsWith(href))
                 ? "active"
                 : ""
             }
             href={href}
-            aria-current={(href === "/app" ? path === "/app" : path.startsWith(href)) ? "page" : undefined}
+            aria-current={(href === "/" ? path === "/" : path.startsWith(href)) ? "page" : undefined}
           >
             <Icon name={icon} size={21} />
             <span>{name}</span>
@@ -545,12 +550,17 @@ function AppShell({
     </PeopleDirectory></MemberAvatarProvider>
   );
 }
-installTracing();
-initColorScheme();
-initSiteAppearance();
-createRoot(document.getElementById("root")!).render(
-  <ErrorBoundary>
-    <PendingSaveStatus />
-    <App />
-  </ErrorBoundary>,
-);
+const canonicalDestination = canonicalNavigation(new URL(location.href));
+if (canonicalDestination) {
+  location.replace(canonicalDestination);
+} else {
+  installTracing();
+  initColorScheme();
+  initSiteAppearance();
+  createRoot(document.getElementById("root")!).render(
+    <ErrorBoundary>
+      <PendingSaveStatus />
+      <App />
+    </ErrorBoundary>,
+  );
+}

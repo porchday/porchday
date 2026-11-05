@@ -1,0 +1,39 @@
+name: Release recovery owner notification
+run-name: Release attention ${{ inputs.operation_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      operation_id:
+        description: Release operation UUID
+        type: string
+        required: true
+      payload:
+        description: Sanitized fixed-schema release alert
+        type: string
+        required: true
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: release-attention-${{ inputs.operation_id }}
+  cancel-in-progress: false
+jobs:
+  notify:
+    if: github.repository == 'porchday/porchday' && github.ref == 'refs/heads/main' && (github.actor == 'bobbyhwilder' || github.actor == 'andyk')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Deliver a sanitized release alert as the Actions bot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PORCHDAY_RELEASE_OPERATION_ID: ${{ inputs.operation_id }}
+          PORCHDAY_RELEASE_ALERT_PAYLOAD: ${{ inputs.payload }}
+        run: |
+          export PORCHDAY_MONITOR_GH_PATH="$(command -v gh)"
+          node scripts/release-alert-relay.ts

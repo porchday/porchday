@@ -188,7 +188,7 @@ export function BuilderChat() {
 
   if (missing)
     return (
-      <Empty title="Page not found" action={<a className="button primary" href="/app">Go Home</a>}>
+      <Empty title="Page not found" action={<a className="button primary" href="/">Go Home</a>}>
         This page is unavailable.
       </Empty>
     );

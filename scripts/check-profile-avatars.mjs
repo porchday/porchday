@@ -30,9 +30,9 @@ const bundle = await build({ absWorkingDir: root, entryPoints: ['apps/web/src/ma
   b.onLoad({ filter: /^vault$/, namespace: 'avatar-fixture' }, () => ({ resolveDir: resolve(root, 'apps/web/src'), loader: 'tsx', contents: `
     import React,{createContext,useContext,useState} from 'react';
     const Context=createContext(null);
-    export function VaultProvider({children}) {
+    export function VaultProvider({children,member}) {
       const [profileVersion,setVersion]=useState(0);
-      const value={member:${JSON.stringify(person)},device:{id:'${device}'},devices:[],profileVersion,
+      const value={member,device:{id:'${device}'},devices:[],profileVersion,
         open:async row=>row.envelope.payload,clear:async()=>{},notifyProfileChanged:()=>setVersion(v=>v+1)};
       window.avatarFixture=value;return <Context.Provider value={value}>{children}</Context.Provider>;
     }
@@ -73,7 +73,7 @@ try {
       await page.goto('about:blank');
       jpeg = await page.evaluate(() => { const c = document.createElement('canvas'); c.width = 48; c.height = 48; c.getContext('2d').fillRect(0, 0, 48, 48); return c.toDataURL('image/jpeg').split(',')[1]; });
       activePhoto = photo; denied = false; reads = 0;
-      await page.goto(origin + '/app/wall');
+      await page.goto(origin + '/wall');
       await page.waitForFunction(() => document.querySelectorAll('.member-avatar img').length === 4);
       assert.equal(reads, 1, 'sidebar, wall, composer and post share one photo request');
       await page.getByRole('button', { name: /comment/i }).first().click();
@@ -89,19 +89,19 @@ try {
       await page.waitForFunction(() => document.querySelectorAll('.member-avatar img').length === 0);
       assert.ok((await page.locator('.member-avatar').allTextContents()).every(text => text === 'S'), 'own fallbacks use the handle, not the UUID');
       activePhoto = photo;
-      await page.goto(origin + '/app/groups/' + groupId);
+      await page.goto(origin + '/groups/' + groupId);
       await page.getByRole('button', { name: /Members/ }).first().click();
       await page.waitForFunction(() => !!document.querySelector('.member-row .member-avatar img'));
-      await page.goto(origin + '/app/notifications');
+      await page.goto(origin + '/notifications');
       await page.waitForFunction(() => !!document.querySelector('.notification-row .member-avatar img'));
-      await page.goto(origin + '/app/connections');
+      await page.goto(origin + '/connections');
       await page.waitForFunction(() => !!document.querySelector('.member-row .member-avatar img'));
       denied = true;
       await page.evaluate(() => window.dispatchEvent(new Event('porchday:connections-changed')));
       await page.waitForFunction(() => !document.querySelector('.member-row .member-avatar img'));
       assert.equal(await page.locator('.member-row .member-avatar').innerText(), 'F', 'inaccessible profiles use initials');
       await page.setViewportSize({ width: 390, height: 844 });
-      await page.goto(origin + '/app/wall');
+      await page.goto(origin + '/wall');
       await page.waitForFunction(() => !!document.querySelector('.wall-profile .member-avatar img'));
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, 'mobile page fits');
       assert.deepEqual(errors, []);

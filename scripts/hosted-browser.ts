@@ -55,7 +55,7 @@ try {
   await page.getByLabel('Email address', { exact: true }).fill(a.email);
   await page.getByLabel('Password', { exact: true }).fill(a.password);
   await page.getByRole('button', { name: 'Log in', exact: true }).click();
-  await page.waitForURL(stagingOrigin + '/app');
+  await page.waitForURL(stagingOrigin + '/');
   signedIn = true;
   savedSessionCookie = (await context.cookies(stagingOrigin)).map(c => `${c.name}=${c.value}`).join('; ');
   check(savedSessionCookie, 'BROWSER_SESSION_COOKIE_MISSING');
@@ -66,7 +66,7 @@ try {
   await page.getByRole('button', { name: 'Unlock' }).click();
   await page.locator('.feed-heading').getByText('Posts', { exact: true }).waitFor({ timeout: 90_000 });
   await page.getByRole('button', { name: 'Newest first', exact: true }).waitFor();
-  observed.defaultHome = new URL(page.url()).pathname === '/app';
+  observed.defaultHome = new URL(page.url()).pathname === '/';
   observed.historyVisible = false;
   if (state.interop && Date.parse(state.interop.expiresAt) > Date.now()) {
     await page.getByText(state.interop.expectedPostText, { exact: true }).waitFor({ timeout: 45_000 });
@@ -144,7 +144,7 @@ try {
     }); } finally { db.close(); }
   });
   check(remaining === 0, 'SIGNOUT_RETAINED_KEYS');
-  await page.goto(stagingOrigin + '/app');
+  await page.goto(stagingOrigin + '/');
   await page.getByRole('button', { name: 'Log in', exact: true }).waitFor();
   check(await page.locator('.feed-heading').getByText('Posts', { exact: true }).count() === 0, 'SIGNOUT_PRIVATE_FEED_VISIBLE');
   await context.setOffline(true);

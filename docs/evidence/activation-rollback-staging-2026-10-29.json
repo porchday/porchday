@@ -1,0 +1,185 @@
+{
+  "version": 1,
+  "environment": "staging",
+  "toolingSource": "a231534d1dfa44d27f77dc895c9dbae8b94465f9",
+  "runtimeSource": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+  "ci": {
+    "verify": 40826601297,
+    "secretScan": 40826601447
+  },
+  "operationId": "559f83dc-dc56-4855-8cc9-764366be5ec3",
+  "candidateVersion": "94a043bc-6355-4520-bb56-8cc2c9a05b11",
+  "baselineVersion": "c6be8a43-f2aa-41f1-900b-814767a1f29f",
+  "fault": {
+    "at": "2026-10-29T06:05:32.151Z",
+    "planHash": "3e8a884112719b110ab43c59dc429026c7c9d0995e9d7b31db6cfb1a37105ccd",
+    "operationId": "559f83dc-dc56-4855-8cc9-764366be5ec3",
+    "kind": "local-readiness-observation",
+    "injectedStatus": 503,
+    "remoteRequestSent": false
+  },
+  "faultHarnessSha256": "88eb69c906cea2c28407375e80acdf72e1dbbfaaea168fc5e56815195117a9f1",
+  "faultScopeTest": {
+    "at": "2026-10-29T06:02:06.022Z",
+    "candidateReadinessLocallyFailed": true,
+    "productionDelegated": true,
+    "otherStagingReadsDelegated": true,
+    "rollbackReadinessDelegated": true
+  },
+  "phases": [
+    "prepared",
+    "activation-intent",
+    "candidate-observed",
+    "rollback-intent",
+    "rolled-back"
+  ],
+  "journeys": [
+    {
+      "at": "2026-10-29T06:05:32.150Z",
+      "version": "94a043bc-6355-4520-bb56-8cc2c9a05b11",
+      "status": "unhealthy",
+      "checks": [
+        {
+          "name": "protected_readiness",
+          "ok": false,
+          "status": 503
+        },
+        {
+          "name": "anonymous_session",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "monitor_freshness",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "login",
+          "ok": true
+        },
+        {
+          "name": "authorized_profile",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "authorized_feed",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "revocation",
+          "ok": true,
+          "status": 401
+        },
+        {
+          "name": "logout",
+          "ok": true,
+          "status": 200
+        }
+      ],
+      "logoutReconciled": false,
+      "authenticatedAt": "2026-10-29T06:05:32.816Z",
+      "authenticatedChecksReused": false
+    },
+    {
+      "at": "2026-10-29T06:05:45.573Z",
+      "version": "c6be8a43-f2aa-41f1-900b-814767a1f29f",
+      "status": "healthy",
+      "checks": [
+        {
+          "name": "protected_readiness",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "anonymous_session",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "monitor_freshness",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "login",
+          "ok": true
+        },
+        {
+          "name": "authorized_profile",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "authorized_feed",
+          "ok": true,
+          "status": 200
+        },
+        {
+          "name": "revocation",
+          "ok": true,
+          "status": 401
+        },
+        {
+          "name": "logout",
+          "ok": true,
+          "status": 200
+        }
+      ],
+      "logoutReconciled": false,
+      "authenticatedAt": "2026-10-29T06:05:46.394Z",
+      "authenticatedChecksReused": false
+    }
+  ],
+  "finalAssets": [
+    {
+      "at": "2026-10-29T06:05:56.941Z",
+      "healthy": true,
+      "passed": 29
+    }
+  ],
+  "continuity": {
+    "at": "2026-10-29T06:06:11.169Z",
+    "samples": 36,
+    "failedSamples": 0,
+    "logoutStatus": 200,
+    "revoked": true,
+    "scope": "One synthetic authenticated session held across staging release; sampled profile/feed reads only.",
+    "firstSampleAt": "2026-10-29T06:05:13.310Z",
+    "lastSampleAt": "2026-10-29T06:06:07.321Z",
+    "maximumSampleStartGapMs": 2017,
+    "maximumSampleDurationMs": 1009
+  },
+  "final": {
+    "at": "2026-10-29T06:06:18.878Z",
+    "remainingSyntheticSessions": 0,
+    "leaseReleased": true,
+    "stagingVersion": "c6be8a43-f2aa-41f1-900b-814767a1f29f",
+    "productionVersion": "3ee85699-feef-4b0c-b264-d5ff13ab6e94",
+    "recovery": {
+      "operationId": "559f83dc-dc56-4855-8cc9-764366be5ec3",
+      "planHash": "3e8a884112719b110ab43c59dc429026c7c9d0995e9d7b31db6cfb1a37105ccd",
+      "outcome": "rolled-back",
+      "version": "c6be8a43-f2aa-41f1-900b-814767a1f29f",
+      "source": "ebc567a4a0f66f72f2136a549ca28317e2419c84",
+      "deploymentId": "4a011e3e-52bc-4a85-80ed-a467b28731e9",
+      "evidenceDigest": "23fd63e80a50b68fb08330b9746c3f9ffcff633f12a65752540211a4d34372e9",
+      "providerSnapshotSha256": "ba88c848d7554ea9b3c9961f690d262c7393c4b23378910596aeb85ceba7a84c"
+    },
+    "monitor": {
+      "incident": false,
+      "lastAt": "2026-10-29T06:06:10.993Z"
+    },
+    "savedCookiesRemain": false
+  },
+  "historicalResume": "already-finalized",
+  "limitations": [
+    "Local injected readiness observation, not an actual hosted application fault.",
+    "Byte-identical application runtime; no feature/schema/client protocol change.",
+    "One synthetic session with sampled profile/feed reads; not continuous or regional coverage.",
+    "No production fault or deployment; unknown-operation escalation remains open.",
+    "Does not establish monthly 99.99% availability."
+  ]
+}

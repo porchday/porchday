@@ -1,0 +1,76 @@
+{
+  "date": "2026-10-29",
+  "runtimeSource": "41ef26805cb38043c78b5ccef4e1cce631729c72",
+  "ci": {
+    "push": 40929527044,
+    "pullRequest": 40929571127,
+    "result": "success"
+  },
+  "activation": {
+    "at": "2026-10-29T18:26:36.317Z",
+    "passed": true,
+    "environment": "staging",
+    "version": "774ea8a2-0aa3-430e-b56e-3eaf0e75c43b",
+    "runtimeSource": "41ef26805cb38043c78b5ccef4e1cce631729c72",
+    "checks": [
+      "existing_allowed_session_and_revoked_cookie_across_code_activation",
+      "existing_session_reads_and_denial_observed_across_code_activation"
+    ],
+    "candidate": "774ea8a2-0aa3-430e-b56e-3eaf0e75c43b",
+    "baseline": "08565d11-0d86-4bab-a691-b557e224b763",
+    "remainingFixtureRows": 0,
+    "stagingWriterEnabled": true,
+    "stagingCleanupEnabled": true,
+    "productionWriterEnabled": false,
+    "productionCleanupEnabled": false,
+    "candidateVerifiedAndCleanupInventoryUnchanged": true
+  },
+  "continuity": {
+    "at": "2026-10-29T18:26:30.340Z",
+    "status": "complete",
+    "samples": 13,
+    "failedSamples": 0,
+    "postCommandSamples": 2,
+    "maxStartGapMs": 2003.1631250000028
+  },
+  "scheduledProgress": {
+    "at": "2026-10-29T18:26:56.261Z",
+    "passed": true,
+    "version": "774ea8a2-0aa3-430e-b56e-3eaf0e75c43b",
+    "status": 200,
+    "issues": [],
+    "progress": {
+      "page_age_seconds": 2,
+      "pass_age_seconds": 2,
+      "last_pass_duration_seconds": 1,
+      "last_pass_seen": 3,
+      "current_pass_seen": 0,
+      "invalid_records": 0
+    },
+    "scheduledPassAdvanced": true,
+    "anonymousStatus": 401,
+    "anonymousTimingAbsent": true,
+    "providerWrites": 0,
+    "databaseWrites": 0
+  },
+  "localValidation": {
+    "testFiles": 154,
+    "testsPassed": 1299,
+    "cryptoTestsPassed": 22,
+    "initialOptionalOverlapSkipped": 1,
+    "separateSocialOverlapTestsPassed": 28
+  },
+  "earlierAttempt": {
+    "activated": false,
+    "reason": "Continuity-event directory missing in private harness; failed before command dispatch.",
+    "reconciled": true,
+    "remainingFixtureRows": 0,
+    "providerUnchanged": true
+  },
+  "limitations": [
+    "Backend activation with allowed/revoked session observations; not already-open browser and newly loaded client overlap.",
+    "Physical native devices not tested.",
+    "Production runtime unchanged; production denial writer and cleanup bindings absent.",
+    "Production latency investigation and measured monthly availability remain open."
+  ]
+}

@@ -289,7 +289,7 @@ export function Tags({ value }: { value: unknown }) {
     <span className="people-tags">
       {validTags(value).map((p) =>
         p.kind === "member" ? (
-          <a key={p.id} href={`/app/wall/${encodeURIComponent(p.id)}`}>
+          <a key={p.id} href={`/wall/${encodeURIComponent(p.id)}`}>
             @{p.label}
           </a>
         ) : (

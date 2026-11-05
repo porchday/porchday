@@ -1,3 +1,6 @@
+import { HistoryChoice } from "./HistoryChoice";
+export { HistoryChoice } from "./HistoryChoice";
+import { GroupInviteForm } from "./GroupInviteForm";
 import { invitationHandle, notificationPath } from "./invitation-notification";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
@@ -108,7 +111,7 @@ export function Connections() {
   return (
     <>
       <div className="page-heading">
-        <h1>Connections</h1>
+        <h1 className="mobile-tab-title">Connections</h1>
         <p>
           Up to 300 mutual connections, including family.
         </p>
@@ -231,7 +234,7 @@ export function Connections() {
                 return (
                   <div className="member-row" key={r.id}>
                     <MemberAvatar memberId={other} name={label(other)} />
-                    <a className="member-info" href={`/app/wall/${other}`}>
+                    <a className="member-info" href={`/wall/${other}`}>
                       <strong>@{label(other)}</strong>
                       <small>
                         Your label: {r.kind === "family" ? "Family" : "Friend"}
@@ -366,7 +369,7 @@ export function Connections() {
       )}
       {sharingConnection && (
         <Modal title="Post sharing" onClose={() => setSharingConnection(null)}>
-          <p>Share your posts with <strong>@{sharingConnection.name}</strong>.</p>
+          <p>Share your posts and photos with <strong>@{sharingConnection.name}</strong>.</p>
           <HistoryChoice value={sharingConnection.history} onChange={history => setSharingConnection(previous => previous && ({ ...previous, history }))} disabled={action.busy} />
           <p>Full history includes your earlier posts and photos whose audience allows this connection. Only me posts, expired posts, and earlier comments and reactions stay excluded.</p>
           <p>Earlier posts are shared while your account is unlocked. Choosing only new posts does not take back posts already shared.</p>
@@ -400,15 +403,6 @@ export function Connections() {
       )}
     </>
   );
-}
-export function HistoryChoice({ value, onChange, disabled }: { value: "full" | "future"; onChange: (value: "full" | "future") => void; disabled?: boolean }) {
-  return <label className="field history-choice">
-    <span>Share your posts</span>
-    <select aria-label="Share your posts" value={value} disabled={disabled} onChange={event => onChange(event.target.value as "full" | "future")}>
-      <option value="full">Share full history (recommended)</option>
-      <option value="future">Only share new posts</option>
-    </select>
-  </label>;
 }
 export function ConnectionKindChoice({ value, onChange, disabled }: { value: "friend" | "family"; onChange: (value: "friend" | "family") => void; disabled?: boolean }) {
   return <label className="field">
@@ -463,7 +457,7 @@ export function Groups() {
       );
       const r = await post("/groups", { envelope });
       setCreate(false);
-      navigate(`/app/groups/${r.id}`);
+      navigate(`/groups/${r.id}`);
     });
   }
   return (
@@ -541,7 +535,7 @@ export function Groups() {
             <a
               className={`group-card ${["sage", "apricot", "lavender"][i % 3]}`}
               key={g.id}
-              href={`/app/groups/${g.id}`}
+              href={`/groups/${g.id}`}
             >
               <span className="group-art">
                 <Icon name={["leaf", "sun", "group"][i % 3]} size={46} />
@@ -593,12 +587,32 @@ export function Groups() {
     </>
   );
 }
+export function GroupInvitationList({ invitations }: { invitations: Json[] }) {
+  return invitations.length ? (
+    <ul className="form-stack">
+      {invitations.map(invitation => (
+        <li key={invitation.id}>
+          <strong>{invitation.recipient_handle ? `@${invitation.recipient_handle}` : "Unavailable member"}</strong>
+          {" · Invited by "}{invitation.inviter_handle ? `@${invitation.inviter_handle}` : "Unavailable member"}
+          <small>{" · "}{invitation.accepted_at ? "Accepted" : Date.parse(invitation.expires_at) > Date.now() ? "Pending" : "Expired"}</small>
+        </li>
+      ))}
+    </ul>
+  ) : <p>No group invitations yet.</p>;
+}
+
 export function GroupDetail({ id }: { id: string }) {
   const vault = useVault();
   const [data, setData] = useState<Json | null>(null);
   const [content, setContent] = useState<Content | null>(null);
   const [manage, setManage] = useState(false);
-  const [handle, setHandle] = useState("");
+  const [invitations, setInvitations] = useState<Json[]>([]);
+  const [invitationCursor, setInvitationCursor] = useState<string | null>(null);
+  async function loadInvitations(more = false) {
+    const result = await get(`/groups/${id}/invitations${more && invitationCursor ? `?cursor=${encodeURIComponent(invitationCursor)}` : ""}`);
+    setInvitations(previous => more ? [...previous, ...result.items] : result.items);
+    setInvitationCursor(result.next_cursor);
+  }
   const [image, setImage] = useState<PendingAsset | null>(null);
   const [removeImage, setRemoveImage] = useState(false);
   const uploadAsset = useAssetUpload();
@@ -606,6 +620,8 @@ export function GroupDetail({ id }: { id: string }) {
   async function refresh() {
     const r = await get(`/groups/${id}`);
     setData(r);
+    if (r.group.owner_id === vault.member.id) await loadInvitations();
+    else { setInvitations([]); setInvitationCursor(null); }
     try {
       setContent(await vault.open(r.group));
     } catch {
@@ -688,28 +704,15 @@ export function GroupDetail({ id }: { id: string }) {
           <h2>Group members</h2>
           {["owner", "moderator"].includes(myRole) &&
             vault.member.status !== "restricted" && (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  action.run(async () => {
-                    await post(`/groups/${id}/invitations`, {
-                      handle: handle.replace(/^@/, ""),
-                    });
-                    setHandle("");
-                  }, "Invitation sent. Share the group details again after they join.");
+              <GroupInviteForm
+                key={id}
+                memberId={vault.member.id}
+                members={data.members}
+                onInvite={async handle => {
+                  await post(`/groups/${id}/invitations`, { handle });
+                  await refresh();
                 }}
-                className="inline-form"
-              >
-                <Field
-                  label="Invite by exact handle"
-                  value={handle}
-                  onChange={(e) => setHandle(e.target.value)}
-                  required
-                />
-                <Button variant="primary compact" busy={action.busy}>
-                  Invite
-                </Button>
-              </form>
+              />
             )}
           {data.members.map((m: Json) => {
             const handle =
@@ -789,6 +792,14 @@ export function GroupDetail({ id }: { id: string }) {
               </div>
             );
           })}
+          {own && (
+            <section aria-label="Group invitations">
+              <h3>Group invitations</h3>
+              <p>The latest invitation for each person.</p>
+              <GroupInvitationList invitations={invitations} />
+              {invitationCursor && <Button busy={action.busy} onClick={() => action.run(() => loadInvitations(true))}>Load more invitations</Button>}
+            </section>
+          )}
           {own && vault.member.status !== "restricted" && (
             <>
               <Field
@@ -850,7 +861,7 @@ export function GroupDetail({ id }: { id: string }) {
                       ? `/groups/${id}`
                       : `/groups/${id}/members/${vault.member.id}`,
                   );
-                  navigate("/app/groups");
+                  navigate("/groups");
                 });
             }}
           >
@@ -941,7 +952,7 @@ export function Wall({ id }: { id?: string }) {
             <p>@{handle || "private"}</p>
           </div>
           {own ? (
-            <a href="/app/settings/profile" className="button outline compact">
+            <a href="/settings/profile" className="button outline compact">
               <Icon name="edit" size={16} />
               Edit profile
             </a>

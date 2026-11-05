@@ -1,0 +1,39 @@
+name: External availability owner notification
+run-name: Owner notification ${{ inputs.event_id }}
+on:
+  workflow_dispatch:
+    inputs:
+      event_id:
+        description: Fixed-format monitor event identifier
+        type: string
+        required: true
+      payload:
+        description: Validated aggregate event and explicit drill flag; never credentials or response bodies
+        type: string
+        required: true
+permissions:
+  contents: read
+  issues: write
+concurrency:
+  group: external-owner-notification-${{ inputs.event_id }}
+  cancel-in-progress: false
+jobs:
+  notify:
+    if: github.repository == 'porchday/porchday' && github.ref == 'refs/heads/main' && (github.actor == 'bobbyhwilder' || github.actor == 'andyk')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Deliver a validated notification as the Actions bot
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PORCHDAY_MONITOR_EVENT_ID: ${{ inputs.event_id }}
+          PORCHDAY_MONITOR_RELAY_PAYLOAD: ${{ inputs.payload }}
+        run: |
+          export PORCHDAY_MONITOR_GH_PATH="$(command -v gh)"
+          node scripts/external-monitor-relay.ts

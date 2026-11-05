@@ -42,3 +42,14 @@ strict received-photo validator, and checks that original metadata and appended
 images do not survive normalization. Arithmetic and 12-bit support is conditional
 on the browser decoder; an unsupported browser must fail with a useful error.
 The separate `webkit-canvas-png.json` fixture is used by the PNG privacy tests.
+
+## Synthetic video containers
+
+`synthetic-video.mp4` and `synthetic-video.mov` contain a half-second blue 160×120 frame and generated 440 Hz tone, with H.264 video and AAC audio. No people or sourced footage. The calendar browser check verifies both containers decode and produce a preview; its WebM fixture is generated at runtime by Chromium. Regenerate with FFmpeg:
+
+```sh
+ffmpeg -f lavfi -i 'color=c=blue:s=160x120:r=10:d=0.5' -f lavfi -i 'sine=frequency=440:duration=0.5' -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart -shortest synthetic-video.mp4
+ffmpeg -i synthetic-video.mp4 -c copy -movflags +faststart synthetic-video.mov
+```
+
+These are synthetic codec/container checks, not real iPhone HEVC/HDR or device acceptance.

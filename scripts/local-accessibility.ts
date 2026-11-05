@@ -182,7 +182,7 @@ try {
   }
   await delayedLogin(false);
   await delayedLogin(true);
-  await memberPage.goto(target.origin + '/app/connections');
+  await memberPage.goto(target.origin + '/connections');
   await memberPage.getByRole('button', {name: 'Accept connection request from @incoming_friend', exact: true}).waitFor();
   await activate(memberPage, memberPage.getByRole('button', {name: 'Accept connection request from @incoming_friend', exact: true}));
   await focused(memberPage.getByRole('heading', {name: 'Your connections', exact: true}));

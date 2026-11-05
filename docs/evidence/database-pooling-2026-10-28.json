@@ -1,0 +1,370 @@
+{
+  "scope": "bounded pooling rollout acceptance; not an achieved monthly SLO",
+  "date": "2026-10-28",
+  "runtime_source": "005454607c98ffdb7c430a947bedb4586a14a45b",
+  "worker_rollout": false,
+  "schema_rollout": false,
+  "environments": {
+    "staging": {
+      "configuration_completed_at": "2026-10-28T20:18:13.442Z",
+      "cluster": "PS_5_AWS_ARM",
+      "replicas": 0,
+      "pooling": {
+        "kind": "planetscale-local-pgbouncer",
+        "runtime_origin_port": 6432,
+        "peers": 1,
+        "default_pool_size": 4,
+        "max_user_connections": 4,
+        "max_db_connections": 12,
+        "reserve_pool_size": 0,
+        "query_wait_timeout_seconds": 5,
+        "server_idle_timeout_seconds": 30,
+        "pool_mode": "transaction"
+      },
+      "member_acceptance": {
+        "login": 200,
+        "reads": 60,
+        "passed_reads": 60,
+        "concurrent_reads": 36,
+        "concurrency": 6,
+        "logout": 200,
+        "old_session_status": 401
+      },
+      "fixture_removed": true,
+      "health_watch": {
+        "completedAt": "2026-10-28T20:25:53.511Z",
+        "secondsAfterAcceptance": 130.22061669921874,
+        "passed": true,
+        "samples": [
+          {
+            "at": "2026-10-28T20:24:03.117Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:24:18.941Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:24:35.056Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:24:50.955Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:25:07.278Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:25:22.991Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:25:38.520Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:25:53.290Z",
+            "statuses": [
+              {
+                "origin": "https://staging.porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "production": {
+      "configuration_completed_at": "2026-10-28T20:27:09.109Z",
+      "cluster": "PS_20_AWS_ARM",
+      "replicas": 2,
+      "pooling": {
+        "kind": "planetscale-local-pgbouncer",
+        "runtime_origin_port": 6432,
+        "peers": 1,
+        "default_pool_size": 4,
+        "max_user_connections": 4,
+        "max_db_connections": 12,
+        "reserve_pool_size": 0,
+        "query_wait_timeout_seconds": 5,
+        "server_idle_timeout_seconds": 30,
+        "pool_mode": "transaction"
+      },
+      "member_acceptance": {
+        "login": 200,
+        "reads": 60,
+        "passed_reads": 60,
+        "concurrent_reads": 36,
+        "concurrency": 6,
+        "logout": 200,
+        "old_session_status": 401
+      },
+      "fixture_removed": true,
+      "health_watch": {
+        "completedAt": "2026-10-28T20:31:13.119Z",
+        "secondsAfterAcceptance": 130.4555146484375,
+        "passed": true,
+        "samples": [
+          {
+            "at": "2026-10-28T20:29:24.617Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:29:40.109Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:29:55.496Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:30:10.955Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:30:26.570Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:30:42.094Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:30:57.614Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          },
+          {
+            "at": "2026-10-28T20:31:12.665Z",
+            "statuses": [
+              {
+                "origin": "https://porchday.org",
+                "status": 200,
+                "ok": true
+              },
+              {
+                "origin": "https://porchday.com",
+                "status": 200,
+                "ok": true
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "staging_driver_probe": {
+    "at": "2026-10-28T20:18:27.437Z",
+    "environment": "staging",
+    "port": 6432,
+    "readOnly": true,
+    "results": [
+      {
+        "role": "auth",
+        "driver": "postgres",
+        "transactions": 3,
+        "preparedReads": 6,
+        "transactionIdentityCleared": true,
+        "elapsedMs": 967
+      },
+      {
+        "role": "auth",
+        "driver": "pg",
+        "transactions": 2,
+        "preparedReads": 2,
+        "transactionIdentityCleared": true
+      },
+      {
+        "role": "social",
+        "driver": "postgres",
+        "transactions": 3,
+        "preparedReads": 6,
+        "transactionIdentityCleared": true,
+        "elapsedMs": 1024
+      },
+      {
+        "role": "jobs",
+        "driver": "postgres",
+        "transactions": 3,
+        "preparedReads": 6,
+        "transactionIdentityCleared": true,
+        "elapsedMs": 995
+      }
+    ],
+    "limitations": "Direct driver compatibility only; not Hyperdrive, saturation, failover, or application acceptance."
+  },
+  "staging_load_probe": {
+    "at": "2026-10-28T20:22:08.131Z",
+    "environment": "staging",
+    "readOnly": true,
+    "clients": 36,
+    "passed": 36,
+    "elapsedMs": 1928,
+    "observedMaxApplicationConnections": 12,
+    "samples": [
+      {
+        "applicationConnections": 2,
+        "totalConnections": 5
+      },
+      {
+        "applicationConnections": 2,
+        "totalConnections": 5
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      },
+      {
+        "applicationConnections": 12,
+        "totalConnections": 15
+      }
+    ],
+    "limitations": "Sampled direct-PgBouncer test, not an exhaustive connection bound, Hyperdrive load test, timeout/failover drill or production acceptance."
+  },
+  "diagnostic_correction": "Original load count 14 included two provider superusers incorrectly classified by pg_has_role; corrected application count was 12. Preserve the original failed measurement."
+}

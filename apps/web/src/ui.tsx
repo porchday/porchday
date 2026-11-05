@@ -1,13 +1,16 @@
+import { canonicalPath } from "./routes";
 import { hasPendingSaves, pendingSaves, withPendingSave } from "./pending-saves";
 import React, { useEffect, useState } from "react";
 import { message } from "./api";
-import { needsDomainNavigation } from "./domain-navigation";
+import { canonicalNavigation, needsDomainNavigation } from "./domain-navigation";
 export function Icon({
   name,
   size = 20,
   ...props
 }: { name: string; size?: number } & React.SVGProps<SVGSVGElement>) {
   const paths: Record<string, React.ReactNode> = {
+    feed: (<><rect x="5" y="1" width="14" height="18" rx="2"/><path d="M8 5h8M5 23v-1h14v1"/><circle cx="12" cy="9" r="2"/><path d="M8 16v-1a4 4 0 0 1 8 0v1"/></>),
+    album: (<><rect x="5" y="2" width="16" height="20" rx="2"/><path d="M2 5h6M2 10h6M2 15h6M2 20h6"/><rect x="10" y="6" width="7" height="9" rx="1"/></>),
     home: (
       <>
         <path d="m3 10 9-7 9 7v10H3z" />
@@ -38,12 +41,7 @@ export function Icon({
         <path d="M4 17h16l-2-3V9a6 6 0 0 0-12 0v5zM9 21h6" />
       </>
     ),
-    settings: (
-      <>
-        <circle cx="12" cy="12" r="4" />
-        <path d="M12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2" />
-      </>
-    ),
+    settings: (<><path d="m10 2-.7 2.6-2 .9L5 4.4 2.4 9l2 1.8v2.4L2.4 15 5 19.6l2.3-1.1 2 .9L10 22h4l.7-2.6 2-.9 2.3 1.1 2.6-4.6-2-1.8v-2.4l2-1.8L19 4.4l-2.3 1.1-2-.9L14 2Z"/><circle cx="12" cy="12" r="3"/></>),
     arrow: <path d="M4 12h16m-6-6 6 6-6 6" />,
     photo: (
       <>
@@ -71,6 +69,7 @@ export function Icon({
       </>
     ),
     comment: <path d="M21 11a9 9 0 0 1-9 9H3l2-5a9 9 0 1 1 16-4Z" />,
+    code: <path d="m8 6-6 6 6 6m8-12 6 6-6 6M14 3l-4 18" />,
     plus: <path d="M12 4v16M4 12h16" />,
     check: <path d="m4 12 5 5L20 6" />,
     close: <path d="m5 5 14 14M5 19 19 5" />,
@@ -457,10 +456,25 @@ export function navigate(path: string) {
   if (hasPendingSaves()) return;
   const destination = new URL(path, location.href);
   if (needsDomainNavigation(destination, location.origin)) {
-    location.assign(destination.href);
+    location.assign(canonicalNavigation(destination) ?? destination.href);
     return;
   }
-  history.pushState({}, "", path);
+  history.pushState({}, "", destination.origin === location.origin ? canonicalPath(destination.pathname) + destination.search + destination.hash : path);
   window.dispatchEvent(new PopStateEvent("popstate"));
   window.scrollTo(0, 0);
+}
+
+/** Save-completion redirects must wait for other in-flight writes too. */
+export function navigateAfterSaves(path: string) {
+  const from = location.href;
+  let unsubscribe = () => {};
+  const cancel = () => { unsubscribe(); window.removeEventListener("popstate", cancel); };
+  const attempt = () => {
+    if (location.href !== from) { cancel(); return; }
+    if (!hasPendingSaves()) { cancel(); navigate(path); }
+  };
+  unsubscribe = pendingSaves.subscribe(attempt);
+  window.addEventListener("popstate", cancel);
+  attempt();
+  return cancel;
 }

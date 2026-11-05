@@ -1,6 +1,10 @@
 import SwiftUI
 import UserNotifications
+#if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 
 @MainActor final class NativeNotifications: ObservableObject {
     static let shared = NativeNotifications()
@@ -26,13 +30,13 @@ import UIKit
         guard let member = model.member, member.raw["status"].string != "suspended" else { available = false; enabled = false; return }
         let config = try? await model.api.social("/native-push/config")
         available = environment != nil && config?["enabled"].boolean == true
-        guard available else { message = "Push notifications will be available in a signed iPhone build when delivery is configured. In-app updates remain available."; return }
+        guard available else { message = "Push notifications will be available in a signed device build when delivery is configured. In-app updates remain available."; return }
         let authorized = await Self.permissionGranted()
         enabled = UserDefaults.standard.bool(forKey: choice(member.id)) && authorized
         if enabled {
             registeringMember = member.id
-            UIApplication.shared.registerForRemoteNotifications()
-        } else { message = "Choose whether this iPhone receives generic updates. Notification previews never include private posts or names." }
+            ApplePlatform.registerPush()
+        } else { message = "Choose whether this device receives generic updates. Notification previews never include private posts or names." }
     }
     private nonisolated static func permissionGranted() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -47,12 +51,12 @@ import UIKit
         busy = true; defer { busy = false }
         do {
             guard try await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) else {
-                message = "Notifications are disabled in iPhone Settings. You can keep using in-app updates."; return
+                message = "Notifications are disabled in device Settings. You can keep using in-app updates."; return
             }
             UserDefaults.standard.set(true, forKey: choice(member.id))
             registeringMember = member.id
-            message = "Connecting this iPhone for private notification previews…"
-            UIApplication.shared.registerForRemoteNotifications()
+            message = "Connecting this device for private notification previews…"
+            ApplePlatform.registerPush()
         } catch { message = "Notification permission could not be checked. Please try again." }
     }
     func received(token: Data) async {
@@ -64,7 +68,7 @@ import UIKit
             let result = try await model.api.social("/native-push/subscriptions", method: "POST", body: .object(["token": .string(encoded), "environment": .string(environment)]))
             guard model.member?.id == member.id, let id = result["id"].string else { throw PorchError.message("Notification enrollment was interrupted.") }
             UserDefaults.standard.set(id, forKey: subscription(member.id))
-            enabled = true; message = "This iPhone receives generic updates. Private content stays inside Porchday."
+            enabled = true; message = "This device receives generic updates. Private content stays inside Porchday."
         } catch { enabled = false; message = "Notification enrollment did not finish. Try Enable again." }
     }
     func registrationFailed() { enabled = false; message = "Push registration is unavailable. Check network access and this build's Apple signing capabilities, then try again." }
@@ -76,7 +80,7 @@ import UIKit
                 _ = try await model.api.social("/native-push/subscriptions/" + id, method: "DELETE")
             }
             clearLocal(member: member.id)
-            message = "Push is off on this iPhone. In-app notifications remain available."
+            message = "Push is off on this device. In-app notifications remain available."
         } catch { message = "The server could not confirm removal. Try again to finish turning push off." }
     }
     func signOut(model: AppModel) async {
@@ -88,12 +92,13 @@ import UIKit
     }
     private func clearLocal(member: String) {
         UserDefaults.standard.removeObject(forKey: choice(member)); UserDefaults.standard.removeObject(forKey: subscription(member))
-        UIApplication.shared.unregisterForRemoteNotifications()
+        ApplePlatform.unregisterPush()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         registeringMember = nil; enabled = false; showInbox = false
     }
 }
 
+#if os(iOS)
 @MainActor final class PorchdayAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         UNUserNotificationCenter.current().delegate = self
@@ -113,6 +118,15 @@ import UIKit
         []
     }
 }
+#else
+@MainActor final class PorchdayAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) { UNUserNotificationCenter.current().delegate = self }
+    func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) { Task { await NativeNotifications.shared.received(token: deviceToken) } }
+    func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) { NativeNotifications.shared.registrationFailed() }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async { await MainActor.run { NativeNotifications.shared.showInbox = true } }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [] }
+}
+#endif
 
 struct NativeNotificationsSettings: View {
     @ObservedObject private var notifications = NativeNotifications.shared
@@ -121,7 +135,7 @@ struct NativeNotificationsSettings: View {
         VStack(alignment: .leading, spacing: 8) {
             Text(notifications.message).font(.footnote)
             if notifications.available {
-                Button(notifications.enabled ? "Turn off push on this iPhone" : "Enable push on this iPhone") {
+                Button(notifications.enabled ? "Turn off push on this device" : "Enable push on this device") {
                     Task { if notifications.enabled { await notifications.disable() } else { await notifications.enable() } }
                 }.disabled(notifications.busy)
             }

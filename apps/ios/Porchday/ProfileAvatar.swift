@@ -1,13 +1,18 @@
+import ImageIO
 import SwiftUI
+#if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 
-struct ProfileAvatarImage { let image: UIImage; let expires: Date }
+struct ProfileAvatarImage { let image: PlatformImage; let expires: Date }
 
 /// A small, memory-only cache shared by repeated appearances of the same person.
 @MainActor final class ProfileAvatarCache {
-    private struct Entry { let image: UIImage?; let expires: Date; let checked: Date }
+    private struct Entry { let image: PlatformImage?; let expires: Date; let checked: Date }
     private var entries: [String: Entry] = [:]
-    private var tasks: [String: Task<(UIImage?, Date), Error>] = [:]
+    private var tasks: [String: Task<(PlatformImage?, Date), Error>] = [:]
     private var generation = 0
     private func trim() {
         if entries.count >= 100, let oldest = entries.min(by: { $0.value.checked < $1.value.checked })?.key { entries[oldest] = nil }
@@ -17,7 +22,7 @@ struct ProfileAvatarImage { let image: UIImage; let expires: Date }
         for task in tasks.values { task.cancel() }
         tasks.removeAll(); entries.removeAll()
     }
-    func image(for key: String, load: @escaping @MainActor () async throws -> (UIImage?, Date)) async throws -> ProfileAvatarImage? {
+    func image(for key: String, load: @escaping @MainActor () async throws -> (PlatformImage?, Date)) async throws -> ProfileAvatarImage? {
         if let entry = entries[key], entry.expires > Date(), Date().timeIntervalSince(entry.checked) < 60 { return entry.image.map { ProfileAvatarImage(image: $0, expires: entry.expires) } }
         let current = generation
         let task = tasks[key] ?? Task { try await load() }
@@ -67,12 +72,10 @@ extension CryptoVault {
             else if let date = photoContext["expiresAt"].string.flatMap(PorchDate.parse) { expires = date }
             else { throw PorchError.message("Invalid photo expiration.") }
             guard expires > Date() else { return (nil, expires) }
-            let decoded = try PhotoPipeline.safelyDecode(data)
-            // Retain a thumbnail, not a full-sized photo for every author.
-            let format = UIGraphicsImageRendererFormat(); format.scale = 1
-            let scale = 144 / max(decoded.size.width, decoded.size.height)
-            let size = CGSize(width: decoded.size.width * scale, height: decoded.size.height * scale)
-            let image = UIGraphicsImageRenderer(size: size, format: format).image { _ in decoded.draw(in: CGRect(origin: .zero, size: size)) }
+            _ = try ReceivedPhoto.decodeJPEG(data)
+            guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 144] as CFDictionary) else { throw PorchError.message("Could not open profile thumbnail.") }
+            let image = PlatformImage(cgImage: thumbnail)
             try Task.checkCancellation()
             return (image, expires)
         }
@@ -94,7 +97,7 @@ struct MemberAvatarView: View {
             ZStack {
                 Color.secondary.opacity(0.15)
                 if let loaded, loaded.identity == identity, loaded.photo.expires > clock.date, vault.unlocked {
-                    Image(uiImage: loaded.photo.image).resizable().scaledToFill()
+                    Image(platformImage: loaded.photo.image).resizable().scaledToFill()
                 } else { Text(initial.isEmpty ? "?" : initial).font(.system(size: size * 0.5, design: .serif)).foregroundStyle(.secondary) }
             }.frame(width: size, height: size).clipShape(Circle())
                 .onChange(of: loaded.map { $0.photo.expires <= clock.date } ?? false) { _, expired in if expired { loaded = nil } }

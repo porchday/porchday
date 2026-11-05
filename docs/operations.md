@@ -1,6 +1,6 @@
 # Porchday operations
 
-The availability target is **99.9% over a rolling 30 days**, covering account access and core member actions. See [the reliability objective, error budget and acceptance plan](reliability.md). It is not yet an achieved SLO; a passing homepage or deployment smoke check does not establish it.
+The availability target is **at least 99.99% per calendar month**, with a rolling 30-day operational trend, covering account access and core member actions. See [the reliability objective, error budget and acceptance plan](reliability.md). It is not yet an achieved SLO; a passing homepage or deployment smoke check does not establish it.
 
 ## Admission and launch gates
 

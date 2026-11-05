@@ -5,7 +5,7 @@ const span = (seq: number, kind: string, name: string, start_ms: number, duratio
   ({ seq, parent_seq, kind, name, start_ms, duration_ms, attrs });
 const photo = "GET /api/v1/media/4dc907ef-5906-47da-9214-84bbd9f5fb22/bytes";
 const trace: StoredTrace = {
-  trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", started_at: Date.UTC(2026, 9, 29), page: "/app",
+  trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", started_at: Date.UTC(2026, 9, 29), page: "/",
   spans: [
     span(0, "resource", "GET /api/v1/feed", 200, 1_000, { status: 200, queue: 100, wait: 600, download: 300, server_total: 500 }),
     span(1, "server", "journal_check", 400, 200, null, 0),

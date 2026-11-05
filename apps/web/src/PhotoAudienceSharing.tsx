@@ -1,0 +1,63 @@
+import {useEffect,useRef,useState} from "react";
+import {get} from "./api";
+import {useVault} from "./vault";
+import {refreshPhotoGrant} from "./photo-album";
+import type {PhotoRow} from "./photo-record";
+
+// Catch-up runs only on the unlocked author's device. Never infer consent from
+// the UI: the server computes the current graph and directional history choice.
+export function PhotoAudienceSharing(){
+ const vault=useVault();
+ const [state,setState]=useState<"idle"|"sharing"|"unfinished">("idle");
+ const retry=useRef<()=>void>(()=>{});
+ const context=`${vault.member.id}:${vault.member.status||"active"}:${vault.device.id}:${vault.device.revoked_at||""}`;
+ const latest=useRef(context);latest.current=context;
+ useEffect(()=>{
+  setState("idle");
+  if((vault.member.status||"active")!=="active"||vault.device.revoked_at)return;
+  let mounted=true,running=false,paused=false;
+  const current=()=>mounted&&latest.current===context;
+  const enabled=()=>current()&&navigator.onLine&&document.visibilityState!=="hidden";
+  const check=()=>{if(!enabled())throw new DOMException("Sharing stopped.","AbortError");};
+  const run=async()=>{
+   if(running||paused||!enabled())return;
+   running=true;let failed=false,after:string|null=null;
+   try{
+    do{
+     check();
+     const page:{items:PhotoRow[];next:string|null}=await get(`/photos/history-refresh${after?"?after="+encodeURIComponent(after):""}`);
+     check();
+     for(const photo of page.items){
+      check();setState("sharing");
+      const grant=photo.grants.find(g=>g.album_id===null);
+      if(photo.owner_id!==vault.member.id||!grant)throw Error("Photo history is unavailable.");
+      try{await refreshPhotoGrant(vault,photo,grant,check);check();window.dispatchEvent(new Event("porchday:posts-shared"));}
+      catch(error){check();failed=true;}
+     }
+     after=page.next;
+    }while(after);
+   }catch{failed=true;}
+   finally{
+    running=false;
+    if(current()){
+     // A rejected or unconfirmed save needs an explicit retry, avoiding repeated
+     // encryption/uploads every timer tick. The next read reconciles lost saves.
+     paused=failed&&enabled();setState(failed?"unfinished":"idle");
+    }
+   }
+  };
+  const recheck=()=>{void run();};
+  retry.current=()=>{paused=false;void run();};
+  window.addEventListener("online",recheck);window.addEventListener("focus",recheck);
+  window.addEventListener("porchday:connections-changed",recheck);
+  document.addEventListener("visibilitychange",recheck);
+  const interval=setInterval(recheck,20_000);recheck();
+  return ()=>{mounted=false;clearInterval(interval);retry.current=()=>{};
+   window.removeEventListener("online",recheck);window.removeEventListener("focus",recheck);
+   window.removeEventListener("porchday:connections-changed",recheck);
+   document.removeEventListener("visibilitychange",recheck);
+  };
+ },[context]);
+ if(state==="idle")return null;
+ return <div className="panel" role="status"><p>{state==="sharing"?"Sharing earlier photos with their current audience…":"Sharing earlier photos hasn’t finished. Your account is ready to use."}</p>{state==="unfinished"&&<button type="button" onClick={()=>retry.current()}>Try sharing again</button>}</div>;
+}

@@ -1,5 +1,9 @@
 import SwiftUI
+#if os(iOS)
 import UIKit
+#else
+import AppKit
+#endif
 import ImageIO
 
 @MainActor enum PhotoPipeline {
@@ -7,22 +11,25 @@ import ImageIO
         guard data.count <= 50 * 1024 * 1024, let source = CGImageSourceCreateWithData(data as CFData, nil), let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any], let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int, width > 0, height > 0, width <= 40000, height <= 40000 else { throw PorchError.message("Choose a readable photo that is 50 MB or smaller.") }
         let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2400, kCGImageSourceShouldCacheImmediately: true]
         guard let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { throw PorchError.message("This photo could not be decoded safely.") }
-        let image = UIImage(cgImage: thumbnail), format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
-        let rendered = UIGraphicsImageRenderer(size: image.size, format: format).image { ctx in UIColor.white.setFill(); ctx.fill(CGRect(origin: .zero, size: image.size)); image.draw(at: .zero) }
-        guard let bytes = rendered.jpegData(compressionQuality: 0.86) else { throw PorchError.message("Could not prepare this photo.") }
+        let bytes = try AppleImageEncoder.encode(AppleImageEncoder.opaque(thumbnail), jpeg: true)
         return PreparedPhoto(bytes: bytes, width: thumbnail.width, height: thumbnail.height)
     }
-    static func safelyDecode(_ data: Data) throws -> UIImage {
+    static func safelyDecode(_ data: Data) throws -> PlatformImage {
         let decoded = try ReceivedPhoto.decodeJPEG(data)
+        #if os(iOS)
         let orientations: [UIImage.Orientation] = [.up, .upMirrored, .down, .downMirrored, .leftMirrored, .right, .rightMirrored, .left]
         return UIImage(cgImage: decoded.image, scale: 1, orientation: orientations[Int(decoded.orientation) - 1])
+        #else
+        guard let image = NSImage(data: data) else { throw PorchError.message("Could not decode validated photo.") }
+        return image
+        #endif
     }
 }
 struct EncryptedPhotoView: View {
     let photo: JSON
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
-    @State private var image: UIImage?
+    @State private var image: PlatformImage?
     @State private var expiry: Date?
     @State private var error = ""
     var body: some View {
@@ -31,8 +38,8 @@ struct EncryptedPhotoView: View {
             VStack(alignment:.leading) {
                 if expired { Label("This photo has expired.",systemImage:"timer").font(.caption) }
                 else if let image {
-                    Image(uiImage:image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius:12)).accessibilityLabel(photo["alt"].string ?? "Shared photo")
-                    if let alt=photo["alt"].string,!alt.isEmpty { Text(alt).font(.caption).foregroundStyle(.secondary) }
+                    Image(platformImage:image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius:12)).accessibilityLabel(photo["alt"].string ?? "Shared photo")
+                    ForEach(NativePhotoContract.captions(photo), id: \.self) { Text($0).font(.caption) }; PeopleTagsView(tags: PersonTag.parse(photo["tags"]))
                 } else { Label(error.isEmpty ? "Opening encrypted photo…":error,systemImage:"photo").font(.caption).padding() }
             }.onChange(of:expired) { _,value in if value { image=nil } }
         }.task(id:photo["id"].string) {
@@ -48,6 +55,7 @@ struct EncryptedPhotoView: View {
         }
     }
 }
+#if os(iOS)
 struct CameraView: UIViewControllerRepresentable {
     let captured: (UIImage) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -61,3 +69,7 @@ struct CameraView: UIViewControllerRepresentable {
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
     }
 }
+
+#else
+struct CameraView: View { let captured: (PlatformImage) -> Void; var body: some View { Text("Choose a photo from your library or files.") } }
+#endif
