@@ -96,6 +96,24 @@ suite('member platform invitations through real auth sessions and restricted SQL
   const connection=(await owner.query('SELECT * FROM app.connections WHERE member_a=$1 AND member_b=$2',[first?a.id:id,first?id:a.id])).rows[0];
   expect(connection).toMatchObject({kind_a:'family',kind_b:'family',history_a:first?choice:'full',history_b:first?'full':choice});
  });
+ it.each(['friend','family'])('enforces the 150-connection cap for %s invitation verification',async kind=>{
+  const sender=await person(),peers=Array.from({length:149},()=>randomUUID());
+  await owner.query('INSERT INTO app.members(id,adult_attested_at,rules_accepted_at) SELECT unnest($1::uuid[]),now(),now()',[peers]);
+  await owner.query("INSERT INTO app.connections(member_a,member_b,kind) SELECT least($1::uuid,p),greatest($1::uuid,p),'friend' FROM unnest($2::uuid[]) p",[sender.id,peers]);
+  const auth=new Pool({connectionString:env.HYPERDRIVE_AUTH.connectionString});
+  try{for(const allowed of [true,false]){
+   const id=randomUUID(),email=id+'@example.test';
+   expect((await call('/api/v1/platform-invitations',{email,kind},sender.cookie)).status).toBe(202);
+   const invitation=await row(email);
+   await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1 WHERE token_hash=$2',[id,invitation.token_hash]);
+   await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$1,$2,false)',[id,email]);
+   await owner.query('SELECT app.auth_provision_member($1::uuid,$2)',[id,'i_'+id.replaceAll('-','').slice(0,16)]);
+   if(allowed)await auth.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id]);
+   else await expect(auth.query('UPDATE public.auth_user SET "emailVerified"=true WHERE id=$1',[id])).rejects.toThrow('CONNECTION_LIMIT');
+   expect((await owner.query('SELECT count(*)::int n FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[sender.id])).rows[0].n).toBe(150);
+   expect((await owner.query('SELECT count(*)::int n FROM app.connections WHERE $1::uuid IN(member_a,member_b)',[id])).rows[0].n).toBe(allowed?1:0);
+  }}finally{await auth.end();}
+ });
  it('rejects invalid history without sending or recording an invitation',async()=>{
   const a=await person(),email=randomUUID()+'@example.test';
   expect((await call('/api/v1/platform-invitations',{email,kind:'friend',history:'all'},a.cookie)).status).toBe(400);

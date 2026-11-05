@@ -38,7 +38,7 @@ struct EncryptedPhotoView: View {
             VStack(alignment:.leading) {
                 if expired { Label("This photo has expired.",systemImage:"timer").font(.caption) }
                 else if let image {
-                    Image(platformImage:image).resizable().scaledToFit().clipShape(RoundedRectangle(cornerRadius:12)).accessibilityLabel(photo["alt"].string ?? "Shared photo")
+                    ViewablePhoto(image: image, caption: photo["alt"].string ?? "", expiresAt: expiry).clipShape(RoundedRectangle(cornerRadius:12))
                     ForEach(NativePhotoContract.captions(photo), id: \.self) { Text($0).font(.caption) }; PeopleTagsView(tags: PersonTag.parse(photo["tags"]))
                 } else { Label(error.isEmpty ? "Opening encrypted photo…":error,systemImage:"photo").font(.caption).padding() }
             }.onChange(of:expired) { _,value in if value { image=nil } }
