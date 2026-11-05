@@ -595,7 +595,7 @@ export function VaultProvider({
         ? { post_id: postId }
         : { audience, ...(groupId ? { group_id: groupId } : {}) },
     );
-    const r = await request(audience === "album" ? `/albums/${groupId}/audience` : `/audiences?${qs}`, {signal});
+    const r = await request(audience === "photo" ? `/photos/${postId}/interactions/audience` : audience === "album" ? `/albums/${groupId}/audience` : `/audiences?${qs}`, {signal});
     const list = items<Device>(r);
     if(list.length>4000)throw Error("This circle has more than 4,000 devices. Choose a smaller audience.");
     if (

@@ -14,7 +14,8 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#feed"
+        "docs/native-parity.md#feed",
+        "design/photo-interactions.md"
       ]
     },
     {
@@ -22,7 +23,8 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#albums"
+        "docs/native-parity.md#albums",
+        "design/photo-interactions.md"
       ]
     },
     {
@@ -30,7 +32,8 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#photo-sharing"
+        "docs/native-parity.md#photo-sharing",
+        "design/photo-interactions.md"
       ]
     },
     {
@@ -70,7 +73,8 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#portability"
+        "docs/native-parity.md#portability",
+        "design/photo-interactions.md"
       ]
     },
     {

@@ -76,7 +76,7 @@ async function seal(
 ) {
   const { data: snapshot } = await call(
     p.id,
-    override.audience === "album" ? `/albums/${override.groupId}/audience${change?"?"+new URLSearchParams({member_id:change.memberId,role:change.role??"remove"}):""}` : "/audiences?audience=" + (override.audience ?? "only_me"),
+    override.audience === "photo" ? `/photos/${override.parentId}/interactions/audience` : override.audience === "album" ? `/albums/${override.groupId}/audience${change?"?"+new URLSearchParams({member_id:change.memberId,role:change.role??"remove"}):""}` : "/audiences?audience=" + (override.audience ?? "only_me"),
   );
   return encryptObject({
     payload,
@@ -162,6 +162,65 @@ suite("Encrypted independent photo API",()=>{
     }
   });
 
+
+  it("shares encrypted photo conversations only with current readers and supports retry-safe reactions",async()=>{
+    const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
+    const {id}=await publish(owner,"connections"),path=`/photos/${id}/interactions`;
+    expect((await call(outsider.id,path)).status).toBe(404);
+    const comment=await seal(reader,{text:"A lovely photo"},1,{id:randomUUID(),kind:"comment",audience:"photo",parentId:id});
+    expect(comment.recipients.map(r=>r.memberId).sort()).toEqual([owner.id,reader.id].sort());
+    expect((await call(reader.id,path,"POST",{envelope:comment})).status).toBe(201);
+    expect((await call(reader.id,path,"POST",{envelope:comment})).status).toBe(201);
+    const listed=await call(owner.id,path);expect(listed.data.items).toHaveLength(1);
+    const decoded=await decryptObject({envelope:listed.data.items[0].envelope,privateKey:owner.key,authorPublicKey:reader.keys.publicKey,expectedContext:comment.context});
+    expect(decoded).toEqual({text:"A lovely photo"});
+    const wrong={...comment,context:{...comment.context,id:randomUUID(),parentId:randomUUID()}};
+    expect((await call(reader.id,path,"POST",{envelope:wrong})).status).toBe(400);
+    const reaction=await seal(reader,{emoji:"love"},1,{id:randomUUID(),kind:"reaction",audience:"photo",parentId:id});
+    expect((await call(reader.id,path,"POST",{envelope:reaction})).status).toBe(201);
+    const replacement=await seal(reader,{emoji:"celebrate"},1,{id:randomUUID(),kind:"reaction",audience:"photo",parentId:id});
+    expect((await call(reader.id,path,"POST",{envelope:replacement})).status).toBe(201);
+    expect((await call(reader.id,path,"POST",{envelope:reaction})).status).toBe(409);
+    expect((await call(owner.id,path)).data.items.filter((r:any)=>r.kind==="reaction")).toHaveLength(1);
+    const job=randomUUID();await db`insert into app.data_transfer_jobs(id,member_id,kind,state) values(${job},${reader.id},'export','complete')`;
+    const exported=await withMember(env,reader.id,async sql=>sql`select app.export_page(${job},'photo_interactions','') as page`);
+    expect(exported[0].page.photo_interactions).toHaveLength(2);
+    expect(exported[0].page.photo_interactions.every((r:any)=>r.author_id===reader.id&&r.parent_id===id)).toBe(true);
+    expect((await call(owner.id,path+"/"+comment.context.id,"DELETE")).status).toBe(200);
+    const [invalidated]=await db`select state from app.data_transfer_jobs where id=${job}`;expect(invalidated.state).toBe('invalidated');
+    expect((await call(reader.id,path,"POST",{envelope:comment})).status).toBe(409);
+    await db`insert into app.blocks(actor,target) values(${owner.id},${reader.id})`;
+    expect((await call(reader.id,path)).status).toBe(404);
+    expect((await call(owner.id,path)).data.items).toHaveLength(0);
+  });
+
+  it("keeps one conversation across albums without redistributing old comments or revoked access",async()=>{
+    const owner=await person(),friend=await person(),albumReader=await person();await connect(owner,friend);
+    const {id}=await publish(owner,"connections"),path=`/photos/${id}/interactions`,album=randomUUID();
+    const old=await seal(friend,{text:"Before album sharing"},1,{id:randomUUID(),kind:"comment",audience:"photo",parentId:id});
+    expect((await call(friend.id,path,"POST",{envelope:old})).status).toBe(201);
+    const first=await seal(owner,{name:"Album"},1,{id:album,kind:"album"});
+    expect((await call(owner.id,"/albums","POST",{envelope:first})).status).toBe(201);
+    const shared=await seal(owner,{name:"Album"},2,{...first.context,audience:"album",groupId:album,revision:2},{memberId:albumReader.id,role:"read"});
+    expect((await call(owner.id,`/albums/${album}/members/${albumReader.id}`,"PUT",{role:"read",expected_revision:1,envelope:shared})).status).toBe(200);
+    const grant=await uploadGrant(owner,id,"album",album);
+    expect((await call(owner.id,`/photos/${id}/grants`,"POST",{envelope:grant.envelope,media_id:grant.media_id})).status).toBe(201);
+    expect((await call(albumReader.id,path)).data.items).toHaveLength(0);
+    const reply=await seal(albumReader,{text:"I can comment as a reader"},1,{id:randomUUID(),kind:"comment",audience:"photo",parentId:id});
+    expect(reply.recipients.map(r=>r.memberId).sort()).toEqual([owner.id,friend.id,albumReader.id].sort());
+    expect((await call(albumReader.id,path,"POST",{envelope:reply})).status).toBe(201);
+    expect((await call(friend.id,`/devices/${albumReader.deviceId}`)).status).toBe(200);
+    expect((await call(friend.id,path)).data.items).toHaveLength(2);
+    await call(friend.id,path+"/"+reply.context.id,"DELETE");
+    expect((await call(owner.id,path)).data.items).toHaveLength(2);
+    const stale=await seal(albumReader,{text:"Stale audience"},1,{id:randomUUID(),kind:"comment",audience:"photo",parentId:id});
+    await call(owner.id,`/photos/${id}/grants/${grant.envelope.context.id}`,"DELETE");
+    expect((await call(albumReader.id,path)).status).toBe(404);
+    expect((await call(albumReader.id,path,"POST",{envelope:stale})).status).toBe(404);
+    expect((await call(friend.id,path)).data.items).toHaveLength(2);
+    await db`update app.photos set expires_at=now()-interval '1 second' where id=${id}`;
+    expect((await call(owner.id,path)).status).toBe(404);
+  });
 
   it("publishes independent encrypted photos without posts, enforcing recipient access to metadata and bytes",async()=>{
     const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);

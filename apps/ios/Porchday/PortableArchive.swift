@@ -169,7 +169,7 @@ struct PortableArchive {
         }
         do {
             let photoService = try NativePhotos(self)
-            for section in ["profile","emoji_library","posts","comments","post_reactions","comment_reactions","media","connections","groups","photos","albums","attachment_dates"] {
+            for section in ["profile","emoji_library","posts","comments","post_reactions","comment_reactions","media","connections","groups","photos","albums","attachment_dates","photo_interactions"] {
                 var cursor:String?=nil
                 repeat {
                     try Task.checkCancellation();progress("Preparing \(section.replacingOccurrences(of:"_",with:" "))…")
@@ -200,7 +200,7 @@ struct PortableArchive {
                         let context=row["envelope"]["context"],deadline=PorchDate.minimum([row["effective_expires_at"],row["expires_at"],context["expiresAt"]])
                         if deadline.map({$0<=Date()})==true { continue }
                         guard context["authorId"].string==member.id || (section=="profile" && row["envelope"] == .null) else { throw PorchError.message("Export contained another person's contribution.") }
-                        let kind=section=="post_reactions" ? "post_reaction":section=="comment_reactions" ? "comment_reaction":section=="posts" ? "post":section=="comments" ? "comment":section
+                        let kind=section=="photo_interactions" ? "photo_interaction":section=="post_reactions" ? "post_reaction":section=="comment_reactions" ? "comment_reaction":section=="posts" ? "post":section=="comments" ? "comment":section
                         let reference:JSON = .object(["kind":.string(kind),"id":section=="emoji_library" ? .string(member.id):row["export_id"],"revision":context["revision"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null])
                         if section=="emoji_library" {
                             guard context["kind"].string=="profile",context["id"].string==member.id,context["audience"].string=="only_me",context["parentId"] == .null,context["groupId"] == .null,context["expiresAt"] == .null,
@@ -223,7 +223,7 @@ struct PortableArchive {
                             guard let encoded=payload["bytes"].string,let image=Data(base64Encoded:encoded) else { throw PorchError.message("Invalid encrypted photo.") };let mime = payload["mime"].string ?? ""; if mime == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(image) } else { guard try VideoContainer.mime(image) == mime else { throw PorchError.message("Archive video format mismatch.") }; _ = try await VideoPipeline.prepare(image) }
                             let path="photos/\(id)." + (try PortableArchive.mediaExtension(mime)),meta:JSON = .object(["id":.string(id),"path":.string(path),"mime":.string(mime),"caption":payload["caption"],"tags":payload["tags"],"poster":payload["poster"],"alt":payload["alt"],"width":payload["width"],"height":payload["height"],"sha256":.string(PortableArchive.digest(image)),"post_id":row["post_id"],"profile_id":row["profile_member_id"],"group_id":row["group_id"],"slot":row["slot"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null]);try await append(meta,section:"media",reference:reference,photo:(path,image))
                         } else {
-                            let payload=try await vault.open(row),entry:JSON = .object(["id":context["id"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null,"audience":context["audience"],"parent_id":context["parentId"],"group_id":context["groupId"],"payload":payload]);try await append(entry,section:section.contains("reactions") ? "reactions":section,reference:reference)
+                            let payload=try await vault.open(row),entry:JSON = .object(["id":context["id"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null,"audience":context["audience"],"parent_id":context["parentId"],"group_id":context["groupId"],"payload":payload]);try await append(entry,section:section=="photo_interactions" ? (row["kind"].string=="reaction" ? "reactions":"comments"):section.contains("reactions") ? "reactions":section,reference:reference)
                         }
                     };cursor=page["next_cursor"].string
                 } while cursor != nil
