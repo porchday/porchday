@@ -35,3 +35,7 @@ reviewed at `4bc8776a04338c21844a08091f01840bd1535e61`. Six tests cover identity
 workflow bytes, job completeness, run-attempt changes and fail-closed inputs.
 No workflow or provider write was performed. Normal release command integration
 and hosted continuity acceptance remain outstanding.
+
+## Native parity before production
+
+Every forward production release must satisfy the [iOS/macOS parity checklist](native-parity.md). Review equivalent behavior across web, iOS and macOS, and run both native workflows on the exact candidate commit. The production activation CLI rejects pending capability checks, failed or skipped required native build/test steps, and CI from a different source. Update private release-tool pins to include this gate before any forward production activation. Emergency recovery and rollback remain available. Build verification is separate from signed distribution and physical-device acceptance.

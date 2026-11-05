@@ -17,7 +17,7 @@ describe("account deletion acknowledgement", () => {
     expect(steps.start).not.toHaveBeenCalled(); expect(steps.cleanup).not.toHaveBeenCalled(); expect(steps.finish).not.toHaveBeenCalled();
   });
   it("rejects a pending response after departure and return even before a new login completes", async () => {
-    const original = {route:"/app/settings/data", authentication:1, navigation:2};
+    const original = {route:"/settings/data", authentication:1, navigation:2};
     const current = {...original, navigation:4};
     const cleanup = vi.fn();
     await completeDeletionInCurrentSession({

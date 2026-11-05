@@ -207,6 +207,7 @@ type context struct {
 	CreatedAt      string  `json:"createdAt"`
 	ExpiresAt      *string `json:"expiresAt"`
 	Revision       int64   `json:"revision"`
+	PhotoDate      *string `json:"photoDate,omitempty"`
 }
 type recipient struct {
 	MemberID  string `json:"memberId"`
@@ -233,14 +234,30 @@ func validateContext(raw json.RawMessage) (*context, error) {
 	if err := dec.Decode(&c); err != nil {
 		return nil, err
 	}
-	if !idPattern.MatchString(c.ID) || !idPattern.MatchString(c.AuthorID) || !idPattern.MatchString(c.AuthorDeviceID) || c.Epoch < 0 || c.Revision < 1 {
+	if !idPattern.MatchString(c.ID) || !idPattern.MatchString(c.AuthorID) || !idPattern.MatchString(c.AuthorDeviceID) || c.Epoch < 0 || c.Revision < 1 || c.Epoch > 9007199254740991 || c.Revision > 9007199254740991 {
 		return nil, errors.New("invalid content context")
 	}
 	if c.ParentID != nil && !idPattern.MatchString(*c.ParentID) || c.GroupID != nil && !idPattern.MatchString(*c.GroupID) {
 		return nil, errors.New("invalid context parent")
 	}
-	if !strings.Contains("|post|comment|reaction|profile|group|media|report|export|", "|"+c.Kind+"|") || !strings.Contains("|connections|friends|family|only_me|group|moderators|", "|"+c.Audience+"|") {
+	if !strings.Contains("|post|comment|reaction|profile|group|media|report|export|album|photo|", "|"+c.Kind+"|") || !strings.Contains("|connections|friends|family|extended_family|community|only_me|group|moderators|album|photo|", "|"+c.Audience+"|") {
 		return nil, errors.New("invalid context kind or audience")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	if value, exists := fields["photoDate"]; exists && (c.Kind != "photo" || string(value) == "null") {
+		return nil, errors.New("invalid photo date field")
+	}
+	if c.Kind == "photo" && c.PhotoDate == nil {
+		return nil, errors.New("photo date required")
+	}
+	if c.PhotoDate != nil {
+		day, err := time.Parse("2006-01-02", *c.PhotoDate)
+		if c.Kind != "photo" || err != nil || day.Year() < 1 || day.Format("2006-01-02") != *c.PhotoDate {
+			return nil, errors.New("invalid photo date")
+		}
 	}
 	created, err := time.Parse("2006-01-02T15:04:05.000Z", c.CreatedAt)
 	if err != nil || created.After(time.Now().Add(5*time.Minute)) {

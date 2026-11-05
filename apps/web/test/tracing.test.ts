@@ -28,7 +28,7 @@ function browser() {
   const upstream = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response("{}", { status: 200 }));
   const events = new EventTarget();
   vi.stubGlobal("localStorage", { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => store.set(k, v), removeItem: (k: string) => store.delete(k) });
-  vi.stubGlobal("location", new URL("https://porchday.org/app"));
+  vi.stubGlobal("location", new URL("https://porchday.org/"));
   vi.stubGlobal("document", Object.assign(events, { visibilityState: "visible" }));
   vi.stubGlobal("window", Object.assign(new EventTarget(), { fetch: upstream }));
   return { upstream, store };
@@ -66,7 +66,7 @@ describe("performance tracing", () => {
     await expect(traced("photo decode", async () => { throw Error("bad jpeg"); })).rejects.toThrow("bad jpeg");
     await flushTraces(true);
     const [body] = uploads(upstream);
-    expect(body).toMatchObject({ trace_id: traceId, page: "/app" });
+    expect(body).toMatchObject({ trace_id: traceId, page: "/" });
     expect(body.spans.map((s: { kind: string; name: string }) => `${s.kind}:${s.name}`)).toEqual([
       "mark:vault-ready", "measure:decrypt", "measure:photo decode", "resource:GET /api/v1/feed",
     ]);
@@ -150,7 +150,7 @@ describe("performance tracing", () => {
 
   it("formats a nested waterfall for builder chat", () => {
     const text = traceReport({
-      trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", started_at: Date.UTC(2026, 9, 28), page: "/app", browser: "Chrome 141",
+      trace_id: "4bf92f3577b34da6a3ce929d0e0e4736", started_at: Date.UTC(2026, 9, 28), page: "/", browser: "Chrome 141",
       connection: "4g", edge: "SIN", release: "44afbb8d-3133",
       spans: [
         { seq: 0, parent_seq: null, kind: "resource", name: "GET /api/v1/feed", start_ms: 120, duration_ms: 1450,
@@ -161,7 +161,7 @@ describe("performance tracing", () => {
     });
     expect(text.split("\n")).toEqual([
       "Porchday trace 4bf92f3577b34da6a3ce929d0e0e4736",
-      "2026-10-28T00:00:00.000Z · /app · Chrome 141 · 4g · upload edge SIN · release 44afbb8d",
+      "2026-10-28T00:00:00.000Z · / · Chrome 141 · 4g · upload edge SIN · release 44afbb8d",
       "start_ms  dur_ms  span",
       "     120    1450  GET /api/v1/feed  [status=200 edge=SIN server_total=1210 db_conn_social=1]",
       "     240     310    ↳ journal_check",

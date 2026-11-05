@@ -2322,3 +2322,18 @@ body
 .domain-move-notice summary { cursor: pointer; }
 .domain-move-notice details p { max-width: 78ch; margin-top: 6px; }
 .domain-unlock-hint { font-size: 14px; }
+
+/* Keep the requested tagline on one unbolded line; narrow screens can scroll it. */
+.porchday-tagline {
+  font-weight: normal;
+  white-space: nowrap;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: 4px;
+}
+.porchday-tagline a { font-weight: normal; }
+.auth-simple .auth-card:has(.porchday-tagline) { min-width: 0; }
+
+.auth-layout.auth-simple:has(.porchday-tagline) { max-width: 1000px; }
+.auth-card:has(.porchday-tagline) form { max-width: 480px; margin-inline: auto; }
+.auth-card:has(.porchday-tagline) > h1 { text-align: center; }

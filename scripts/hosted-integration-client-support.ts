@@ -35,7 +35,7 @@ export function authorizeURL(clientId: string, redirect: string, pkce: ReturnTyp
   ensure(callback.hostname === '127.0.0.1' && callback.protocol === 'http:' && !!callback.port &&
     callback.pathname === '/callback' && !callback.username && !callback.password && !callback.search && !callback.hash,
   'LOOPBACK_CALLBACK_REQUIRED');
-  const url = new URL('/app/integrations/authorize', stagingOrigin);
+  const url = new URL('/integrations/authorize', stagingOrigin);
   url.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirect,
     scope: integrationScopes.join(' '), code_challenge: pkce.challenge,
     code_challenge_method: 'S256', state: pkce.state }).toString();

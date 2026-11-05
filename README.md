@@ -4,6 +4,8 @@ A simple social network for people who know each other: no ads, no influencer me
 
 Porchday is an actively developed, invitation-only adult pilot. Original application source is [Apache-2.0 licensed](LICENSE), with separate [dependency notices](THIRD_PARTY_NOTICES.md). Source publication and broader service admission are separate decisions.
 
+The [roadmap](ROADMAP.md) defines the ranked backlog, next steps, dependencies and intentionally deferred work. Use it to choose what to work on; linked GitHub Issues hold status and acceptance evidence.
+
 ## What is implemented
 
 - Up to 300 mutual connections, including family; personal walls, named groups and audience controls. Each person chooses full-history or future-only sharing when connecting; see [history sharing](docs/friend-history-sharing.md).
@@ -18,6 +20,16 @@ Private social content is signed and encrypted on member devices. The operator s
 Google/GitHub sign-in, Datadog and technical proof of humanity are deferred. The [design](design/social-network-design.md) describes the intended product; the dated [build status](docs/build-status.md) records what was actually verified and what remains open.
 
 The [federation proposal](design/federation-proposal.md) explores participation through independently operated servers while keeping the hosted experience simple. It is a discussion draft for future work; federation is not implemented.
+
+## Native Apple apps
+
+The iOS and macOS apps share native SwiftUI screens and encryption code under
+`org.porchday.app`. The Mac WebKit preview is retired; native release verification
+and TestFlight distribution are tracked in [#49](https://github.com/porchday/porchday/issues/49)
+and [#114](https://github.com/porchday/porchday/issues/114).
+See the [Apple build guide](apps/ios/README.md) and [Mac target](apps/macos/README.md).
+Do not remove an installed preview's local data until native sign-in and recovery
+of encrypted history have been verified. Browser keys do not migrate automatically.
 
 ## Start developing
 
@@ -45,6 +57,7 @@ For native builds and interoperability tests, see the [iOS instructions](apps/io
 | `apps/web` | React/TypeScript public site and PWA, built with Vite. |
 | `apps/api` | Cloudflare Worker, PostgreSQL migrations and API tests. |
 | `apps/ios` | SwiftUI client and simulator tests. |
+| `apps/macos` | Native macOS entry point for the shared SwiftUI Apple app. |
 | `packages/crypto` | Shared OpenPGP protocol, Unicode metadata, JavaScript and Go interoperability fixtures. |
 | `scripts` | Development, verification and operator tools. Hosted scripts require explicit operator preparation. |
 | `design`, `docs` | Product requirements, protocols, verification records and runbooks. |
@@ -69,7 +82,7 @@ To produce the tracked client source/rebuild archive locally, run `python3 scrip
 
 ## Production domains
 
-[porchday.org](https://porchday.org) became the primary production address on October 26, 2026. Public `.com` pages forward to `.org`; [porchday.com/app](https://porchday.com/app) remains available for existing devices because their saved encryption keys belong to that origin. Use the same account at `.org` and your encryption recovery secret to unlock its history. Keep the old browser data and installed app until that succeeds. See the [migration guide](docs/domain-migration.md), completed public-migration evidence in [issue #17](https://github.com/porchday/porchday/issues/17), and remaining member-device checks in [issue #7](https://github.com/porchday/porchday/issues/7).
+[porchday.org](https://porchday.org) is the production address. After owner-confirmed member migration, `.com` website visits automatically redirect to `.org`. Member pages use root-level paths such as `/connections`, `/share`, `/albums` and `/settings/profile`; the feed is `/`. Old `/app/...` bookmarks redirect to their new paths without changing queries or fragments. Existing browser data and the PWA's internal identity are preserved. See the [routing and migration guide](docs/domain-migration.md), [domain issue #17](https://github.com/porchday/porchday/issues/17), and separate native/device checks in [#7](https://github.com/porchday/porchday/issues/7).
 
 ## Secrets
 
@@ -96,3 +109,7 @@ For incidents and restores, use the [incident guide](docs/incident-response.md),
 The shared corn logo source is `apps/web/public/icon.svg`. With Playwright Chromium installed, `node apps/web/scripts/generate-icons.mjs` regenerates the website, PWA and native artwork. Inspect the results before committing.
 
 The web build gives installed-app icons content-based URLs while preserving PWA identity. Apply Porchday's **Update now** if offered, close and reopen the installed app, and use Chrome's **⋮ → Review app update** when offered. Do not clear site data or reinstall solely to refresh artwork; see [Chrome's update behavior](https://developer.chrome.com/blog/improvements-to-web-app-updates).
+
+## Native parity before production
+
+Every forward production release must satisfy the [iOS/macOS parity checklist](docs/native-parity.md). Review equivalent behavior across web, iOS and macOS, and run both native workflows on the exact candidate commit. The production activation CLI rejects pending capability checks, failed or skipped required native build/test steps, and CI from a different source. Update private release-tool pins to include this gate before any forward production activation. Emergency recovery and rollback remain available. Build verification is separate from signed distribution and physical-device acceptance.

@@ -1,3 +1,4 @@
+import {verifyProductionNativeParity} from "./release-native-parity.ts";
 import {constants,closeSync,fstatSync,lstatSync,openSync,readFileSync,realpathSync,existsSync,writeFileSync,fsyncSync} from 'node:fs';
 import {isDeepStrictEqual} from 'node:util';
 import {createHash,randomUUID} from 'node:crypto';
@@ -57,6 +58,10 @@ export async function executeActivationManifest(input:ActivationManifest,env:Nod
  const config=JSON.parse(readPinned(e.probe).toString()) as ProbeConfig;validateProbeConfig(config);
  const target=deploymentTarget(plan.worker);if(config.environment!==target.environment)throw Error('ACTIVATION_PROBE_SCOPE_CHANGED');
  verifyActivationReview(plan,upload,e.proofPath,review);
+ // Enforce parity before any fresh production activation. Durable recovery and
+ // rollback continue under their original evidence; never strand an intent.
+ const parityState=await journal.read();
+ if(target.environment==='production'&&(!parityState||parityState.phase==='prepared'))await verifyProductionNativeParity(e.workspace,plan.candidateSource,signal);
  const accountId=env.CLOUDFLARE_ACCOUNT_ID??'',apiToken=env.CLOUDFLARE_API_TOKEN??'',connection=env[target.environment==='staging'?'PORCHDAY_STAGING_DATABASE_MIGRATION_URL':'PORCHDAY_PRODUCTION_DATABASE_MIGRATION_URL']??'';
  const database={connection,branchId:upload.evidence.databaseBranchId};validateReleaseDatabaseTarget(connection,database.branchId);
  const reader=new CloudflareReleaseReader({accountId,apiToken,queues:upload.queues}),client=new CloudflareDeploymentClient({accountId,apiToken,worker:plan.worker});

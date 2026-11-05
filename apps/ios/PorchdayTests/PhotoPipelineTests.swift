@@ -3,6 +3,26 @@ import UIKit
 @testable import Porchday
 
 final class PhotoPipelineTests: XCTestCase {
+    @MainActor func testFullResolutionPhotoIsDownsampled() throws {
+        let source: Data = try autoreleasepool {
+            let format = UIGraphicsImageRendererFormat()
+            format.scale = 1
+            format.opaque = true
+            let size = CGSize(width: 8064, height: 6048)
+            let image = UIGraphicsImageRenderer(size: size, format: format).image { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(origin: .zero, size: size))
+            }
+            return try XCTUnwrap(image.jpegData(compressionQuality: 0.85))
+        }
+        let prepared = try PhotoPipeline.prepare(source)
+        XCTAssertEqual(prepared.width, 2400)
+        XCTAssertEqual(prepared.height, 1800)
+        let received = try ReceivedPhoto.decodeJPEG(prepared.bytes)
+        XCTAssertEqual(received.image.width, 2400)
+        XCTAssertEqual(received.image.height, 1800)
+    }
+
     @MainActor func testSourceByteLimitIncludes50MiBAndRejectsOneByteMore() throws {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -26,7 +46,7 @@ final class PhotoPipelineTests: XCTestCase {
         source.append(0)
         XCTAssertThrowsError(try PhotoPipeline.prepare(source)) { error in
             XCTAssertEqual(error.localizedDescription,
-                "Choose a photo that is 50 MB or smaller and no more than 40 megapixels.")
+                "Choose a readable photo that is 50 MB or smaller.")
         }
     }
 }

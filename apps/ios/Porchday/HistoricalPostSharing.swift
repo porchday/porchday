@@ -30,7 +30,7 @@ import Foundation
               context["id"].string == postID, context["authorId"].string == memberID,
               context["kind"].string == "post", context["parentId"] == .null,
               context["groupId"] == .null, source["group_id"] == .null,
-              ["connections", "friends", "family"].contains(context["audience"].string ?? ""),
+              ["connections", "friends", "family", "community", "extended_family"].contains(context["audience"].string ?? ""),
               let revision = context["revision"].integer, revision > 0, revision < 9_007_199_254_740_991,
               let created = context["createdAt"].string.flatMap(PorchDate.parse), created <= now.addingTimeInterval(300),
               sameDeadline(source["expires_at"], context["expiresAt"]),

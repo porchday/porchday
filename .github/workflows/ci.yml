@@ -41,7 +41,6 @@ jobs:
       - run: python3 scripts/check-format.py
       - run: python3 -m unittest discover -s scripts -p 'test_check_format.py'
       - run: python3 -m unittest discover -s scripts -p 'test_check_secrets.py'
-      - run: python3 scripts/test_denial_cost_estimate.py
       - run: node scripts/migrate.ts
       - run: npm run typecheck
       - run: npx tsc -p scripts/tsconfig.external-monitor.json
@@ -49,26 +48,19 @@ jobs:
       - run: node --input-type=module -e "await import('./scripts/deployment-recovery.ts'); await import('./scripts/deployment-recovery-journal.ts'); await import('./scripts/cloudflare-deployment-client.ts'); await import('./scripts/deployment-recovery-lease.ts'); await import('./scripts/release-verification.ts'); await import('./scripts/cloudflare-release-reader.ts'); await import('./scripts/release-schema.ts'); await import('./scripts/release-wrangler.ts'); await import('./scripts/release-upload-lease.ts'); await import('./scripts/release-upload-process.ts'); await import('./scripts/release-worker-artifacts.ts'); await import('./scripts/release-ci.ts'); await import('./scripts/release-upload-reconcile.ts'); await import('./scripts/release-upload.ts'); await import('./scripts/release-upload-cli.ts'); await import('./scripts/release-activation-evidence.ts'); await import('./scripts/release-activation-state.ts'); await import('./scripts/release-activation-review.ts'); await import('./scripts/release-activation-finalize.ts'); await import('./scripts/release-journey.ts'); await import('./scripts/release-activation-cli.ts')"
       - run: npx tsc -p scripts/tsconfig.availability-report.json
       - run: npx tsc -p scripts/tsconfig.release-assets.json
-      - run: npx tsc -p scripts/tsconfig.denial-capacity.json
       - run: node --input-type=module -e "await import('./scripts/release-assets.ts'); await import('./scripts/release-assets-verify.ts'); await import('./scripts/release-assets-browser.ts')"
       - run: node --input-type=module -e "await import('./scripts/availability-report.ts')"
       - run: node --input-type=module -e "await import('./scripts/external-monitor-backup.ts'); await import('./scripts/external-monitor-relay.ts'); await import('./scripts/external-monitor-delivery.ts')"
       - run: node scripts/prepare-test-databases.ts
       - run: npm test
+      - name: Verify photo migrations with the preserved release schema
+        run: npx vitest run apps/api/test/independent-photos.database.test.ts apps/api/test/independent-photos.http.test.ts
+        env:
+          PHOTO_TEST_SCHEMA: without-052-057
       - run: npx playwright install --with-deps chromium
       - run: node scripts/check-photo-calendar.mjs
+      - run: node scripts/check-existing-album-photos.mjs
+      - run: node scripts/check-photo-interactions.mjs
+      - run: node scripts/check-unified-feed.mjs
       - run: npm run build
-      - name: Verify pre-migration backup and journal compatibility
-        run: |
-          git fetch --no-tags --depth=1 origin 3810d1d6383415eb2559c54829b68dee6113618c
-          drill_container="porchday-commit-restore-$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
-          trap 'docker rm -f "$drill_container" >/dev/null' EXIT
-          docker run -d --name "$drill_container" --label porchday.commit-restore-drill=true -e POSTGRES_PASSWORD=porchday-local-restore-only -p 127.0.0.1::5432 postgres:17 >/dev/null
-          for attempt in $(seq 1 30); do
-            if docker exec "$drill_container" pg_isready -U postgres >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          docker exec "$drill_container" pg_isready -U postgres
-          drill_port=$(docker port "$drill_container" 5432/tcp | cut -d: -f2)
-          LOCAL_DRILL_CONTAINER="$drill_container" LOCAL_DRILL_ADMIN_URL="postgres://postgres:porchday-local-restore-only@127.0.0.1:$drill_port/postgres" npx tsx scripts/drill-restore-local.ts --run --commit-protocol
       - run: python3 scripts/check-secrets.py

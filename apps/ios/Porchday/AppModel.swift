@@ -159,9 +159,9 @@ import Combine
                             uploadPhoto: { path, bytes in try check(); _ = try await self.api.bytes(path, method: "PUT", body: bytes) },
                             publish: { id, body in try check(); return try await self.api.social("/posts/" + id + "/audience-refresh", method: "POST", body: body) },
                             validatePhoto: { payload in
-                                guard payload["mime"].string == "image/jpeg", let encoded = payload["bytes"].string,
+                                guard let encoded = payload["bytes"].string,
                                       let bytes = Data(base64Encoded: encoded) else { throw PorchError.message("A photo could not be opened.") }
-                                _ = try PhotoPipeline.safelyDecode(bytes)
+                                if payload["mime"].string == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(bytes) } else { guard try VideoContainer.mime(bytes) == payload["mime"].string else { throw PorchError.message("Video metadata mismatch.") } }
                             }, check: { try check() }))
                         try check(); count += 1; self.historySharingVersion += 1
                     }
@@ -172,6 +172,20 @@ import Combine
                         break
                     }
                 } while cursor != nil
+                let photos = try NativePhotos(self)
+                var after: String?, photoCount = 0
+                repeat {
+                    try check()
+                    let page = try await photos.request("/photos/history-refresh" + (after.map { "?" + NativePhotos.query(["after": $0]) } ?? ""))
+                    for photo in page["items"].array {
+                        for grant in photo["grants"].array where grant["album_id"] == .null {
+                            try check(); try await photos.refresh(photo, grant: grant)
+                        }
+                        photoCount += 1; self.historySharingVersion += 1
+                    }
+                    after = page["next"].string
+                    if photoCount >= 20 && after != nil { self.historySharingNeedsRetry = true; self.historySharingNotice = "Earlier photos were shared. Continue to check for more."; break }
+                } while after != nil
             } catch is CancellationError { /* Resume from a fresh source on a later foreground. */ }
             catch {
                 guard !Task.isCancelled, self.member?.id == member.id, self.authenticationGeneration == generation else { return }

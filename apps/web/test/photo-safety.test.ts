@@ -90,7 +90,7 @@ describe("untrusted JPEG preflight", () => {
     );
     expect(close).toHaveBeenCalledTimes(2);
   });
-  it("allows larger source photos only within the existing 40-megapixel bound", () => {
+  it("retains the received-photo area bound even with an explicit dimension override", () => {
     expect(jpegDimensions(jpeg(6000, 4000), 65535).width).toBe(6000);
     expect(() => jpegDimensions(jpeg(10000, 10000), 65535)).toThrow(
       /safe dimensions/,

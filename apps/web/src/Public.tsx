@@ -1,34 +1,35 @@
+import { loginDestination } from "./routes";
 import React, { useEffect, useRef, useState } from "react";
 import { auth, post, localDate } from "./api";
 import { Logo, Icon, Button, Field, Alert, useAction, navigate } from "./ui";
 import { BackgroundControls } from "./BackgroundControls";
 import { ColorSchemeControls } from "./ColorSchemeControls";
-export function PublicHeader() {
+export function PublicHeader({ member = false }: { member?: boolean }) {
   return (
     <header className="public-header wrap">
       <div className="homemade-sign">
         <Logo />
       </div>
-      <nav aria-label="Main navigation">
+      {member && <nav aria-label="Main navigation">
         <a href="/">Home</a>
         <a href="/about">About</a>
         <a href="/principles">Principles</a>
         <a href="/login" className="login-link">
           Log in <Icon name="arrow" size={16} />
         </a>
-      </nav>
+      </nav>}
     </header>
   );
 }
-export function PublicFooter() {
+export function PublicFooter({ member = false }: { member?: boolean }) {
   return (
     <footer className="public-footer wrap">
       <div>
-        <Logo small />
+        {member && <Logo small />}
         <small>By invitation only.</small>
       </div>
-      <nav aria-label="Information">
-        <a href="/about">Our mission</a>
+      {member && <nav aria-label="Information">
+        <a href="/mission">Our mission</a>
         <a href="/privacy">Privacy</a>
         <a href="/community">Community rules</a>
         <a href="/accessibility">Accessibility</a>
@@ -36,36 +37,35 @@ export function PublicFooter() {
         <a href="https://github.com/porchday/porchday">Source code</a>
         <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0 license</a>
         <a href="/third-party-notices.txt">Open-source notices</a>
-      </nav>
+      </nav>}
       <ColorSchemeControls />
       <BackgroundControls />
     </footer>
   );
 }
+export function Tagline() {
+  return <p className="porchday-tagline">No ads, algorithms, or influencers. Non-profit. <a href="https://github.com/porchday/porchday">Open source</a> under the <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0 license</a>.</p>;
+}
 export function Landing() {
-  return (
-    <>
-      <PublicHeader />
-      <main id="main-content" tabIndex={-1} className="classic-home simple-home wrap">
-        <section className="classic-welcome classic-box">
-          <h1>a simple social network</h1>
-          <div className="classic-box-body">
-            <p className="classic-promise">No ads, algorithms, or influencers.</p>
-            <p><a href="https://github.com/porchday/porchday">Open source</a> under the <a href="https://github.com/porchday/porchday/blob/main/LICENSE">Apache 2.0 license</a>.</p>
-            <p>Already have an account?</p>
-            <a className="button primary" href="/login">Member log in</a>
-            <p className="invitation-line">Have an invitation? <a href="/join">create account</a></p>
-          </div>
-        </section>
-      </main>
-      <PublicFooter />
-    </>
-  );
+  return <>
+    <PublicHeader member />
+    <main id="main-content" tabIndex={-1} className="classic-home wrap">
+      <section className="classic-welcome classic-box">
+        <h1>About Porchday</h1>
+        <div className="classic-box-body">
+          <p>a simple social network</p>
+          <Tagline />
+          <p><a href="/">Go to Home</a> · <a href="/mission">Our mission</a> · <a href="/principles">Our principles</a></p>
+        </div>
+      </section>
+    </main>
+    <PublicFooter member />
+  </>;
 }
 export function AuthPage({
   mode,
   onSignedIn,
-  returnTo = "/app",
+  returnTo = "/",
 }: {
   mode: string;
   onSignedIn: () => void;
@@ -105,9 +105,7 @@ export function AuthPage({
         setFactorCode("");
         onSignedIn();
         navigate(
-          returnTo.startsWith("/app") || returnTo === "/staff"
-            ? returnTo
-            : "/app",
+          loginDestination(returnTo),
         );
       } else if (join) {
         await auth("sign-up/email", {
@@ -143,7 +141,7 @@ export function AuthPage({
         const result = await auth("sign-in/email", {
           email,
           password,
-          callbackURL: "/app",
+          callbackURL: "/",
         });
         setPassword("");
         if (result.twoFactorRedirect) {
@@ -151,9 +149,7 @@ export function AuthPage({
         } else {
           onSignedIn();
           navigate(
-            returnTo.startsWith("/app") || returnTo === "/staff"
-              ? returnTo
-              : "/app",
+            loginDestination(returnTo),
           );
         }
       }
@@ -164,6 +160,7 @@ export function AuthPage({
       <PublicHeader />
       <main id="main-content" tabIndex={-1} className="auth-layout wrap auth-simple">
         <section className="auth-card">
+          {mode === "login" && <Tagline />}
           <h1>
             {join
               ? "Create account"
@@ -177,7 +174,7 @@ export function AuthPage({
           </h1>
           <p>
             {join
-              ? "An invitation is required. You must be 18 or older to join. If your invitation email names a Friend or Family connection, accepting and verifying your email creates that connection automatically. You will share future posts for that audience; you can change your label or disconnect later."
+              ? "An invitation is required. You must be 18 or older to join. If your invitation email names a Friend or Family connection, accepting and verifying your email creates that connection automatically. Your invitation email describes your inviter’s history-sharing choice. Your own sharing starts with full history for that connection; you can change your sharing choice or label, or disconnect later."
               : forgot
                 ? "We’ll email a reset link if there’s an eligible account. Your encryption recovery secret is separate."
                 : reset
@@ -327,11 +324,11 @@ export function AuthPage({
                     />
                     <span>
                       I agree to the{" "}
-                      <a href="/community" target="_blank" rel="noreferrer">
+                      <a href={"/community#invite=" + encodeURIComponent(invite)} target="_blank" rel="noreferrer">
                         community rules
                       </a>{" "}
                       and{" "}
-                      <a href="/privacy" target="_blank" rel="noreferrer">
+                      <a href={"/privacy#invite=" + encodeURIComponent(invite)} target="_blank" rel="noreferrer">
                         privacy policy
                       </a>
                       . I’m a person operating my own account, not an AI agent.
@@ -652,7 +649,7 @@ export function Policy({ page }: { page: string }) {
   const p = policyContent[page] || policyContent.help;
   return (
     <>
-      <PublicHeader />
+      <PublicHeader member />
       <main id="main-content" tabIndex={-1} className="narrow-page policy">
         <span className="eyebrow">PORCHDAY</span>
         <h1>{p.title}</h1>
@@ -675,7 +672,29 @@ export function Policy({ page }: { page: string }) {
           Private pilot notice · Updated {localDate("2026-10-24T12:00:00Z")}
         </small>
       </main>
-      <PublicFooter />
+      <PublicFooter member />
     </>
   );
+}
+
+// An unconsumed invitation lets its recipient review signup policies before agreeing.
+// It grants no account or social-data access.
+export function InvitedPolicyPage({ path, loading, onSignedIn }: { path: string; loading: boolean; onSignedIn: () => void }) {
+  const token = new URLSearchParams(location.hash.slice(1)).get("invite") || "";
+  const eligiblePage = path === "/privacy" || path === "/community";
+  const [approved, setApproved] = useState("");
+  const [checking, setChecking] = useState(Boolean(token && eligiblePage));
+  useEffect(() => {
+    let active = true;
+    setApproved("");
+    setChecking(Boolean(token && eligiblePage));
+    if (token && eligiblePage) auth("invitation-policy", { inviteCode: token })
+      .then(() => { if (active) setApproved(token); })
+      .catch(() => {})
+      .finally(() => { if (active) setChecking(false); });
+    return () => { active = false; };
+  }, [token, eligiblePage]);
+  if (loading || checking) return <main id="main-content" className="narrow-page"><p role="status">Checking access…</p></main>;
+  if (eligiblePage && token && approved === token) return <Policy page={path.slice(1)} />;
+  return <AuthPage mode="login" returnTo={path} onSignedIn={onSignedIn} />;
 }

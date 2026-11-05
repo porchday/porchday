@@ -25,6 +25,22 @@ const entry = {
   payload: { text: "A little memory", media: [] },
 };
 describe("portable archive privacy and integrity", () => {
+  it("preserves independent photo dates and owned album references in JSON and readable HTML",()=>{
+    const archive=emptyArchive(member,"friend");
+    archive.photos=[{id:"photo",photo_date:"2026-10-31",created_at:entry.created_at,expires_at:null,album_ids:["album"],payload:{media:[{id:"media",mime:"image/jpeg",alt:"A memory"}]}}];
+    archive.albums=[{id:"album",created_at:entry.created_at,payload:{name:"Family <script>",description:"Our memories"}}];
+    archive.attachment_dates=[{media_id:"legacy",post_id:entry.id,photo_date:"2026-10-30"}];
+    const packed=packArchive(archive),decoded=unpackArchive(packed);
+    expect(decoded.archive.photos).toEqual(archive.photos);
+    expect(decoded.archive.attachment_dates).toEqual(archive.attachment_dates);
+    const html=strFromU8(decoded.files["index.html"]);
+    expect(html).toContain("2026-10-31");expect(html).toContain("Family &lt;script&gt;");expect(html).not.toContain("Family <script>");
+    archive.photos[0].photo_date="2026-02-31";
+    expect(()=>unpackArchive(packArchive(archive))).toThrow(/independent photo/);
+    archive.photos=[];archive.albums=[{id:"bad",created_at:entry.created_at,payload:{name:[]}}];
+    expect(()=>unpackArchive(packArchive(archive))).toThrow(/album is malformed/);
+  });
+
   it("round-trips an optional private emoji collection and readable Unicode/static-image reactions", async () => {
     const image = await custom(),
       unicode = await unicodeReaction("🦦");

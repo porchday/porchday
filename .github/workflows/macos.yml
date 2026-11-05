@@ -1,0 +1,64 @@
+name: Verify native macOS
+on:
+  push:
+  pull_request:
+    paths: ['apps/ios/**', 'apps/macos/**', 'packages/crypto/**', '.github/workflows/macos.yml']
+  workflow_dispatch:
+    inputs:
+      prepare_testflight:
+        description: Prepare a signed native Mac TestFlight package after tests (no upload)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: packages/crypto/native/go.mod
+          cache-dependency-path: packages/crypto/native/go.sum
+      - run: brew install xcodegen
+      - run: apps/ios/build-native.sh
+        env:
+          PORCHDAY_APPLE_TARGETS: macos
+      - name: Compile shared native Mac app
+        run: |
+          xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac \
+            -destination 'generic/platform=macOS' -derivedDataPath apps/ios/build/Mac \
+            build CODE_SIGNING_ALLOWED=NO
+      - name: Run shared calendar, tag and media contract tests
+        run: |
+          xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac \
+            -destination 'platform=macOS' -derivedDataPath apps/ios/build/Mac \
+            -resultBundlePath apps/ios/build/MacTests.xcresult \
+            test CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual
+      - name: Package verification artifact
+        run: ditto -c -k --sequesterRsrc --keepParent apps/ios/build/Mac/Build/Products/Debug/Porchday.app apps/ios/build/Porchday-native-Mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-macos-verification
+          path: apps/ios/build/Porchday-native-Mac.zip
+          retention-days: 7
+
+      - name: Prepare signed native Mac TestFlight package
+        if: github.event_name == 'workflow_dispatch' && inputs.prepare_testflight
+        env:
+          APPLE_MAC_APP_P12: ${{ secrets.PORCHDAY_APPLE_MAC_APP_P12 }}
+          APPLE_MAC_INSTALLER_P12: ${{ secrets.PORCHDAY_APPLE_MAC_INSTALLER_P12 }}
+          APPLE_MAC_PASSWORD: ${{ secrets.PORCHDAY_APPLE_MAC_PASSWORD }}
+          APPLE_MAC_PROFILE: ${{ secrets.PORCHDAY_APPLE_MAC_PROFILE }}
+          PORCHDAY_BUILD_NUMBER: ${{ github.run_number }}
+        run: apps/macos/archive-testflight.sh
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch' && inputs.prepare_testflight && success()
+        with:
+          name: native-mac-testflight-candidate
+          path: |
+            apps/ios/build/MacTestFlight/*.pkg
+            apps/ios/build/MacTestFlight/evidence.json
+          retention-days: 7

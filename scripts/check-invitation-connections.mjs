@@ -12,7 +12,7 @@ window.calls=[];
 window.fetch=async(url,options={})=>{
  window.calls.push({url:String(url),method:options.method||'GET',body:options.body?JSON.parse(options.body):null});
  if(options.method==='POST' && String(url).endsWith('/revoke')){items[0].status='revoked';return Response.json({revoked:true});}
- if(options.method==='POST'){const data=JSON.parse(options.body);items=[{id:'00000000-0000-4000-8000-000000000001',email:data.email,kind:data.kind,status:'pending',requested_at:'2026-10-31T00:00:00Z',expires_at:'2026-11-07T00:00:00Z'}];return Response.json({accepted:true},{status:202});}
+ if(options.method==='POST'){const data=JSON.parse(options.body);items=[{id:'00000000-0000-4000-8000-000000000001',email:data.email,kind:data.kind,history:data.history,status:'pending',requested_at:'2026-10-31T00:00:00Z',expires_at:'2026-11-07T00:00:00Z'}];return Response.json({accepted:true},{status:202});}
  return Response.json({items,next_cursor:null});
 };
 createRoot(document.getElementById('root')).render(<PlatformInvitation canInvite={true}/>);
@@ -25,6 +25,9 @@ try{
  browser=await chromium.launch({headless:true});const page=await browser.newPage();
  await page.goto('http://127.0.0.1:'+server.address().port);
  await page.getByText('No invitations yet.').waitFor();
+ assert.equal(await page.getByLabel('Share your posts and photos',{exact:true}).inputValue(),'full');
+ await page.getByLabel('Share your posts and photos',{exact:true}).selectOption('future');
+ await page.getByText(/only share new posts and photos after you connect/).waitFor();
  await page.getByLabel('Their email address').fill('synthetic@example.test');
  await page.getByLabel('Connect as').selectOption('family');
  await page.getByText(/automatically connect as Family/).waitFor();
@@ -32,8 +35,9 @@ try{
  await page.getByText('Pending',{exact:true}).waitFor();
  await page.getByText('Connect as Family',{exact:true}).waitFor();
  const calls=await page.evaluate(()=>window.calls);
- assert.deepEqual(calls.find(c=>c.method==='POST').body,{email:'synthetic@example.test',kind:'family'});
+ assert.deepEqual(calls.find(c=>c.method==='POST').body,{email:'synthetic@example.test',kind:'family',history:'future'});
  assert(calls.some(c=>c.url==='/api/v1/platform-invitations?v=2'));
+ await page.getByText('Only share new posts and photos',{exact:true}).last().waitFor();
  await page.getByRole('button',{name:'Revoke invitation'}).click();
  await page.getByText('Revoked',{exact:true}).waitFor();
  assert.equal(await page.getByRole('button',{name:'Revoke invitation'}).count(),0);

@@ -1,4 +1,4 @@
-# Porchday for iOS
+# Porchday native Apple app
 
 The native client uses SwiftUI and URLSession with the same authorized social API and signed encrypted envelope format as the web client. It is not a web-view wrapper. Photo processing, encryption, recovery, multipart export/import and Keychain storage run on the device.
 
@@ -67,11 +67,11 @@ The editor previews and changes the stored choice. Export/import and unrelated e
 
 Simulator verification does not establish physical-device, APNs or Universal Links behavior. A physical build needs a real signing identity and provisioning selected in Xcode. App Store/TestFlight distribution and notification/domain capabilities require separate Apple setup and operator approval.
 
-The checked-in entitlements declare both `applinks:porchday.org` and `applinks:porchday.com`, plus an APNs environment variable. Simulator CI uses its own app-local Keychain entitlement and `PORCHDAY_PUSH_ENABLED=NO`. For a physical build, configure the real development team, Push Notifications and Associated Domains for `com.porchday.app`, enable signing, set `PORCHDAY_PUSH_ENABLED=YES`, and select the matching `PORCHDAY_APNS_ENVIRONMENT`. An APNs provider private key belongs only in the operator's backend secret storage, never the app or repository.
+The checked-in entitlements declare both `applinks:porchday.org` and `applinks:porchday.com`, plus an APNs environment variable. Simulator CI uses its own app-local Keychain entitlement and `PORCHDAY_PUSH_ENABLED=NO`. For a physical build, configure the real development team, Push Notifications and Associated Domains for `org.porchday.app`, enable signing, set `PORCHDAY_PUSH_ENABLED=YES`, and select the matching `PORCHDAY_APNS_ENVIRONMENT`. An APNs provider private key belongs only in the operator's backend secret storage, never the app or repository.
 
 The permission button appears only when the build flag and `/api/v1/native-push/config` both enable delivery. Only pressing **Enable** requests authorization. Opted-in launches register the current token through the authenticated API; token bytes are not cached on disk. Opt-out and sign-out remove the subscription and unregister locally. Notifications contain generic text and open the authorized inbox; no extension decrypts private content.
 
-For Universal Links, publish the correct Apple application identifier and `/app/post/*` components in `/.well-known/apple-app-site-association`, without a redirect. The client validates `https://porchday.org/app/post/{UUID}` and legacy `https://porchday.com/app/post/{UUID}` links, but the presence of client code does not prove deployed domain association. Record real-device push and link tests after signing is configured. See Apple's [APNs registration](https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns), [notification permission](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications) and [Associated Domains](https://developer.apple.com/documentation/xcode/supporting-associated-domains) documentation.
+For Universal Links, publish the correct Apple application identifier and both `/post/*` and legacy `/app/post/*` components in `/.well-known/apple-app-site-association`, without a redirect. The client validates `/post/{UUID}` and legacy `/app/post/{UUID}` links on both exact production hosts, but the presence of client code does not prove deployed domain association. Record real-device push and link tests after signing is configured. See Apple's [APNs registration](https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns), [notification permission](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications) and [Associated Domains](https://developer.apple.com/documentation/xcode/supporting-associated-domains) documentation.
 
 A passing build is not a security audit. Broader launch also requires independent encryption review and the remaining [admission requirements](../../docs/operations.md#admission-and-launch-gates).
 
@@ -111,3 +111,76 @@ ordinary signed-out restore; account holds and transport failures remain visible
 This reduces network dependencies but does not establish physical launch latency.
 Simulator tests and a California iPhone trial with saved credentials and keys are
 still required before claiming the cold/warm p99 launch targets.
+
+## Shared native Apple identity
+
+The native iPhone/iPad and macOS targets use `org.porchday.app`,
+registered as a universal Apple App ID with Push Notifications and Associated
+Domains. The old `org.porchday.macos` WebKit preview is retired by owner request.
+Its source and packaging have been removed; the historical release is a draft.
+Installed preview data must remain until the member verifies native recovery.
+
+The existing `com.porchday.app.keys` Keychain service strings are deliberately
+retained: they are storage labels, not bundle identifiers or push topics. Changing
+them is not required for this registration and could strand existing development
+keys. A newly signed app ID still has its own entitlement/access-group boundary;
+this does not promise migration from a differently signed installed build.
+
+Production APNs topic must match `org.porchday.app` when native delivery is enabled.
+Publish the actual signing team's application identifier in the domain association
+response and verify on device before claiming Universal Links work. Registration
+alone does not configure backend credentials or activate push. No hosted config
+is changed by this project update.
+
+The public App Store Connect API cannot create the initial app record. Create it
+on the website with this bundle ID, then manage supported release operations
+through the API. The `PorchdayMac` target shares the implementation directly. Mac distribution
+signing and installed-device validation remain separate from compilation.
+
+### Signed TestFlight candidate archive
+
+The native workflow's manual `prepare_testflight` input runs the native suite
+before archiving/exporting a signed iOS candidate. It never uploads or invites
+testers. Only dispatch reviewed source with passing applicable CI. Its ephemeral
+keychain uses encrypted repository secrets `PORCHDAY_APPLE_DISTRIBUTION_P12`,
+`PORCHDAY_APPLE_DISTRIBUTION_PASSWORD` and `PORCHDAY_APPLE_IOS_PROFILE`.
+The workflow run number is the build number; evidence records exact source and IPA hash.
+Push stays disabled until actual provider/device verification. The app manifest
+declares app-local UserDefaults access (CA92.1); archive/dependency privacy report,
+export compliance and Apple validation remain separate distribution checks.
+
+## Current web compatibility work
+
+Both targets now include native calendar browsing, personal daily highlights,
+author/tag filters, earlier-month loading and adjacent-day navigation; member and
+child tags in posts/comments/captions; child profiles and delegated posting; and
+bounded encrypted video upload/playback. Typed @handles resolve only against the
+authorized directory and never expand the audience or imply push delivery.
+
+Calendar and social metadata use the existing web APIs and encrypted payloads.
+Video retains the web's 10 MiB and 4K limits; actual codec playback depends on the
+Apple OS. Unsupported codecs produce an explicit error, never a successful empty
+attachment. Temporary playback files are private, excluded from backup, removed
+when closed/backgrounded, and cleaned on the next launch after interruption.
+
+Account email/MFA, appeals, integration registration/consent, and allowlisted
+builder chat/feature voting use native screens. Builder disclosure version 2 is
+explicitly accepted; an unknown newer version blocks sending until updated.
+Browser authorization callbacks still open their registered external destination.
+
+The Mac has a navigation sidebar and native file/Photos selection; iOS has tabs.
+See [the parity matrix](../../docs/native-apple-parity.md) for implementation versus
+verification. Current compilation does not prove signed devices, notifications,
+all codecs, hosted cross-client round trips or TestFlight acceptance.
+
+WebM uses an isolated, ephemeral local WebKit media surface because AVFoundation
+cannot decode the web app's WebM contract. This is not a hosted app wrapper:
+all screens/authentication/crypto remain native, the media page has no network,
+no application bridge and no persistent website storage. Other clips use AVKit.
+The shared iOS minimum is 17.4 for WebM support; macOS remains 14.0. Files import
+supports WebM outside the photo library. Synthetic VP9 decoding runs in both
+platform test targets; hardware/other-codec acceptance still needs verification.
+
+## Native parity before production
+
+Every forward production release must satisfy the [iOS/macOS parity checklist](../../docs/native-parity.md). Review equivalent behavior across web, iOS and macOS, and run both native workflows on the exact candidate commit. The production activation CLI rejects pending capability checks, failed or skipped required native build/test steps, and CI from a different source. Update private release-tool pins to include this gate before any forward production activation. Emergency recovery and rollback remain available. Build verification is separate from signed distribution and physical-device acceptance.

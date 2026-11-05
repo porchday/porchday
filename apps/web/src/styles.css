@@ -4531,7 +4531,7 @@ hr {
   font-size: 14px;
 }
 
-/* Performance inspector (/app/performance). */
+/* Performance inspector (/performance). */
 .trace-inspector {
   display: grid;
   gap: 1rem;
@@ -4794,3 +4794,73 @@ button.trace-row:focus-visible {
 .calendar-thumbnail { height:100%; width:100%; }
 .calendar-thumbnail .photo-placeholder { min-height:0; height:100%; padding:.3rem; }
 .calendar-thumbnail .photo-placeholder span { display:none; }
+
+.post-photos video, .photo-draft video, .calendar-post video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 75vh;
+  border-radius: 12px;
+}
+.calendar-day-content { min-height: 160px; }
+.calendar-day-content nav { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+
+.calendar-thumbnail figure { position: relative; }
+.calendar-video-indicator { position: absolute; left: 3px; bottom: 3px; padding: 0 4px; border-radius: 4px; background: #ffffffdb; color: #222; }
+
+.photo-calendar { margin-bottom: 20px; }
+.calendar-earlier { display: flex; justify-content: center; padding: 20px; }
+
+/* Shared reading/composing navigation. Sized strokes do not grow with icons. */
+.feed-view-controls { display:flex; flex-wrap:wrap; gap:.5rem; margin:1rem 0; }
+.feed-view-controls [aria-pressed="true"] { text-decoration:underline; text-underline-offset:.3em; }
+.feed-author-controls { margin:1rem 0; }
+.feed-author-controls summary { cursor:pointer; }
+.feed-author-options { display:grid; grid-template-rows:repeat(3,auto); grid-auto-flow:column; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.75rem; padding:1rem 0; }
+.feed-author-options label { display:flex; align-items:center; gap:.5rem; }
+.feed-author-options input { width:auto; }
+.composer-photo-heading { font-size:1rem; margin:1rem 0 .5rem; }
+.mobile-nav > a > svg { width:34px; height:40px; flex-shrink:0; }
+.mobile-nav > a > svg * { vector-effect:non-scaling-stroke; stroke-width:1.7px; }
+.album-heading, .album-actions { display:flex; align-items:center; flex-wrap:wrap; justify-content:space-between; gap:1rem; }
+.album-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr)); gap:1rem; }
+.album-card { display:block; text-decoration:none; }
+.album-card h2 { margin-top:1rem; }
+.album-member { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem; justify-content:space-between; }
+.album-member select { width:auto; max-width:100%; }
+
+.album-photo-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr)); gap:1rem; margin-top:1rem; }
+.independent-photo { min-width:0; }
+.independent-photo img { max-width:100%; height:auto; }
+
+.composer-fields { border:0; padding:0; margin:0; min-width:0; }
+.album-cover { aspect-ratio:4/3; display:flex; align-items:center; justify-content:center; overflow:hidden; }
+.album-cover figure { width:100%; height:100%; margin:0; }
+.album-cover img { width:100%; height:100%; object-fit:cover; }
+
+.composer-photo-divider { border: 0; border-top: 1px solid var(--line, #e9ede1); margin: 20px 0 14px; }
+.composer-photo-shortcut { font-size: .875rem; margin: 4px 0 16px; }
+.composer-post-controls { border-top: 0; }
+.existing-photo-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+.existing-photo-choice { min-width: 0; border: 1px solid var(--line, #e9ede1); padding: 8px; }
+.existing-photo-choice img { width: 100%; height: 140px; object-fit: cover; }
+.existing-photo-choice label { display: flex; gap: 8px; align-items: center; }
+.existing-photo-choice small { display: block; }
+@media (max-width: 740px) {
+ .app-mobile-header { height: 58px; }
+ .app-mobile-header > .logo { font-size: 25px; }
+ .app-mobile-header .logo .logo-mark { width: 35px; height: 40px; }
+ .app-main { padding-top: 14px; }
+ .mobile-tab-title, .mobile-tab-heading h1 { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+ .app-main .mobile-tab-heading { margin: 0; padding: 0; border: 0; }
+ .page-heading:has(> .mobile-tab-title):not(.album-heading) { margin: 0; padding: 0; border: 0; }
+}
+.existing-photo-choice .calendar-thumbnail { height: 140px; width: 100%; overflow: hidden; }
+.existing-photo-choice .calendar-thumbnail figure { margin: 0; height: 100%; }
+.existing-photo-choice .calendar-thumbnail img { height: 100%; object-fit: contain; }
+.existing-photo-choice label { margin-top: 8px; }
+.feed-filter-selects { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 12px; }
+.feed-filter-selects label { display: flex; flex: 1 1 180px; flex-direction: column; gap: 4px; min-width: 0; }
+.feed-filter-selects select { width: 100%; }
+.activity-feed { display: grid; gap: 16px; }
+.calendar-post-preview { display: block; overflow: hidden; font-size: .7rem; line-height: 1.25; overflow-wrap: anywhere; }

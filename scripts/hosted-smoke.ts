@@ -212,7 +212,7 @@ async function publicChecks() {
   }
   const manifest = await api.json("/manifest.webmanifest");
   check(
-    manifest.start_url === "/app" &&
+    manifest.start_url === "/" &&
       manifest.scope === "/" &&
       manifest.display === "standalone",
     "PWA_MANIFEST_INVALID",

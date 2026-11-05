@@ -18,3 +18,4 @@ jobs:
       - run: node scripts/check-post-detail-loads.mjs
       - run: TEST_BROWSER=webkit node scripts/check-post-detail-loads.mjs
       - run: node scripts/check-feed-saves.mjs
+      - run: node scripts/check-album-adoption.mjs

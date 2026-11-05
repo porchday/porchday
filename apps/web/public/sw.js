@@ -76,7 +76,7 @@ self.addEventListener("push", (event) =>
       icon: "/icon-192.png",
       badge: "/icon-192.png",
       tag: "porchday-update",
-      data: { url: "/app" },
+      data: { url: "/" },
     }),
   ),
 );
@@ -86,11 +86,11 @@ self.addEventListener("notificationclick", (event) => {
     self.clients.matchAll({ type: "window" }).then((clients) => {
       for (const client of clients) {
         if ("focus" in client) {
-          client.navigate("/app");
+          client.navigate("/");
           return client.focus();
         }
       }
-      return self.clients.openWindow("/app");
+      return self.clients.openWindow("/");
     }),
   );
 });

@@ -60,6 +60,17 @@ describe("public pilot acceptance contract", () => {
     expect(failed).not.toContain('class="alert success"');
     expect(failed).not.toContain("private-provider-detail");
   });
+  it("shows a minimal login page with an unbolded one-paragraph tagline", () => {
+    locationFor();
+    const html = renderToStaticMarkup(createElement(AuthPage, {mode: "login", onSignedIn: () => {}}));
+    expect(html).toContain('class="porchday-tagline"');
+    expect(html).toContain("No ads, algorithms, or influencers. Non-profit.");
+    expect(html).not.toContain('href="/about"');
+    expect(html).not.toContain('href="/principles"');
+    expect(html).not.toContain('href="/privacy"');
+    expect(html).not.toContain('<strong>');
+    expect(html).toContain('type="password"');
+  });
   it("keeps stolen-account reporting independent of login and matches the server description limit", () => {
     locationFor();
     const html = renderToStaticMarkup(createElement(StolenAccount));
@@ -69,7 +80,7 @@ describe("public pilot acceptance contract", () => {
     expect(html).toContain("Resume an existing recovery case");
     expect(html).not.toContain('type="password"');
   });
-  it("links the public Apache-licensed source without claiming established nonprofit status", () => {
+  it("keeps the former landing content on the member About page", () => {
     locationFor();
     const html = renderToStaticMarkup(createElement(Landing));
     expect(html).toContain("a simple social network");
@@ -85,7 +96,7 @@ describe("public pilot acceptance contract", () => {
     expect(html).not.toContain("A private pilot.");
     expect(html).not.toContain("about this little website");
     expect(html).not.toContain("site-about");
-    expect(html).toContain('Have an invitation? <a href="/join">create account</a>');
+    expect(html).toContain('href="/">Go to Home</a>');
     const about = renderToStaticMarkup(
       createElement(Policy, { page: "about" }),
     );

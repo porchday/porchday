@@ -12,6 +12,7 @@ final class CryptoVaultAccessTests: XCTestCase {
         var requests: [(String, String)] = []
         var stored: [String: Data] = [:]
         var failStorage = false
+        var photoSnapshot: JSON = .null
         var secret: String { json["bob"]["recoverySecret"].string! }
         init(status: String, revoked: Bool = false) throws {
             let url = try XCTUnwrap(Bundle(for: CryptoVaultAccessTests.self).url(forResource: "openpgp-v1", withExtension: "json"))
@@ -30,6 +31,7 @@ final class CryptoVaultAccessTests: XCTestCase {
             CryptoVault(request: { [self] path, method, _ in
                 requests.append((path, method))
                 guard method == "GET" else { throw PorchError.message("Synthetic enrollment boundary") }
+                if path == "/albums/synthetic/audience" { return photoSnapshot }
                 if path == "/devices" { return .object(["items": .array(roster)]) }
                 if path == "/keys/backup" { return .object(["envelope": .object(["v": .number(1), "devices": .array(entries)])]) }
                 if path == "/devices/" + json["envelope"]["context"]["authorDeviceId"].string! {
@@ -43,6 +45,31 @@ final class CryptoVaultAccessTests: XCTestCase {
                 stored[account] = data
             })
         }
+    }
+
+    @MainActor func testAlbumSnapshotsNeverOmitUnkeyedRevokedOrDuplicateRecipients() async throws {
+        let fixture = try Fixture(status: "restricted"), vault = fixture.vault()
+        try await vault.load(member: fixture.member); try await vault.unlock(member: fixture.member, secret: fixture.secret)
+        let member = try Member(fixture.member.raw.replacing("status", with: .string("active")))
+        try await vault.load(member: member)
+        let context = NativePhotoContract.context(kind: "photo", id: "synthetic-photo-grant", parent: "synthetic-photo", audience: "album", album: "synthetic", expiry: .null, date: "2024-02-29")
+        let valid: JSON = .object(["epoch": .number(1), "pending_members": .array([]), "devices": .array(fixture.roster)])
+        fixture.photoSnapshot = valid
+        let envelope = try await vault.sealSnapshot(.object(["text": .string("synthetic")]), member: member, context: context, path: "/albums/synthetic/audience")
+        XCTAssertEqual(envelope["context"]["photoDate"].string, "2024-02-29")
+        XCTAssertEqual(envelope["recipients"].array.count, fixture.roster.count)
+        for invalid in [
+            valid.replacing("pending_members", with: .array([.string("unkeyed")])),
+            valid.replacing("pending_members", with: .null),
+            valid.replacing("devices", with: .array([])),
+            valid.replacing("devices", with: .array(fixture.roster + fixture.roster)),
+            valid.replacing("devices", with: .array([fixture.roster[0].replacing("revoked_at", with: .string(PorchDate.string()))])),
+            valid.replacing("epoch", with: .number(-1))
+        ] {
+            fixture.photoSnapshot = invalid
+            do { _ = try await vault.sealSnapshot(.object([:]), member: member, context: context, path: "/albums/synthetic/audience"); XCTFail("Unsafe audience must not encrypt") } catch { }
+        }
+        vault.clear()
     }
 
     @MainActor func testFreshBootstrapRosterRestoresSavedKeysWithoutDeviceReadAndLaterRefreshChecksRevocation() async throws {

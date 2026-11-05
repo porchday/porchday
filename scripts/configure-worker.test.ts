@@ -169,6 +169,7 @@ test('journal rollout survives regeneration and cannot enable a writer without i
   const resources=JSON.parse(await readFile('infra/resources.json','utf8')),manifest=join(directory,'infra/resources.json');
   for(const name of ['staging','production']){
    const env=resources.environments[name],output=join(directory,'apps/api/wrangler.'+name+'.jsonc');
+   env.journal_latency_recovery_v1=false;env.journal_latency_writer_v1=false;
    for(const writer of [true,false]){
     env.privacy_commit_recovery_v1=true;env.privacy_commit_writer_v1=writer;await writeFile(manifest,JSON.stringify(resources));
     const result=spawnSync('python3',[resolve('scripts/configure-worker.py'),name],{cwd:directory,encoding:'utf8'});expect(result.status,result.stderr).toBe(0);
