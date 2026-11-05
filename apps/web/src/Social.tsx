@@ -1,3 +1,4 @@
+import {ActivityAuthor,postAudienceLabel} from "./ActivityAuthor";
 import {PhotoViewer} from "./PhotoViewer";
 import {AttachmentDateEditor} from "./AttachmentDateEditor";
 import {signAttachmentDate} from "./attachment-photo-date";
@@ -880,33 +881,7 @@ export function PostCard({
   return (
     <article ref={cardRef} className="post-card panel">
       <header className="post-heading">
-        <a href={`/wall/${row.author_id}`} className="post-author">
-          <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} />
-          <div>
-            <strong>
-              {row.author_id === vault.member.id
-                ? `@${vault.member.handle}`
-                : row.author_handle
-                  ? `@${row.author_handle}`
-                  : "A connection"}
-            </strong>
-            <span>
-              <time dateTime={row.created_at} title={localDate(row.created_at)}>
-                {relativeDate(row.created_at)}
-              </time>{" "}
-              · <Icon name="lock" size={11} />
-              {row.audience === "only_me"
-                ? "Only me"
-                : row.group_id
-                  ? "Group"
-                  : row.audience === "community" ? "Community" : row.audience === "extended_family" ? "Extended family" : row.audience === "family"
-                    ? "Family"
-                    : row.audience === "friends"
-                      ? "Friends only"
-                      : "Friends & family"}
-            </span>
-          </div>
-        </a>
+        <ActivityAuthor memberId={row.author_id} handle={row.author_handle} date={row.created_at} sharing={postAudienceLabel(row.audience,row.group_id)}/>
         <div className="post-menu">
           <button
             ref={optionsButton}
