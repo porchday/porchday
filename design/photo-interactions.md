@@ -1,6 +1,6 @@
 # Photo comments and reactions
 
-Owner request, November 4, 2026. Tracking: [#151](https://github.com/porchday/porchday/issues/151). Implementation candidate; not a production release claim.
+Owner request, November 4, 2026. Tracking: [#151](https://github.com/porchday/porchday/issues/151). Web/API deployed and verified November 4; see [release evidence](../docs/evidence/photo-interactions-release-2026-11-04.md) for exact source, hosted checks and the separate native distribution/manual-verification status.
 
 Standalone photos have a single encrypted conversation, available from their feed card and every album containing the photo. A small photo icon and “Photo” label distinguish standalone photo entries from posts. The conversation expands below the caption/date; composing a comment does not create a post. Comments are plain text (up to 5,000 characters). The initial reaction selector offers the six familiar post reactions, with one current reaction per person; choosing it again removes it, choosing another replaces it. Nested replies, comment editing, custom reaction images, and notification delivery are outside this first implementation.
 
