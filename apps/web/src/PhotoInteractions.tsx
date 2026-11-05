@@ -1,3 +1,5 @@
+import {EmojiGlyph,EmojiPicker} from "./EmojiPicker";
+import {validateReactionPayload,reactionDisplay,type ReactionPayload} from "@porchday/crypto/reactions";
 import React,{useEffect,useRef,useState} from "react";
 import {get,request,del,items,message,type EncryptedEnvelope,type Device,type Content} from "./api";
 import {useVault} from "./vault";
@@ -12,35 +14,43 @@ export function validatePhotoInteraction(row:Row,photo:PhotoRow){
 }
 export function PhotoInteractions({photo}:{photo:PhotoRow}){
  const vault=useVault(),action=useAction();const [expired,setExpired]=useState(false),[expanded,setExpanded]=useState(false),[rows,setRows]=useState<Row[]>([]),[ownReaction,setOwnReaction]=useState<Row|null>(null),[next,setNext]=useState<string|null>(null),[text,setText]=useState("");
+ const [picker,setPicker]=useState(false);const addButton=useRef<HTMLButtonElement>(null);
  const generation=useRef(0),pending=useRef<{envelope:EncryptedEnvelope;text:string}|null>(null);
  async function load(after?:string){const token=++generation.current;try{const result=await get(`/photos/${photo.id}/interactions`+(after?"?after="+encodeURIComponent(after):""));
-  const opened=await Promise.all(items<Row>(result).map(async row=>{try{validatePhotoInteraction(row,photo);return {...row,content:await vault.open(row)};}catch(error){return {...row,error:message(error)};}}));
-  let own:Row|null=null;if(result.own_reaction){const row=result.own_reaction as Row;validatePhotoInteraction(row,photo);if(row.author_id!==vault.member.id||row.kind!=="reaction")throw Error("Reaction identity did not match.");own={...row};try{own.content=await vault.open(row);}catch(error){own.error=message(error);}}
+  const opened=await Promise.all(items<Row>(result).map(async row=>{try{validatePhotoInteraction(row,photo);const content=await vault.open(row);if(row.kind==="reaction")await validateReactionPayload(content);return {...row,content};}catch(error){return {...row,error:message(error)};}}));
+  let own:Row|null=null;if(result.own_reaction){const row=result.own_reaction as Row;validatePhotoInteraction(row,photo);if(row.author_id!==vault.member.id||row.kind!=="reaction")throw Error("Reaction identity did not match.");own={...row};try{own.content=await vault.open(row);await validateReactionPayload(own.content);}catch(error){own.error=message(error);}}
   if(token===generation.current){setOwnReaction(own);setRows(old=>after?[...old,...opened.filter(r=>!old.some(o=>o.id===r.id))]:opened);setNext(result.next||null);}
  }catch(error){if(token===generation.current){setRows([]);setOwnReaction(null);}throw error;}}
  useEffect(()=>{const deadline=photo.expires_at?Date.parse(photo.expires_at):null;const check=()=>setExpired(deadline!==null&&Date.now()>=deadline);check();if(deadline===null)return;const timer=setInterval(check,1000);return()=>clearInterval(timer);},[photo.id,photo.expires_at]);
  useEffect(()=>{if(expired){generation.current++;pending.current=null;setRows([]);setOwnReaction(null);setText("");}},[expired]);
  useEffect(()=>{pending.current=null;setText("");setRows([]);setOwnReaction(null);setNext(null);},[photo.id,vault.member.id]);
- useEffect(()=>{if(expanded)void action.run(()=>load());return()=>{generation.current++;};},[expanded,photo.id,vault.member.id]);
+ useEffect(()=>{if(!expired)void action.run(()=>load());return()=>{generation.current++;};},[expired,photo.id,vault.member.id]);
  const own=ownReaction||rows.find(r=>r.kind==="reaction"&&r.author_id===vault.member.id),write=vault.member.status==="active";
- async function send(kind:"comment"|"reaction",value:string){await action.runSave(async()=>{
-  if(kind==="reaction"&&own?.content?.emoji===value){await del(`/photos/${photo.id}/interactions/${own.id}`);await load();return;}
-  const key=kind+":"+value;
-  if(!pending.current||pending.current.text!==key)pending.current={text:key,envelope:await vault.seal(kind==="comment"?{text:value}:{emoji:value},{kind,audience:"photo",parentId:photo.id,expiresAt:photo.expires_at?new Date(photo.expires_at).toISOString():null},photo.id)};
+ async function send(kind:"comment"|"reaction",value:string|ReactionPayload){await action.runSave(async()=>{
+  if(kind==="reaction"&&own?.content?.emoji===(typeof value==="string"?value:value.emoji)){await del(`/photos/${photo.id}/interactions/${own.id}`);await load();return;}
+  const key=kind+":"+JSON.stringify(value);
+  if(!pending.current||pending.current.text!==key)pending.current={text:key,envelope:await vault.seal(kind==="comment"?{text:value}:await validateReactionPayload(value),{kind,audience:"photo",parentId:photo.id,expiresAt:photo.expires_at?new Date(photo.expires_at).toISOString():null},photo.id)};
   try{await request(`/photos/${photo.id}/interactions`,{method:"POST",body:JSON.stringify({envelope:pending.current.envelope})});}
   catch(error){if(error&&typeof error==="object"&&"code" in error&&["AUDIENCE_CHANGED","INVALID_CREATION_TIME"].includes(String(error.code)))pending.current=null;throw error;}
-  pending.current=null;if(kind==="comment")setText("");await load();
+  pending.current=null;if(kind==="comment")setText("");else setPicker(false);await load();
  });}
  if(expired)return <p>This photo has expired.</p>;
+ const reactions=[...rows.filter(r=>r.kind==="reaction"&&!r.error),...(ownReaction&&!ownReaction.error&&!rows.some(r=>r.id===ownReaction.id)?[ownReaction]:[])];
+ const choices=[...new Map(reactions.map(r=>[String(r.content!.emoji),r.content as ReactionPayload])).values()];
+ const comments=rows.filter(r=>r.kind==="comment");
  return <section className="photo-conversation" aria-label="Photo comments and reactions">
-  <Button variant="quiet" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}><Icon name="comment"/> Comments & reactions</Button>
-  {expanded&&<div className="form-stack"><Alert>{action.error}</Alert>
-   <p className="small-copy">Shared with people who can see this photo, including through its albums. New viewers may not see earlier comments.</p>
-   <div className="row">{photoEmoji.map(emoji=><Button key={emoji.id} variant="quiet" aria-label={`React ${emoji.icon}`} aria-pressed={own?.content?.emoji===emoji.id} disabled={!write||action.busy} onClick={()=>send("reaction",emoji.id)}>{emoji.icon}</Button>)}</div>
-   {[...rows.filter(r=>r.kind==="reaction"),...(ownReaction&&!rows.some(r=>r.id===ownReaction.id)?[ownReaction]:[])].map(row=><span key={row.id} className="small-copy">{row.error?"Unable to open reaction":`${photoEmoji.find(e=>e.id===row.content?.emoji)?.icon||"Reaction"} @${row.author_handle||"member"}`} </span>)}
-   {rows.filter(r=>r.kind==="comment").map(row=><div key={row.id}><strong>@{row.author_handle||"member"}</strong><p style={{whiteSpace:"pre-wrap"}}>{row.error||String(row.content?.text||"")}</p>{write&&(row.author_id===vault.member.id||photo.owner_id===vault.member.id)&&<Button variant="quiet" disabled={action.busy} onClick={()=>action.runSave(async()=>{await del(`/photos/${photo.id}/interactions/${row.id}`);await load();})}>Delete comment</Button>}</div>)}
+  <div className="post-actions"><div className="reaction-area"><div className="reaction-chips">
+   {choices.map(value=>{const count=reactions.filter(r=>r.content?.emoji===value.emoji).length;return <button type="button" className={"reaction-chip"+(own?.content?.emoji===value.emoji?" selected":"")} key={value.emoji} aria-label={`${reactionDisplay(value).name}, ${count} ${count===1?"person":"people"}`} aria-pressed={own?.content?.emoji===value.emoji} disabled={!write||action.busy} onClick={()=>send("reaction",value)}><EmojiGlyph value={value}/>{count}</button>;})}
+   <button type="button" ref={addButton} className="reaction-add" aria-label="Add a reaction" aria-expanded={picker} disabled={!write||action.busy} onClick={()=>setPicker(true)}><Icon name="smile" size={18}/><Icon name="plus" size={10}/></button>
+  </div></div><button type="button" className="text-button comment-toggle" aria-label="Comment" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}><Icon name="comment" size={18}/>{comments.length||""} <span>Comment</span></button></div>
+  {picker&&<EmojiPicker onSelect={value=>send("reaction",value)} onClose={()=>setPicker(false)} busy={action.busy} error={action.error} returnFocusRef={addButton}/>}
+  {!picker&&<Alert>{action.error}</Alert>}
+  {rows.some(r=>r.kind==="reaction"&&r.error)&&<p className="small-copy">Some reactions could not be opened.</p>}
+  {next&&!expanded&&<button type="button" className="text-button" disabled={action.busy} onClick={()=>action.run(()=>load(next))}>Load more reactions and comments</button>}
+  {expanded&&<section className="comments" aria-label="Comments">
+   {comments.map(row=><article key={row.id} className="comment"><strong>@{row.author_handle||"member"}</strong><p style={{whiteSpace:"pre-wrap"}}>{row.error||String(row.content?.text||"")}</p>{write&&(row.author_id===vault.member.id||photo.owner_id===vault.member.id)&&<Button variant="quiet" disabled={action.busy} onClick={()=>action.runSave(async()=>{await del(`/photos/${photo.id}/interactions/${row.id}`);await load();})}>Delete comment</Button>}</article>)}
    {next&&<Button busy={action.busy} onClick={()=>action.run(()=>load(next))}>Load more comments and reactions</Button>}
-   {write&&<form className="form-stack" onSubmit={e=>{e.preventDefault();if(text.trim())void send("comment",text.trim());}}><label>Comment<textarea maxLength={5000} value={text} disabled={action.busy} onChange={e=>setText(e.target.value)} placeholder="Write a comment…"/></label><Button variant="primary" type="submit" disabled={!text.trim()} busy={action.busy}>Comment</Button></form>}
-  </div>}
+   {write&&<form className="form-stack comment-composer" onSubmit={e=>{e.preventDefault();if(text.trim())void send("comment",text.trim());}}><label>Comment<textarea maxLength={5000} value={text} disabled={action.busy} onChange={e=>setText(e.target.value)} placeholder="Write a comment…"/></label><Button variant="primary" type="submit" disabled={!text.trim()} busy={action.busy}>Comment</Button></form>}
+  </section>}
  </section>;
 }

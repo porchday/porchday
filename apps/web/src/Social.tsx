@@ -1,3 +1,4 @@
+import {PhotoViewer} from "./PhotoViewer";
 import {AttachmentDateEditor} from "./AttachmentDateEditor";
 import {signAttachmentDate} from "./attachment-photo-date";
 import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
@@ -1093,6 +1094,8 @@ export function EncryptedPhoto({ media, thumbnail=false, photoProof }: { media: 
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const imageRef = useRef<HTMLImageElement>(null);
+  const [viewer,setViewer]=useState(false);
+  useEffect(()=>setViewer(false),[media.id]);
   const video = isVideo(media.mime);
   const [requested, setRequested] = useState<string | null>(null);
   const [poster, setPoster] = useState<{ id: string; url: string } | null>(null);
@@ -1194,7 +1197,14 @@ export function EncryptedPhoto({ media, thumbnail=false, photoProof }: { media: 
         decoding="async"
         width={media.width}
         height={media.height}
+        role={thumbnail?undefined:"button"}
+        tabIndex={thumbnail?undefined:0}
+        aria-label={thumbnail?undefined:`Open photo: ${media.alt||"Shared photo"}`}
+        onClick={thumbnail?undefined:()=>setViewer(true)}
+        onKeyDown={thumbnail?undefined:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setViewer(true);}}}
+        className={thumbnail?undefined:"viewable-photo"}
       />}
+      {!thumbnail&&!video&&viewer&&<PhotoViewer src={url} alt={media.alt||""} onClose={()=>setViewer(false)}/>}
       {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
       {!thumbnail && <Tags value={media.tags}/>}
     </figure>

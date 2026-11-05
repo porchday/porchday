@@ -88,7 +88,6 @@ struct NativeActivityCard: View {
     var body: some View {
         if entry.raw["kind"].string == "photo" { VStack(alignment: .leading) {
             HStack { MemberAvatarView(memberID: entry.raw["author_id"].string ?? "", name: entry.raw["author_handle"].string ?? "Member"); Text("@" + (entry.raw["author_handle"].string ?? "member")).font(.headline) }
-            Label("Photo", systemImage: "photo").font(.caption).foregroundStyle(.secondary)
             NativePhotoCard(photo: entry.raw["photo"], changed: changed)
         } }
         else if let post = entry.post {
@@ -125,7 +124,7 @@ struct NativePhotoCard: View {
             else if row["expires_at"].string.flatMap(PorchDate.parse).map({ $0 <= clock.date }) == true { Text("This photo has expired.") }
             else {
                 VStack(alignment: .leading) {
-                    if let image { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 420).accessibilityLabel(content["media"].array.first?["alt"].string ?? "Photo") }
+                    if let image { ViewablePhoto(image: image, caption: content["media"].array.first?["alt"].string ?? "", expiresAt: row["expires_at"].string.flatMap(PorchDate.parse)).frame(maxHeight: 420) }
                     else if let player { VideoPlayer(player: player).frame(minHeight: 220) }
                     else if let webM { LocalWebMPlayer(decoder: webM).frame(minHeight: 220) }
                     else if error.isEmpty { ProgressView("Opening photo…") }
