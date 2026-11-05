@@ -15,7 +15,7 @@ const actor='11111111-1111-4111-8111-111111111111';
 beforeEach(()=>{f.calls=[];f.fail='';f.connected=0;f.ended=0;f.destroyed=0;});
 test('one setup batch precedes UUID-only RLS query/commit batch, with isolated cleanup',async()=>{
  const result=await readMemberBootstrap(env,actor,true);
- expect(result).toEqual({id:'a',startup_devices:[],connection_limit:300});
+ expect(result).toEqual({id:'a',startup_devices:[],connection_limit:150});
  const queries=f.calls.filter(x=>x.text);expect(queries).toHaveLength(2);
  expect(queries[0]).toEqual({text:`BEGIN; SET LOCAL app.member_id = '${actor}'`,values:undefined});
  expect(queries[1].text).toContain(`where m.id='${actor}'::uuid; COMMIT`);expect(queries[1].values).toBeUndefined();

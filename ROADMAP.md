@@ -6,6 +6,8 @@ Completed owner follow-up: [#151](https://github.com/porchday/porchday/issues/15
 
 Completed feed-header follow-up: [#28](https://github.com/porchday/porchday/issues/28) now uses matching photo/post author headers inside the card. Deployed and verified November 4; see [release evidence](docs/evidence/activity-headers-release-2026-11-04.md). Broader avatar/device acceptance remains open.
 
+Current owner follow-up: [#161](https://github.com/porchday/porchday/issues/161) lowers the mutual connection cap to 150, including family, across normal acceptance, invitation verification, web and native clients. Existing connections are preserved. Implementation and production verification in progress.
+
 Last reviewed: **November 4, 2026**. The original November 1 inventory covered 40 open product-backlog issues; the release status below supersedes that snapshot. The owner’s November 1 priority list supersedes the earlier reliability-first planning order; active incidents and release safeguards still take precedence. Priority labels below reflect GitHub labels; #15 has no priority label yet. Status summaries are a dated snapshot, so read the linked issue's recent evidence before starting.
 
 Owner follow-up November 3: #123 adds an album picker for any available past upload, including older post attachments, preserving existing audiences. #124 simplifies mobile headers and Share, moves notifications/logout to More, and labels both photo subtabs Photos. **Delivered to staging and production (November 3)**; see [release verification](docs/evidence/mobile-album-picker-release-2026-11-03.md).

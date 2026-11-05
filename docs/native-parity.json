@@ -93,7 +93,8 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#audiences"
+        "docs/native-parity.md#audiences",
+        "docs/native-parity.md#connection-limit"
       ],
       "implementation": {
         "ios": "implemented",

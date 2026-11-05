@@ -520,7 +520,7 @@ function AppShell({
         </div>
         <section className="rail-card">
           <h2>Connections</h2>
-          <p>{count ?? "–"} of 300, including family</p>
+          <p>{count ?? "–"} of 150, including family</p>
           <a className="text-link" href="/connections">
             Manage connections <Icon name="arrow" size={15} />
           </a>

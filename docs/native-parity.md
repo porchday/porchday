@@ -70,3 +70,7 @@ Shared iOS/macOS source removes the feed Photo badge, exposes reaction chips and
 ## Unified activity headers
 
 Feed photos and posts share ActivityAuthor on web and ActivityAuthorView on iOS/macOS: avatar, author, and a compact date/lock metadata line inside the card. Photos show their editable photo date; posts retain publication time. Standalone photos say “Shared photo” because visible grants do not necessarily describe every audience or album with access. Attached-post photos retain post audience context. No access policy changes. Native physical-device acceptance remains a follow-up under #49/#114.
+
+## Connection limit
+
+Web, API and shared iOS/macOS connection counters and capacity controls use 150 accepted connections, including family. Migration 072 enforces the same limit for both endpoints during normal acceptance and invitation verification, retaining locking, history preferences and existing connections. Group and album limits are unchanged. Exact-source native CI is required; device and distribution follow-ups remain under #49/#114.

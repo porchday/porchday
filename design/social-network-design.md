@@ -18,7 +18,7 @@ The long-term ambition is a widely used social network in the United States oper
 | No ads | No advertising inventory, sponsored posts, paid reach, or behavioral advertising trackers. |
 | No algorithm | Show eligible posts chronologically, without engagement-based ranking, personalized recommendations, or paid amplification. |
 | No influencers | No followers, creator tiers, monetization programs, trending lists, or popularity-based distribution. Members participate as people in mutual relationships. |
-| Up to 300 friends including family | Each member may have at most 300 accepted connections total. Family counts toward the same limit. Enforce this in the database. |
+| Up to 150 friends including family | Each member may have at most 150 accepted connections total. Family counts toward the same limit. Enforce this in the database. |
 | Friends first | After sign-in, open a chronological feed of eligible posts from accepted friends and family. |
 | You control your data | Make it easy to export, integrate with, migrate, or delete your data. |
 | Private content stays private | End-to-end encrypt social content so the nonprofit cannot decrypt it; disclose necessary operational metadata and member-submitted reports separately. |
@@ -32,7 +32,7 @@ The long-term ambition is a widely used social network in the United States oper
 
 “No algorithm” is the marketing promise of a chronological social feed without engagement-based ranking or recommendation systems. Ordinary software logic still handles ordering, permissions, search, and safety; it does not optimize what members see to maximize time spent.
 
-Family includes chosen family. Each member decides who they label as family; the other person does not need to agree, and no legal relationship documents are collected. Family is a personal label for the member's own audience controls, not a separate allowance: every accepted connection counts once toward the same 300-person cap.
+Family includes chosen family. Each member decides who they label as family; the other person does not need to agree, and no legal relationship documents are collected. Family is a personal label for the member's own audience controls, not a separate allowance: every accepted connection counts once toward the same 150-person cap.
 
 ## Setup authorization and repository
 
@@ -66,7 +66,7 @@ Confirmed product decisions:
 
 - Support email/password sign-in only for the MVP. Google and GitHub OAuth are deferred; no social sign-in or email magic-link login is enabled at launch.
 
-- Each member can have up to 300 friends total, including family. There is no separate family allowance.
+- Each member can have up to 150 friends total, including family. There is no separate family allowance.
 
 - Lead the marketing website with “No ads. No influencers. No algorithm.” State prominently that the service is run by a nonprofit for the public good and funded by philanthropy.
 
@@ -109,7 +109,7 @@ Follow the hero with a preview of a personal wall and a calm chronological feed.
 
 1. Explain the three commitments: no advertising, no influencer economy, and no engagement-ranked feed. Explain “no algorithm” in plain language as posts from your people, newest first.
 2. Explain nonprofit stewardship and philanthropic funding, with links to governance, financial transparency, and ways to give. Donations support the service without buying visibility or influence over members' feeds.
-3. Describe up to 300 friends, including family, under one simple limit.
+3. Describe up to 150 friends, including family, under one simple limit.
 4. Show profile personalization through colors, backgrounds, and personal details.
 5. Feature **You control your data.** Supporting copy: **Export it. Connect your tools. Move to another platform. Or delete it.** Link to concrete instructions and supported formats. Feature **Open source** alongside this promise, with a link to the public code repository and license.
 6. Feature **Real people. No AI agents.** Explain the humans-only policy and reporting process; do not claim members have passed technical human verification.
@@ -141,15 +141,15 @@ An empty Home invites the member to connect with someone and write a first post.
 
 ### Connections
 
-A connection is mutual, while each person independently labels the other as friend or family. The sender chooses their own label when requesting a connection; the recipient chooses their own label when accepting, defaulting to Friend. Requests can be accepted, declined, canceled, or blocked. Pending requests do not count toward the 300-connection limit. Both endpoints must have capacity when any connection is accepted, including family. Each accepted pair consumes one slot for each person.
+A connection is mutual, while each person independently labels the other as friend or family. The sender chooses their own label when requesting a connection; the recipient chooses their own label when accepting, defaulting to Friend. Requests can be accepted, declined, canceled, or blocked. Pending requests do not count toward the 150-connection limit. Both endpoints must have capacity when any connection is accepted, including family. Each accepted pair consumes one slot for each person.
 
 Changing a friend/family label takes effect for the person making the choice without the other person's agreement, and does not change either person's connection count. Each author's labels determine their Friends only and Family only audiences; someone cannot gain access to another person's family posts by labeling that person as family. Relabeling is allowed at the cap because it creates no new connection. Either person can remove any connection without approval; do not publicly announce removal. See the [personal connection-label contract](../docs/connection-labels.md) for migration, revocation and history behavior.
 
-Show a member their own connection usage, such as “184 of 300 friends, including family.” Avoid public connection counts, ranked friends, or a “Top 8.” Make discovery limited to exact handles and invitation links during the pilot. Keep connection lists private by default.
+Show a member their own connection usage, such as “84 of 150 friends, including family.” Avoid public connection counts, ranked friends, or a “Top 8.” Make discovery limited to exact handles and invitation links during the pilot. Keep connection lists private by default.
 
 ### Invitations to join Porchday
 
-An active member with verified email can invite a person who does not yet have an account from Connections → Invite someone. Accept one email address and send a transactional Porchday email identifying the inviter by their public handle. Include a private signup link with the code in its fragment and the same code for manual entry. Each invitation is bound to that email, single-use and expires seven days after issuance. It does not create an account or automatically establish a connection. Registration still requires the invitation, adult attestation, rules consent and email verification; the 300-connection limit applies when a later connection is mutually accepted.
+An active member with verified email can invite a person who does not yet have an account from Connections → Invite someone. Accept one email address and send a transactional Porchday email identifying the inviter by their public handle. Include a private signup link with the code in its fragment and the same code for manual entry. Each invitation is bound to that email, single-use and expires seven days after issuance. It does not create an account or automatically establish a connection. Registration still requires the invitation, adult attestation, rules consent and email verification; the 150-connection limit applies when a later connection is mutually accepted.
 
 Return the same accepted response for eligible requests, existing accounts and duplicate recipients; do not expose account existence or claim delivery from queue acceptance. Limit each sender to ten requests in a rolling 24 hours and each recipient to one issuance per seven days, atomically under concurrency. Keep email bodies encrypted in the restricted transactional outbox, store only hashed invitation codes, and retain keyed recipient hashes for abuse limits for seven days. These operational contact records are not end-to-end-encrypted social content. Do not accept custom invitation text, upload address books or expose this capability through integration scopes.
 
@@ -232,7 +232,7 @@ Connection history sharing updates the original post through an author-signed en
 
 “Share as a new post” remains a separate explicit copying action: the original author creates a new independent post for a deliberately selected current audience. The client decrypts and re-encrypts only that author's text and photos into fresh object IDs; other members' comments and reactions remain on the original thread and are not copied. Preserve encrypted provenance and the original absolute expiration, allowing a shorter deadline but never restarting the timer. Ordinary edits do not broaden the original audience. The server atomically verifies ownership, current access and expiry when accepting the new copy.
 
-Membership changes while an author is offline must queue any required rekeying without leaking new content under old keys. Present key-setup or rekeying delays instead of silently omitting intended recipients or posting plaintext. Test the 300-connection case and large groups on mobile hardware. Server permissions and cryptographic audiences must agree; a successful RLS check alone cannot grant a decryption key.
+Membership changes while an author is offline must queue any required rekeying without leaking new content under old keys. Present key-setup or rekeying delays instead of silently omitting intended recipients or posting plaintext. Test the 150-connection case and large groups on mobile hardware. Server permissions and cryptographic audiences must agree; a successful RLS check alone cannot grant a decryption key.
 
 ### Recovery and expiration
 
@@ -262,7 +262,7 @@ Offer a downloadable archive containing versioned JSON, a readable HTML index, a
 
 Generate readable exports on the member's device after decryption, with visible status, cancellation, and retry. Server-side asynchronous jobs may package ciphertext and authorized metadata only; they cannot generate plaintext HTML, JSON content, or media. Offer a locally produced encrypted archive by default and an explicit plaintext export option with a privacy warning. Recheck ownership and expiry during generation and before authenticated download. Any server-held archive contains ciphertext only. Use short-lived private archives, delete them after a disclosed download window, and invalidate or rebuild an archive if included source content expires or is deleted before download. Account deletion invalidates pending exports and stored archives. Warn that downloaded copies are outside the service's deletion control.
 
-Publish the schema, versioning policy, sample archive, and importer interfaces. Provide an importer into another Porchday installation that previews changes, validates checksums and size limits, prevents duplicate imports, and preserves authorship provenance, timestamps, and expiry. Never resurrect expired content, import login secrets, create friendships without consent, or broaden an audience automatically. Imported posts remain private until the member reviews audience mappings. Decrypt and re-encrypt imports on the client for the destination account and audience; do not send plaintext archives to the nonprofit. Restore connections only through fresh mutual acceptance, and respect the 300-connection limit.
+Publish the schema, versioning policy, sample archive, and importer interfaces. Provide an importer into another Porchday installation that previews changes, validates checksums and size limits, prevents duplicate imports, and preserves authorship provenance, timestamps, and expiry. Never resurrect expired content, import login secrets, create friendships without consent, or broaden an audience automatically. Imported posts remain private until the member reviews audience mappings. Decrypt and re-encrypt imports on the client for the destination account and audience; do not send plaintext archives to the nonprofit. Restore connections only through fresh mutual acceptance, and respect the 150-connection limit.
 
 Make migration to other platforms practical through standard files and documented adapters. Identify exactly which destinations and fields are supported; no platform can guarantee another service accepts every field. Show unsupported items and offer a complete readable archive instead of silently dropping them. Migration does not imply federation: automatically connecting independent servers is a separate protocol and trust decision.
 
@@ -424,11 +424,11 @@ Review attacker-created posts, comments, invitations, profile changes, and group
 
 Separate post and comment reactions preserve real foreign keys instead of relying on an unchecked polymorphic target. Post-owned photos are not reused by other posts in the first release, so post deletion has unambiguous storage ownership. Profile images have a separate lifecycle.
 
-Index accepted relationships in both endpoint directions, posts by author and creation cursor, group posts by group and cursor, comments by post and creation time, group membership by member, and non-null expiry timestamps. Index notifications by recipient/read state and the outbox by next retry. Measure representative feed queries with members at the 300-connection cap and heavily used groups.
+Index accepted relationships in both endpoint directions, posts by author and creation cursor, group posts by group and cursor, comments by post and creation time, group membership by member, and non-null expiry timestamps. Index notifications by recipient/read state and the outbox by next retry. Measure representative feed queries with members at the 150-connection cap and heavily used groups.
 
 ### Transactions and row-level security
 
-Accept connections through a database function that locks both member rows in deterministic UUID order, confirms request and block state, counts each person's accepted connections across both friend and family types, and inserts the accepted pair atomically only if both counts are below 300. All connection acceptance, removal, and type changes must follow the same locking discipline. Revoke direct mutations that bypass it. Two simultaneous acceptances at 299 connections must not produce 301; labeling a request as family cannot bypass the cap.
+Accept connections through a database function that locks both member rows in deterministic UUID order, confirms request and block state, counts each person's accepted connections across both friend and family types, and inserts the accepted pair atomically only if both counts are below 150. All connection acceptance, removal, and type changes must follow the same locking discipline. Revoke direct mutations that bypass it. Two simultaneous acceptances at 149 connections must not produce 151; labeling a request as family cannot bypass the cap.
 
 Authorize every social operation in the Worker and enable PostgreSQL row-level security on member-scoped social tables with default denial. Use a server-derived member UUID in a transaction-local setting, for example parameterized `set_config('app.member_id', memberUuid, true)`, inside the same explicit transaction as the protected queries. Missing or invalid context denies access. Never derive identity from a client-supplied actor ID or leave identity in connection-wide session state: Hyperdrive pools connections by transaction. Policies consult account status, relationships, blocks, group memberships, audiences, and expiry. RLS is defense in depth for trusted server queries, not protection against a compromised Worker credential that can set arbitrary context. Test the actual runtime roles, transaction reuse, rollback, and missing-context paths. R2 has no PostgreSQL RLS; every media route must perform equivalent fresh database authorization. [Hyperdrive connection lifecycle](https://developers.cloudflare.com/hyperdrive/concepts/connection-lifecycle/)
 
@@ -500,7 +500,7 @@ Account recovery must work for email/password accounts, including when an attack
 
 ### Abuse prevention and resource limits
 
-The 300-connection cap does not bound uploads or request throughput. Apply configurable limits to invitations, posting, comments, searches, group creation, uploads, and total stored media. Use per-account and per-IP signals together, with accessible challenges when needed. Avoid permanent IP-only bans that punish shared households. Let legitimate large families appeal invitation throttles.
+The 150-connection cap does not bound uploads or request throughput. Apply configurable limits to invitations, posting, comments, searches, group creation, uploads, and total stored media. Use per-account and per-IP signals together, with accessible challenges when needed. Avoid permanent IP-only bans that punish shared households. Let legitimate large families appeal invitation throttles.
 
 Set transparent initial storage allowances after measuring costs; notify members before restricting uploads and never silently delete permanent photos to enforce a quota. Track database compute, backup storage, object storage, media egress, Worker requests, queue operations, image processing, email, authentication compute, staff Access seats, Hyperdrive usage, and Cloudflare telemetry usage. Calculate monthly cost as fixed platform costs plus usage-based services plus moderation and support staffing. Add spending alerts and graceful resource controls before a public launch.
 
@@ -557,7 +557,7 @@ Required acceptance scenarios:
 
 - A member cannot post to another member's wall through the interface or direct API calls, but can comment on an eligible post.
 - A person who does not confirm they are at least 18 cannot enroll in the pilot.
-- A member with 300 accepted connections cannot accept a 301st, whether friend or family. Concurrent acceptances from 299 result in at most 300; acceptance fails if either endpoint is already at the cap.
+- A member with 150 accepted connections cannot accept a 301st, whether friend or family. Concurrent acceptances from 149 result in at most 150; acceptance fails if either endpoint is already at the cap.
 - Friend/family labels are independent in each direction. Relabeling changes only the choosing member's audience classification, preserves connection counts, and works at the cap. Removing a connection frees one slot for each person; pending requests consume none.
 - Home opens after ordinary login and lists eligible posts chronologically across pagination without popularity ranking or duplicate posts.
 - A removed friend, blocked member, or former group member immediately loses the relevant access, including direct image requests and old notification links.
@@ -583,7 +583,7 @@ Required acceptance scenarios:
 - Queue redelivery, failed image processing, bounced email, and database outages produce recoverable states without duplicate posts or notifications.
 - Mobile, keyboard, and screen-reader users can complete signup, connection acceptance, posting, reporting, and account deletion.
 
-Load testing should cover the confirmed initial scale of up to 10,000 registered users, including members at the 300-connection cap with varied friend/family mixes. Use 1,000 daily active members as a provisional workload assumption, not a confirmed forecast; test peak concurrency and media traffic separately. The budget is flexible, but establish operating estimates and spending alerts before launch. Set a provisional p95 feed API target below 500 ms at agreed pilot concurrency, excluding media transfer. Record actual service costs and latency before setting launch commitments.
+Load testing should cover the confirmed initial scale of up to 10,000 registered users, including members at the 150-connection cap with varied friend/family mixes. Use 1,000 daily active members as a provisional workload assumption, not a confirmed forecast; test peak concurrency and media traffic separately. The budget is flexible, but establish operating estimates and spending alerts before launch. Set a provisional p95 feed API target below 500 ms at agreed pilot concurrency, excluding media transfer. Record actual service costs and latency before setting launch commitments.
 
 ## Implementation choices and remaining launch decisions
 

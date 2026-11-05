@@ -518,7 +518,7 @@ const policyContent: Record<
       ],
       [
         "No influencers",
-        "Everyone connects mutually, with up to 300 friends including family. No followers, creator tiers, trending lists, public popularity scores, or engagement manipulation. Having an audience somewhere else does not exclude a person from joining.",
+        "Everyone connects mutually, with up to 150 friends including family. No followers, creator tiers, trending lists, public popularity scores, or engagement manipulation. Having an audience somewhere else does not exclude a person from joining.",
       ],
       [
         "No algorithm",

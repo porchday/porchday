@@ -84,7 +84,7 @@ export class ApiError extends Error {
           AUDIENCE_CHANGED:
             "Your sharing audience changed. Review the audience and submit again to encrypt for the current recipients.",
           CONNECTION_LIMIT:
-            "One of you has reached the 300-person limit, including family. A connection cannot be accepted until both people have room.",
+            "One of you has reached the 150-person limit, including family. A connection cannot be accepted until both people have room.",
           MEDIA_QUOTA:
             "Your encrypted photo storage is full. Export or remove older photos before adding more.",
           REACTION_LIMIT:
