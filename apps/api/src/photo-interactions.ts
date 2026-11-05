@@ -19,7 +19,7 @@ export async function photoInteractionSnapshot(db:Db,photo:string){
 }
 export function registerPhotoInteractionRoutes(app:Hono<{Bindings:Env;Variables:Variables}>,{tx,body,fail,id,writeAllowed,checkEnvelope}:Dependencies){
  async function requirePhoto(db:Db,p:string){const [photo]=await db`select * from app.photos where id=${p}`;if(!photo)fail("NOT_FOUND",404);return photo;}
- app.get('/photos/:id/interactions/audience',async c=>c.json(await tx(c,async db=>{const p=id(c.req.param('id'));await requirePhoto(db,p);return photoInteractionSnapshot(db,p);}))); 
+ app.get('/photos/:id/interactions/audience',async c=>c.json(await tx(c,async db=>{const p=id(c.req.param('id'));await requirePhoto(db,p);return photoInteractionSnapshot(db,p);})));
  app.get('/photos/:id/interactions',async c=>c.json(await tx(c,async db=>{
   const p=id(c.req.param('id'));await requirePhoto(db,p);
   const after=c.req.query('after');let cursor:{at:string;id:string}|undefined;

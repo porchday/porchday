@@ -83,7 +83,10 @@ struct NativePhotoInteractions: View {
             }
             _ = try await service.request(path, method: "POST", body: .object(["envelope": pending!]))
             pending = nil; if kind == "comment" { text = "" }; try await read(service)
-        } catch { self.error = error.localizedDescription }
+        } catch {
+            if case PorchError.api(let code, _, _) = error, ["AUDIENCE_CHANGED", "INVALID_CREATION_TIME"].contains(code) { pending = nil }
+            self.error = error.localizedDescription
+        }
     }
     private func remove(_ id: String) async {
         guard !busy else { return }; busy = true; error = ""; defer { busy = false }

@@ -188,6 +188,14 @@ suite("Encrypted independent photo API",()=>{
     expect(exported[0].page.photo_interactions.every((r:any)=>r.author_id===reader.id&&r.parent_id===id)).toBe(true);
     expect((await call(owner.id,path+"/"+comment.context.id,"DELETE")).status).toBe(200);
     const [invalidated]=await db`select state from app.data_transfer_jobs where id=${job}`;expect(invalidated.state).toBe('invalidated');
+    const decisions=await db`select sequence,id,occurred_at,decision from app.safety_journal where decision->>'kind'='photo_interactions' and decision->>'id'=${comment.context.id}`;
+    expect(decisions).toHaveLength(1);
+    const key={id:reader.deviceId,member_id:reader.id,public_key:reader.keys.publicKey,fingerprint:reader.keys.fingerprint};
+    await db`insert into app.photo_interactions(id,photo_id,author_id,kind,envelope,author_key) values(${comment.context.id},${id},${reader.id},'comment',${db.json(comment)},${db.json(key)})`;
+    await db`update app.safety_journal_state set restore_quarantined=true where id`;
+    await db`select app.replay_safety_batch(${db.json(decisions as any)})`;
+    await db`update app.safety_journal_state set restore_quarantined=false where id`;
+    expect(await db`select id from app.photo_interactions where id=${comment.context.id}`).toHaveLength(0);
     expect((await call(reader.id,path,"POST",{envelope:comment})).status).toBe(409);
     await db`insert into app.blocks(actor,target) values(${owner.id},${reader.id})`;
     expect((await call(reader.id,path)).status).toBe(404);
@@ -210,7 +218,7 @@ suite("Encrypted independent photo API",()=>{
     expect(reply.recipients.map(r=>r.memberId).sort()).toEqual([owner.id,friend.id,albumReader.id].sort());
     expect((await call(albumReader.id,path,"POST",{envelope:reply})).status).toBe(201);
     expect((await call(friend.id,`/devices/${albumReader.deviceId}`)).status).toBe(200);
-    expect((await call(friend.id,path)).data.items).toHaveLength(2);
+    expect((await call(friend.id,path)).data.items.find((r:any)=>r.id===reply.context.id).author_handle).toMatch(/^e_/);
     await call(friend.id,path+"/"+reply.context.id,"DELETE");
     expect((await call(owner.id,path)).data.items).toHaveLength(2);
     const stale=await seal(albumReader,{text:"Stale audience"},1,{id:randomUUID(),kind:"comment",audience:"photo",parentId:id});

@@ -23,7 +23,9 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
   if(kind==="reaction"&&own?.content?.emoji===value){await del(`/photos/${photo.id}/interactions/${own.id}`);await load();return;}
   const key=kind+":"+value;
   if(!pending.current||pending.current.text!==key)pending.current={text:key,envelope:await vault.seal(kind==="comment"?{text:value}:{emoji:value},{kind,audience:"photo",parentId:photo.id,expiresAt:photo.expires_at?new Date(photo.expires_at).toISOString():null},photo.id)};
-  await request(`/photos/${photo.id}/interactions`,{method:"POST",body:JSON.stringify({envelope:pending.current.envelope})});pending.current=null;if(kind==="comment")setText("");await load();
+  try{await request(`/photos/${photo.id}/interactions`,{method:"POST",body:JSON.stringify({envelope:pending.current.envelope})});}
+  catch(error){if(error&&typeof error==="object"&&"code" in error&&["AUDIENCE_CHANGED","INVALID_CREATION_TIME"].includes(String(error.code)))pending.current=null;throw error;}
+  pending.current=null;if(kind==="comment")setText("");await load();
  });}
  return <section className="photo-conversation" aria-label="Photo comments and reactions">
   <Button variant="quiet" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}><Icon name="comment"/> Comments & reactions</Button>
