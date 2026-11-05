@@ -14,13 +14,18 @@ struct NativePhotoInteractions: View {
     @State private var expanded = false
     @State private var rows: [SocialItem] = []
     @State private var next: String?
+    @State private var ownReaction: SocialItem?
     @State private var text = ""
     @State private var error = ""
     @State private var busy = false
     @State private var pending: JSON?
     @State private var pendingValue = ""
     private var path: String { "/photos/" + (photo["id"].string ?? "") + "/interactions" }
-    private var own: SocialItem? { rows.first { $0.raw["kind"].string == "reaction" && $0.raw["author_id"].string == model.member?.id } }
+    private var own: SocialItem? { ownReaction ?? rows.first { $0.raw["kind"].string == "reaction" && $0.raw["author_id"].string == model.member?.id } }
+    private var reactions: [SocialItem] {
+        let listed = rows.filter { $0.raw["kind"].string == "reaction" }
+        if let ownReaction, !listed.contains(where: { $0.id == ownReaction.id }) { return listed + [ownReaction] }; return listed
+    }
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 12) {
@@ -34,7 +39,7 @@ struct NativePhotoInteractions: View {
                             .disabled(busy || !model.canWriteSocial)
                     }
                 }
-                ForEach(rows.filter { $0.raw["kind"].string == "reaction" }) { row in
+                ForEach(reactions) { row in
                     Text(row.error ?? ((reactionCatalog.first { $0.id == row.payload?["emoji"].string }?.emoji ?? "Reaction") + " @" + (row.raw["author_handle"].string ?? "member"))).font(.caption)
                 }
                 ForEach(rows.filter { $0.raw["kind"].string == "comment" }) { row in
@@ -63,11 +68,18 @@ struct NativePhotoInteractions: View {
             try PhotoInteractionContract.validate(row, photo: photo)
             opened.append(await model.vault.item(row)); try service.check()
         }
+        var currentReaction: SocialItem?
+        if result["own_reaction"] != .null {
+            let row = result["own_reaction"]; try PhotoInteractionContract.validate(row, photo: photo)
+            guard row["author_id"].string == service.member.id, row["kind"].string == "reaction" else { throw PorchError.message("Reaction identity did not match.") }
+            currentReaction = await model.vault.item(row); try service.check()
+        }
+        ownReaction = currentReaction
         rows = after == nil ? opened : rows + opened.filter { item in !rows.contains { $0.id == item.id } }; next = result["next"].string
     }
     private func load(after: String? = nil) async {
         guard !busy else { return }; busy = true; error = ""; defer { busy = false }
-        do { try await read(NativePhotos(model), after: after) } catch { rows = []; self.error = error.localizedDescription }
+        do { try await read(NativePhotos(model), after: after) } catch { rows = []; ownReaction = nil; self.error = error.localizedDescription }
     }
     private func send(kind: String, value: String) async {
         guard !busy else { return }; busy = true; error = ""; defer { busy = false }

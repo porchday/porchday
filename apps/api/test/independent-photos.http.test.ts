@@ -230,6 +230,20 @@ suite("Encrypted independent photo API",()=>{
     expect((await call(owner.id,path)).status).toBe(404);
   });
 
+  it("pages encrypted conversations with precise creation-time cursors",async()=>{
+    const owner=await person(),{id}=await publish(owner),path=`/photos/${id}/interactions`;
+    for(let n=0;n<26;n++){
+      const envelope=await seal(owner,{text:String(n)},1,{id:randomUUID(),kind:"comment",audience:"photo",parentId:id});
+      expect((await call(owner.id,path,"POST",{envelope})).status).toBe(201);
+    }
+    const reaction=await seal(owner,{emoji:"love"},1,{id:randomUUID(),kind:"reaction",audience:"photo",parentId:id});
+    expect((await call(owner.id,path,"POST",{envelope:reaction})).status).toBe(201);
+    const first=(await call(owner.id,path)).data;expect(first.items).toHaveLength(25);expect(first.own_reaction.id).toBe(reaction.context.id);expect(first.next).toBeTruthy();
+    const last=(await call(owner.id,path+"?after="+encodeURIComponent(first.next))).data;
+    expect(last.items).toHaveLength(2);expect(last.next).toBeNull();
+    expect(new Set([...first.items,...last.items].map((r:any)=>r.id)).size).toBe(27);
+  });
+
   it("publishes independent encrypted photos without posts, enforcing recipient access to metadata and bytes",async()=>{
     const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
     const {id,grant}=await publish(owner,"connections");

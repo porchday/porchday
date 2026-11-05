@@ -24,8 +24,9 @@ export function registerPhotoInteractionRoutes(app:Hono<{Bindings:Env;Variables:
   const p=id(c.req.param('id'));await requirePhoto(db,p);
   const after=c.req.query('after');let cursor:{at:string;id:string}|undefined;
   if(after){try{cursor=z.object({at:z.string().datetime({offset:true}),id:z.string().uuid()}).strict().parse(JSON.parse(after));}catch{fail('INVALID_CURSOR');}}
-  const rows=await db`select i.*,to_char(i.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_at,h.handle as author_handle from app.photo_interactions i left join lateral app.member_handles(array[i.author_id]) h on true where photo_id=${p} ${cursor?db`and (i.created_at,i.id)>(${cursor.at}::timestamptz,${cursor.id}::uuid)`:db``} order by i.created_at,i.id limit 101`;
-  const selected=rows.slice(0,100);return {items:selected,next:rows.length>100?JSON.stringify({at:selected[99].cursor_at,id:selected[99].id}):null};
+  const rows=await db`select i.*,to_char(i.created_at at time zone 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"') as cursor_at,h.handle as author_handle from app.photo_interactions i left join lateral app.member_handles(array[i.author_id]) h on true where photo_id=${p} ${cursor?db`and (i.created_at,i.id)>(${cursor.at}::text::timestamptz,${cursor.id}::uuid)`:db``} order by i.created_at,i.id limit 26`;
+  const [own]=await db`select i.*,h.handle as author_handle from app.photo_interactions i left join lateral app.member_handles(array[i.author_id]) h on true where photo_id=${p} and kind='reaction' and author_id=${c.get('memberId')}`;
+  const selected=rows.slice(0,25);return {items:selected,own_reaction:own||null,next:rows.length>25?JSON.stringify({at:selected[24].cursor_at,id:selected[24].id}):null};
  })));
  app.post('/photos/:id/interactions',async c=>{
   const b=await body(c,z.object({envelope:envelopeSchema}).strict(),600000),p=id(c.req.param('id')),e=b.envelope.context;
