@@ -88,6 +88,7 @@ struct NativeActivityCard: View {
     var body: some View {
         if entry.raw["kind"].string == "photo" { VStack(alignment: .leading) {
             HStack { MemberAvatarView(memberID: entry.raw["author_id"].string ?? "", name: entry.raw["author_handle"].string ?? "Member"); Text("@" + (entry.raw["author_handle"].string ?? "member")).font(.headline) }
+            Label("Photo", systemImage: "photo").font(.caption).foregroundStyle(.secondary)
             NativePhotoCard(photo: entry.raw["photo"], changed: changed)
         } }
         else if let post = entry.post {
@@ -131,6 +132,7 @@ struct NativePhotoCard: View {
                     ForEach(NativePhotoContract.captions(content["media"].array.first ?? .null), id: \.self) { Text($0) }
                     PeopleTagsView(tags: PersonTag.parse(content["media"].array.first?["tags"] ?? .null))
                     Text(row["photo_date"].string ?? "").font(.caption)
+                    if content != .null { NativePhotoInteractions(photo: row) }
                     if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Retry photo") { Task { await load() } } }
                     if model.canWriteSocial {
                         if row["owner_id"].string == model.member?.id {

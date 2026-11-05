@@ -1,3 +1,4 @@
+import {photoInteractionSnapshot,registerPhotoInteractionRoutes} from "./photo-interactions";
 import {attachmentDateProof,setAttachmentDate} from "./attachment-photo-dates";
 import { registerPhotoRoutes, photoGrantSnapshot, photoRefreshSnapshot } from "./social-photos";
 import { registerAlbumRoutes, albumSnapshot } from "./social-albums";
@@ -73,11 +74,14 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
     allowPast?: boolean;
     historyPostId?: string;
     historySourceRevision?: number;
+    photoInteractionId?: string;
     photoGrantId?: string;
     photoRefreshId?: string;
     albumChange?: { memberId: string; role: "read" | "add" | "admin" | null };
 } = {}) {
     const e = envelope.context;
+    if (e.audience === "photo" && (!options.photoInteractionId || !["comment","reaction"].includes(kind) || e.parentId !== options.photoInteractionId || e.groupId !== null || e.revision !== 1)) fail("ENVELOPE_CONTEXT");
+    if (options.photoInteractionId && e.audience !== "photo") fail("ENVELOPE_CONTEXT");
     if (e.audience === "album" && !["album", "media", "photo"].includes(kind)) fail("ENVELOPE_CONTEXT");
     if ((kind === 'report') !== (e.audience === 'moderators'))
         fail('ENVELOPE_CONTEXT');
@@ -104,7 +108,7 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
       const [grant]=await db`select * from app.photo_grants where id=${options.photoRefreshId}`;
       if(!grant||e.audience!==grant.audience||e.groupId!==grant.album_id||e.parentId!==grant.photo_id||!["photo","media"].includes(kind)||(kind==="photo"&&e.id!==grant.id))fail("ENVELOPE_CONTEXT");
     }
-    const s = options.photoRefreshId ? await photoRefreshSnapshot(db,options.photoRefreshId) : options.photoGrantId ? await photoGrantSnapshot(db, options.photoGrantId) : e.audience === "album"
+    const s = options.photoInteractionId ? await photoInteractionSnapshot(db,options.photoInteractionId) : options.photoRefreshId ? await photoRefreshSnapshot(db,options.photoRefreshId) : options.photoGrantId ? await photoGrantSnapshot(db, options.photoGrantId) : e.audience === "album"
       ? await albumSnapshot(db, e.groupId!, options.albumChange)
       : await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
     if(s.devices.length>4000)fail("AUDIENCE_TOO_LARGE",413);
@@ -167,6 +171,7 @@ export function createSocialRoutes() {
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
     registerPhotoRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
+    registerPhotoInteractionRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerAlbumRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerCalendarRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerEmojiRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});

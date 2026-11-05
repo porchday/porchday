@@ -60,6 +60,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: node scripts/check-photo-calendar.mjs
       - run: node scripts/check-existing-album-photos.mjs
+      - run: node scripts/check-photo-interactions.mjs
       - run: node scripts/check-unified-feed.mjs
       - run: npm run build
       - run: python3 scripts/check-secrets.py

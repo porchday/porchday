@@ -15,6 +15,8 @@ Owner follow-up November 4: [unified Feed design](design/unified-feed.md) replac
 
 Owner bug follow-up November 4: #123 corrects confusing existing-photo picker completion: explicit progress, automatic close after full success, and retained selections after partial failure. **Delivered to staging and production (November 4)**; see [completion-fix verification](docs/evidence/album-picker-completion-2026-11-04.md).
 
+Owner follow-up November 4: **[#151](https://github.com/porchday/porchday/issues/151), P2: standalone photo comments and reactions**, with a photo icon/label in the feed. Current implementation work covers web and shared iOS/macOS, encrypted audience checks, deletion/retry safety and archives. See [design](design/photo-interactions.md). Validation and production deployment are pending; this is the owner’s active requested feature.
+
 ## How to choose the next task
 
 1. An active outage, credible security report or risk of losing access to encrypted content takes precedence. Handle sensitive reports through [SECURITY.md](SECURITY.md).

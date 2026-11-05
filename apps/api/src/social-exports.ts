@@ -3,9 +3,9 @@ import { z } from 'zod';
 import type { Env, Variables } from './types.js';
 import type { RouteDependencies, SocialContext } from './social-media.js';
 
-const sections=['profile','emoji_library','posts','comments','post_reactions','comment_reactions','media','connections','groups','photos','albums','attachment_dates'] as const;
+const sections=['profile','emoji_library','posts','comments','post_reactions','comment_reactions','media','connections','groups','photos','albums','attachment_dates','photo_interactions'] as const;
 const sectionSchema=z.enum(sections);
-const validationSchema=z.object({items:z.array(z.object({kind:z.enum(['profile','emoji_library','post','comment','post_reaction','comment_reaction','media','photo','album','attachment_date']),id:z.string().min(1).max(256),revision:z.number().int().positive(),expires_at:z.string().datetime({offset:true}).nullable()} ).strict()).max(1000)}).strict();
+const validationSchema=z.object({items:z.array(z.object({kind:z.enum(['profile','emoji_library','post','comment','post_reaction','comment_reaction','media','photo','album','attachment_date','photo_interaction']),id:z.string().min(1).max(256),revision:z.number().int().positive(),expires_at:z.string().datetime({offset:true}).nullable()} ).strict()).max(1000)}).strict();
 export function registerExportRoutes(app:Hono<{Bindings:Env;Variables:Variables}>,{tx,recent,fail,id}:RouteDependencies&{recent(c:SocialContext):void}) {
   app.post('/exports',async c=>{recent(c);return c.json(await tx(c,async db=>{
     const [job]=await db`insert into app.data_transfer_jobs(id,member_id,kind,state) values(${crypto.randomUUID()},${c.get('memberId')},'export','complete') returning id,expires_at`;return {...job,sections};

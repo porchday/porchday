@@ -1,3 +1,4 @@
+import {PhotoInteractions} from "./PhotoInteractions";
 import {updatePhoto} from "./photo-update";
 import {type PhotoProof} from "@porchday/crypto/photos";
 import React,{useEffect,useRef,useState} from "react";
@@ -36,6 +37,7 @@ export function PhotoCard({photo,onChanged,album}:{photo:PhotoRow;onChanged:()=>
   return <article className="panel independent-photo"><Alert>{error||action.error}</Alert><Alert success>{action.notice}</Alert>
     {content?<EncryptedPhoto media={content.media![0]} photoProof={content.photoProof as PhotoProof}/>:!error&&<Loading/>}
     <p><time dateTime={photo.photo_date}>{photo.photo_date}</time></p>
+    {content&&<PhotoInteractions photo={photo}/>}
     {own&&write&&content&&<><Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo</Button><Button variant="quiet" onClick={chooseAlbum}>Add to album</Button></>}
     {album&&write&&(own||album.role==="admin")&&<Button variant="quiet" onClick={()=>setConfirm("remove")}>Remove from album</Button>}
     {own&&write&&<Button variant="quiet" onClick={()=>setConfirm("delete")}>Delete photo</Button>}

@@ -154,8 +154,8 @@ func TestPhotoAndAlbumContextParity(t *testing.T) {
 	}
 	recipients, _ := json.Marshal([]recipient{{MemberID: original.Recipients[0].MemberID, DeviceID: original.Recipients[0].DeviceID, PublicKey: f.Alice.PublicKey}, {MemberID: original.Recipients[1].MemberID, DeviceID: original.Recipients[1].DeviceID, PublicKey: f.Bob.PublicKey}})
 	var envelopes []json.RawMessage
-	for _, kind := range []string{"album", "photo", "post"} {
-		for _, audience := range []string{"community", "extended_family", "album"} {
+	for _, kind := range []string{"album", "photo", "post", "comment", "reaction"} {
+		for _, audience := range []string{"community", "extended_family", "album", "photo"} {
 			base["kind"], base["audience"] = kind, audience
 			delete(base, "photoDate")
 			if kind == "photo" {

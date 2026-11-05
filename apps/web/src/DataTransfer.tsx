@@ -61,6 +61,7 @@ const SECTIONS = [
   "photos",
   "albums",
   "attachment_dates",
+  "photo_interactions",
 ];
 const canonicalDate = (value: unknown) =>
   value ? new Date(String(value)).toISOString() : null;
@@ -72,7 +73,7 @@ type Reference = {
     | "comment"
     | "post_reaction"
     | "comment_reaction"
-    | "media" | "photo" | "album" | "attachment_date";
+    | "media" | "photo" | "album" | "attachment_date" | "photo_interaction";
   id: string;
   revision: number;
   expires_at: string | null;
@@ -354,7 +355,7 @@ export function DataTransfer() {
                   envelope: row.envelope,
                   id: row.id,
                 });
-                if (section.endsWith("reactions")) {
+                if (section.endsWith("reactions") || (section === "photo_interactions" && row.kind === "reaction")) {
                   payload = await validateReactionPayload(payload);
                   if ("custom" in payload)
                     await validateCustomEmojiPixels(
@@ -381,11 +382,11 @@ export function DataTransfer() {
                 };
                 await room(JSON.stringify(entry).length * 3 + 1024);
                 archive[
-                  section.endsWith("reactions") ? "reactions" : section
+                  section === "photo_interactions" ? (row.kind === "reaction" ? "reactions" : "comments") : section.endsWith("reactions") ? "reactions" : section
                 ].push(entry);
                 refs.push(
                   reference(
-                    section === "posts"
+                    section === "photo_interactions" ? "photo_interaction" : section === "posts"
                       ? "post"
                       : section === "comments"
                         ? "comment"

@@ -54,3 +54,7 @@ Existing native inbox, badge and opt-in mention push implementations remain. Har
 4. Complete staging acceptance, including old-client compatibility, privacy boundaries and uncertain-write handling.
 5. Activate production only through updated maintained tooling with a verified matrix and CI evidence. Keep existing continuity, schema, rollback and artifact gates.
 6. Record separately what is merged, hosted, signed, distributed and verified on devices. Close issues only when their acceptance is met.
+
+## Photo conversations (issue #151)
+
+The candidate adds the shared `NativePhotoInteractions` view to photos in Feed and Albums, a photo feed label, six reaction choices and encrypted comments. Web and native use the same `photo` audience protocol and own-contribution archive section. Photo-sharing/feed/albums/portability rows remain pending until hosted cross-client and device checks verify the candidate. Exact-source build results are recorded on #151; no matrix row is promoted by compilation alone.

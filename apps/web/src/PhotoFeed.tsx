@@ -6,7 +6,7 @@ import { useNearViewport } from "./near-viewport";
 import React,{useEffect,useRef,useState} from "react";
 import {get,items,message,accessLost,type Content,type MediaPayload,type SocialObject} from "./api";
 import {useVault} from "./vault";
-import {Alert,Button,Empty,Field,Loading,Modal,useAction} from "./ui";
+import {Alert,Button,Empty,Field,Loading,Modal,Icon,useAction} from "./ui";
 import {EncryptedPhoto,PostCard} from "./Social";
 import {PhotoCard,openPhoto,type PhotoRow} from "./PhotoCollection";
 import {matchesAuthor,type AuthorFilter,type FeedContent} from "./feed-filters";
@@ -45,7 +45,7 @@ export function usePhotos(month?:string,enabled=true,owned=false,content:FeedCon
 function EntryCard({entry,refresh}:{entry:Entry;refresh:()=>void}){
  const vault=useVault(),action=useAction(),[editing,setEditing]=useState(false),[date,setDate]=useState(entry.day),[adding,setAdding]=useState(false);
  if(entry.kind==="post"&&entry.post)return <PostCard row={{...entry.post,author_handle:entry.author_handle}} onChange={refresh}/>;
- return <div><p className="muted">{entry.author_handle?"@"+entry.author_handle:"Member"}</p>{entry.photo?<PhotoCard photo={entry.photo} onChanged={refresh}/>:<article className="panel independent-photo"><Alert>{entry.error||action.error}</Alert>{entry.media&&<EncryptedPhoto media={entry.media}/>}<p>{!entry.error&&<><time dateTime={entry.day}>{entry.day}</time> · </>}<a href={"/post/"+entry.post!.id}>View post</a></p>{entry.author_id===vault.member.id&&vault.member.status==="active"&&<><Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo date</Button>{entry.media&&!entry.error&&<Button variant="quiet" onClick={()=>setAdding(true)}>Add to album</Button>}</>}</article>}
+ return <div>{entry.photo&&<span className="small-copy"><Icon name="photo"/> Photo</span>}<p className="muted">{entry.author_handle?"@"+entry.author_handle:"Member"}</p>{entry.photo?<PhotoCard photo={entry.photo} onChanged={refresh}/>:<article className="panel independent-photo"><Alert>{entry.error||action.error}</Alert>{entry.media&&<EncryptedPhoto media={entry.media}/>}<p>{!entry.error&&<><time dateTime={entry.day}>{entry.day}</time> · </>}<a href={"/post/"+entry.post!.id}>View post</a></p>{entry.author_id===vault.member.id&&vault.member.status==="active"&&<><Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo date</Button>{entry.media&&!entry.error&&<Button variant="quiet" onClick={()=>setAdding(true)}>Add to album</Button>}</>}</article>}
  {adding&&<AttachmentAlbumPicker mediaId={entry.id} postId={entry.post!.id} day={entry.day} onClose={()=>setAdding(false)} onSaved={refresh}/>}
  {editing&&<Modal title="Edit photo date" onClose={()=>setEditing(false)}><form className="form-stack" onSubmit={e=>{e.preventDefault();void action.runSave(async()=>{await updateAttachmentDate(vault,entry.id,entry.post!.id,date);setEditing(false);refresh();});}}><Field label="Photo date" type="date" min="0001-01-01" max="9999-12-31" required value={date} disabled={action.busy} onChange={e=>setDate(e.target.value)}/><p>This changes where the photo appears in the photo calendar. The post date and audience stay the same.</p><Alert>{action.error}</Alert><Button type="submit" busy={action.busy}>Save date</Button></form></Modal>}
  </div>;

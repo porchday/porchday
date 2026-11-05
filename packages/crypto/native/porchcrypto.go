@@ -240,7 +240,7 @@ func validateContext(raw json.RawMessage) (*context, error) {
 	if c.ParentID != nil && !idPattern.MatchString(*c.ParentID) || c.GroupID != nil && !idPattern.MatchString(*c.GroupID) {
 		return nil, errors.New("invalid context parent")
 	}
-	if !strings.Contains("|post|comment|reaction|profile|group|media|report|export|album|photo|", "|"+c.Kind+"|") || !strings.Contains("|connections|friends|family|extended_family|community|only_me|group|moderators|album|", "|"+c.Audience+"|") {
+	if !strings.Contains("|post|comment|reaction|profile|group|media|report|export|album|photo|", "|"+c.Kind+"|") || !strings.Contains("|connections|friends|family|extended_family|community|only_me|group|moderators|album|photo|", "|"+c.Audience+"|") {
 		return nil, errors.New("invalid context kind or audience")
 	}
 	var fields map[string]json.RawMessage

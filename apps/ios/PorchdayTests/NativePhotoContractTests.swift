@@ -2,6 +2,17 @@ import XCTest
 @testable import Porchday
 
 final class NativePhotoContractTests: XCTestCase {
+    func testPhotoInteractionsBindConversationAuthorAndExpiry() throws {
+        let photo: JSON = .object(["id": .string("photo"), "expires_at": .null])
+        let context: JSON = .object(["id": .string("comment"), "authorId": .string("writer"), "parentId": .string("photo"), "kind": .string("comment"), "audience": .string("photo"), "groupId": .null, "expiresAt": .null, "revision": .number(1)])
+        let row: JSON = .object(["id": .string("comment"), "author_id": .string("writer"), "photo_id": .string("photo"), "kind": .string("comment"), "envelope": .object(["context": context])])
+        XCTAssertNoThrow(try PhotoInteractionContract.validate(row, photo: photo))
+        for field in ["id", "authorId", "parentId", "kind", "audience", "groupId", "revision"] {
+            let changed = row.replacing("envelope", with: .object(["context": context.replacing(field, with: .string("wrong"))]))
+            XCTAssertThrowsError(try PhotoInteractionContract.validate(changed, photo: photo))
+        }
+        XCTAssertThrowsError(try PhotoInteractionContract.validate(row, photo: photo.replacing("expires_at", with: .string("2026-12-01T00:00:00.000Z"))))
+    }
     func testDatesCannotOverflowOrApplyToPostDates() throws {
         XCTAssertEqual(try NativePhotoContract.date("2024-02-29"), "2024-02-29")
         for value in ["2023-02-29", "2024-02-30", "0000-01-01", "2024-2-01", "tomorrow"] { XCTAssertThrowsError(try NativePhotoContract.date(value)) }
