@@ -57,7 +57,7 @@ struct NativePhotoInteractions: View {
         .task(id: expanded) { if expanded { await load() } }
     }
     private func read(_ service: NativePhotos, after: String? = nil) async throws {
-        let result = try await service.request(path + (after.map { "?" + service.query(["after": $0]) } ?? ""))
+        let result = try await service.request(path + (after.map { "?" + NativePhotos.query(["after": $0]) } ?? ""))
         var opened: [SocialItem] = []
         for row in result["items"].array {
             try PhotoInteractionContract.validate(row, photo: photo)
