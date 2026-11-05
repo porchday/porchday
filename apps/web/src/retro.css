@@ -800,7 +800,7 @@ summary:focus-visible {
 .feed-heading > .text-button {
   font-size: 12px;
 }
-.post-card {
+.post-card, .feed-photo-card {
   padding: 13px 13px 0;
 }
 .post-heading {
@@ -1305,7 +1305,7 @@ body
   .composer-privacy label select {
     min-height: 40px;
   }
-  .post-card {
+  .post-card, .feed-photo-card {
     padding: 12px 12px 0;
   }
   .post-text {
@@ -2337,3 +2337,5 @@ body
 .auth-layout.auth-simple:has(.porchday-tagline) { max-width: 1000px; }
 .auth-card:has(.porchday-tagline) form { max-width: 480px; margin-inline: auto; }
 .auth-card:has(.porchday-tagline) > h1 { text-align: center; }
+
+.feed-photo-card { padding-bottom: 16px; }
