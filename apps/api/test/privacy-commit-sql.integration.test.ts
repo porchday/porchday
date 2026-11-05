@@ -14,7 +14,7 @@ import {provePrivacyCommits} from '../src/privacy-commit-proof';
 
 const url=process.env.PRIVACY_COMMIT_TEST_DATABASE_URL;
 const suite=url?describe:describe.skip;
-let owner:Sql,auth:Sql,generation:string,restoreBefore:string;
+let owner:Sql,auth:Sql,generation:string,restoreBefore:string,restoreAfterMarker:string;
 const digest='a'.repeat(64);
 async function fixture(){const id=randomUUID();await owner`insert into public.commit_fixture(id,value) values(${id},0)`;return id;}
 async function value(id:string){return Number((await owner`select value from public.commit_fixture where id=${id}`)[0].value);}
@@ -34,6 +34,7 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
   for(const name of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort()){
    if(name==='069_privacy_transaction_commits.sql')restoreBefore=(await owner`select pg_get_functiondef('app.replay_safety_batch(jsonb)'::regprocedure) as definition`)[0].definition;
    await owner.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+   if(name==='069_privacy_transaction_commits.sql')restoreAfterMarker=(await owner`select pg_get_functiondef('app.replay_safety_batch(jsonb)'::regprocedure) as definition`)[0].definition;
   }
   await owner.unsafe("DO $$ BEGIN IF NOT EXISTS(SELECT FROM pg_roles WHERE rolname='porchday_commit_auth_test') THEN CREATE ROLE porchday_commit_auth_test LOGIN PASSWORD 'local-commit-proof-only' IN ROLE porchday_auth; END IF; END $$");
   await owner`create table public.commit_fixture(id uuid primary key,value integer not null)`;
@@ -153,7 +154,10 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
  it('preserves every installed photo/child restore handler and an already prepared marker reader',async()=>{
   const definition=async()=>String((await owner`select pg_get_functiondef('app.replay_safety_batch(jsonb)'::regprocedure) as definition`)[0].definition);
   const after=await definition(),actions=(text:string)=>text.slice(text.indexOf("  CASE d->>'action'"),text.indexOf('  END CASE;')+'  END CASE;'.length);
-  expect(actions(after)).toBe(actions(restoreBefore));expect(after).toContain('privacy_operation_committed');
+  // Compare migration 069 at its boundary; later migrations may deliberately
+  // add handlers. Reapplying 069 below must preserve all those later handlers.
+  expect(actions(restoreAfterMarker)).toBe(actions(restoreBefore));expect(after).toContain('privacy_operation_committed');
+  expect(after).toContain('photo_interactions');
   expect(after).toContain('child_profiles');expect(after).toContain('photos');
   await owner.unsafe(await readFile(new URL('../migrations/069_privacy_transaction_commits.sql',import.meta.url),'utf8'));
   expect(await definition()).toBe(after);
