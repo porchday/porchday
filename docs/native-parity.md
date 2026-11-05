@@ -62,3 +62,7 @@ The candidate adds the shared `NativePhotoInteractions` view to photos in Feed a
 ## Owner policy update — November 4, 2026
 
 Hosted-native and physical-device checks are no longer prerequisites for pushing to production. The version 2 matrix records the already implemented shared SwiftUI capabilities separately from outstanding manual acceptance. Exact-source iOS simulator/macOS automated tests, implementation parity, normal staging web/API acceptance, schema checks, continuity and rollback requirements remain required. Signing, TestFlight and App Store distribution remain separate work. This policy does not assert that any pending test has passed.
+
+## Photo viewer and action-row parity — November 4 follow-up
+
+Shared iOS/macOS source removes the feed Photo badge, exposes reaction chips and a separate Comment action, and reuses ReactionPicker for legacy, Unicode and custom image reactions. ViewablePhoto is used by post attachments and standalone photo cards; its focused sheet supports pinch/magnification, pan, zoom buttons, reset, close and expiry dismissal. Web uses the same interaction model in a full-window dialog. Exact-source CI is required before release; device gesture acceptance and distribution remain pending under #49/#114.

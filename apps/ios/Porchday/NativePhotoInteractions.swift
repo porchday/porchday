@@ -12,6 +12,7 @@ struct NativePhotoInteractions: View {
     let photo: JSON
     @EnvironmentObject var model: AppModel
     @State private var expanded = false
+    @State private var picker = false
     @State private var rows: [SocialItem] = []
     @State private var next: String?
     @State private var ownReaction: SocialItem?
@@ -26,22 +27,26 @@ struct NativePhotoInteractions: View {
         let listed = rows.filter { $0.raw["kind"].string == "reaction" }
         if let ownReaction, !listed.contains(where: { $0.id == ownReaction.id }) { return listed + [ownReaction] }; return listed
     }
+    private var choices: [ReactionValue] {
+        var seen = Set<String>()
+        return reactions.compactMap { row in guard let payload = row.payload, let value = try? ReactionValue.parse(payload), seen.insert(value.id).inserted else { return nil }; return value }
+    }
     var body: some View {
-        DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Shared with people who can see this photo, including through its albums. New viewers may not see earlier comments.").font(.caption).foregroundStyle(.secondary)
-                if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Retry loading") { Task { await load() } }.disabled(busy) }
-                HStack {
-                    ForEach(PhotoInteractionContract.emoji, id: \.self) { emoji in
-                        Button(reactionCatalog.first { $0.id == emoji }?.emoji ?? emoji) { Task { await send(kind: "reaction", value: emoji) } }
-                            .accessibilityLabel("React " + (reactionCatalog.first { $0.id == emoji }?.label ?? emoji))
-                            .accessibilityValue(own?.payload?["emoji"].string == emoji ? "Selected" : "")
-                            .disabled(busy || !model.canWriteSocial)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                ScrollView(.horizontal, showsIndicators: false) { HStack {
+                    ForEach(choices) { value in
+                        let count = reactions.filter { $0.payload?["emoji"].string == value.id }.count
+                        Button { Task { await send(kind: "reaction", value: value.id, reaction: value) } } label: {
+                            HStack { ReactionGlyph(reaction: value); Text(String(count)) }.padding(8).background(own?.payload?["emoji"].string == value.id ? Color.orange.opacity(0.18) : Color.secondary.opacity(0.07), in: Capsule())
+                        }.buttonStyle(.plain).accessibilityLabel("\(value.label), \(count) people").accessibilityValue(own?.payload?["emoji"].string == value.id ? "Selected" : "").disabled(busy || !model.canWriteSocial)
                     }
-                }
-                ForEach(reactions) { row in
-                    Text(row.error ?? ((reactionCatalog.first { $0.id == row.payload?["emoji"].string }?.emoji ?? "Reaction") + " @" + (row.raw["author_handle"].string ?? "member"))).font(.caption)
-                }
+                    Button { picker = true } label: { Image(systemName: "face.smiling").frame(minWidth: 44, minHeight: 44) }.accessibilityLabel("Add reaction").disabled(busy || !model.canWriteSocial)
+                } }
+                Button { expanded.toggle() } label: { Label("Comment", systemImage: "bubble.left") }
+            }
+            if !error.isEmpty { Text(error).foregroundStyle(.red); Button("Retry loading") { Task { await load() } }.disabled(busy) }
+            if expanded {
                 ForEach(rows.filter { $0.raw["kind"].string == "comment" }) { row in
                     VStack(alignment: .leading) {
                         Text("@" + (row.raw["author_handle"].string ?? "member")).font(.headline)
@@ -51,15 +56,16 @@ struct NativePhotoInteractions: View {
                         }
                     }
                 }
-                if let next { Button("Load more comments and reactions") { Task { await load(after: next) } }.disabled(busy) }
                 if model.canWriteSocial {
                     TextField("Write a comment…", text: $text, axis: .vertical).lineLimit(2...6).disabled(busy)
                     Button("Comment") { Task { await send(kind: "comment", value: text.trimmingCharacters(in: .whitespacesAndNewlines)) } }.disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || text.count > 5000)
                 }
-                if busy { ProgressView() }
-            }.padding(.vertical, 8)
-        } label: { Label("Comments & reactions", systemImage: "bubble.left") }
-        .task(id: expanded) { if expanded { await load() } }
+            }
+            if let next { Button("Load more comments and reactions") { Task { await load(after: next) } }.disabled(busy) }
+            if busy { ProgressView() }
+        }
+        .task(id: photo["id"]) { await load() }
+        .sheet(isPresented: $picker) { NavigationStack { ReactionPicker { value in await send(kind: "reaction", value: value.id, reaction: value); return error.isEmpty } } }
     }
     private func read(_ service: NativePhotos, after: String? = nil) async throws {
         let result = try await service.request(path + (after.map { "?" + NativePhotos.query(["after": $0]) } ?? ""))
@@ -81,7 +87,7 @@ struct NativePhotoInteractions: View {
         guard !busy else { return }; busy = true; error = ""; defer { busy = false }
         do { try await read(NativePhotos(model), after: after) } catch { rows = []; ownReaction = nil; self.error = error.localizedDescription }
     }
-    private func send(kind: String, value: String) async {
+    private func send(kind: String, value: String, reaction: ReactionValue? = nil) async {
         guard !busy else { return }; busy = true; error = ""; defer { busy = false }
         do {
             let service = try NativePhotos(model)
@@ -91,7 +97,7 @@ struct NativePhotoInteractions: View {
             let key = kind + ":" + value
             if pending == nil || pendingValue != key {
                 let context = NativePhotoContract.context(kind: kind, id: UUID().uuidString.lowercased(), parent: photo["id"].string, audience: "photo", album: nil, expiry: NativePhotoContract.expiry(photo["expires_at"]))
-                pending = try await service.seal(.object([kind == "comment" ? "text" : "emoji": .string(value)]), context: context, snapshot: path + "/audience"); pendingValue = key
+                pending = try await service.seal(reaction?.payload ?? .object([kind == "comment" ? "text" : "emoji": .string(value)]), context: context, snapshot: path + "/audience"); pendingValue = key
             }
             _ = try await service.request(path, method: "POST", body: .object(["envelope": pending!]))
             pending = nil; if kind == "comment" { text = "" }; try await read(service)

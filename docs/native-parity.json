@@ -23,7 +23,8 @@
       "macos": "pending",
       "evidence": [
         "docs/native-parity.md#feed",
-        "design/photo-interactions.md"
+        "design/photo-interactions.md",
+        "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up"
       ],
       "implementation": {
         "ios": "implemented",
@@ -40,7 +41,8 @@
       "macos": "pending",
       "evidence": [
         "docs/native-parity.md#albums",
-        "design/photo-interactions.md"
+        "design/photo-interactions.md",
+        "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up"
       ],
       "implementation": {
         "ios": "implemented",
@@ -57,7 +59,8 @@
       "macos": "pending",
       "evidence": [
         "docs/native-parity.md#photo-sharing",
-        "design/photo-interactions.md"
+        "design/photo-interactions.md",
+        "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up"
       ],
       "implementation": {
         "ios": "implemented",
