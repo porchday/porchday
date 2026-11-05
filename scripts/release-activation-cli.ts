@@ -1,3 +1,4 @@
+import {verifyProductionNativeParity} from "./release-native-parity.ts";
 import {deploymentWriteRecorder} from './deployment-write-receipts.ts';
 import {withBrowserAcceptance,type BrowserAcceptance} from './release-browser-gate.ts';
 import {createContinuityGate} from './release-continuity-gate.ts';
@@ -102,6 +103,9 @@ async function executeScopedActivationManifest(input:ActivationManifest,env:Node
  const config=JSON.parse(readPinned(e.probe).toString()) as ProbeConfig;validateProbeConfig(config);
  const target=recoveryTarget(plan.worker);if(config.environment!==target.environment)throw Error('ACTIVATION_PROBE_SCOPE_CHANGED');
  verifyActivationReview(plan,upload,e.proofPath,review);
+ // Gate fresh production releases without stranding durable recovery or rollback.
+ const parityState=await journal.read();
+ if(target.environment==='production'&&(!parityState||parityState.phase==='prepared'))await verifyProductionNativeParity(e.workspace,plan.candidateSource,signal);
  const accountId=env.CLOUDFLARE_ACCOUNT_ID??'',apiToken=env.CLOUDFLARE_API_TOKEN??'',connection=env[target.environment==='staging'?'PORCHDAY_STAGING_DATABASE_MIGRATION_URL':'PORCHDAY_PRODUCTION_DATABASE_MIGRATION_URL']??'';
  const database={connection,branchId:upload.evidence.databaseBranchId};validateReleaseDatabaseTarget(connection,database.branchId);
  const reader=new CloudflareReleaseReader({accountId,apiToken,queues:upload.queues});
