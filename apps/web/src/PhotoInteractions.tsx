@@ -11,13 +11,15 @@ export function validatePhotoInteraction(row:Row,photo:PhotoRow){
  (c.expiresAt?Date.parse(c.expiresAt):null)!==(photo.expires_at?Date.parse(photo.expires_at):null))throw Error("Photo conversation identity did not match its signed content.");
 }
 export function PhotoInteractions({photo}:{photo:PhotoRow}){
- const vault=useVault(),action=useAction();const [expanded,setExpanded]=useState(false),[rows,setRows]=useState<Row[]>([]),[ownReaction,setOwnReaction]=useState<Row|null>(null),[next,setNext]=useState<string|null>(null),[text,setText]=useState("");
+ const vault=useVault(),action=useAction();const [expired,setExpired]=useState(false),[expanded,setExpanded]=useState(false),[rows,setRows]=useState<Row[]>([]),[ownReaction,setOwnReaction]=useState<Row|null>(null),[next,setNext]=useState<string|null>(null),[text,setText]=useState("");
  const generation=useRef(0),pending=useRef<{envelope:EncryptedEnvelope;text:string}|null>(null);
  async function load(after?:string){const token=++generation.current;try{const result=await get(`/photos/${photo.id}/interactions`+(after?"?after="+encodeURIComponent(after):""));
   const opened=await Promise.all(items<Row>(result).map(async row=>{try{validatePhotoInteraction(row,photo);return {...row,content:await vault.open(row)};}catch(error){return {...row,error:message(error)};}}));
   let own:Row|null=null;if(result.own_reaction){const row=result.own_reaction as Row;validatePhotoInteraction(row,photo);if(row.author_id!==vault.member.id||row.kind!=="reaction")throw Error("Reaction identity did not match.");own={...row};try{own.content=await vault.open(row);}catch(error){own.error=message(error);}}
   if(token===generation.current){setOwnReaction(own);setRows(old=>after?[...old,...opened.filter(r=>!old.some(o=>o.id===r.id))]:opened);setNext(result.next||null);}
  }catch(error){if(token===generation.current){setRows([]);setOwnReaction(null);}throw error;}}
+ useEffect(()=>{const deadline=photo.expires_at?Date.parse(photo.expires_at):null;const check=()=>setExpired(deadline!==null&&Date.now()>=deadline);check();if(deadline===null)return;const timer=setInterval(check,1000);return()=>clearInterval(timer);},[photo.id,photo.expires_at]);
+ useEffect(()=>{if(expired){generation.current++;pending.current=null;setRows([]);setOwnReaction(null);setText("");}},[expired]);
  useEffect(()=>{pending.current=null;setText("");setRows([]);setOwnReaction(null);setNext(null);},[photo.id,vault.member.id]);
  useEffect(()=>{if(expanded)void action.run(()=>load());return()=>{generation.current++;};},[expanded,photo.id,vault.member.id]);
  const own=ownReaction||rows.find(r=>r.kind==="reaction"&&r.author_id===vault.member.id),write=vault.member.status==="active";
@@ -29,6 +31,7 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
   catch(error){if(error&&typeof error==="object"&&"code" in error&&["AUDIENCE_CHANGED","INVALID_CREATION_TIME"].includes(String(error.code)))pending.current=null;throw error;}
   pending.current=null;if(kind==="comment")setText("");await load();
  });}
+ if(expired)return <p>This photo has expired.</p>;
  return <section className="photo-conversation" aria-label="Photo comments and reactions">
   <Button variant="quiet" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}><Icon name="comment"/> Comments & reactions</Button>
   {expanded&&<div className="form-stack"><Alert>{action.error}</Alert>
