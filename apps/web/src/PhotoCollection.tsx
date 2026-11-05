@@ -11,7 +11,7 @@ import type {AlbumRow} from "./Albums";
 import {openPhoto,type PhotoRow} from "./photo-record";
 export {openPhoto,type PhotoRow,type PhotoGrant} from "./photo-record";
 import {addPhotoToAlbum} from "./photo-album";
-export function PhotoCard({photo,onChanged,album}:{photo:PhotoRow;onChanged:()=>void;album?:AlbumRow}){
+export function PhotoCard({photo,onChanged,album,header}:{photo:PhotoRow;onChanged:()=>void;album?:AlbumRow;header?:React.ReactNode}){
   const vault=useVault(),action=useAction();
   const [content,setContent]=useState<Content|null>(null),[error,setError]=useState("");
   const [adding,setAdding]=useState(false),[destination,setDestination]=useState("");
@@ -34,9 +34,9 @@ export function PhotoCard({photo,onChanged,album}:{photo:PhotoRow;onChanged:()=>
     await updatePhoto(vault,photo,date,m=>({...m,alt:caption,tags}));setEditing(false);onChanged();
   },"Photo updated.");}
   const own=photo.owner_id===vault.member.id,write=vault.member.status==="active";
-  return <article className="panel independent-photo"><Alert>{error||action.error}</Alert><Alert success>{action.notice}</Alert>
+  return <article className={"panel independent-photo"+(header?" feed-photo-card":"")}>{header&&<header className="post-heading">{header}</header>}<Alert>{error||action.error}</Alert><Alert success>{action.notice}</Alert>
     {content?<EncryptedPhoto media={content.media![0]} photoProof={content.photoProof as PhotoProof}/>:!error&&<Loading/>}
-    <p><time dateTime={photo.photo_date}>{photo.photo_date}</time></p>
+    {!header&&<p><time dateTime={photo.photo_date}>{photo.photo_date}</time></p>}
     {content&&<PhotoInteractions photo={photo}/>}
     {own&&write&&content&&<><Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo</Button><Button variant="quiet" onClick={chooseAlbum}>Add to album</Button></>}
     {album&&write&&(own||album.role==="admin")&&<Button variant="quiet" onClick={()=>setConfirm("remove")}>Remove from album</Button>}

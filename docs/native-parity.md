@@ -66,3 +66,7 @@ Hosted-native and physical-device checks are no longer prerequisites for pushing
 ## Photo viewer and action-row parity — November 4 follow-up
 
 Shared iOS/macOS source removes the feed Photo badge, exposes reaction chips and a separate Comment action, and reuses ReactionPicker for legacy, Unicode and custom image reactions. ViewablePhoto is used by post attachments and standalone photo cards; its focused sheet supports pinch/magnification, pan, zoom buttons, reset, close and expiry dismissal. Web uses the same interaction model in a full-window dialog. Exact-source CI is required before release; device gesture acceptance and distribution remain pending under #49/#114.
+
+## Unified activity headers
+
+Feed photos and posts share ActivityAuthor on web and ActivityAuthorView on iOS/macOS: avatar, author, and a compact date/lock metadata line inside the card. Photos show their editable photo date; posts retain publication time. Standalone photos say “Shared photo” because visible grants do not necessarily describe every audience or album with access. Attached-post photos retain post audience context. No access policy changes. Native physical-device acceptance remains a follow-up under #49/#114.
