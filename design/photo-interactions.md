@@ -25,3 +25,5 @@ Validation includes database/API recipient and deletion checks; web/native OpenP
 Photos in posts and standalone photo cards open a quiet, full-window web dialog with close, zoom in/out, reset, wheel/pinch zoom, and drag-to-pan. Escape closes it and restores focus. The viewer reuses the already-validated decrypted blob; no public URL, new upload, or persistent photo copy is created. Expiry/unmount removes it with the source image. Calendar thumbnails retain their existing day selection behavior. Shared iOS/macOS ViewablePhoto opens a focused sheet with magnification, drag, zoom/reset controls, and expiry dismissal. Videos retain playback controls.
 
 Automated UI checks cover responsive viewports, reaction retry/replacement/removal, viewer zoom/pan/reset, keyboard close and focus restoration. Native device gesture acceptance is a follow-up under #49/#114, not a production blocker.
+
+The viewer/action-row follow-up is deployed and verified; see [November 4 release evidence](../docs/evidence/photo-viewer-release-2026-11-04.md).
