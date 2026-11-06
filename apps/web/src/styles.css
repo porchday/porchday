@@ -4883,3 +4883,9 @@ button.trace-row:focus-visible {
 .photo-viewer .photo-viewer-caption { color: #f4e7dc; }
 
 .feed-photo-card { padding-bottom: 16px; }
+
+.video-preparation-fields { display: grid; gap: 1rem; }
+.video-preparation-fields > label { display: grid; gap: .4rem; }
+.video-preparation-fields input, .video-preparation-fields select { width: 100%; min-width: 0; }
+.video-preparation-fields p { margin: 0; }
+.video-preparation-actions { display: flex; flex-wrap: wrap; gap: .6rem; }

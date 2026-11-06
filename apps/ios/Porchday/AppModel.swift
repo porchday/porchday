@@ -155,10 +155,11 @@ import Combine
                                     original: context, historySnapshot: snapshot)
                             },
                             sign: { try check(); return try self.vault.sign($0) },
-                            reservePhoto: { try check(); return try await self.api.social("/media", method: "POST", body: $0) },
+                            reservePhoto: { try check(); return try await self.api.social($0["stream_id"].string == nil ? "/media":"/videos", method: "POST", body: $0) },
                             uploadPhoto: { path, bytes in try check(); _ = try await self.api.bytes(path, method: "PUT", body: bytes) },
                             publish: { id, body in try check(); return try await self.api.social("/posts/" + id + "/audience-refresh", method: "POST", body: body) },
                             validatePhoto: { payload in
+                                if payload["videoVersion"].integer==2 { _ = try SegmentedVideoCrypto.decode(JSONEncoder().encode(payload["video"]));return }
                                 guard let encoded = payload["bytes"].string,
                                       let bytes = Data(base64Encoded: encoded) else { throw PorchError.message("A photo could not be opened.") }
                                 if payload["mime"].string == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(bytes) } else { guard try VideoContainer.mime(bytes) == payload["mime"].string else { throw PorchError.message("Video metadata mismatch.") } }

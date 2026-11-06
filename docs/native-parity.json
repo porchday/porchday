@@ -26,7 +26,9 @@
         "design/photo-interactions.md",
         "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
         "docs/native-parity.md#unified-activity-headers",
-        "docs/native-parity.md#signup-guidance-and-feed-label--november-6"
+        "docs/native-parity.md#signup-guidance-and-feed-label--november-6",
+        "docs/native-parity.md#larger-videos--november-6-implementation",
+        "design/larger-videos.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -34,7 +36,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/108"
       ]
     },
     {
@@ -62,7 +65,9 @@
       "evidence": [
         "docs/native-parity.md#photo-sharing",
         "design/photo-interactions.md",
-        "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up"
+        "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
+        "docs/native-parity.md#larger-videos--november-6-implementation",
+        "design/larger-videos.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -70,7 +75,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/108"
       ]
     },
     {
@@ -130,7 +136,9 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#history"
+        "docs/native-parity.md#history",
+        "docs/native-parity.md#larger-videos--november-6-implementation",
+        "design/larger-videos.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -138,7 +146,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/108"
       ]
     },
     {
@@ -147,7 +156,9 @@
       "macos": "pending",
       "evidence": [
         "docs/native-parity.md#portability",
-        "design/photo-interactions.md"
+        "design/photo-interactions.md",
+        "docs/native-parity.md#larger-videos--november-6-implementation",
+        "design/larger-videos.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -155,7 +166,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/108"
       ]
     },
     {

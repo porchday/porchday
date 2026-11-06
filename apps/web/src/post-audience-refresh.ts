@@ -1,3 +1,4 @@
+import {validateVideoManifest} from "@porchday/crypto/video";
 import type { ContentContext, EncryptedEnvelope } from "@porchday/crypto";
 import { canonicalJson } from "@porchday/crypto";
 import { ApiError, type Content, type MediaPayload, type SocialObject } from "./api";
@@ -31,7 +32,7 @@ type PreparationIO = {
   >;
   readMedia: (id: string, signal: AbortSignal) => Promise<EncryptedEnvelope>;
   validatePhoto: (content: Content) => Promise<void>;
-  upload: (id: string, envelope: EncryptedEnvelope, sourceRevision: number) => Promise<void>;
+  upload: (id: string, envelope: EncryptedEnvelope, sourceRevision: number, streamId?:string) => Promise<void>;
   cleanup: (ids: string[]) => Promise<void>;
   sign: (statement: unknown) => Promise<unknown>;
   current: () => boolean;
@@ -100,7 +101,7 @@ export async function preparePostAudienceRefresh(
       // Register before reservation/upload: a lost response may have created the
       // unattached object. No post write has happened during preparation.
       uploaded.push(replacement.id);
-      await io.upload(replacement.id, envelope, context.revision); check();
+      if(payload.videoVersion===2)await io.upload(replacement.id,envelope,context.revision,validateVideoManifest(payload.video).streamId);else await io.upload(replacement.id,envelope,context.revision); check();
       sourceMediaIds.push(photo.id);
       media.push(replacement);
     }
