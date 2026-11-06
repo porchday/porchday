@@ -5,6 +5,7 @@ import UIKit
 import AppKit
 #endif
 import ImageIO
+import CryptoKit
 
 @MainActor enum PhotoPipeline {
     static func prepare(_ data: Data) throws -> PreparedPhoto {
@@ -25,6 +26,25 @@ import ImageIO
         #endif
     }
 }
+/// Decode each verified JPEG once within a short foreground window. Byte-keyed
+/// entries cannot substitute an old image for changed signed content.
+@MainActor final class NativeImageCache {
+    private var entries = NativeMemoryCache<PlatformImage>(budget: 64 * 1024 * 1024, limit: 32)
+    func clear() { entries.clear() }
+    func decode(_ data: Data, expiry: Date? = nil) throws -> PlatformImage {
+        guard expiry.map({ $0 > Date() }) ?? true else { throw PorchError.message("This photo has expired.") }
+        let key = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        if let image = entries.value(for: key) { return image }
+        let image = try PhotoPipeline.safelyDecode(data)
+        #if os(iOS)
+        let pixels = (image.cgImage?.width ?? 2400) * (image.cgImage?.height ?? 2400)
+        #else
+        let pixels = Int(image.size.width * image.size.height)
+        #endif
+        entries.insert(image, for: key, cost: max(1, pixels) * 4, expires: min(expiry ?? .distantFuture, Date().addingTimeInterval(20)))
+        return image
+    }
+}
 struct EncryptedPhotoView: View {
     let photo: JSON
     @EnvironmentObject var model: AppModel
@@ -33,7 +53,7 @@ struct EncryptedPhotoView: View {
     @State private var expiry: Date?
     @State private var error = ""
     var body: some View {
-        TimelineView(.periodic(from:.now,by:1)) { clock in
+        TimelineView(.explicit([expiry].compactMap { $0 })) { clock in
             let expired=expiry.map{$0<=clock.date} ?? false
             VStack(alignment:.leading) {
                 if expired { Label("This photo has expired.",systemImage:"timer").font(.caption) }
@@ -43,15 +63,18 @@ struct EncryptedPhotoView: View {
                 } else { Label(error.isEmpty ? "Opening encrypted photo…":error,systemImage:"photo").font(.caption).padding() }
             }.onChange(of:expired) { _,value in if value { image=nil } }
         }.task(id:photo["id"].string) {
-            image=nil;expiry=nil;error=""
+            error=""
+            let generation = model.authenticationGeneration
             do {
                 guard let id=photo["id"].string else { return }
-                let bytes=try await model.api.bytes("/api/v1/media/\(id)/bytes"),envelope=try JSONDecoder().decode(JSON.self,from:bytes)
+                let envelope=try await model.api.social("/media/\(id)/bytes")
                 let payload=try await vault.open(.object(["id":.string(id),"envelope":envelope]))
                 guard payload["mime"].string=="image/jpeg",let encoded=payload["bytes"].string,let imageData=Data(base64Encoded:encoded) else { throw PorchError.message("Unsupported encrypted photo format.") }
                 expiry=envelope["context"]["expiresAt"].string.flatMap(PorchDate.parse)
-                image=try PhotoPipeline.safelyDecode(imageData)
-            } catch { self.error=error.localizedDescription }
+                try Task.checkCancellation()
+                guard generation == model.authenticationGeneration, vault.unlocked else { return }
+                image=try vault.images.decode(imageData, expiry: expiry)
+            } catch { if !(error is CancellationError) && !Task.isCancelled { image = nil; self.error=error.localizedDescription } }
         }
     }
 }

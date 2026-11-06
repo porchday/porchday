@@ -204,7 +204,7 @@ struct GroupsView: View {
         Section { Text("Group membership is separate from your 150 connections.").font(.footnote); Button("Create a named group") { create = true }.disabled(!model.canWriteSocial) }
         Section("Your groups") { ForEach(groups, id: \.id) { group in NavigationLink(group.name) { GroupView(id: group.id, title: group.name) } } }
         Section("Invitations") { ForEach(Array(invitations.enumerated()), id: \.offset) { _, invitation in Button("Accept private group invitation") { Task { await model.perform { _ = try await model.api.social("/group-invitations/\(invitation["id"].string ?? "")/accept", method: "POST", body: .object([:])); await refresh() } } }.disabled(!model.canWriteSocial) } }
-    }.navigationTitle("Groups").task { await refresh() }.refreshable { await refresh() }
+    }.navigationTitle("Groups").task { await refresh() }.refreshable { await model.api.invalidateReads(); await refresh() }
         .sheet(isPresented: $create) { NavigationStack { Form { TextField("Group name", text: $name); TextField("Description", text: $description, axis: .vertical); Button("Create private group") { Task { await model.perform { guard let member = model.member else { return }; let envelope = try await vault.seal(.object(["name": .string(name), "description": .string(description)]), member: member, kind: "group", audience: "only_me"); _ = try await model.api.social("/groups", method: "POST", body: .object(["envelope": envelope])); create = false; name = ""; description = ""; await refresh() } } }.disabled(name.isEmpty || !model.canWriteSocial) }.navigationTitle("Create group").toolbar { Button("Cancel") { create = false } } } }
     }
     private func refresh() async { await model.perform { let data = try await model.api.social("/groups"); invitations = data["invitations"].array; var rows: [(String,String)] = []; for group in data["items"].array { let payload = try? await vault.open(group); rows.append((group["id"].string ?? "", payload?["name"].string ?? "Private group — awaiting shared keys")) }; groups = rows } }
@@ -264,7 +264,7 @@ struct NotificationsView: View {
                     }
                 }
             }
-        }.navigationTitle("Notifications").task { await refresh() }.refreshable { await refresh() }
+        }.navigationTitle("Notifications").task { await refresh() }.refreshable { await model.api.invalidateReads(); await refresh() }
     }
     private func refresh() async { await model.perform { rows = try await model.api.social("/notifications")["items"].array } }
 }

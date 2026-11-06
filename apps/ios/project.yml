@@ -87,6 +87,7 @@ targets:
     sources:
       - PorchdayTests/AppleParityTests.swift
       - PorchdayTests/SegmentedVideoTests.swift
+      - PorchdayTests/NativeReadCacheTests.swift
       - PorchdayTests/NativePhotoContractTests.swift
       - PorchdayTests/PorchdayTests.swift
       - PorchdayTests/CryptoVaultAccessTests.swift

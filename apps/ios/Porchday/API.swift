@@ -5,6 +5,10 @@ actor API {
     let baseURL = ServerConfiguration.origin
     private let session: URLSession
     private var cookies: [String: String] = [:]
+    private let reads = NativeReadCache()
+    private var sessionGeneration = 0
+    func invalidateReads() async { await reads.invalidate() }
+    func readGeneration() async -> Int { await reads.generation }
     init() {
         let config = URLSessionConfiguration.ephemeral
         config.urlCache = nil; config.requestCachePolicy = .reloadIgnoringLocalCacheData
@@ -17,6 +21,24 @@ actor API {
         if data.isEmpty { return .object([:]) }; return try JSONDecoder().decode(JSON.self, from: data)
     }
     func bytes(_ path: String, method: String = "GET", body: Data? = nil, contentType: String = "application/octet-stream") async throws -> Data {
+        if method == "GET", body == nil, NativeReadCache.permits(path) {
+            return try await reads.read(path) { try await self.networkBytes(path, method: method, body: body, contentType: contentType) }
+        }
+        if method != "GET" {
+            if path.hasPrefix("/api/auth/") { sessionGeneration += 1 }
+            await reads.invalidate()
+        }
+        do {
+            let result = try await networkBytes(path, method: method, body: body, contentType: contentType)
+            if method != "GET" { await reads.invalidate() }
+            return result
+        } catch {
+            if method != "GET" { await reads.invalidate() }
+            throw error
+        }
+    }
+    private func networkBytes(_ path: String, method: String, body: Data?, contentType: String) async throws -> Data {
+        let generation = sessionGeneration
         guard path.hasPrefix("/api/"), let url = URL(string: path, relativeTo: baseURL)?.absoluteURL, ServerConfiguration.permits(url, origin: baseURL) else { throw PorchError.message("Untrusted server address.") }
         var req = URLRequest(url: url); req.httpMethod = method; req.httpBody = body
         req.setValue(baseURL.absoluteString, forHTTPHeaderField: "Origin")
@@ -24,13 +46,17 @@ actor API {
         if body != nil { req.setValue(contentType, forHTTPHeaderField: "Content-Type") }
         if !cookies.isEmpty { req.setValue(cookies.map { "\($0.key)=\($0.value)" }.joined(separator: "; "), forHTTPHeaderField: "Cookie") }
         let (data, response) = try await session.data(for: req)
+        guard generation == sessionGeneration else { throw CancellationError() }
+        try Task.checkCancellation()
         guard let http = response as? HTTPURLResponse else { throw PorchError.message("No server response. Try again when connected.") }
         let headers = Dictionary(uniqueKeysWithValues: http.allHeaderFields.compactMap { key, value -> (String, String)? in guard let key = key as? String, let value = value as? String else { return nil }; return (key, value) })
+        let previousCookies = cookies
         for cookie in HTTPCookie.cookies(withResponseHeaderFields: headers, for: url) {
             if cookie.expiresDate.map({ $0 <= Date() }) == true || cookie.value.isEmpty { cookies.removeValue(forKey: cookie.name) } else { cookies[cookie.name] = cookie.value }
         }
-        try SecureStore.write(JSONEncoder().encode(cookies), account: "session")
+        if cookies != previousCookies { try SecureStore.write(JSONEncoder().encode(cookies), account: "session") }
         guard (200..<300).contains(http.statusCode) else {
+            if [401, 403].contains(http.statusCode) { await reads.invalidate() }
             let error = (try? JSONDecoder().decode(JSON.self, from: data)) ?? .null
             let message = error["error"]["message"].string ?? error["message"].string ?? error["error"]["code"].string ?? "This action is unavailable. Please try again."
             throw PorchError.api(code:error["error"]["code"].string ?? error["code"].string ?? "REQUEST_FAILED",message:message.replacingOccurrences(of:"_",with:" "),details:error["error"]["details"])
@@ -41,22 +67,26 @@ actor API {
     /// Content-Length header. Video data never passes through the JSON decoder.
     func videoChunk(_ path:String,expectedSize:Int) async throws -> Data {
         guard (17...4_194_320).contains(expectedSize),(path.hasPrefix("/api/v1/videos/")||path.hasPrefix("/api/v1/exports/")),let url=URL(string:path,relativeTo:baseURL)?.absoluteURL,ServerConfiguration.permits(url,origin:baseURL) else { throw VideoV2Error.integrity }
+        let generation = sessionGeneration
         var request=URLRequest(url:url);request.cachePolicy = .reloadIgnoringLocalCacheData
         request.setValue(baseURL.absoluteString,forHTTPHeaderField:"Origin")
         if !cookies.isEmpty { request.setValue(cookies.map { "\($0.key)=\($0.value)" }.joined(separator:"; "),forHTTPHeaderField:"Cookie") }
         let (stream,response)=try await session.bytes(for:request)
+        guard generation == sessionGeneration else { throw CancellationError() }
+        try Task.checkCancellation()
         guard let http=response as? HTTPURLResponse,http.statusCode==200,
               response.expectedContentLength<0 || response.expectedContentLength==Int64(expectedSize) else { throw VideoV2Error.integrity }
         let headers=Dictionary(uniqueKeysWithValues:http.allHeaderFields.compactMap{key,value -> (String,String)? in guard let key=key as? String,let value=value as? String else{return nil};return(key,value)})
+        let previousCookies = cookies
         for cookie in HTTPCookie.cookies(withResponseHeaderFields:headers,for:url) { if cookie.expiresDate.map({$0<=Date()})==true || cookie.value.isEmpty {cookies.removeValue(forKey:cookie.name)} else {cookies[cookie.name]=cookie.value} }
-        try SecureStore.write(JSONEncoder().encode(cookies),account:"session")
+        if cookies != previousCookies { try SecureStore.write(JSONEncoder().encode(cookies),account:"session") }
         var data=Data();data.reserveCapacity(expectedSize)
         for try await byte in stream { if data.count>=expectedSize { throw VideoV2Error.integrity };data.append(byte) }
         guard data.count==expectedSize else { throw VideoV2Error.integrity };return data
     }
     func social(_ path: String, method: String = "GET", body: JSON? = nil) async throws -> JSON { try await request("/api/v1" + path, method: method, body: body) }
     func auth(_ path: String, body: JSON? = nil, method: String = "POST") async throws -> JSON { try await request("/api/auth/" + path, method: method, body: body) }
-    func clearSession() { cookies = [:]; SecureStore.delete("session") }
+    func clearSession() async { sessionGeneration += 1; await reads.invalidate(); cookies = [:]; SecureStore.delete("session") }
 }
 
 private final class SameOriginRedirects:NSObject,URLSessionTaskDelegate,@unchecked Sendable {

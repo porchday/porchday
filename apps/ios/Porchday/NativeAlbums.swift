@@ -23,7 +23,7 @@ struct NativeAlbumsView: View {
             if !busy && rows.isEmpty && error.isEmpty { Text("Make an album together. Add people with read-only, add, or album-admin permissions.") }
             if busy { ProgressView() }; if !error.isEmpty { Text(error).foregroundStyle(.red) }
             if next != nil { Button("Load more albums") { Task { await load(more: true) } }.disabled(busy) }
-        }.task { await load() }.refreshable { await load() }
+        }.task { await load() }.refreshable { await model.api.invalidateReads(); await load() }
         .sheet(isPresented: $creating) { NavigationStack { Form { TextField("Album name", text: $name); Text("You’ll be the album-admin. Add people after creating it."); Button("Create album") { Task { busy = true; defer { busy = false }; await model.perform { let service = try NativePhotos(model); let context = NativePhotoContract.context(kind: "album", id: UUID().uuidString.lowercased(), parent: nil, audience: "only_me", album: nil, expiry: .null); let envelope = try await service.seal(.object(["name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "description": .string("")]), context: context); _ = try await service.request("/albums", method: "POST", body: .object(["envelope": envelope])); creating = false; name = ""; await load() } } }.disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 200) }.navigationTitle("Create album").toolbar { Button("Cancel") { creating = false }.disabled(busy) } } }
     }
     private func load(more: Bool = false) async {
@@ -94,7 +94,7 @@ struct NativeAlbumView: View {
                 if next != nil { Button("Load more photos") { Task { await loadPhotos(more: true) } } }
             }
             if busy { ProgressView() }
-        }.disabled(busy).task { await load() }.refreshable { await load() }
+        }.disabled(busy).task { await load() }.refreshable { await model.api.invalidateReads(); await load() }
         .sheet(isPresented: $choosing, onDismiss: { Task { await loadPhotos() } }) { NavigationStack { NativeExistingPhotos(album: id) { count in notice = "\(count) photos added."; choosing = false; Task { await loadPhotos() } } } }
         .confirmationDialog("Confirm album change", isPresented: Binding(get: { confirmation != nil }, set: { if !$0 { confirmation = nil } })) {
             Button("Confirm", role: .destructive) { let action = confirmation; confirmation = nil; Task { await work { guard let action else { return }; let service = try NativePhotos(model); if action == "delete" { _ = try await service.request("/albums/" + id, method: "DELETE"); dismiss() } else if action == "leave" { _ = try await service.request("/albums/" + id + "/leave", method: "POST", body: .object([:])); dismiss() } else { _ = try await service.request("/albums/" + id + "/transfer", method: "POST", body: .object(["member_id": .string(action)])); await load() } } } }
