@@ -61,7 +61,7 @@ struct NativeFeedView: View {
     @State private var month = PhotoCalendar.month(Date())
     @State private var selectedDay: String?
     private var monthKey: String? { calendar ? String(PhotoCalendar.day(month).prefix(7)) : nil }
-    private var filterKey: String { content + (monthKey ?? "scroll") }
+    private var filterKey: String { content + (monthKey ?? "scroll") + ":\(model.foregroundVersion):\(model.authenticationGeneration)" }
     private var visible: [NativeActivity] { store.rows.filter { row in
         let deadline = row.expiry
         return (row.post?.active ?? true) && (deadline.map { $0 > Date() } ?? true) && NativePhotoContract.matchesAuthor(row.raw, selection: from, member: model.member?.id ?? "") } }
@@ -163,7 +163,7 @@ struct NativePhotoCard: View {
                     }
                 }
             }
-        }.task(id: photo) { await load() }.task(id: row["expires_at"]) { if let expiry = row["expires_at"].string.flatMap(PorchDate.parse) { try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))); if !Task.isCancelled { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil; content = .null } } }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
+        }.task(id: photo.replacing("_foreground", with: .number(Double(model.foregroundVersion)))) { await load() }.task(id: row["expires_at"]) { if let expiry = row["expires_at"].string.flatMap(PorchDate.parse) { try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))); if !Task.isCancelled { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil; content = .null } } }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
         .confirmationDialog(removing == "delete" ? "Delete this photo and its original post attachment? Saved copies cannot be recalled." : "Remove this album’s access? Other audiences keep access.", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Confirm", role: .destructive) { let action = removing; removing = nil; Task { busy = true; defer { busy = false }; await model.perform {
                 let service = try NativePhotos(model)

@@ -19,6 +19,13 @@ import Combine
     @Published private(set) var historySharingVersion = 0
     private var historySharingNeedsRetry = false
     private var sceneIsActive = false
+    @Published private(set) var foregroundVersion = 0
+    func refreshForeground() async {
+        await api.invalidateReads()
+        await restore()
+        if sceneIsActive { foregroundVersion += 1 }
+        await refreshHistoricalPosts()
+    }
     private var historySharing: (id: UUID, task: Task<Void, Never>)?
     let vault = CryptoVault()
     let api = API.shared

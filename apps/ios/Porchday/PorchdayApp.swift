@@ -30,7 +30,7 @@ import SwiftUI
                 .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }
                 .onChange(of: scenePhase) { _, phase in
                     model.setSceneActive(phase == .active)
-                    if phase == .active, model.member != nil { Task { await model.api.invalidateReads(); await model.restore(); await model.refreshHistoricalPosts() } }
+                    if phase == .active, model.member != nil { Task { await model.refreshForeground() } }
                 }
                 .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(HStack(spacing: 12) { Image("PorchdayMark").resizable().frame(width: 48, height: 48).accessibilityHidden(true); Text("Porchday").font(.largeTitle) }) } }
         }

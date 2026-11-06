@@ -23,7 +23,7 @@ struct NativeAlbumsView: View {
             if !busy && rows.isEmpty && error.isEmpty { Text("Make an album together. Add people with read-only, add, or album-admin permissions.") }
             if busy { ProgressView() }; if !error.isEmpty { Text(error).foregroundStyle(.red) }
             if next != nil { Button("Load more albums") { Task { await load(more: true) } }.disabled(busy) }
-        }.task { await load() }.refreshable { await model.api.invalidateReads(); await load() }
+        }.task(id: model.foregroundVersion) { await load() }.refreshable { await model.api.invalidateReads(); await load() }
         .sheet(isPresented: $creating) { NavigationStack { Form { TextField("Album name", text: $name); Text("You’ll be the album-admin. Add people after creating it."); Button("Create album") { Task { busy = true; defer { busy = false }; await model.perform { let service = try NativePhotos(model); let context = NativePhotoContract.context(kind: "album", id: UUID().uuidString.lowercased(), parent: nil, audience: "only_me", album: nil, expiry: .null); let envelope = try await service.seal(.object(["name": .string(name.trimmingCharacters(in: .whitespacesAndNewlines)), "description": .string("")]), context: context); _ = try await service.request("/albums", method: "POST", body: .object(["envelope": envelope])); creating = false; name = ""; await load() } } }.disabled(busy || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || name.count > 200) }.navigationTitle("Create album").toolbar { Button("Cancel") { creating = false }.disabled(busy) } } }
     }
     private func load(more: Bool = false) async {

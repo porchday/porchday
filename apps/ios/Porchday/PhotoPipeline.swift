@@ -62,7 +62,7 @@ struct EncryptedPhotoView: View {
                     ForEach(NativePhotoContract.captions(photo), id: \.self) { Text($0).font(.caption) }; PeopleTagsView(tags: PersonTag.parse(photo["tags"]))
                 } else { Label(error.isEmpty ? "Opening encrypted photo…":error,systemImage:"photo").font(.caption).padding() }
             }.onChange(of:expired) { _,value in if value { image=nil } }
-        }.task(id:photo["id"].string) {
+        }.task(id: (photo["id"].string ?? "") + ":\(model.foregroundVersion)") {
             error=""
             let generation = model.authenticationGeneration
             do {

@@ -86,7 +86,7 @@ actor API {
     }
     func social(_ path: String, method: String = "GET", body: JSON? = nil) async throws -> JSON { try await request("/api/v1" + path, method: method, body: body) }
     func auth(_ path: String, body: JSON? = nil, method: String = "POST") async throws -> JSON { try await request("/api/auth/" + path, method: method, body: body) }
-    func clearSession() async { sessionGeneration += 1; await reads.invalidate(); cookies = [:]; SecureStore.delete("session") }
+    func clearSession() async { sessionGeneration += 1; cookies = [:]; SecureStore.delete("session"); await reads.invalidate() }
 }
 
 private final class SameOriginRedirects:NSObject,URLSessionTaskDelegate,@unchecked Sendable {
