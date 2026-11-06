@@ -1,3 +1,4 @@
+import {readVerificationResult,verificationRedirect} from './verification-result';
 import {logoutJournalTiming,measureJournalPhase} from './journal-timing';
 import {publishSessionDenial} from './session-denial';
 import {deleteDeniedSession} from './session-denial-cleanup';
@@ -87,6 +88,7 @@ type Authorization = {
   auth?: ReturnType<typeof createAuth>;
   changedEmailUser?: { id: string; email: string; newEmail: string };
   emailTokenHash?: string;
+  signupVerification?: boolean;
 };
 
 function sameOriginTarget(raw: unknown, base: string) {
@@ -126,8 +128,8 @@ async function authorize(
           { algorithms: ["HS256"], requiredClaims: ["iat", "exp"] },
         )
       ).payload;
-    } catch {
-      return reject("INVALID_LINK");
+    } catch (error) {
+      return reject((error as {code?:string})?.code === "ERR_JWT_EXPIRED" ? "LINK_EXPIRED" : "INVALID_LINK");
     }
     if (
       typeof claims.email !== "string" ||
@@ -192,6 +194,7 @@ async function authorize(
       memberId: account.id,
       journal: true,
       emailTokenHash,
+      signupVerification: claims.updateTo === undefined && claims.requestType === undefined,
       changedEmailUser:
         claims.requestType === "change-email-verification" &&
         typeof claims.updateTo === "string"
@@ -290,8 +293,10 @@ authRoutes.use(
     onError: (c) => c.json({ error: { code: "TOO_LARGE" } }, 413),
   }),
 );
+authRoutes.get("/verification-result", readVerificationResult);
 authRoutes.all("/*", async (c) => {
   const path = new URL(c.req.url).pathname.replace("/api/auth/", "");
+  const browserVerification = path === "verify-email" && c.req.method === "GET" && (c.req.header("Accept") || "").includes("text/html");
   const resetRedirect = /^reset-password\/[A-Za-z0-9_-]{16,200}$/.test(path);
   if (!allowed.has(path) && !(c.req.method === "GET" && resetRedirect))
     return c.json(
@@ -351,11 +356,11 @@ authRoutes.all("/*", async (c) => {
       const token = incoming.inviteCode;
       if (typeof token !== "string" || !/^[A-Za-z0-9_-]{24,128}$/.test(token)) reject("INVALID_INVITATION", 403);
       const invitation = await physicalPool.query(
-        "SELECT 1 FROM public.pilot_invitations WHERE token_hash=$1 AND consumed_user IS NULL AND expires_at>now()",
+        "SELECT connection_kind,connection_history,expires_at FROM public.pilot_invitations WHERE token_hash=$1 AND consumed_user IS NULL AND expires_at>now()",
         [await hashToken(token)],
       );
       if (!invitation.rowCount) reject("INVALID_INVITATION", 403);
-      return c.json({ accepted: true });
+      return c.json({ accepted: true, ...(incoming.details === true ? {kind: invitation.rows[0].connection_kind, history: invitation.rows[0].connection_history, expiresAt: invitation.rows[0].expires_at} : {}) });
     }
     const proof = sensitive(path)
       ? await measureJournalPhase(logoutTiming,'initial_authorization',()=>authorize(c, physicalPool, path, incoming))
@@ -380,6 +385,7 @@ authRoutes.all("/*", async (c) => {
         )
       ).rows[0]?.id;
     let completedEmailChange = false;
+    let completedVerification = false;
     const work = async (commitScope?: AuthPrivacyCommitScope) => {
       const client = await measureJournalPhase(logoutTiming,'work_pool_acquire',()=>physicalPool.connect());
       const proxyClient = {
@@ -571,6 +577,10 @@ authRoutes.all("/*", async (c) => {
               completedEmailChange = true;
             }
           }
+          if (path === "verify-email" && checked && (checked.signupVerification || completedEmailChange) && response.status < 400 && response.headers.get("location") === c.env.APP_URL + "/login?verified=1") {
+            const current = await pool.query('SELECT "emailVerified" FROM public.auth_user WHERE id=$1', [checked.memberId]);
+            completedVerification = current.rows[0]?.emailVerified === true;
+          }
           if (signupId && !response.ok) {
             // A downstream email failure can occur after the account exists. Never reissue that claim.
             await pool.query(
@@ -610,6 +620,8 @@ authRoutes.all("/*", async (c) => {
       ? await withHttpAuthPrivacyJournal(c, work, logoutTiming)
       : await work();
     committedAndConfirmed = true;
+    if (browserVerification && (completedVerification || (completedEmailChange && response.headers.get("location") === c.env.APP_URL + "/login?emailChanged=1")))
+      return verificationRedirect(c, "verified");
     // The shared callback describes both steps. Show completion only after the
     // exact new address is verified and SQL plus the privacy journal confirm it.
     if (
@@ -629,6 +641,8 @@ authRoutes.all("/*", async (c) => {
     return response;
   } catch (error) {
     if (error instanceof ConfirmedTransactionRollback) error = error.originalError;
+    if (browserVerification)
+      return verificationRedirect(c, error instanceof AuthRejection ? error.code === "LINK_ALREADY_USED" ? "used" : error.code === "LINK_EXPIRED" ? "expired" : error.code === "RATE_LIMIT" ? "unavailable" : "invalid" : "unavailable");
     if (error instanceof AuthRejection)
       return c.json({ error: { code: error.code } }, error.status);
     if (error instanceof JournalError)

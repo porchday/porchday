@@ -51,7 +51,7 @@ struct NativeFeedView: View {
     private var visible: [NativeActivity] { store.rows.filter { NativePhotoContract.matchesAuthor($0.raw, selection: from, member: model.member?.id ?? "") } }
     var body: some View {
         List {
-            Picker("View", selection: $calendar) { Text("Infinite scroll").tag(false); Text("Calendar").tag(true) }.pickerStyle(.segmented)
+            Picker("View", selection: $calendar) { Text("Feed").tag(false); Text("Calendar").tag(true) }.pickerStyle(.segmented)
             DisclosureGroup("Filters") {
                 Picker("Show", selection: $content) { Text("Everything").tag("everything"); Text("Posts").tag("posts"); Text("Photos").tag("photos") }
                 Picker("From", selection: $from) { Text("Only me").tag("me"); Text("Friends").tag("friends"); Text("Family").tag("family"); Text("Friends & Family").tag("connections"); Text("Extended family").tag("extended_family"); Text("Community").tag("community") }

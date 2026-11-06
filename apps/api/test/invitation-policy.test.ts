@@ -51,3 +51,8 @@ it('does not accept token-bearing GET URLs', async () => {
   expect((await request({}, 'https://example.test', 'GET')).status).toBe(405);
   expect(db.query).not.toHaveBeenCalled();
 });
+
+it('returns connection/history context only when requested, with no recipient identity', async () => {
+  db.query.mockReset().mockResolvedValueOnce({ rows: [{ count: 1 }] }).mockResolvedValue({rowCount:1,rows:[{connection_kind:'family',connection_history:'future',expires_at:'2026-12-01T00:00:00Z'}]});
+  expect(await (await request({inviteCode:token,details:true})).json()).toEqual({accepted:true,kind:'family',history:'future',expiresAt:'2026-12-01T00:00:00Z'});
+});
