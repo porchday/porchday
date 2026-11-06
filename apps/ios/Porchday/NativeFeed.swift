@@ -6,6 +6,7 @@ struct NativeActivity: Identifiable {
     let post: SocialItem?
     var id: String { (raw["kind"].string ?? "") + ":" + (raw["id"].string ?? "") }
     var day: String { raw["day"].string ?? "" }
+    var expiry: Date? { post?.expiry ?? PorchDate.minimum([raw["photo"]["expires_at"], raw["post"]["effective_expires_at"], raw["post"]["expires_at"]]) }
 }
 @MainActor final class NativeActivityStore: ObservableObject {
     @Published var rows: [NativeActivity] = []
@@ -13,10 +14,19 @@ struct NativeActivity: Identifiable {
     @Published var busy = false
     @Published var error = ""
     private var attempt = UUID()
-    func load(_ model: AppModel, content: String, month: String? = nil, owned: Bool = false, more: Bool = false) async {
+    private var queryKey = ""
+    private var loadedAt: Date?
+    private var readGeneration = -1
+    func load(_ model: AppModel, content: String, month: String? = nil, owned: Bool = false, more: Bool = false, force: Bool = false) async {
         if more && busy { return }
+        if force { await model.api.invalidateReads() }
+        let key = "\(model.authenticationGeneration):\(model.member?.id ?? ""):\(content):\(month ?? ""):\(owned):\(TimeZone.current.identifier)"
+        let generation = await model.api.readGeneration()
+        if !more && !force && queryKey == key && readGeneration == generation,
+           let loadedAt, Date().timeIntervalSince(loadedAt) < 20 { return }
         let token = UUID(); attempt = token; busy = true; error = ""
-        if !more { rows = []; next = .null }
+        if queryKey != key { rows = []; next = .null; loadedAt = nil; queryKey = key }
+        let initial = rows.isEmpty
         defer { if token == attempt { busy = false } }
         do {
             let service = try NativePhotos(model)
@@ -31,25 +41,32 @@ struct NativeActivity: Identifiable {
                     item = await model.vault.item(raw["post"])
                     if raw["attachment_date"] != .null { try await service.verifyAttachment(raw["attachment_date"], media: raw["id"].string ?? "", post: raw["post"]["id"].string ?? "", owner: raw["author_id"].string ?? "", day: raw["day"].string ?? "") }
                 }
+                try service.check(); guard token == attempt else { return }
                 decoded.append(.init(raw: raw, post: item))
+                if initial && (decoded.count == 1 || decoded.count % 4 == 0) { rows = decoded }
+                await Task.yield()
             }
             try service.check(); guard token == attempt else { return }
             let existing = more ? rows : []; rows = existing + decoded.filter { row in !existing.contains { $0.id == row.id } }; next = result["next"]
+            loadedAt = Date(); readGeneration = generation
         } catch { if token == attempt && !(error is CancellationError) { self.error = error.localizedDescription } }
     }
 }
 struct NativeFeedView: View {
     @EnvironmentObject var model: AppModel
-    @StateObject private var store = NativeActivityStore()
+    @ObservedObject var store: NativeActivityStore
     @State private var content = "everything"
     @State private var from = "connections"
     @State private var calendar = false
     @State private var month = PhotoCalendar.month(Date())
     @State private var selectedDay: String?
     private var monthKey: String? { calendar ? String(PhotoCalendar.day(month).prefix(7)) : nil }
-    private var filterKey: String { content + (monthKey ?? "scroll") }
-    private var visible: [NativeActivity] { store.rows.filter { NativePhotoContract.matchesAuthor($0.raw, selection: from, member: model.member?.id ?? "") } }
+    private var filterKey: String { content + (monthKey ?? "scroll") + ":\(model.foregroundVersion):\(model.authenticationGeneration)" }
+    private var visible: [NativeActivity] { store.rows.filter { row in
+        let deadline = row.expiry
+        return (row.post?.active ?? true) && (deadline.map { $0 > Date() } ?? true) && NativePhotoContract.matchesAuthor(row.raw, selection: from, member: model.member?.id ?? "") } }
     var body: some View {
+        TimelineView(.explicit(store.rows.compactMap(\.expiry))) { _ in
         List {
             Picker("View", selection: $calendar) { Text("Feed").tag(false); Text("Calendar").tag(true) }.pickerStyle(.segmented)
             DisclosureGroup("Filters") {
@@ -73,12 +90,13 @@ struct NativeFeedView: View {
             if store.busy { ProgressView("Opening activity…") }
             if !store.error.isEmpty { Text(store.error).foregroundStyle(.red); Button("Retry") { Task { await load() } } }
             if !store.busy && store.error.isEmpty && visible.isEmpty { Text("No matching activity loaded.") }
-            if store.next != .null { Button("Load more") { Task { await load(more: true) } }.disabled(store.busy).onAppear { if !calendar { Task { await load(more: true) } } } }
-        }.task(id: filterKey) { await load() }.refreshable { await load() }
+            if store.next != .null { Button("Load more") { Task { await load(more: true) } }.disabled(store.busy) }
+        }
+        }.task(id: filterKey) { await load() }.refreshable { await load(force: true) }
         .onChange(of: model.historySharingVersion) { _, _ in Task { await load() } }
         .sheet(isPresented: Binding(get: { selectedDay != nil }, set: { if !$0 { selectedDay = nil } })) { NavigationStack { List { ForEach(visible.filter { $0.day == selectedDay }) { NativeActivityCard(entry: $0, changed: { Task { await load() } }) }; if store.next != .null { Button("Load more in this month") { Task { await load(more: true) } }.disabled(store.busy) } }.navigationTitle(selectedDay ?? "Day").toolbar { Button("Done") { selectedDay = nil } } } }
     }
-    private func load(more: Bool = false) async { await store.load(model, content: content, month: monthKey, more: more) }
+    private func load(more: Bool = false, force: Bool = false) async { await store.load(model, content: content, month: monthKey, more: more, force: force) }
 }
 struct NativeActivityCard: View {
     let entry: NativeActivity
@@ -119,7 +137,7 @@ struct NativePhotoCard: View {
     @State private var current: JSON = .null
     private var row: JSON { current == .null ? photo : current }
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { clock in
+        TimelineView(.explicit([row["expires_at"].string.flatMap(PorchDate.parse)].compactMap { $0 })) { clock in
             if removed { Text("Photo removed.") }
             else if row["expires_at"].string.flatMap(PorchDate.parse).map({ $0 <= clock.date }) == true { Text("This photo has expired.") }
             else {
@@ -145,7 +163,7 @@ struct NativePhotoCard: View {
                     }
                 }
             }
-        }.task(id: photo) { await load() }.task(id: row["expires_at"]) { if let expiry = row["expires_at"].string.flatMap(PorchDate.parse) { try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))); if !Task.isCancelled { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil; content = .null } } }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
+        }.task(id: photo.replacing("_foreground", with: .number(Double(model.foregroundVersion)))) { await load() }.task(id: row["expires_at"]) { if let expiry = row["expires_at"].string.flatMap(PorchDate.parse) { try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))); if !Task.isCancelled { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil; content = .null } } }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
         .confirmationDialog(removing == "delete" ? "Delete this photo and its original post attachment? Saved copies cannot be recalled." : "Remove this album’s access? Other audiences keep access.", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Confirm", role: .destructive) { let action = removing; removing = nil; Task { busy = true; defer { busy = false }; await model.perform {
                 let service = try NativePhotos(model)
@@ -180,11 +198,19 @@ struct NativePhotoCard: View {
             let media = content["media"].array[0]
             alt = media["alt"].string ?? ""; caption = media["caption"].string ?? ""; tags = PersonTag.parse(media["tags"])
             let mime = media["mime"].string ?? "image/jpeg"
-            if mime.hasPrefix("image/") { image = try PhotoPipeline.safelyDecode(opened.bytes) }
+            if mime.hasPrefix("image/") {
+                let decoded = try await model.vault.images.decode(opened.bytes, expiry: row["expires_at"].string.flatMap(PorchDate.parse))
+                try service.check(); image = decoded
+            }
             else if mime == "video/webm" { let decoder = LocalWebM(); _ = try await decoder.open(opened.bytes); try service.check(); webM = decoder }
             else { let prepared = try PrivateMediaFile(opened.bytes, ext: VideoContainer.fileExtension(mime)); file = prepared; player = AVPlayer(url: prepared.url) }
             let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.calendar = PhotoCalendar.calendar; date = formatter.date(from: row["photo_date"].string ?? "") ?? Date(); error = ""
-        } catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+        } catch {
+            if !(error is CancellationError) && !Task.isCancelled {
+                image = nil; content = .null; player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil
+                self.error = error.localizedDescription
+            }
+        }
     }
 }
 
