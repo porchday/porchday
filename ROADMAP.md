@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-Owner follow-up November 6: approved [signup experience](design/signup-experience.md) implementation under #27 and the chronological view label **Feed** under #124 are in progress. [Larger-video proposal](design/larger-videos.md) under #108 is for review only; proposed limits do not change current upload support.
+Delivered November 6: the [signup experience](design/signup-experience.md) improvements under #27 and chronological view label **Feed** under #124 are live in staging and production. [Release evidence](docs/evidence/signup-release-2026-11-06.md) records automated native parity, hosted signup checks and final production verification. #27 retains inbox/device acceptance and the original unconfirmed recipient report. The [larger-video proposal](design/larger-videos.md) under #108 remains for review only; proposed limits do not change current upload support.
 
 The owner’s current product priorities are broader connection circles, first-class photos, simpler navigation, working mentions and notifications, and native app distribution. This is the repository's authoritative order of work. GitHub Issues hold acceptance criteria, implementation status and evidence; this file explains what comes next and why. A merged change to this file changes the default order. It does not authorize deployment, broaden admission or override an issue's approval requirements.
 
