@@ -57,4 +57,11 @@ describe('uploaded Worker artifact verification',()=>{
   expect(verifyWorkerArtifacts({...f,actual,allowObservedMapNormalization:true,allowObservedPathNormalization:true}).mapMode).toBe('observed-provider-path-normalization');
   for(const patch of [{file:'other.js'},{sources:normalized.sources.map((path,index)=>index===0?'other.ts':path)},{mappings:'BBBB'}])expect(()=>verifyWorkerArtifacts({...f,actual:{...actual,'index.js.map':encode({...normalized,...patch})},allowObservedMapNormalization:true,allowObservedPathNormalization:true})).toThrow('MAP_CHANGED');
  });
+ it('accepts only the exact root-preserving provider variant under both normalization flags',()=>{
+  const f=fixture(),remote={...f.map,file:f.entry,sources:f.map.sources.map(path=>path.replace(/^(?:\.\.\/)+/,'')),sourcesContent:f.map.sourcesContent.map(value=>value??'')};
+  const options={...f,actual:{...f.actual,'index.js.map':encode(remote)},allowObservedMapNormalization:true,allowObservedPathNormalization:true};
+  expect(verifyWorkerArtifacts(options).mapMode).toBe('observed-provider-root-preserving-normalization');
+  for(const key of ['allowObservedMapNormalization','allowObservedPathNormalization'])expect(()=>verifyWorkerArtifacts({...options,[key]:false})).toThrow('MAP_CHANGED');
+  for(const patch of [{sourceRoot:'/other/build'},{sourcesRoot:null},{sources:['different',...remote.sources.slice(1)]},{sourcesContent:['changed','','','','']},{file:'other.js'},{mappings:'BBBB'},{names:['different']},{extra:1}])expect(()=>verifyWorkerArtifacts({...options,actual:{...options.actual,'index.js.map':encode({...remote,...patch})}})).toThrow('MAP_CHANGED');
+ });
 });
