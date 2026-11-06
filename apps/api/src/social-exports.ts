@@ -26,9 +26,19 @@ export function registerExportRoutes(app:Hono<{Bindings:Env;Variables:Variables}
     return c.json(await tx(c,async db=>{const [r]=await db`select app.validate_export(${id(c.req.param('id'))},${db.json(b.items)}) as valid`;if(!r.valid)fail('EXPORT_CHANGED',409);return {ok:true};}));
   });
   app.get('/exports/:id/media/:mediaId/bytes',async c=>{
-    recent(c);const key=await tx(c,async db=>{const [r]=await db`select app.export_media(${id(c.req.param('id'))},${id(c.req.param('mediaId'))}) as object_key`;return r.object_key;});
+    recent(c);const key=await tx(c,async db=>{const [r]=await db`select app.export_media(${id(c.req.param('id'))},${id(c.req.param('mediaId'))}) as object_key`;const[m]=await db`select video_stream_id from app.media_assets where id=${id(c.req.param('mediaId'))}`;if(m?.video_stream_id&&c.req.query('video_version')!=='2')fail('CLIENT_UPDATE_REQUIRED',409);return r.object_key;});
     const object=await c.env.MEDIA.get(key);if(!object)return fail('NOT_FOUND',404);
     return new Response(object.body,{headers:{'Content-Type':'application/octet-stream','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'}});
+  });
+  app.get('/exports/:id/media/:mediaId/chunks/:index',async c=>{
+    recent(c);const index=Number(c.req.param('index'));if(!Number.isSafeInteger(index)||index<0||index>62)fail('NOT_FOUND',404);
+    const chunk=await tx(c,async db=>{
+      await db`select app.export_media(${id(c.req.param('id'))},${id(c.req.param('mediaId'))})`;
+      const[row]=await db`select v.object_key,v.byte_size from app.video_chunks v join app.media_assets m on m.video_stream_id=v.stream_id where m.id=${id(c.req.param('mediaId'))} and v.chunk_index=${index} and v.received_at is not null and app.can_video_stream(v.stream_id)`;
+      if(!row)fail('NOT_FOUND',404);return row;
+    });
+    const object=await c.env.MEDIA.get(chunk.object_key);if(!object||object.size!==Number(chunk.byte_size))return fail('NOT_FOUND',404);
+    return new Response(object.body,{headers:{'Content-Type':'application/octet-stream','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','Content-Length':String(chunk.byte_size)}});
   });
   app.delete('/exports/:id',async c=>c.json(await tx(c,async db=>{await db`update app.data_transfer_jobs set state='cancelled' where id=${id(c.req.param('id'))} and kind='export'`;return {ok:true};})));
 }

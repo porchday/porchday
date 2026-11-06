@@ -111,7 +111,7 @@ async function draft(owner:Person,audience:ContentContext['audience']='only_me')
  const envelope=await seal(owner,{id:mediaId,mime:'video/mp4',video:manifest},1,{id:mediaId,kind:'media',parentId:postId,audience});
  const bytes=new TextEncoder().encode(JSON.stringify(envelope)),segments=[{index:0,size:chunk.bytes.length,sha256:chunk.segment.sha256}];
  const request={id:mediaId,envelope,byte_size:bytes.length,stream_id:streamId,segments};
- return{mediaId,postId,streamId,chunk,bytes,request,audience};
+ return{mediaId,postId,streamId,chunk,bytes,request,audience,manifest};
 }
 async function upload(owner:Person,value:Awaited<ReturnType<typeof draft>>){
  expect((await call(owner.id,'/videos','POST',value.request)).status).toBe(201);
@@ -164,6 +164,7 @@ suite("Encrypted segmented video API", () => {
    const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);const video=await draft(owner,'connections');
    expect((await call(owner.id,'/videos','POST',video.request)).status).toBe(201);
    expect((await call(owner.id,'/videos','POST',video.request)).status).toBe(201);
+   expect((await call(owner.id,'/videos','POST',{...video.request,segments:[{...video.request.segments[0],sha256:'0'.repeat(64)}]})).status).toBe(409);
    expect((await call(owner.id,`/videos/${video.mediaId}/complete`,'POST',{})).status).toBe(409);
    expect((await binary(owner.id,`/media/${video.mediaId}/bytes`,video.bytes)).status).toBe(409);
    expect((await binary(outsider.id,`/videos/${video.mediaId}/chunks/0`,video.chunk.bytes)).status).toBe(404);
@@ -206,4 +207,49 @@ suite("Encrypted segmented video API", () => {
    const owner=await person(),video=await draft(owner);await upload(owner,video);env.VIDEO_UPLOADS_V2='false';
    try{expect((await call(owner.id,'/videos/capabilities')).data.enabled).toBe(false);expect((await call(owner.id,'/videos','POST',video.request)).status).toBe(409);expect((await app.request('https://local.test/videos/'+video.mediaId+'/chunks/0',{headers:{'x-member':owner.id}},env)).status).toBe(200);}finally{env.VIDEO_UPLOADS_V2='true';}
   });
+  it('reuses completed ciphertext for history without double counting and retains it until the last grant is removed',async()=>{
+   const owner=await person(),video=await draft(owner);await upload(owner,video);
+   const newID=randomUUID(),parent=randomUUID(),envelope=await seal(owner,{id:newID,mime:'video/mp4',videoVersion:2,video:video.manifest},1,{id:newID,kind:'media',parentId:parent,audience:'only_me'}),packed=new TextEncoder().encode(JSON.stringify(envelope));
+   const body={id:newID,envelope,byte_size:packed.length,stream_id:video.streamId};
+   expect((await call(owner.id,'/videos','POST',body)).status).toBe(201);
+   expect((await binary(owner.id,`/media/${newID}/bytes`,packed)).status).toBe(200);
+   expect(await db`select id from app.video_streams where owner_id=${owner.id}`).toHaveLength(1);
+   expect((await call(owner.id,`/videos/${video.mediaId}`,'DELETE')).status).toBe(200);
+   expect((await app.request('https://local.test/videos/'+newID+'/chunks/0',{headers:{'x-member':owner.id}},env)).status).toBe(200);
+   expect((await call(owner.id,`/videos/${newID}`,'DELETE')).status).toBe(200);
+   expect(await db`select id from app.video_streams where owner_id=${owner.id}`).toHaveLength(0);
+  });
+  it('denies restored chunks recorded in the durable deletion journal',async()=>{
+   const owner=await person(),video=await draft(owner);await upload(owner,video);
+   const[chunk]=await db`select object_key from app.video_chunks where stream_id=${video.streamId}`;
+   await db`insert into app.deletion_outbox(object_key,reason) values(${chunk.object_key},'synthetic restore replay') on conflict do nothing`;
+   expect((await app.request('https://local.test/videos/'+video.mediaId+'/chunks/0',{headers:{'x-member':owner.id}},env)).status).toBe(404);
+  });
+  it('reserves the existing member quota concurrently and frees canceled uploads',async()=>{
+   const owner=await person(),drafts=await Promise.all(Array.from({length:5},()=>draft(owner)));
+   for(const video of drafts)video.request.segments=Array.from({length:63},(_,index)=>({index,size:(index===62?2:4)*1024*1024+16,sha256:'0'.repeat(64)}));
+   const results=await Promise.all(drafts.map(video=>call(owner.id,'/videos','POST',video.request)));
+   expect(results.map(r=>r.status).sort()).toEqual([201,201,201,201,413]);
+   const reserved=results.findIndex(r=>r.status===201),blocked=results.findIndex(r=>r.status===413);
+   expect((await call(owner.id,`/videos/${drafts[reserved].mediaId}`,'DELETE')).status).toBe(200);
+   expect((await call(owner.id,'/videos','POST',drafts[blocked].request)).status).toBe(201);
+  });
+
+  it('exports only through a live authorized job and requires a video-capable reader',async()=>{
+   const owner=await person(),stranger=await person(),video=await draft(owner);await upload(owner,video);
+   const envelope=await seal(owner,{text:'Synthetic video export',media:[{id:video.mediaId,mime:'video/mp4',videoVersion:2}]},1,{id:video.postId,kind:'post',audience:'only_me'});
+   expect((await call(owner.id,'/posts','POST',{envelope,media_ids:[video.mediaId]})).status).toBe(201);
+   const job=await call(owner.id,'/exports','POST',{});expect(job.status).toBe(201);
+   const path=`/exports/${job.data.id}/media/${video.mediaId}`;
+   expect((await call(owner.id,path+'/bytes')).status).toBe(409);
+   expect((await call(owner.id,path+'/bytes?video_version=2')).status).toBe(200);
+   const chunk=await app.request('https://local.test'+path+'/chunks/0',{headers:{'x-member':owner.id}},env);expect(chunk.status).toBe(200);expect(new Uint8Array(await chunk.arrayBuffer())).toEqual(video.chunk.bytes);
+   expect((await app.request('https://local.test'+path+'/chunks/0',{headers:{'x-member':stranger.id}},env)).status).not.toBe(200);
+   expect((await call(owner.id,'/exports/'+job.data.id,'DELETE')).status).toBe(200);
+   expect((await app.request('https://local.test'+path+'/chunks/0',{headers:{'x-member':owner.id}},env)).status).not.toBe(200);
+   // Old clients cannot silently publish the small update card as the video.
+   const next=randomUUID(),replacement=await seal(owner,{text:'Synthetic reshare',media:[]},1,{id:next,kind:'post',audience:'only_me'});
+   expect((await call(owner.id,`/posts/${video.postId}/reshare`,'POST',{envelope:replacement,media_ids:[],source_expires_at:null})).data.error.code).toBe('CLIENT_UPDATE_REQUIRED');
+  });
+
 });

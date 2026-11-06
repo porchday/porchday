@@ -40,6 +40,8 @@ targets:
     platform: iOS
     sources:
       - Porchday
+      - path: ../../packages/crypto/data/video-update-required.mp4
+        buildPhase: resources
       - path: ../../packages/crypto/data/emoji-17.0.json
         buildPhase: resources
     settings:
@@ -60,6 +62,8 @@ targets:
     deploymentTarget: '14.0'
     sources:
       - Porchday
+      - path: ../../packages/crypto/data/video-update-required.mp4
+        buildPhase: resources
       - path: ../../packages/crypto/data/emoji-17.0.json
         buildPhase: resources
     settings:

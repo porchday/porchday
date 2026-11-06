@@ -45,13 +45,14 @@ struct PortableArchive {
     func zip() throws -> Data {
         let archive = try Archive(accessMode: .create)
         var entries = files
+        if let reader=Bundle.main.url(forResource:"VideoArchiveReader",withExtension:"html") { entries["videos.html"]=try Data(contentsOf:reader) } else { throw PorchError.message("The offline video reader is missing from this app build.") }
         entries["archive.json"] = try JSONEncoder().encode(manifest)
         let texts = (manifest["posts"].array + manifest["comments"].array).map { "<article><p>" + Self.escape($0["payload"]["text"].string ?? "") + "</p><small>" + Self.escape($0["created_at"].string ?? "") + "</small></article>" }.joined() + manifest["reactions"].array.map { row in
             guard let reaction = try? ReactionValue.parse(row["payload"]) else { return "<article><p>Reaction data is preserved in archive.json.</p></article>" }
             let image = reaction.png.map { "<img width=32 height=32 alt=\"" + Self.escape(reaction.label) + "\" src=\"data:image/png;base64," + $0.base64EncodedString() + "\">" } ?? Self.escape(reaction.unicode ?? reaction.label)
             return "<article><p>Reaction: " + image + "</p></article>"
         }.joined()
-        entries["index.html"] = Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>This is one part of a member-owned archive. Keep every part. Saved copies are outside service deletion control.</p>" + texts + "<p>Full structured data is in archive.json. Photos may be in another archive part.</p>").utf8)
+        entries["index.html"] = Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>This is one part of a member-owned archive. Keep every part. Saved copies are outside service deletion control.</p>" + texts + "<p>Full structured data is in archive.json. Photos may be in another archive part. <a href=\"videos.html\">Open archived videos</a>.</p>").utf8)
         if let index = manifest["archive_set"]["index"].integer {
             let suffix=String(format:"%03d",index)
             entries["archive-part-\(suffix).json"]=entries["archive.json"]
@@ -59,7 +60,7 @@ struct PortableArchive {
             if manifest["archive_set"]["complete"].boolean {
                 let total=manifest["archive_set"]["total"].integer ?? index
                 let links=(1...total).map { "<li><a href=\"index-part-" + String(format:"%03d",$0) + ".html\">Part \($0)</a></li>" }.joined()
-                entries["index.html"]=Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>Extract all parts into one folder.</p><ul>"+links+"</ul>").utf8)
+                entries["index.html"]=Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>Extract all parts into one folder. <a href=\"videos.html\">Open archived videos</a>.</p><ul>"+links+"</ul>").utf8)
             }
         }
         guard entries.values.reduce(0, { $0 + $1.count }) <= Self.limit - 65536 else { throw PorchError.message("A single record exceeds the archive part safety limit.") }
@@ -71,16 +72,18 @@ struct PortableArchive {
         let archive = try Archive(data: data, accessMode: .read)
         var files: [String: Data] = [:], total = 0, count = 0
         for entry in archive {
-            count += 1; guard count <= 5000, entry.type == .file, entry.path == "archive.json" || entry.path == "index.html" || entry.path.range(of: #"^(archive-part-[0-9]+\.json|index-part-[0-9]+\.html)$"#,options:.regularExpression) != nil || entry.path.range(of: #"^photos/[a-fA-F0-9-]{36}\.(jpg|mp4|mov|webm)$"#, options: .regularExpression) != nil else { throw PorchError.message("Archive contains an unsupported path or file type.") }
+            count += 1; guard count <= 5000, entry.type == .file, entry.path == "archive.json" || entry.path == "index.html" || entry.path == "videos.html" || entry.path.range(of: #"^(archive-part-[0-9]+\.json|index-part-[0-9]+\.html)$"#,options:.regularExpression) != nil || entry.path.range(of:#"^videos/[a-f0-9-]{36}/[0-9]{1,2}\.part$"#,options:.regularExpression) != nil || entry.path.range(of: #"^photos/[a-fA-F0-9-]{36}\.(jpg|mp4|mov|webm)$"#, options: .regularExpression) != nil else { throw PorchError.message("Archive contains an unsupported path or file type.") }
             guard entry.uncompressedSize <= UInt64(limit), files[entry.path] == nil else { throw PorchError.message("Archive has oversized or duplicate entries.") }
             var bytes = Data(); let crc = try archive.extract(entry) { chunk in total += chunk.count; guard total <= limit else { throw PorchError.message("Expanded archive exceeds the safety limit.") }; bytes.append(chunk) }
             guard crc == entry.checksum else { throw PorchError.message("Archive checksum failed.") }; files[entry.path] = bytes
         }
         guard let manifestBytes = files.removeValue(forKey: "archive.json") else { throw PorchError.message("Missing archive.json.") }
         let manifest = try JSONDecoder().decode(JSON.self, from: manifestBytes)
-        guard manifest["format"].string == "porchday-archive", manifest["version"].integer == 1, let source = manifest["member_id"].string, UUID(uuidString: source) != nil else { throw PorchError.message("Unsupported archive schema.") }
+        guard manifest["format"].string == "porchday-archive", [1,2].contains(manifest["version"].integer ?? 0), let source = manifest["member_id"].string, UUID(uuidString: source) != nil else { throw PorchError.message("Unsupported archive schema.") }
         if manifest["emojiLibrary"] != .null { _ = try EmojiLibraryPayload.parse(manifest["emojiLibrary"]) }
-        for photo in manifest["media"].array { guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID)." + (try mediaExtension(photo["mime"].string ?? "")), let bytes = files[path], digest(bytes) == photo["sha256"].string, photo["expires_at"] == .null || photo["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("A photo is missing or failed its checksum.") } }
+        if manifest["video_segments"] != .null { guard case .array = manifest["video_segments"] else { throw VideoV2Error.invalidManifest } }
+        for segment in manifest["video_segments"].array { try VideoArchive.validateSegment(segment,files:files) }
+        for photo in manifest["media"].array { if photo["videoVersion"].integer==2 {guard manifest["version"].integer==2 else{throw VideoV2Error.invalidManifest};try VideoArchive.validate(photo);continue};guard let photoID = photo["id"].string, UUID(uuidString:photoID) != nil, let path = photo["path"].string, path == "photos/\(photoID)." + (try mediaExtension(photo["mime"].string ?? "")), let bytes = files[path], digest(bytes) == photo["sha256"].string, photo["expires_at"] == .null || photo["expires_at"].string.flatMap(PorchDate.parse) != nil else { throw PorchError.message("A photo is missing or failed its checksum.") } }
         try requireSupportedCollections(manifest)
         return PortableArchive(manifest: manifest, files: files)
     }
@@ -102,16 +105,19 @@ struct PortableArchive {
     let entryCount:Int
     let photoCount:Int
     private let photos:[String:Int]
+    private let videoSegments:[String:Int]
     let orphanPhotoIDs:[String]
     func collection(_ name: String) throws -> [JSON] { try urls.indices.flatMap { try part($0).manifest[name].array } }
     func part(_ index:Int) throws -> PortableArchive { try Self.read(url:urls[index],secret:secret) }
-    func photo(_ id:String) throws -> (JSON,Data) { guard let index=photos[id] else { throw PorchError.message("A referenced photo is missing from the selected archive parts.") };let archive=try part(index);guard let meta=archive.manifest["media"].array.first(where:{$0["id"].string==id}),let path=meta["path"].string,let data=archive.files[path] else { throw PorchError.message("An archive photo is missing.") };return(meta,data) }
+    func photo(_ id:String) throws -> (JSON,Data) { guard let index=photos[id] else { throw PorchError.message("A referenced photo is missing from the selected archive parts.") };let archive=try part(index);guard let meta=archive.manifest["media"].array.first(where:{$0["id"].string==id}) else { throw VideoV2Error.integrity };if meta["videoVersion"].integer==2{return(meta,Data())};guard let path=meta["path"].string,let data=archive.files[path] else { throw PorchError.message("An archive photo is missing.") };return(meta,data) }
+    func video(_ id:String) async throws -> PreparedPhoto {let(record,_)=try photo(id);return try await VideoArchive.assemble(record){segment in guard let path=segment["path"].string,let index=videoSegments[path],let data=try part(index).files[path] else{throw VideoV2Error.integrity};return data}}
     private static func read(url:URL,secret:String) throws -> PortableArchive { let size=try url.resourceValues(forKeys:[.fileSizeKey]).fileSize ?? 0;guard size>0,size<=PortableArchive.limit+1024*1024 else { throw PorchError.message("An archive part exceeds the safety limit.") };let data=try Data(contentsOf:url);return try PortableArchive.read(url.pathExtension.lowercased()=="pgp" ? CryptoVault.unarchive(data,secret:secret) : data) }
     static func load(urls:[URL],secret:String) throws -> ArchiveSelection {
         guard !urls.isEmpty,urls.count<=1000 else { throw PorchError.message("Select all parts of one archive, up to 1000 files at a time.") }
         let directory=FileManager.default.temporaryDirectory.appendingPathComponent("porchday-import-"+UUID().uuidString,isDirectory:true);try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true)
         try SecureTemporaryFiles.protect(directory, directory: true)
         var loaded=false;defer { if !loaded { try? FileManager.default.removeItem(at:directory) } }
+        var segmentParts:[String:Int]=[:],segmentRecords:[String:JSON]=[:],videoRecords:[JSON]=[]
         var staged:[(Int,URL)]=[],setID:String?,memberID:String?,total:Int?,completions=0,entryCount=0,profileCount=0,libraryCount=0,photoParts:[String:Int]=[:],recordIDs=Set<String>(),references=Set<String>()
         for url in urls {
             let scoped=url.startAccessingSecurityScopedResource();defer { if scoped { url.stopAccessingSecurityScopedResource() } }
@@ -134,11 +140,14 @@ struct PortableArchive {
                 for slot in ["avatar","cover","background"] { if let id=archive.manifest["profile"][slot]["id"].string { references.insert(id) } }
             }
             if archive.manifest["emojiLibrary"] != .null { libraryCount += 1 }
-            for photo in archive.manifest["media"].array { guard let id=photo["id"].string,photoParts[id]==nil else { throw PorchError.message("Duplicate photo across archive parts.") };photoParts[id]=index-1 }
+            for segment in archive.manifest["video_segments"].array {guard let path=segment["path"].string,segmentParts[path]==nil else{throw VideoV2Error.integrity};segmentParts[path]=index-1;segmentRecords[path]=segment}
+            for photo in archive.manifest["media"].array { if photo["videoVersion"].integer==2 {videoRecords.append(photo)};guard let id=photo["id"].string,photoParts[id]==nil else { throw PorchError.message("Duplicate photo across archive parts.") };photoParts[id]=index-1 }
         }
         guard profileCount<=1,libraryCount<=1,completions==1,total==urls.count,Set(staged.map(\.0))==Set(1...urls.count),references.isSubset(of:Set(photoParts.keys)) else { throw PorchError.message("The archive is incomplete. Select every part, including its final completion part.") }
+        for video in videoRecords {for segment in video["segments"].array {guard let path=segment["path"].string,segmentRecords[path]==segment else{throw VideoV2Error.integrity}}}
+        let expected=Set(videoRecords.flatMap{$0["segments"].array.compactMap{$0["path"].string}});guard expected==Set(segmentRecords.keys)else{throw VideoV2Error.integrity}
         loaded=true
-        return ArchiveSelection(urls:staged.sorted{$0.0<$1.0}.map(\.1),secret:secret,memberID:memberID ?? "",entryCount:entryCount,photoCount:photoParts.count,photos:photoParts,orphanPhotoIDs:Array(Set(photoParts.keys).subtracting(references)))
+        return ArchiveSelection(urls:staged.sorted{$0.0<$1.0}.map(\.1),secret:secret,memberID:memberID ?? "",entryCount:entryCount,photoCount:photoParts.count,photos:photoParts,videoSegments:segmentParts,orphanPhotoIDs:Array(Set(photoParts.keys).subtracting(references)))
     }
 }
 
@@ -219,7 +228,15 @@ struct PortableArchive {
                         }
                         if section=="media" {
                             guard let id=row["id"].string else { throw PorchError.message("Invalid photo identifier.") }
-                            let raw=try await api.bytes("/api/v1/exports/\(jobID)/media/\(id)/bytes"),envelope=try JSONDecoder().decode(JSON.self,from:raw),payload=try await vault.open(.object(["id":.string(id),"envelope":envelope]))
+                            let raw=try await api.bytes("/api/v1/exports/\(jobID)/media/\(id)/bytes?video_version=2"),envelope=try JSONDecoder().decode(JSON.self,from:raw),payload=try await vault.open(.object(["id":.string(id),"envelope":envelope]))
+                            if payload["videoVersion"].integer==2 {
+                                let video=try SegmentedVideoCrypto.decode(JSONEncoder().encode(payload["video"]));var hash=SHA256(),segments:[JSON]=[]
+                                for segment in video.segments {
+                                    try Task.checkCancellation();let cipher=try await api.videoChunk("/api/v1/exports/\(jobID)/media/\(id)/chunks/\(segment.index)",expectedSize:segment.size),bytes=try SegmentedVideoCrypto.decrypt(cipher,manifest:video,index:segment.index),path=VideoArchive.path(id,segment.index)
+                                    hash.update(data:bytes);let entry:JSON = .object(["id":.string(id),"index":.number(Double(segment.index)),"path":.string(path),"size":.number(Double(bytes.count)),"sha256":.string(PortableArchive.digest(bytes))]);segments.append(entry);try await append(entry,section:"video_segments",reference:reference,photo:(path,bytes));manifest["version"] = .number(2)
+                                }
+                                let meta:JSON = .object(["id":.string(id),"path":.string("photos/\(id).mp4"),"mime":.string("video/mp4"),"videoVersion":.number(2),"size":.number(Double(video.size)),"duration":.number(video.duration),"segments":.array(segments),"caption":payload["caption"],"tags":payload["tags"],"poster":payload["poster"],"alt":payload["alt"],"width":.number(Double(video.width)),"height":.number(Double(video.height)),"sha256":.string(hash.finalize().map{String(format:"%02x",$0)}.joined()),"post_id":row["post_id"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null]);try await append(meta,section:"media",reference:reference);manifest["version"] = .number(2);continue
+                            }
                             guard let encoded=payload["bytes"].string,let image=Data(base64Encoded:encoded) else { throw PorchError.message("Invalid encrypted photo.") };let mime = payload["mime"].string ?? ""; if mime == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(image) } else { guard try VideoContainer.mime(image) == mime else { throw PorchError.message("Archive video format mismatch.") }; _ = try await VideoPipeline.prepare(image) }
                             let path="photos/\(id)." + (try PortableArchive.mediaExtension(mime)),meta:JSON = .object(["id":.string(id),"path":.string(path),"mime":.string(mime),"caption":payload["caption"],"tags":payload["tags"],"poster":payload["poster"],"alt":payload["alt"],"width":payload["width"],"height":payload["height"],"sha256":.string(PortableArchive.digest(image)),"post_id":row["post_id"],"profile_id":row["profile_member_id"],"group_id":row["group_id"],"slot":row["slot"],"created_at":context["createdAt"],"expires_at":deadline.map{.string(PorchDate.string($0))} ?? .null]);try await append(meta,section:"media",reference:reference,photo:(path,image))
                         } else {
@@ -235,6 +252,14 @@ struct PortableArchive {
         guard let member else { throw PorchError.message("Sign in first.") }
         let (metadata,bytes)=try selection.photo(id),deadline=try PortableArchive.photoDeadline(metadata,parent:expiry)
         guard deadline.map({$0>Date()}) ?? true else { throw PorchError.message("An imported photo expired before it could be saved.") }
+        if metadata["videoVersion"].integer==2 {
+            guard try await api.social("/videos/capabilities")["enabled"].boolean else {throw PorchError.message("Video imports are not enabled on this server yet.")}
+            let video=try await selection.video(id),outbox=try NativeVideoOutbox(owner:member.id),operation=UUID().uuidString.lowercased(),generation=authenticationGeneration
+            let staged=try await outbox.stage(video,postID:parent,model:self,audience:"only_me",group:nil,expiry:deadline,storageID:operation)
+            defer{try? outbox.discard(operation)}
+            try await outbox.sendStaged(operation,media:staged.reservation,api:api,check:{guard self.authenticationGeneration==generation,self.vault.unlocked else{throw CancellationError()}},progress:{_ in})
+            return staged.metadata
+        }
         let image: PreparedPhoto
         if metadata["mime"].string == "image/jpeg" { image = try PhotoPipeline.prepare(bytes) } else { guard try VideoContainer.mime(bytes) == metadata["mime"].string else { throw PorchError.message("Archive video format mismatch.") }; image = try await VideoPipeline.prepare(bytes) }
         let meta:JSON = .object(["id":.string(image.id),"alt":metadata["alt"],"mime":.string(image.mime),"name":.string("media." + (try PortableArchive.mediaExtension(image.mime))),"caption":metadata["caption"],"tags":metadata["tags"],"poster":.string(image.poster),"width":.number(Double(image.width)),"height":.number(Double(image.height))])
