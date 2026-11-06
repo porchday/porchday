@@ -99,3 +99,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['(?:^|/)docs/evidence/mobile-album-picker-release-2026-11-03\.md$']
 regexes = ['^(?:f66c399224c652c57115c6045e15fb348d4bf368|a8ef16aee99014877f57c77aaa0c17ea69d96197)$']
+
+[[allowlists]]
+description = "Exact public Git source revisions in the verified 150-connection release report; commit IDs, not credentials."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['(?:^|/)docs/evidence/connection-limit-release-2026-11-04\.md$']
+regexes = ['^(?:c1594e92ab82d4c16d80db73db89ad511be78302|bd0b2ed192f69c06c873ac174fa75069939a640d)$']
