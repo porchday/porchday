@@ -16,6 +16,7 @@ Porchday's original source is licensed under Apache License 2.0. Dependencies ke
 | ZIPFoundation | 0.9.20 | MIT | https://github.com/weichsel/ZIPFoundation/tree/0.9.20 |
 | React and React DOM | 19.3.1 | MIT | https://github.com/facebook/react/tree/v19.3.1 |
 | React Scheduler | 0.28.0 | MIT | https://github.com/facebook/react |
+| Mediabunny | 1.65.2 | MPL-2.0 | https://github.com/Vanilagy/mediabunny/tree/v1.65.2 |
 | fflate | 0.8.3 | MIT | https://github.com/101arrowz/fflate/tree/v0.8.3 |
 | node-qrcode | 1.5.4 | MIT | https://github.com/soldair/node-qrcode/tree/v1.5.4 |
 | dijkstrajs | 1.0.3 | MIT | https://github.com/andrewhayward/dijkstra |
@@ -1374,3 +1375,5 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+Mediabunny is used without changes. Its source is available at https://github.com/Vanilagy/mediabunny/tree/v1.65.2 under the Mozilla Public License 2.0 (https://mozilla.org/MPL/2.0/). Its license does not relicense Porchday application files.

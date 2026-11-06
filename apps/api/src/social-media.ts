@@ -16,7 +16,7 @@ export interface RouteDependencies {
   fail(code:string,status?:400|403|404|409|413|429,details?:unknown):never;
   id(raw:string|undefined):string;
 }
-interface MediaDependencies extends RouteDependencies {
+export interface MediaDependencies extends RouteDependencies {
   body<T>(c:SocialContext,schema:z.ZodType<T>,maxBytes?:number):Promise<T>;
   writeAllowed(db:Db):Promise<void>;
   checkEnvelope(db:Db,member:string,envelope:Pick<EncryptedEnvelope,'context'|'recipients'>,kind:string,options?:{postId?:string;allowPast?:boolean;historyPostId?:string;historySourceRevision?:number;photoRefreshId?:string}):Promise<unknown>;
@@ -113,7 +113,9 @@ export function registerMediaRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
       await checkEnvelope(db,c.get('memberId'),b.routing,'media',{allowPast:b.routing.context.audience==='only_me',historyPostId:b.history_post_id,historySourceRevision:b.history_source_revision,photoRefreshId:b.photo_refresh_id});
       // Preserve directory-before-profile lock order while serializing quota reservations.
       await db`select member_id from app.profiles where member_id=${c.get('memberId')} for update`;
-      const [quota]=await db`select coalesce(sum(byte_size),0)::bigint as bytes from app.media_assets where owner_id=${c.get('memberId')}`;
+      const [existing]=await db`select * from app.media_assets where id=${b.id} and owner_id=${c.get('memberId')}`;
+      if(existing){if(existing.video_stream_id||existing.envelope_sha256!==b.digest||Number(existing.byte_size)!==b.byte_size)fail('MEDIA_UPLOAD_MISMATCH',409);return{id:b.id,upload_url:'/api/v1/media/'+b.id+'/bytes',state:existing.state};}
+      const [quota]=await db`select (select coalesce(sum(byte_size),0) from app.media_assets where owner_id=${c.get('memberId')})+(select coalesce(sum(byte_size),0) from app.video_streams where owner_id=${c.get('memberId')}) as bytes`;
       if(Number(quota.bytes)+b.byte_size>1024*1024*1024)fail('MEDIA_QUOTA',413);
       await db`insert into app.media_assets(id,owner_id,object_key,envelope,envelope_sha256,byte_size,state) values(${b.id},${c.get('memberId')},${'media/'+c.get('memberId')+'/'+b.id},${db.json(JSON.parse(canonicalJson(b.routing)))},${b.digest},${b.byte_size},'pending')`;
       return {id:b.id,upload_url:'/api/v1/media/'+b.id+'/bytes'};

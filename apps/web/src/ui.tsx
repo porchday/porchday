@@ -316,6 +316,7 @@ export function Modal({
         <button
           className="icon-button"
           aria-label="Close dialog"
+          type="button"
           onClick={onClose}
         >
           <Icon name="close" />

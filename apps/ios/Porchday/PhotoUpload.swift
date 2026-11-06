@@ -1,7 +1,7 @@
 import Foundation
 
 /// Editors keep selection identity stable across separate upload attempts.
-struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); let bytes: Data; let width: Int; let height: Int; var alt = ""; var mime = "image/jpeg"; var poster = ""; var caption = ""; var tags: [PersonTag] = []; var photoDate = PhotoCalendar.day(Date()) }
+struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); let bytes: Data; let width: Int; let height: Int; var alt = ""; var mime = "image/jpeg"; var poster = ""; var caption = ""; var tags: [PersonTag] = []; var photoDate = PhotoCalendar.day(Date()); var largeVideo: PreparedLargeNativeVideo? = nil }
 
 @MainActor enum PhotoUpload {
     /// A manual retry can follow a committed reservation or a partly uploaded
@@ -11,6 +11,7 @@ struct PreparedPhoto: Identifiable { let id = UUID().uuidString.lowercased(); le
                        seal: @MainActor (JSON, String) async throws -> JSON,
                        reserve: @MainActor (JSON) async throws -> JSON,
                        put: @MainActor (String, Data) async throws -> Void) async throws -> JSON {
+        guard photo.largeVideo == nil else { throw PorchError.message("Share this video through the post composer.") }
         let id = UUID().uuidString.lowercased()
         let metadata: JSON = .object(["id": .string(id), "mime": .string(photo.mime), "name": .string(photo.mime == "image/jpeg" ? "photo.jpg" : "video." + VideoContainer.fileExtension(photo.mime)),
                                       "alt": .string(photo.alt), "caption": .string(photo.caption), "tags": .array(photo.tags.map(\.json)), "poster": .string(photo.poster), "width": .number(Double(photo.width)), "height": .number(Double(photo.height))])

@@ -1,3 +1,5 @@
+import {archiveVideoReader} from "./archive-video-reader";
+import {validateArchivedVideo,validateArchivedSegment} from "./video-archive";
 import { unzipSync, zipSync, strToU8, strFromU8 } from "fflate";
 import type { Json } from "./api";
 import {
@@ -17,7 +19,7 @@ export interface ArchiveSet {
 }
 export interface PortableArchive extends Json {
   format: "porchday-archive";
-  version: 1;
+  version: 1|2;
   generated_at: string;
   member_id: string;
   handle: string;
@@ -29,6 +31,7 @@ export interface PortableArchive extends Json {
   comments: Json[];
   reactions: Json[];
   media: Json[];
+  video_segments?: Json[];
   connections: Json[];
   groups: Json[];
   photos?: Json[];
@@ -103,6 +106,7 @@ export function packArchive(
 ) {
   const files: Record<string, Uint8Array> = {
     ...photos,
+    ...(archive.version===2?{"videos.html":strToU8(archiveVideoReader)}:{}),
     "archive.json": strToU8(JSON.stringify(archive, null, 2)),
     "index.html": strToU8(
       `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Your Porchday archive</title><style>body{font:18px/1.6 system-ui;max-width:760px;margin:60px auto;padding:20px;color:#244e43;background:#f6f3ea}article{padding:25px 0;border-bottom:1px solid #bbb}img,video{max-width:100%}small{font-size:14px}p{white-space:pre-wrap}</style><h1>Your Porchday archive</h1><p>@${htmlEscape(archive.handle)} · ${htmlEscape(archive.generated_at)}</p><p>${archive.archive_set ? `Part ${archive.archive_set.index}${archive.archive_set.total ? " of " + archive.archive_set.total : ""}. Keep all files in this archive set. Extract all parts into one folder to view photos referenced by other parts.` : ""}</p><p>Your contributions only. Other members’ private content is not included. Saved copies are outside the service’s deletion control.</p>${[...archive.posts, ...archive.comments, ...archive.reactions].map((p) => `<article><small>${htmlEscape(p.created_at)} · ${htmlEscape(p.audience)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small><p>${htmlEscape(p.payload.text || "")}${p.payload.emoji ? archiveReactionHtml(p.payload) : ""}</p>${(p.payload.media || []).map((m: Json) => archiveMediaHtml(m)).join("")}</article>`).join("")}${(archive.photos || []).map(p => `<article><small>Photo · ${htmlEscape(p.photo_date)}${p.expires_at ? " · Original expiry " + htmlEscape(p.expires_at) : ""}</small>${p.payload.media.map((m: Json) => archiveMediaHtml(m)).join("")}</article>`).join("")}${(archive.albums || []).map(a => `<section><h2>${htmlEscape(a.payload.name)}</h2><p>${htmlEscape(a.payload.description)}</p><small>Owned album · ${htmlEscape(a.id)}. Photo membership is recorded in archive.json; sharing permissions are not restored.</small></section>`).join("")}${archive.emojiLibrary ? `<section><h2>My images</h2>${archive.emojiLibrary.customEmojis.map((item) => `<p>${archiveReactionHtml(item)}</p>`).join("")}</section>` : ""}<p>See archive.json for profile, saved emoji images, connection/group references, reactions, and provenance. Reference IDs do not reveal unavailable private context.</p></html>`,
@@ -115,7 +119,7 @@ export function packArchive(
     files[`archive-part-${part}.json`] = files["archive.json"];
     if (archive.archive_set.complete)
       files["index.html"] = strToU8(
-        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>Extract all parts into one directory. Your photos are in the photos folder.</p><ul>${Array.from({ length: archive.archive_set.total || 0 }, (_, i) => `<li><a href="index-part-${String(i + 1).padStart(3, "0")}.html">Part ${i + 1}</a></li>`).join("")}</ul></html>`,
+        `<!doctype html><html lang="en"><meta charset="utf-8"><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>Extract all parts into one directory. Your photos are in the photos folder.${archive.version===2?' <a href="videos.html">Open archived videos</a>.':''}</p><ul>${Array.from({ length: archive.archive_set.total || 0 }, (_, i) => `<li><a href="index-part-${String(i + 1).padStart(3, "0")}.html">Part ${i + 1}</a></li>`).join("")}</ul></html>`,
       );
   }
   const zip = zipSync(files, { level: 5 });
@@ -159,7 +163,7 @@ export function unpackArchive(bytes: Uint8Array): {
   }
   if (
     archive.format !== "porchday-archive" ||
-    archive.version !== 1 ||
+    ![1,2].includes(archive.version) ||
     typeof archive.member_id !== "string" ||
     !Array.isArray(archive.posts) ||
     !Array.isArray(archive.comments) ||
@@ -225,7 +229,10 @@ export function unpackArchive(bytes: Uint8Array): {
     )
       throw new Error("An authored entry has invalid photo references.");
   }
+  if(archive.video_segments!==undefined&&!Array.isArray(archive.video_segments))throw Error("Invalid video segments.");
+  for(const segment of archive.video_segments||[])validateArchivedSegment(segment,files);
   for (const media of archive.media) {
+    if(media.videoVersion===2){if(archive.version!==2)throw Error("Unsupported video archive version.");validateArchivedVideo(media);continue;}
     if (
       typeof media.id !== "string" ||
       !validMediaPath(media.path, media.mime) ||
@@ -339,6 +346,7 @@ export function validMediaPath(path: unknown, mime: unknown) {
 }
 
 export function archiveMediaHtml(media: Json) {
+  if(media.videoVersion===2)return `<p><a href="videos.html">Open archived video</a> · ${htmlEscape(media.alt||media.name||"Video")}</p>`;
   const ext = media.mime === "video/mp4" ? "mp4" : media.mime === "video/quicktime" ? "mov" : media.mime === "video/webm" ? "webm" : media.mime === "image/jpeg" ? "jpg" : null;
   if (!ext || typeof media.id !== "string" || !/^[A-Za-z0-9_-]+$/.test(media.id)) return "";
   const src = `photos/${media.id}.${ext}`, alt = htmlEscape(media.alt || "");

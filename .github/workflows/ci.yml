@@ -54,10 +54,13 @@ jobs:
       - run: node scripts/prepare-test-databases.ts
       - run: npm test
       - name: Verify photo migrations with the preserved release schema
-        run: npx vitest run apps/api/test/independent-photos.database.test.ts apps/api/test/independent-photos.http.test.ts
+        run: npx vitest run apps/api/test/independent-photos.database.test.ts apps/api/test/independent-photos.http.test.ts apps/api/test/segmented-video.http.test.ts
         env:
           PHOTO_TEST_SCHEMA: without-052-057
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium webkit
+      - run: node scripts/check-video-playback.mjs
+      - run: node scripts/check-video-outbox.mjs
+      - run: node scripts/check-video-picker.mjs
       - run: node scripts/check-photo-calendar.mjs
       - run: node scripts/check-existing-album-photos.mjs
       - run: node scripts/check-photo-interactions.mjs

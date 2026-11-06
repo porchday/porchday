@@ -1,3 +1,11 @@
+import {videoUpdatePlaceholder} from "./video-placeholder";
+import {validateVideoManifest} from "@porchday/crypto/video";
+import {VideoPicker} from "./VideoPicker";
+import type {PreparedLargeVideo} from "./video-prepare";
+import {stageVideo,stageMedia,savePublication,sendPublication,pendingPublications,cancelPublication,discardLocalPublication} from "./video-outbox";
+import {SegmentedVideo} from "./SegmentedVideo";
+import {ActivityAuthor,postAudienceLabel} from "./ActivityAuthor";
+import {PhotoViewer} from "./PhotoViewer";
 import {AttachmentDateEditor} from "./AttachmentDateEditor";
 import {signAttachmentDate} from "./attachment-photo-date";
 import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
@@ -233,6 +241,7 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
   };
 }
 type PendingPhoto = {
+  largeVideo?:PreparedLargeVideo;
   photoDate?: string;
   mime?: string;
   poster?: string;
@@ -271,6 +280,14 @@ export function Composer({
   );
   const [timer, setTimer] = useState("");
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const [largeVideosEnabled,setLargeVideosEnabled]=useState(false);
+  const [pendingVideos,setPendingVideos]=useState<{id:string;createdAt:string}[]>([]);
+  const [videoProgress,setVideoProgress]=useState("");
+  const uploadAbort=useRef<AbortController|null>(null);
+  const preparedVideos=useRef(new Map<string,PreparedLargeVideo>());
+  const refreshPendingVideos=async()=>{if(typeof navigator.storage?.getDirectory==="function")setPendingVideos(await pendingPublications(vault.member.id));};
+  useEffect(()=>{let alive=true;void get("/videos/capabilities").then(value=>{if(alive)setLargeVideosEnabled(value.enabled===true);}).catch(()=>{});void refreshPendingVideos().catch(()=>{});return()=>{alive=false;uploadAbort.current?.abort();for(const video of preparedVideos.current.values())void video.dispose();};},[vault.member.id]);
+  useEffect(()=>{const ids=new Set(photos.map(p=>p.id));for(const[id,video]of preparedVideos.current)if(!ids.has(id)){void video.dispose();preparedVideos.current.delete(id);}},[photos]);
   const draftUrls = useRef(new Set<string>());
   useEffect(() => {
     const current = new Set(photos.filter(p => isVideo(p.mime)).map(p => p.preview));
@@ -315,6 +332,7 @@ export function Composer({
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if(mode==="photos"&&photos.some(p=>p.largeVideo)){await action.run(async()=>{throw Error("Videos belong in a post. Switch to Post or remove the video before sharing photos.");});return;}
     if(mode==="photos"&&shareTabs){
       if(!photos.length)return;
       const destination=await action.runSave(async()=>{
@@ -336,8 +354,13 @@ export function Composer({
       const id = crypto.randomUUID();
       const expiresAt = deadline(timer);
       const createdAt = new Date().toISOString();
+      const durable=photos.some(p=>p.largeVideo);
+      const abort=new AbortController();uploadAbort.current=abort;
+      const staged:Awaited<ReturnType<typeof stageMedia>>[]=[];
+      let saved=false;
       const media: MediaPayload[] = [];
       const photoDates=[];
+      try {
       for (const photo of photos) {
         const meta = {
           id: crypto.randomUUID(),
@@ -348,12 +371,12 @@ export function Composer({
           name: photo.name,
           width: photo.width,
           height: photo.height,
+          ...(photo.largeVideo?{videoVersion:2 as const,duration:photo.largeVideo.duration}:{}),
         };
+        const video=photo.largeVideo?await stageVideo(vault.member.id,id,meta.id,photo.largeVideo,abort.signal,fraction=>setVideoProgress(`Encrypting video… ${Math.round(fraction*100)}%`)):undefined;
         const envelope = await vault.seal(
           {
-            bytes: bytesToBase64(
-              new Uint8Array(await photo.blob.arrayBuffer()),
-            ),
+            ...(video?{video,bytes:videoUpdatePlaceholder}:{bytes:bytesToBase64(new Uint8Array(await photo.blob.arrayBuffer()))}),
             ...meta,
           },
           {
@@ -368,7 +391,8 @@ export function Composer({
         );
         const bytes = new TextEncoder().encode(JSON.stringify(envelope));
         if (bytes.length > 22_020_096) throw Error("This encrypted attachment is too large for this audience. Choose a smaller file.");
-        const upload = await post("/media", {
+        if(durable)staged.push(await stageMedia(vault.member.id,id,envelope,video));
+        else {const upload = await post("/media", {
           id: meta.id,
           envelope,
           byte_size: bytes.length,
@@ -377,7 +401,7 @@ export function Composer({
           method: "PUT",
           headers: { "Content-Type": "application/octet-stream" },
           body: new Blob([bytes]),
-        });
+        });}
         media.push(meta);
         photoDates.push(await signAttachmentDate(vault,meta.id,id,photo.photoDate||localPhotoDate(),1));
       }
@@ -392,12 +416,19 @@ export function Composer({
           expiresAt,
         },
       );
-      await post("/posts", { envelope, photo_dates:photoDates, media_ids: media.map((p) => p.id), on_behalf_of: onBehalf || null });
+      const publication={envelope,photo_dates:photoDates,media_ids:media.map(p=>p.id),on_behalf_of:onBehalf||null};
+      if(durable){await savePublication(vault.member.id,id,staged,publication);saved=true;
+        // The durable encrypted post now owns this intent. Remove the live draft
+        // before sending so an uncertain response cannot create a duplicate post.
+        setText("");setTags([]);setOnBehalf("");setPhotos([]);setTimer("");
+        await refreshPendingVideos();await sendPublication(vault.member.id,id,abort.signal,setVideoProgress);
+      }else await post("/posts",publication);
       setText("");
       setTags([]);setOnBehalf("");
       setPhotos([]);
       setTimer("");
       onPosted();
+      }finally{if(durable&&!saved)await discardLocalPublication(vault.member.id,id);uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}
     }, "Post shared.");
   }
   if (vault.member.status === "restricted") return null;
@@ -407,6 +438,8 @@ export function Composer({
       data-unsaved-draft={Boolean(text.trim() || photos.length) || undefined}
       onSubmit={submit}
     >
+      {pendingVideos.map(p=><div className="panel" key={p.id}><p>An encrypted post upload is saved on this device ({localDate(p.createdAt)}).</p><Button type="button" disabled={action.busy} onClick={()=>void action.runSave(async()=>{const abort=new AbortController();uploadAbort.current=abort;try{await sendPublication(vault.member.id,p.id,abort.signal,setVideoProgress);onPosted();}finally{uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}},"Post shared.")}>Resume upload</Button><Button type="button" disabled={action.busy} onClick={()=>void action.run(async()=>{await cancelPublication(vault.member.id,p.id);await refreshPendingVideos();})}>Cancel upload</Button></div>)}
+      {videoProgress&&<div role="status"><p>{videoProgress}</p><Button type="button" onClick={()=>uploadAbort.current?.abort()}>Pause upload</Button></div>}
       <fieldset disabled={action.busy} className="composer-fields">
       {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos</button></div>}
       {mode==="post"&&<>
@@ -480,7 +513,7 @@ export function Composer({
             ref={input}
             type="file"
             disabled={action.busy}
-            accept={`${PHOTO_ACCEPT},${VIDEO_ACCEPT}`}
+            accept={largeVideosEnabled?PHOTO_ACCEPT:`${PHOTO_ACCEPT},${VIDEO_ACCEPT}`}
             multiple
             className="sr-only"
             tabIndex={-1}
@@ -492,8 +525,9 @@ export function Composer({
             onClick={() => input.current?.click()}
           >
             <Icon name="photo" size={18} />
-            <span>Photos & videos</span>
+            <span>{largeVideosEnabled?"Photos":"Photos & videos"}</span>
           </button>
+          {largeVideosEnabled&&mode==="post"&&<VideoPicker disabled={action.busy||photos.length>=10} onPrepared={(video,name)=>{const id=crypto.randomUUID();preparedVideos.current.set(id,video);setPhotos(current=>[...current,{id,name,alt:"",photoDate:localPhotoDate(),blob:video.blob,width:video.width,height:video.height,mime:video.mime,poster:video.poster,preview:video.preview,largeVideo:video}]);}}/>}
           <TimerSelect value={timer} onChange={setTimer} />
         </div>
         <Button
@@ -505,7 +539,7 @@ export function Composer({
           {mode==="photos"?(album?"Add photos to album":"Add photos"):"Share post"} <Icon name="arrow" size={16} />
         </Button>
       </div>
-      <p className="muted">Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience.</p>
+      <p className="muted">{largeVideosEnabled?"Videos in posts: choose a source up to 1 GiB, then trim to 10 minutes and prepare at 1080p or 720p. Prepared videos can be up to 250 MiB. Uploads share your 1 GiB media allowance.":"Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience."}</p>
       <div className="composer-privacy">
         <Icon name="lock" size={13} />
         {groupId ? (
@@ -879,33 +913,7 @@ export function PostCard({
   return (
     <article ref={cardRef} className="post-card panel">
       <header className="post-heading">
-        <a href={`/wall/${row.author_id}`} className="post-author">
-          <MemberAvatar memberId={row.author_id} name={row.author_handle || "?"} />
-          <div>
-            <strong>
-              {row.author_id === vault.member.id
-                ? `@${vault.member.handle}`
-                : row.author_handle
-                  ? `@${row.author_handle}`
-                  : "A connection"}
-            </strong>
-            <span>
-              <time dateTime={row.created_at} title={localDate(row.created_at)}>
-                {relativeDate(row.created_at)}
-              </time>{" "}
-              · <Icon name="lock" size={11} />
-              {row.audience === "only_me"
-                ? "Only me"
-                : row.group_id
-                  ? "Group"
-                  : row.audience === "community" ? "Community" : row.audience === "extended_family" ? "Extended family" : row.audience === "family"
-                    ? "Family"
-                    : row.audience === "friends"
-                      ? "Friends only"
-                      : "Friends & family"}
-            </span>
-          </div>
-        </a>
+        <ActivityAuthor memberId={row.author_id} handle={row.author_handle} date={row.created_at} sharing={postAudienceLabel(row.audience,row.group_id)}/>
         <div className="post-menu">
           <button
             ref={optionsButton}
@@ -1089,10 +1097,13 @@ export function PostCard({
     </article>
   );
 }
-export function EncryptedPhoto({ media, thumbnail=false, photoProof }: { media: MediaPayload; thumbnail?:boolean; photoProof?:PhotoProof }) {
+export function EncryptedPhoto(props:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){return props.media.videoVersion===2?<SegmentedVideo media={props.media} thumbnail={props.thumbnail}/>:<LegacyEncryptedPhoto {...props}/>;}
+function LegacyEncryptedPhoto({ media, thumbnail=false, photoProof }: { media: MediaPayload; thumbnail?:boolean; photoProof?:PhotoProof }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const imageRef = useRef<HTMLImageElement>(null);
+  const [viewer,setViewer]=useState(false);
+  useEffect(()=>setViewer(false),[media.id]);
   const video = isVideo(media.mime);
   const [requested, setRequested] = useState<string | null>(null);
   const [poster, setPoster] = useState<{ id: string; url: string } | null>(null);
@@ -1194,7 +1205,14 @@ export function EncryptedPhoto({ media, thumbnail=false, photoProof }: { media: 
         decoding="async"
         width={media.width}
         height={media.height}
+        role={thumbnail?undefined:"button"}
+        tabIndex={thumbnail?undefined:0}
+        aria-label={thumbnail?undefined:`Open photo: ${media.alt||"Shared photo"}`}
+        onClick={thumbnail?undefined:()=>setViewer(true)}
+        onKeyDown={thumbnail?undefined:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setViewer(true);}}}
+        className={thumbnail?undefined:"viewable-photo"}
       />}
+      {!thumbnail&&!video&&viewer&&<PhotoViewer src={url} alt={media.alt||""} onClose={()=>setViewer(false)}/>}
       {!thumbnail && media.alt && <figcaption>{media.alt}</figcaption>}
       {!thumbnail && <Tags value={media.tags}/>}
     </figure>
@@ -2001,18 +2019,18 @@ function ReshareDialog({
           });
           if (
             (!isVideo(original.mime) && original.mime !== "image/jpeg") ||
-            typeof original.bytes !== "string"
+            original.videoVersion!==2&&typeof original.bytes !== "string"
           )
             throw new Error("An original photo has an unsupported format.");
-          const bytes = base64ToBytes(original.bytes);
-          const { width, height } = await validatedMedia(bytes, original.mime);
+          const video=original.videoVersion===2?validateVideoManifest(original.video):undefined;
+          const {width,height}=video||await validatedMedia(base64ToBytes(original.bytes as string),original.mime as string);
           const photoExpiresAt = preservedPhotoDeadline(
             oldEnvelope.context.expiresAt,
             expiresAt,
           );
           const item = { ...photo, width, height, posterExpiresAt: photoExpiresAt, id: crypto.randomUUID() };
           const envelope = await vault.seal(
-            { ...item, bytes: original.bytes },
+            { ...item, ...(video?{video,bytes:videoUpdatePlaceholder}:{bytes:original.bytes}) },
             {
               id: item.id,
               kind: "media",
@@ -2024,10 +2042,10 @@ function ReshareDialog({
             },
           );
           const packed = new TextEncoder().encode(JSON.stringify(envelope));
-          const upload = await post("/media", {
+          const upload = await post(video?"/videos":"/media", {
             id: item.id,
             envelope,
-            byte_size: packed.length,
+            byte_size: packed.length,...(video?{stream_id:video.streamId}:{}),
           });
           await request(upload.upload_url, {
             method: "PUT",
