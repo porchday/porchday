@@ -57,6 +57,13 @@ describe('uploaded Worker artifact verification',()=>{
   const incomplete=encode({...map,sourcesContent:[null]});
   expect(()=>verifyWorkerArtifacts({...options,expected:{...expected,'index.js.map':incomplete},hashes:{...hashes,'index.js.map':createHash('sha256').update(incomplete).digest('hex')},actual:{...options.actual,'index.js.map':encode({...normalized,sourcesContent:['']})}})).toThrow('MAP_CHANGED');
  });
+ it('accepts only the exact root-preserving provider variant under both normalization flags',()=>{
+  const f=fixture(),remote={...f.map,file:f.entry,sources:f.map.sources.map(path=>path.replace(/^(?:\.\.\/)+/,'')),sourcesContent:f.map.sourcesContent.map(value=>value??'')};
+  const options={...f,actual:{...f.actual,'index.js.map':encode(remote)},allowObservedMapNormalization:true,allowObservedPathNormalization:true};
+  expect(verifyWorkerArtifacts(options).mapMode).toBe('observed-provider-root-preserving-normalization');
+  for(const key of ['allowObservedMapNormalization','allowObservedPathNormalization'])expect(()=>verifyWorkerArtifacts({...options,[key]:false})).toThrow('MAP_CHANGED');
+  for(const patch of [{sourceRoot:'/other/build'},{sourcesRoot:null},{sources:['different',...remote.sources.slice(1)]},{sourcesContent:['changed','','','','']},{file:'other.js'},{mappings:'BBBB'},{names:['different']},{extra:1}])expect(()=>verifyWorkerArtifacts({...options,actual:{...options.actual,'index.js.map':encode({...remote,...patch})}})).toThrow('MAP_CHANGED');
+ });
  it('rejects unexpected modules and malformed maps even when their local hashes match',()=>{
   const f=fixture();expect(()=>verifyWorkerArtifacts({...f,actual:{...f.actual,'extra.js':Buffer.from('extra')}})).toThrow('MODULE_SET_CHANGED');
   const bytes=Buffer.from('{}'),hash=createHash('sha256').update(bytes).digest('hex');

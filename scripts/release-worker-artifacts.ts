@@ -20,7 +20,7 @@ export function verifyWorkerArtifacts(options:{entry:'index.js'|'edge.js';expect
  for(const value of [expected,actual,hashes])if(Object.keys(value).sort().join(',')!==names.join(','))throw Error('RELEASE_WORKER_MODULE_SET_CHANGED');
  for(const name of names){if(!(expected[name] instanceof Uint8Array)||!(actual[name] instanceof Uint8Array)||expected[name].length>16*1024*1024||actual[name].length>16*1024*1024||!/^[a-f0-9]{64}$/.test(hashes[name])||hash(expected[name])!==hashes[name])throw Error('RELEASE_WORKER_PREPARATION_CHANGED');}
  if(!Buffer.from(expected[entry]).equals(actual[entry]))throw Error('RELEASE_WORKER_EXECUTABLE_CHANGED');
- const local=sourceMap(expected[entry+'.map']),remote=sourceMap(actual[entry+'.map']);let mapMode:'byte-identical'|'observed-provider-normalization'|'observed-provider-path-normalization'='byte-identical';
+ const local=sourceMap(expected[entry+'.map']),remote=sourceMap(actual[entry+'.map']);let mapMode:'byte-identical'|'observed-provider-normalization'|'observed-provider-path-normalization'|'observed-provider-root-preserving-normalization'='byte-identical';
  if(!Buffer.from(expected[entry+'.map']).equals(actual[entry+'.map'])){
   if(!options.allowObservedMapNormalization||Object.keys(local).sort().join(',')!=='mappings,names,sourceRoot,sources,sourcesContent,version'||typeof local.sourceRoot!=='string'||!local.sourceRoot)throw Error('RELEASE_WORKER_MAP_CHANGED');
   const sources=local.sources as string[],contents=local.sourcesContent as (string|null)[],missing=sources.filter((_,index)=>contents[index]===null);
@@ -29,8 +29,12 @@ export function verifyWorkerArtifacts(options:{entry:'index.js'|'edge.js';expect
   if(canonical(normalized)===canonical(remote))mapMode='observed-provider-normalization';
   else{
    const paths=sources.map(path=>path.replace(/^(?:\.\.\/)+/,''));
-   if(!options.allowObservedPathNormalization||sources.some(path=>path.startsWith('/')||path.includes('\\'))||!sources.some((path,index)=>path!==paths[index])||canonical({...normalized,file:entry,sources:paths})!==canonical(remote))throw Error('RELEASE_WORKER_MAP_CHANGED');
-   mapMode='observed-provider-path-normalization';
+   if(!options.allowObservedPathNormalization||sources.some(path=>path.startsWith('/')||path.includes('\\'))||!sources.some((path,index)=>path!==paths[index]))throw Error('RELEASE_WORKER_MAP_CHANGED');
+   if(canonical({...normalized,file:entry,sources:paths})===canonical(remote))mapMode='observed-provider-path-normalization';
+   // Observed November 6: provider retains the exact reviewed sourceRoot instead
+   // of replacing it with sourcesRoot:null. Every other field remains exact.
+   else if(canonical({...local,file:entry,sources:paths,sourcesContent:contents.map(value=>value??'')})===canonical(remote))mapMode='observed-provider-root-preserving-normalization';
+   else throw Error('RELEASE_WORKER_MAP_CHANGED');
   }
  }
  return{entry,mapMode,hashes:Object.fromEntries(names.map(name=>[name,hash(actual[name])])),sourceCount:(remote.sources as string[]).length};

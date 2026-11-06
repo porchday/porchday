@@ -728,3 +728,14 @@ provider response but omitted its HTTP status from the log. The receipt records
 combined status/code claims, incomplete catalogues and changed inventories still
 fail closed. The caller must verify the original process receipt and exact failed
 version-upload endpoint; code-only evidence never permits replay of the operation.
+
+## November 6 provider map variant
+
+The provider now sometimes retains the prepared `sourceRoot` exactly while adding
+the entry filename, stripping leading parent-directory segments and filling only
+the four known missing dependency sources. Both existing normalization opt-ins
+are required. The verifier compares the entire map against that exact derived
+form, including the unchanged root, source contents, mappings and names. Changed
+roots, added fields, altered executable bytes and any other differences still
+fail. Read-only reconciliation of an already uploaded operation uses its original
+manifest and operation ID; this comparison never authorizes uploading it again.
