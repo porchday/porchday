@@ -664,3 +664,14 @@ monthly 99.99% availability objective.
 ## Native parity before production
 
 Every forward production release must satisfy the [iOS/macOS parity checklist](native-parity.md). Review equivalent behavior across web, iOS and macOS, and run both native workflows on the exact candidate commit. The production activation CLI requires implemented native equivalents, a reviewed capability matrix, and successful exact-source automated native checks. Hosted-native interoperability and physical-device checks may remain pending with linked follow-up issues; they do not block production. Failed or skipped required automated native build/test steps and CI from a different source still block activation. Update private release-tool pins to include this gate before any forward production activation. Emergency recovery and rollback remain available. Build verification is separate from signed distribution and physical-device acceptance.
+
+## November 6 provider map variant
+
+The provider now sometimes retains the prepared `sourceRoot` exactly while adding
+the entry filename, stripping leading parent-directory segments and filling only
+the four known missing dependency sources. Both existing normalization opt-ins
+are required. The verifier compares the entire map against that exact derived
+form, including the unchanged root, source contents, mappings and names. Changed
+roots, added fields, altered executable bytes and any other differences still
+fail. Read-only reconciliation of an already uploaded operation uses its original
+manifest and operation ID; this comparison never authorizes uploading it again.
