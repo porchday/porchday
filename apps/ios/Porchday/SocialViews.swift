@@ -19,7 +19,7 @@ struct FeedView: View {
     @State private var loaded = false
     @State private var loadID = UUID()
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
+        TimelineView(.explicit(rows.compactMap(\.expiry))) { _ in
             List {
                 if let notice = model.member?.access.notice { Section { Text(notice) } }
                 if let profileHeader { Section { profileHeader } }
@@ -37,7 +37,7 @@ struct FeedView: View {
             .scrollContentBackground(wallpaper == .none ? .visible : .hidden)
             .background { if wallpaper != .none { WallpaperBackground(wallpaper: wallpaper).ignoresSafeArea(edges: .bottom) } }
         }
-        .navigationTitle(title).refreshable { await load() }.task(id: endpoint) { await load() }
+        .navigationTitle(title).refreshable { await model.api.invalidateReads(); await load() }.task(id: endpoint + ":\(model.foregroundVersion)") { await load() }
         .onChange(of: model.historySharingVersion) { _, _ in Task { await load() } }
         .toolbar { NavigationLink { NotificationsView() } label: { Label("Notifications", systemImage: "bell") } }
         .sheet(isPresented: $compose) { NavigationStack { ComposerView(groupID: groupID) { Task { await load() } } } }
@@ -61,12 +61,13 @@ struct FeedView: View {
             let result = try await model.api.social(endpoint + suffix)
             guard current() else { return }
             let existing = more ? rows : []
-            if !more { rows = []; cursor = nil; loaded = false }
             let complete = await ProgressiveFeed.decode(result["items"].array, isCurrent: current, open: { await vault.item($0) }, publish: { items in
+                if !more && loaded && !rows.isEmpty && items.count < result["items"].array.count { return }
                 rows = existing + items.filter { next in !existing.contains { $0.id == next.id } }
                 loaded = true
             })
             guard complete, current() else { return }
+            if !more && result["items"].array.isEmpty { rows = [] }
             cursor = result["next_cursor"].string
             loaded = true
         }
@@ -97,7 +98,7 @@ struct PostDetailView: View {
     @State private var mayModerate = false
     @State private var deleted = false
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { _ in
+        TimelineView(.explicit(([post].compactMap { $0 } + comments).compactMap(\.expiry))) { _ in
             List {
                 if let post, post.active, !deleted {
                     Section { MomentCard(item: post); ReactionBar(item: post, reactions: reactions, postID: id, changed: refresh); Button("Write a comment") { reply = post }.disabled(!model.canWriteSocial) }
@@ -112,7 +113,7 @@ struct PostDetailView: View {
                     Section { Button("Report a concern") { report = post } }
                 } else { ContentUnavailableView("Post unavailable", systemImage: "clock", description: Text("It may have expired, been removed, or no longer be shared with you.")) }
             }
-        }.navigationTitle("Post").porchInlineTitle().task(id: id) { await refresh() }.refreshable { await refresh() }
+        }.navigationTitle("Post").porchInlineTitle().task(id: id + ":\(model.foregroundVersion)") { await refresh() }.refreshable { await model.api.invalidateReads(); await refresh() }
             .confirmationDialog("Delete this content and its replies?",isPresented:Binding(get:{removing != nil},set:{if !$0 { removing=nil }}),titleVisibility:.visible) {
                 Button("Delete permanently",role:.destructive) { guard let item=removing else{return};Task { await model.perform { _ = try await model.api.social("/"+(item.isComment ? "comments/":"posts/")+item.id,method:"DELETE");if item.isComment { await refresh() } else { deleted=true };removing=nil } } }
                 Button("Cancel",role:.cancel) { removing=nil }

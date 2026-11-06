@@ -1,12 +1,17 @@
 import Foundation
 import Combine
+import CryptoKit
 import Porchcrypto
 
 @MainActor final class CryptoVault: ObservableObject {
     @Published var device: Device? {
-        didSet { if oldValue?.id != device?.id || oldValue?.revoked != device?.revoked { invalidateAvatars() } }
+        didSet { if oldValue?.id != device?.id || oldValue?.revoked != device?.revoked { clearPresentationCache() } }
     }
     let avatars = ProfileAvatarCache()
+    private var opened = NativeMemoryCache<JSON>(budget: 24 * 1024 * 1024)
+    private var presentationGeneration = 0
+    let images = NativeImageCache()
+    func clearPresentationCache() { presentationGeneration += 1; opened.clear(); images.clear(); invalidateAvatars() }
     @Published private(set) var avatarVersion = 0
     func invalidateAvatars() { avatars.clear(); avatarVersion += 1 }
     @Published var devices: [Device] = []
@@ -125,7 +130,7 @@ import Porchcrypto
         let value: JSON = .object(["active": .string(active.id), "keys": .array(keys)])
         try writeStored(JSONEncoder().encode(value), "device:\(member.id)")
     }
-    func clear() { invalidateAvatars(); for session in sessions.values { session.close() }; sessions = [:]; device = nil; devices = []; recoveryNote = ""; pending = nil; access = MemberAccess(status: "unavailable") }
+    func clear() { clearPresentationCache(); for session in sessions.values { session.close() }; sessions = [:]; device = nil; devices = []; recoveryNote = ""; pending = nil; access = MemberAccess(status: "unavailable") }
     private func verify(_ device: Device) throws {
         var error: NSError?; let actual = PorchcryptoPublicFingerprint(device.publicKey, &error); if let error { throw error }
         guard actual == device.fingerprint else { throw PorchError.message("Device fingerprint mismatch. Sharing has stopped.") }
@@ -191,11 +196,23 @@ import Porchcrypto
         if let id = row["id"].string, id != context["id"].string { throw PorchError.message("Content identity mismatch.") }
         if let author = row["author_id"].string, author != context["authorId"].string { throw PorchError.message("Content author mismatch.") }
         if let deadline = row["effective_expires_at"].string.flatMap(PorchDate.parse), deadline <= Date() { throw PorchError.message("This content has expired.") }
+        let deadline = PorchDate.minimum([row["effective_expires_at"], row["expires_at"], context["expiresAt"]])
+        guard deadline.map({ $0 > Date() }) ?? true else { throw PorchError.message("This content has expired.") }
+        try Task.checkCancellation()
+        guard unlocked else { throw PorchError.message("Unlock your account first.") }
+        let generation = presentationGeneration
+        let serialized = try envelope.serialized()
+        let cacheKey = SHA256.hash(data: Data(serialized.utf8)).map { String(format: "%02x", $0) }.joined()
+        if let cached = opened.value(for: cacheKey) { return cached }
         guard let authorID = context["authorDeviceId"].string else { throw PorchError.message("Missing author identity.") }
         let author = try Device(try await social("/devices/" + authorID)); try verify(author)
         guard let session = envelope["recipients"].array.compactMap({ $0["fingerprint"].string }).compactMap({ sessions[$0] }).first else { throw PorchError.message("This content predates your device. Restore your recovery keys or ask the author to share it.") }
-        var error: NSError?; let payload = session.decrypt(try envelope.serialized(), expectedContextJSON: try context.serialized(), authorPublicKey: author.publicKey, error: &error)
-        if let error { throw error }; return try .parse(payload)
+        var error: NSError?; let payload = session.decrypt(serialized, expectedContextJSON: try context.serialized(), authorPublicKey: author.publicKey, error: &error)
+        if let error { throw error }
+        guard generation == presentationGeneration, unlocked, !Task.isCancelled else { throw CancellationError() }
+        let result = try JSON.parse(payload)
+        opened.insert(result, for: cacheKey, cost: payload.utf8.count, expires: min(deadline ?? .distantFuture, Date().addingTimeInterval(20)))
+        return result
     }
     func item(_ row: JSON) async -> SocialItem { let envelope = row["envelope"]; do { return SocialItem(id: row["id"].string ?? envelope["context"]["id"].string ?? "", raw: row, envelope: envelope, payload: try await open(row), error: nil) } catch { return SocialItem(id: row["id"].string ?? "", raw: row, envelope: envelope, payload: nil, error: error.localizedDescription) } }
     func sign(_ statement: JSON) throws -> JSON { guard access.writesSocial, let device, !device.revoked, let session = sessions[device.fingerprint] else { throw PorchError.message("Social changes are unavailable. Your data and appeals remain available.") }; var error: NSError?; let value = session.sign(try statement.serialized(), error: &error); if let error { throw error }; return try .parse(value) }

@@ -19,6 +19,13 @@ import Combine
     @Published private(set) var historySharingVersion = 0
     private var historySharingNeedsRetry = false
     private var sceneIsActive = false
+    @Published private(set) var foregroundVersion = 0
+    func refreshForeground() async {
+        await api.invalidateReads()
+        await restore()
+        if sceneIsActive { foregroundVersion += 1 }
+        await refreshHistoricalPosts()
+    }
     private var historySharing: (id: UUID, task: Task<Void, Never>)?
     let vault = CryptoVault()
     let api = API.shared
@@ -108,7 +115,10 @@ import Combine
     }
     func setSceneActive(_ active: Bool) {
         sceneIsActive = active
-        if !active { cancelHistoricalPostSharing() }
+        if !active {
+            cancelHistoricalPostSharing(); vault.clearPresentationCache()
+            Task { await api.invalidateReads() }
+        }
     }
     /// Sharing policy comes from the server's explicit per-connection choice.
     /// Older connections are not upgraded by opening the app. Bound one pass
@@ -126,6 +136,7 @@ import Combine
                       self.member?.access.writesSocial == true, self.vault.unlocked,
                       self.sceneIsActive, self.deletionPhase == .idle else { throw CancellationError() }
             }
+            var changed = false
             do {
                 var cursor: String?, count = 0, pages = 0
                 var seen = Set<String>()
@@ -164,7 +175,7 @@ import Combine
                                       let bytes = Data(base64Encoded: encoded) else { throw PorchError.message("A photo could not be opened.") }
                                 if payload["mime"].string == "image/jpeg" { _ = try PhotoPipeline.safelyDecode(bytes) } else { guard try VideoContainer.mime(bytes) == payload["mime"].string else { throw PorchError.message("Video metadata mismatch.") } }
                             }, check: { try check() }))
-                        try check(); count += 1; self.historySharingVersion += 1
+                        try check(); count += 1; changed = true
                     }
                     cursor = page["next_cursor"].string
                     if cursor != nil && (count >= 20 || pages >= 4) {
@@ -193,6 +204,7 @@ import Combine
                 self.historySharingNotice = "Some earlier posts could not be shared yet. Your account remains available."
                 self.historySharingNeedsRetry = true
             }
+            if changed, self.authenticationGeneration == generation { self.historySharingVersion += 1 }
             if self.historySharing?.id == runID { self.historySharing = nil; self.historySharingBusy = false }
         }
         historySharing = (runID, task)
@@ -207,5 +219,5 @@ import Combine
         guard let postID = ServerConfiguration.postID(from: url) else { return }
         deepLinkPost = postID
     }
-    func perform(_ action: () async throws -> Void) async { error = nil; do { try await action() } catch { self.error = error.localizedDescription } }
+    func perform(_ action: () async throws -> Void) async { error = nil; do { try await action() } catch is CancellationError { } catch { if !Task.isCancelled { self.error = error.localizedDescription } } }
 }

@@ -22,10 +22,15 @@ import SwiftUI
                 .tint(Color(red: 0.27, green: 0.39, blue: 0.29))
                 .task { model.setSceneActive(scenePhase == .active); await model.restore(); await model.refreshHistoricalPosts() }
                 .onOpenURL { model.handleURL($0) }
+                #if os(iOS)
+                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
+                    model.vault.clearPresentationCache(); Task { await model.api.invalidateReads() }
+                }
+                #endif
                 .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }
                 .onChange(of: scenePhase) { _, phase in
                     model.setSceneActive(phase == .active)
-                    if phase == .active, model.member != nil { Task { await model.restore(); await model.refreshHistoricalPosts() } }
+                    if phase == .active, model.member != nil { Task { await model.refreshForeground() } }
                 }
                 .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(HStack(spacing: 12) { Image("PorchdayMark").resizable().frame(width: 48, height: 48).accessibilityHidden(true); Text("Porchday").font(.largeTitle) }) } }
         }
@@ -53,6 +58,7 @@ struct MainTabs: View {
     @State private var builderAvailable = false
     @State private var destination: String? = "feed"
     @State private var shareAlbum: String?
+    @StateObject private var activity = NativeActivityStore()
     var body: some View {
         Group {
             #if os(macOS)
@@ -110,7 +116,7 @@ struct MainTabs: View {
         case "builder": BuilderChatView()
         case "features": BuilderChatView(features: true)
         case "settings": SettingsView()
-        default: NativeFeedView()
+        default: NativeFeedView(store: activity)
         }
     }
 }
