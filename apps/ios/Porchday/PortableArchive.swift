@@ -45,14 +45,15 @@ struct PortableArchive {
     func zip() throws -> Data {
         let archive = try Archive(accessMode: .create)
         var entries = files
-        if let reader=Bundle.main.url(forResource:"VideoArchiveReader",withExtension:"html") { entries["videos.html"]=try Data(contentsOf:reader) } else { throw PorchError.message("The offline video reader is missing from this app build.") }
+        let videoLink=manifest["version"].integer==2 ? " <a href=\"videos.html\">Open archived videos</a>.":""
+        if manifest["version"].integer==2 {if let reader=Bundle.main.url(forResource:"VideoArchiveReader",withExtension:"html") { entries["videos.html"]=try Data(contentsOf:reader) } else { throw PorchError.message("The offline video reader is missing from this app build.") }}
         entries["archive.json"] = try JSONEncoder().encode(manifest)
         let texts = (manifest["posts"].array + manifest["comments"].array).map { "<article><p>" + Self.escape($0["payload"]["text"].string ?? "") + "</p><small>" + Self.escape($0["created_at"].string ?? "") + "</small></article>" }.joined() + manifest["reactions"].array.map { row in
             guard let reaction = try? ReactionValue.parse(row["payload"]) else { return "<article><p>Reaction data is preserved in archive.json.</p></article>" }
             let image = reaction.png.map { "<img width=32 height=32 alt=\"" + Self.escape(reaction.label) + "\" src=\"data:image/png;base64," + $0.base64EncodedString() + "\">" } ?? Self.escape(reaction.unicode ?? reaction.label)
             return "<article><p>Reaction: " + image + "</p></article>"
         }.joined()
-        entries["index.html"] = Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>This is one part of a member-owned archive. Keep every part. Saved copies are outside service deletion control.</p>" + texts + "<p>Full structured data is in archive.json. Photos may be in another archive part. <a href=\"videos.html\">Open archived videos</a>.</p>").utf8)
+        entries["index.html"] = Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>This is one part of a member-owned archive. Keep every part. Saved copies are outside service deletion control.</p>" + texts + "<p>Full structured data is in archive.json. Photos may be in another archive part.\(videoLink)</p>").utf8)
         if let index = manifest["archive_set"]["index"].integer {
             let suffix=String(format:"%03d",index)
             entries["archive-part-\(suffix).json"]=entries["archive.json"]
@@ -60,7 +61,7 @@ struct PortableArchive {
             if manifest["archive_set"]["complete"].boolean {
                 let total=manifest["archive_set"]["total"].integer ?? index
                 let links=(1...total).map { "<li><a href=\"index-part-" + String(format:"%03d",$0) + ".html\">Part \($0)</a></li>" }.joined()
-                entries["index.html"]=Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>Extract all parts into one folder. <a href=\"videos.html\">Open archived videos</a>.</p><ul>"+links+"</ul>").utf8)
+                entries["index.html"]=Data(("<!doctype html><meta charset=utf-8><title>Your Porchday archive</title><h1>Your Porchday archive</h1><p>Extract all parts into one folder.\(videoLink)</p><ul>"+links+"</ul>").utf8)
             }
         }
         guard entries.values.reduce(0, { $0 + $1.count }) <= Self.limit - 65536 else { throw PorchError.message("A single record exceeds the archive part safety limit.") }
