@@ -35,8 +35,8 @@ export async function prepareLargeVideo(file:File,options:VideoPreparationOption
   // Retain audio rather than silently dropping a track when AAC encoding is
   // unavailable. An explicit error offers an existing compatible MP4/native app.
   conversion=await Conversion.init({input,output,tracks:'all',trim:{start,end},tags:{},showWarnings:false,
-   video:{...dimensions,fit:'contain',codec:'avc',...(copyable?{}:{quality:new Quality(resolution===1080?3_000_000:1_800_000),frameRate:30,keyFrameInterval:2}),allowTransformationMetadata:false},
-   audio:{codec:'aac',...(copyable?{}:{quality:new Quality(128_000)})}});
+   video:{...dimensions,fit:'contain',codec:'avc',...(copyable?{}:{quality:new Quality({bitrate:resolution===1080?3_000_000:1_800_000}),frameRate:30,keyFrameInterval:2}),allowTransformationMetadata:false},
+   audio:{codec:'aac',...(copyable?{}:{quality:new Quality({bitrate:128_000})})}});
   if(!conversion.isValid||conversion.discardedTracks.length||conversion.utilizedTracks.length!==1+Number(info.audio))throw Error(codecError,{cause:conversion.discardedTracks.map(t=>({type:t.track.type,reason:t.reason}))});
   conversion.onProgress=fraction=>options.progress?.(fraction);options.signal.throwIfAborted();await conversion.execute();await writable.close();writable=undefined;
   const blob=await handle.getFile();if(!blob.size||blob.size>VIDEO_MAX_BYTES)throw Error('Choose a shorter video or 720p.');
