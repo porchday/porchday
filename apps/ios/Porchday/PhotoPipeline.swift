@@ -26,6 +26,16 @@ import CryptoKit
         #endif
     }
 }
+/// Serial decoding bounds transient pixel allocations without blocking SwiftUI.
+private actor NativeJPEGDecoder {
+    static let shared = NativeJPEGDecoder()
+    func decode(_ data: Data) throws -> (image: CGImage, orientation: UInt32) {
+        try Task.checkCancellation()
+        let result = try ReceivedPhoto.decodeJPEG(data)
+        try Task.checkCancellation(); return result
+    }
+}
+
 /// Decode each verified JPEG once within a short foreground window. Byte-keyed
 /// entries cannot substitute an old image for changed signed content.
 @MainActor final class NativeImageCache {
@@ -45,11 +55,7 @@ import CryptoKit
         let work: (id: UUID, task: Task<(image: CGImage, orientation: UInt32), Error>)
         if let existing = pending[key] { work = existing }
         else {
-            work = (UUID(), Task.detached(priority: .userInitiated) {
-                try Task.checkCancellation()
-                let result = try ReceivedPhoto.decodeJPEG(data)
-                try Task.checkCancellation(); return result
-            })
+            work = (UUID(), Task { try await NativeJPEGDecoder.shared.decode(data) })
             pending[key] = work
         }
         do {
@@ -78,6 +84,7 @@ struct EncryptedPhotoView: View {
     @EnvironmentObject var vault: CryptoVault
     @State private var image: PlatformImage?
     @State private var expiry: Date?
+    @State private var loadedID: String?
     @State private var error = ""
     var body: some View {
         TimelineView(.explicit([expiry].compactMap { $0 })) { clock in
@@ -94,13 +101,16 @@ struct EncryptedPhotoView: View {
             let generation = model.authenticationGeneration
             do {
                 guard let id=photo["id"].string else { return }
+                if loadedID != id { image = nil; expiry = nil }
                 let envelope=try await model.api.social("/media/\(id)/bytes")
                 let payload=try await vault.open(.object(["id":.string(id),"envelope":envelope]))
                 guard payload["mime"].string=="image/jpeg",let encoded=payload["bytes"].string,let imageData=Data(base64Encoded:encoded) else { throw PorchError.message("Unsupported encrypted photo format.") }
                 expiry=envelope["context"]["expiresAt"].string.flatMap(PorchDate.parse)
                 try Task.checkCancellation()
                 guard generation == model.authenticationGeneration, vault.unlocked else { return }
-                image=try await vault.images.decode(imageData, expiry: expiry)
+                let decoded = try await vault.images.decode(imageData, expiry: expiry)
+                guard generation == model.authenticationGeneration, vault.unlocked, !Task.isCancelled else { return }
+                image = decoded; loadedID = id
             } catch { if !(error is CancellationError) && !Task.isCancelled { image = nil; self.error=error.localizedDescription } }
         }
     }

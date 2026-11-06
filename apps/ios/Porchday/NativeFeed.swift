@@ -198,11 +198,19 @@ struct NativePhotoCard: View {
             let media = content["media"].array[0]
             alt = media["alt"].string ?? ""; caption = media["caption"].string ?? ""; tags = PersonTag.parse(media["tags"])
             let mime = media["mime"].string ?? "image/jpeg"
-            if mime.hasPrefix("image/") { image = try await model.vault.images.decode(opened.bytes, expiry: row["expires_at"].string.flatMap(PorchDate.parse)) }
+            if mime.hasPrefix("image/") {
+                let decoded = try await model.vault.images.decode(opened.bytes, expiry: row["expires_at"].string.flatMap(PorchDate.parse))
+                try service.check(); image = decoded
+            }
             else if mime == "video/webm" { let decoder = LocalWebM(); _ = try await decoder.open(opened.bytes); try service.check(); webM = decoder }
             else { let prepared = try PrivateMediaFile(opened.bytes, ext: VideoContainer.fileExtension(mime)); file = prepared; player = AVPlayer(url: prepared.url) }
             let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"; formatter.calendar = PhotoCalendar.calendar; date = formatter.date(from: row["photo_date"].string ?? "") ?? Date(); error = ""
-        } catch { if !(error is CancellationError) { self.error = error.localizedDescription } }
+        } catch {
+            if !(error is CancellationError) && !Task.isCancelled {
+                image = nil; content = .null; player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil
+                self.error = error.localizedDescription
+            }
+        }
     }
 }
 

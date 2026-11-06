@@ -1,4 +1,7 @@
 import XCTest
+import CoreGraphics
+import ImageIO
+import UniformTypeIdentifiers
 #if canImport(PorchdayMac)
 @testable import PorchdayMac
 #else
@@ -51,6 +54,21 @@ import XCTest
         XCTAssertNil(cache.value(for: "large")); XCTAssertEqual(cache.cost, 6)
         XCTAssertNil(cache.value(for: "a", now: future)); XCTAssertEqual(cache.cost, 3)
         cache.clear(); XCTAssertEqual(cache.cost, 0)
+    }
+    func testVerifiedPhotoReuseClearAndExpiry() async throws {
+        let context = try XCTUnwrap(CGContext(data: nil, width: 16, height: 12, bitsPerComponent: 8, bytesPerRow: 64, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue))
+        let pixels = try XCTUnwrap(context.makeImage()), bytes = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(bytes, UTType.jpeg.identifier as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, pixels, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let cache = NativeImageCache(), data = bytes as Data
+        let first = try await cache.decode(data), second = try await cache.decode(data)
+        XCTAssertTrue(first === second, "Warm photo appearances must reuse decoded pixels")
+        do { _ = try await cache.decode(data, expiry: .distantPast); XCTFail("Expired image escaped cache") } catch {}
+        cache.clear()
+        let fresh = try await cache.decode(data)
+        XCTAssertFalse(first === fresh, "Privacy reset must discard decoded images")
+        do { _ = try await cache.decode(Data([0xff, 0xd8, 0xff, 0xd9])); XCTFail("Malformed JPEG accepted") } catch {}
     }
     func testOnlyPresentationReadsAreEligible() {
         let id = UUID().uuidString.lowercased()
