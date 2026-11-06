@@ -25,7 +25,8 @@
         "docs/native-parity.md#feed",
         "design/photo-interactions.md",
         "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
-        "docs/native-parity.md#unified-activity-headers"
+        "docs/native-parity.md#unified-activity-headers",
+        "docs/native-parity.md#signup-guidance-and-feed-label--november-6"
       ],
       "implementation": {
         "ios": "implemented",
@@ -110,7 +111,9 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#invitations"
+        "docs/native-parity.md#invitations",
+        "docs/native-parity.md#signup-guidance-and-feed-label--november-6",
+        "design/signup-experience.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -118,7 +121,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/27"
       ]
     },
     {

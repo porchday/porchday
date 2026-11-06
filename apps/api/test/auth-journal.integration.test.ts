@@ -1,3 +1,4 @@
+import {SignJWT} from "jose";
 import {persistSessionDenial} from '../src/session-denial';
 import {cleanupDeniedSessions} from '../src/session-denial-cleanup';
 import {provePrivacyCommits} from '../src/privacy-commit-proof';
@@ -219,6 +220,38 @@ suite("Authenticated account privacy journal boundary", () => {
     await Promise.allSettled(pending);
     vi.restoreAllMocks();
     await owner?.end();
+  });
+  it("shows browser verification results only after confirmed verification and handles repeat/invalid links", async () => {
+    const p = await person();
+    await owner.query('UPDATE public.auth_user SET "emailVerified"=false WHERE id=$1', [p.id]);
+    const store = await journal(p.id);
+    const sent = await call("send-verification-email", {email:p.email, callbackURL:env.APP_URL+"/login?verified=1"});
+    expect(sent.response.status).toBe(200);
+    const mail = emails.filter(v=>v.subject==="Verify your Porchday email").at(-1)!;
+    expect(mail.text).toContain("expires in 1 hour");
+    expect(mail.text).toContain("recovery secret");
+    const url = new URL(mail.text.match(/http:\/\/localhost:5173\/api\/auth\/verify-email\?\S+/)![0]);
+    const checked = await call("verify-email"+url.search, undefined, "", {Accept:"text/html"});
+    expect(checked.response.status).toBe(303);
+    expect(checked.response.headers.get("location")).toBe(env.APP_URL+"/login?verification=1");
+    const receipt = checked.response.headers.getSetCookie().map(v=>v.split(";")[0]).join("; ");
+    expect(await (await call("verification-result", undefined, receipt)).response.json()).toEqual({state:"verified"});
+    expect((await owner.query('SELECT "emailVerified" FROM public.auth_user WHERE id=$1',[p.id])).rows[0].emailVerified).toBe(true);
+    const before = store.writes;
+    const repeat = await call("verify-email"+url.search, undefined, "", {Accept:"text/html"});
+    expect(repeat.response.status).toBe(303);
+    const repeated = repeat.response.headers.getSetCookie().map(v=>v.split(";")[0]).join("; ");
+    expect(await (await call("verification-result", undefined, repeated)).response.json()).toEqual({state:"used"});
+    expect(store.writes).toBe(before);
+    const invalid = await call("verify-email?token=invalid", undefined, "", {Accept:"text/html"});
+    expect(invalid.response.status).toBe(303);
+    const invalidReceipt = invalid.response.headers.getSetCookie().map(v=>v.split(";")[0]).join("; ");
+    expect(await (await call("verification-result", undefined, invalidReceipt)).response.json()).toEqual({state:"invalid"});
+    expect(await (await call("verification-result?verified=1")).response.json()).toEqual({state:null});
+    const expiredToken = await new SignJWT({email:p.email}).setProtectedHeader({alg:"HS256"}).setIssuedAt(Math.floor(Date.now()/1000)-7200).setExpirationTime(Math.floor(Date.now()/1000)-3600).sign(new TextEncoder().encode(env.BETTER_AUTH_SECRET));
+    const expired = await call("verify-email?token="+expiredToken,undefined,"",{Accept:"text/html"});
+    const expiredReceipt = expired.response.headers.getSetCookie().map(v=>v.split(";")[0]).join("; ");
+    expect(await (await call("verification-result",undefined,expiredReceipt)).response.json()).toEqual({state:"expired"});
   });
   it.each(["confirmed", "rollback-response-lost", "commit-response-lost", "rollback-receipt-failure"])(
     "preserves transaction outcome evidence after %s",
