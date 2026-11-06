@@ -30,19 +30,46 @@ import CryptoKit
 /// entries cannot substitute an old image for changed signed content.
 @MainActor final class NativeImageCache {
     private var entries = NativeMemoryCache<PlatformImage>(budget: 64 * 1024 * 1024, limit: 32)
-    func clear() { entries.clear() }
-    func decode(_ data: Data, expiry: Date? = nil) throws -> PlatformImage {
+    private var generation = 0
+    private var pending: [String: (id: UUID, task: Task<(image: CGImage, orientation: UInt32), Error>)] = [:]
+    func clear() {
+        generation += 1; entries.clear()
+        for work in pending.values { work.task.cancel() }; pending.removeAll()
+    }
+    func decode(_ data: Data, expiry: Date? = nil) async throws -> PlatformImage {
+        try Task.checkCancellation()
         guard expiry.map({ $0 > Date() }) ?? true else { throw PorchError.message("This photo has expired.") }
         let key = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
         if let image = entries.value(for: key) { return image }
-        let image = try PhotoPipeline.safelyDecode(data)
-        #if os(iOS)
-        let pixels = (image.cgImage?.width ?? 2400) * (image.cgImage?.height ?? 2400)
-        #else
-        let pixels = Int(image.size.width * image.size.height)
-        #endif
-        entries.insert(image, for: key, cost: max(1, pixels) * 4, expires: min(expiry ?? .distantFuture, Date().addingTimeInterval(20)))
-        return image
+        let epoch = generation
+        let work: (id: UUID, task: Task<(image: CGImage, orientation: UInt32), Error>)
+        if let existing = pending[key] { work = existing }
+        else {
+            work = (UUID(), Task.detached(priority: .userInitiated) {
+                try Task.checkCancellation()
+                let result = try ReceivedPhoto.decodeJPEG(data)
+                try Task.checkCancellation(); return result
+            })
+            pending[key] = work
+        }
+        do {
+            let decoded = try await work.task.value
+            guard epoch == generation, !work.task.isCancelled, expiry.map({ $0 > Date() }) ?? true else { throw CancellationError() }
+            try Task.checkCancellation()
+            if pending[key]?.id == work.id { pending[key] = nil }
+            if let existing = entries.value(for: key) { return existing }
+            #if os(iOS)
+            let orientations: [UIImage.Orientation] = [.up, .upMirrored, .down, .downMirrored, .leftMirrored, .right, .rightMirrored, .left]
+            let image = UIImage(cgImage: decoded.image, scale: 1, orientation: orientations[Int(decoded.orientation) - 1])
+            #else
+            guard let image = NSImage(data: data) else { throw PorchError.message("Could not decode validated photo.") }
+            #endif
+            entries.insert(image, for: key, cost: decoded.image.width * decoded.image.height * 4, expires: min(expiry ?? .distantFuture, Date().addingTimeInterval(20)))
+            return image
+        } catch {
+            if pending[key]?.id == work.id { pending[key] = nil }
+            throw error
+        }
     }
 }
 struct EncryptedPhotoView: View {
@@ -73,7 +100,7 @@ struct EncryptedPhotoView: View {
                 expiry=envelope["context"]["expiresAt"].string.flatMap(PorchDate.parse)
                 try Task.checkCancellation()
                 guard generation == model.authenticationGeneration, vault.unlocked else { return }
-                image=try vault.images.decode(imageData, expiry: expiry)
+                image=try await vault.images.decode(imageData, expiry: expiry)
             } catch { if !(error is CancellationError) && !Task.isCancelled { image = nil; self.error=error.localizedDescription } }
         }
     }

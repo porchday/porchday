@@ -37,7 +37,7 @@ import Foundation
                 guard envelope["context"]["parentId"] == photo["id"], envelope["context"]["kind"].string == "media" else { throw PorchError.message("Photo bytes belong to different content.") }
                 let payload = try await model.vault.open(.object(["id": media["id"], "envelope": envelope]))
                 guard payload["mime"] == media["mime"], let bytes = payload["bytes"].string.flatMap({ Data(base64Encoded: $0) }), NativePhotoContract.hash(bytes) == content["photoProof"]["statement"]["sha256"].string else { throw PorchError.message("Photo bytes do not match the owner signature.") }
-                if media["mime"].string == "image/jpeg" { _ = try model.vault.images.decode(bytes, expiry: photo["expires_at"].string.flatMap(PorchDate.parse)) }
+                if media["mime"].string == "image/jpeg" { _ = try await model.vault.images.decode(bytes, expiry: photo["expires_at"].string.flatMap(PorchDate.parse)) }
                 else { guard let mime = media["mime"].string, try VideoContainer.mime(bytes) == mime else { throw PorchError.message("Photo format does not match its signed metadata.") }; _ = try await VideoPipeline.prepare(bytes) }
                 try check(); return (content, payload, bytes)
             } catch { last = error }
