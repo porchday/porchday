@@ -62,6 +62,7 @@ suite('Restored provider administrator with original object owners unavailable',
   }
  });
  it('runs the production restore path without the owner, holding surviving accounts while honoring later member deletion',async()=>{
+  for(const name of(await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')&&n>'040_restore_operator.sql').sort())await owner.unsafe(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
   const member=randomUUID(),removedMember=randomUUID(),deleted=randomUUID(),survivor=randomUUID(),timed=randomUUID(),child=randomUUID(),media=randomUUID();
   await owner`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${member},now(),now())`;
   await owner`insert into public.auth_user(id,name,email,"emailVerified") values(${member},'Synthetic restore',${member+'@example.test'},true)`;
@@ -73,12 +74,20 @@ suite('Restored provider administrator with original object owners unavailable',
   await owner`insert into app.comments(id,post_id,author_id,envelope,created_at) values(${child},${timed},${member},'{}',now()-interval '23 hours')`;
   const key='media/'+member+'/'+media,bytes='{"ciphertext":"synthetic encrypted photo"}',digest=createHash('sha256').update(bytes).digest('hex');
   await owner`insert into app.media_assets(id,owner_id,post_id,object_key,envelope,byte_size,state,envelope_sha256,raw_sha256) values(${media},${member},${survivor},${key},'{}',${Buffer.byteLength(bytes)},'attached',${digest},${digest})`;
+  const stream=randomUUID(),chunk=randomUUID(),chunkKey='media/'+member+'/'+chunk,chunkBytes='synthetic encrypted video chunk',chunkDigest=createHash('sha256').update(chunkBytes).digest('hex');
+  await owner`insert into app.video_streams(id,owner_id,byte_size,specification) values(${stream},${member},${Buffer.byteLength(chunkBytes)},${owner.json([{index:0,size:Buffer.byteLength(chunkBytes),sha256:chunkDigest}])})`;
+  await owner`insert into app.video_chunks(id,stream_id,owner_id,chunk_index,byte_size,sha256,object_key,received_at) values(${chunk},${stream},${member},0,${Buffer.byteLength(chunkBytes)},${chunkDigest},${chunkKey},now())`;
+  await owner`update app.video_streams set complete=true where id=${stream}`;
+  // The manifest root is inserted with its immutable stream association.
+  await owner`delete from app.media_assets where id=${media}`;
+  const videoRoot=randomUUID(),videoKey='media/'+member+'/'+videoRoot;
+  await owner`insert into app.media_assets(id,owner_id,post_id,object_key,envelope,byte_size,state,envelope_sha256,raw_sha256,video_stream_id) values(${videoRoot},${member},${survivor},${videoKey},'{}',${Buffer.byteLength(bytes)},'attached',${digest},${digest},${stream})`;
   const journal=await mf.getR2Bucket('JOURNAL') as unknown as JournalStore,sourceBucket=await mf.getR2Bucket('SOURCE') as unknown as R2Bucket,backup=await mf.getR2Bucket('BACKUP') as unknown as R2Bucket;
   const db:JournalDatabase={async status(){return(await operator`select app.safety_status() value`)[0].value;},async page(after){return(await operator`select app.safety_page(${after}::bigint,200) value`)[0].value;}};
   await initializePrivacyJournal(journal,db);const current=await readJournalControl(journal);await journal.put('control.json',JSON.stringify({...current.value,mode:'active',reason:null}),{onlyIf:{etagMatches:current.etag}});
   const initial=await db.status(),at=new Date(),run={id:randomUUID(),restore_at:at.toISOString(),generation:initial.generation,base_sequence:initial.sequence,expires_at:new Date(+at+7*86400000).toISOString()};
-  await sourceBucket.put(key,bytes);const item={object_key:key,canonical_sha256:digest,sha256:digest,byte_size:Buffer.byteLength(bytes)};
-  const backupDb:BackupDatabase={journal:db,async start(){return run;},async info(){return run;},async page(_,after){return after?[]:[item];},async missing(){return null;},async complete(){},async failed(){}};
+  await sourceBucket.put(videoKey,bytes);await sourceBucket.put(chunkKey,chunkBytes);const items=[{object_key:videoKey,canonical_sha256:digest,sha256:digest,byte_size:Buffer.byteLength(bytes)},{object_key:chunkKey,canonical_sha256:chunkDigest,sha256:chunkDigest,byte_size:Buffer.byteLength(chunkBytes)}].sort((a,b)=>a.object_key.localeCompare(b.object_key));
+  const backupDb:BackupDatabase={journal:db,async start(){return run;},async info(){return run;},async page(_,after){return after?[]:items;},async missing(){return null;},async complete(){},async failed(){}};
   const storage={source:sourceBucket,backup,journal,db:backupDb};await beginMediaBackup(storage);while(await copyMediaBackupPage(storage,run.id)!=='complete'){}
   // Independent decisions describe later actions; the SQL rows intentionally
   // retain the older snapshot until the real restore functions replay them.
@@ -91,9 +100,10 @@ suite('Restored provider administrator with original object owners unavailable',
   expect(await operator`select id from app.members where id=${removedMember}`).toHaveLength(0);expect(await operator`select id from public.auth_user where id=${removedMember}`).toHaveLength(0);
   expect(await operator`select id from app.posts where id in(${deleted},${timed})`).toHaveLength(0);expect(await operator`select id from app.comments where id=${child}`).toHaveLength(0);
   expect(await operator`select id from public.auth_session`).toHaveLength(0);expect(await operator`select id from public.auth_verification`).toHaveLength(0);expect((await operator`select status from app.members where id=${member}`)[0].status).toBe('hold');
-  const copied=new Map<string,string>();const verify=async(item:{key:string;sha256:string;byteSize:number})=>{if(copied.get(item.key)!==bytes||item.sha256!==digest||item.byteSize!==Buffer.byteLength(bytes))throw Error('MISSING_VERIFIED_MEDIA');};
+  const copied=new Map<string,string>();const verify=async(item:{key:string;sha256:string;byteSize:number})=>{const expected=item.key===chunkKey?chunkBytes:bytes;if(copied.get(item.key)!==expected||item.sha256!==createHash('sha256').update(expected).digest('hex')||item.byteSize!==Buffer.byteLength(expected))throw Error('MISSING_VERIFIED_MEDIA');};
   await expect(releasePrivacyQuarantine(journal,operator,verify)).rejects.toThrow('MISSING_VERIFIED_MEDIA');expect((await readJournalControl(journal)).value.mode).toBe('quarantine');
-  const restored=await restoreMediaSnapshot({journal,sql:operator,backup,snapshotId:run.id,pairedTime:run.restore_at,restoreObject:async value=>{const object=await backup.get('snapshots/'+run.id+'/objects/'+value.key.slice(6));expect(object).not.toBeNull();copied.set(value.key,await object!.text());}});expect(restored.copied).toBe(1);
+  const restored=await restoreMediaSnapshot({journal,sql:operator,backup,snapshotId:run.id,pairedTime:run.restore_at,restoreObject:async value=>{const object=await backup.get('snapshots/'+run.id+'/objects/'+value.key.slice(6));expect(object).not.toBeNull();copied.set(value.key,await object!.text());}});expect(restored.copied).toBe(2);
+  copied.delete(chunkKey);await expect(releasePrivacyQuarantine(journal,operator,verify)).rejects.toThrow('MISSING_VERIFIED_MEDIA');copied.set(chunkKey,chunkBytes);
   await releasePrivacyQuarantine(journal,operator,verify);expect((await readJournalControl(journal)).value.mode).toBe('active');expect((await db.status()).quarantined).toBe(false);
  });
 });

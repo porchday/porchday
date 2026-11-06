@@ -21,6 +21,7 @@ export async function stageVideo(owner:string,postId:string,mediaId:string,video
 }
 export async function stageMedia(owner:string,postId:string,envelope:EncryptedEnvelope,video?:VideoManifest):Promise<Reservation>{
  const bytes=JSON.stringify(envelope),dir=await directory(owner,postId),id=envelope.context.id;
+ if(new TextEncoder().encode(bytes).length>(video?1024*1024:22_020_096))throw Error("This encrypted attachment is too large for this audience. Choose a smaller audience or attachment.");
  await write(dir,id,bytes);
  return{id,byte_size:new TextEncoder().encode(bytes).length,...(video?{stream_id:video.streamId,segments:video.segments.map(({index,size,sha256})=>({index,size,sha256}))}:{})};
 }

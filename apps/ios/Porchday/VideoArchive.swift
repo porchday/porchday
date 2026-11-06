@@ -26,6 +26,9 @@ enum VideoArchive {
         for track in videos {let formats=try await track.load(.formatDescriptions);guard formats.allSatisfy({CMFormatDescriptionGetMediaSubType($0)==kCMVideoCodecType_H264})else{throw VideoV2Error.invalidManifest}}
         for track in audios {let formats=try await track.load(.formatDescriptions);guard formats.allSatisfy({CMFormatDescriptionGetMediaSubType($0)==kAudioFormatMPEG4AAC})else{throw VideoV2Error.invalidManifest}}
         let width=record["width"].integer!,height=record["height"].integer!
+        guard let track=videos.first else{throw VideoV2Error.invalidManifest}
+        let natural=try await track.load(.naturalSize),transform=try await track.load(.preferredTransform),display=natural.applying(transform)
+        guard Int(abs(display.width).rounded())==width,Int(abs(display.height).rounded())==height else{throw VideoV2Error.invalidManifest}
         let prepared=PreparedLargeNativeVideo(source:selected,url:selected.url,width:width,height:height,duration:min(duration,600))
         return PreparedPhoto(bytes:Data(),width:width,height:height,alt:record["alt"].string ?? "",mime:"video/mp4",poster:record["poster"].string ?? "",caption:record["caption"].string ?? "",tags:PersonTag.parse(record["tags"]),largeVideo:prepared)
     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 struct LargeVideoPreparationView: View {
     let source:SelectedVideoFile
     let prepared:(PreparedPhoto)->Void
@@ -23,5 +24,14 @@ struct LargeVideoPreparationView: View {
         }.navigationTitle("Prepare video").toolbar { Button("Cancel") { operation?.cancel();dismiss() } }
         }.task { do { duration=try await LargeVideoPreparation.inspect(source);end=min(600,duration) } catch { self.error=error.localizedDescription } }
         .onDisappear { operation?.cancel() }
+    }
+}
+
+struct PreparedLargeVideoPreview: View {
+    let video:PreparedLargeNativeVideo
+    @State private var player:AVPlayer?
+    var body:some View { VideoPlayer(player:player).frame(minHeight:180,maxHeight:300)
+        .task(id:video.url) { player=AVPlayer(url:video.url) }
+        .onDisappear { player?.pause();player?.replaceCurrentItem(with:nil);player=nil }
     }
 }
