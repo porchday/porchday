@@ -15,7 +15,7 @@ export function FeedExperience({initialContent="everything",initialView="scroll"
  const labels={everything:"Everything",posts:"Posts",photos:"Photos"};
  return <>
   <div className="page-heading mobile-tab-heading"><h1>Feed</h1></div>
-  <div className="feed-view-controls" aria-label="Feed view"><Button aria-pressed={view==="scroll"} onClick={()=>setView("scroll")}>Infinite scroll</Button><Button aria-pressed={view==="calendar"} onClick={()=>setView("calendar")}>Calendar</Button></div>
+  <div className="feed-view-controls" aria-label="Feed view"><Button aria-pressed={view==="scroll"} onClick={()=>setView("scroll")}>Feed</Button><Button aria-pressed={view==="calendar"} onClick={()=>setView("calendar")}>Calendar</Button></div>
   <details className="feed-author-controls"><summary>Filters · {labels[content]} · {audienceLabels[audience]}</summary><div className="feed-filter-selects">
    <label>Show<select value={content} onChange={e=>setContent(e.target.value as FeedContent)}>{Object.entries(labels).map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>
    <label>From<select value={audience} onChange={e=>setAudience(e.target.value as FeedAudience)}>{audienceOptions.map(value=><option key={value} value={value}>{audienceLabels[value]}</option>)}</select></label>

@@ -72,7 +72,7 @@ export function AuthPage({
   returnTo?: string;
 }) {
   const query = new URLSearchParams(location.search);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(() => { try { return sessionStorage.getItem("porchday.signup-email") || ""; } catch { return ""; } });
   const [password, setPassword] = useState("");
   const [handle, setHandle] = useState("");
   const [invite, setInvite] = useState(() =>
@@ -88,6 +88,44 @@ export function AuthPage({
   const [factorCode, setFactorCode] = useState("");
   const [backupCode, setBackupCode] = useState(false);
   const action = useAction();
+  const [invitationContext, setInvitationContext] = useState<{kind?: string; history?: string; expiresAt?: string} | null>(null);
+  const [invitationError, setInvitationError] = useState("");
+  const [verificationState, setVerificationState] = useState<string | null>(null);
+  const [resendAt, setResendAt] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!resendAt) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [resendAt]);
+  useEffect(() => {
+    setInvitationContext(null); setInvitationError("");
+    if (mode !== "join" || !invite) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      auth("invitation-policy", {inviteCode: invite, details: true}).then(result => {
+        if (active) setInvitationContext(result);
+      }).catch(() => { if (active) setInvitationError("We couldn’t confirm this invitation. Check the link or code in your invitation email. If you already created your account, log in or resend verification instead."); });
+    }, 400);
+    return () => { active = false; clearTimeout(timer); };
+  }, [mode, invite]);
+  useEffect(() => {
+    if (mode !== "login" || !query.has("verification")) return;
+    let active = true;
+    fetch("/api/auth/verification-result", {credentials: "same-origin", cache: "no-store"})
+      .then(async response => { if (!response.ok) throw Error(); return response.json(); })
+      .then(result => { if (active) setVerificationState(result.state || "unknown"); })
+      .catch(() => { if (active) setVerificationState("unavailable"); });
+    return () => { active = false; };
+  }, [mode]);
+  function rememberEmail() { try { sessionStorage.setItem("porchday.signup-email", email.trim()); } catch { /* Storage is optional. */ } }
+  async function resend() {
+    if (Date.now() < resendAt) return;
+    await action.run(async () => {
+      await auth("send-verification-email", {email, callbackURL: `${location.origin}/login?verified=1`});
+      setResendAt(Date.now() + 60_000); setNow(Date.now());
+    });
+  }
   const reset = mode === "reset";
   const join = mode === "join";
   const forgot = mode === "forgot";
@@ -118,6 +156,7 @@ export function AuthPage({
           acceptedRules: rules,
           callbackURL: `${location.origin}/login?verified=1`,
         });
+        rememberEmail(); setPassword(""); setResendAt(Date.now() + 60_000); setNow(Date.now());
         setDone(true);
       } else if (forgot) {
         await auth("request-password-reset", {
@@ -136,6 +175,7 @@ export function AuthPage({
           email,
           callbackURL: `${location.origin}/login?verified=1`,
         });
+        rememberEmail(); setResendAt(Date.now() + 60_000); setNow(Date.now());
         setDone(true);
       } else {
         const result = await auth("sign-in/email", {
@@ -144,6 +184,7 @@ export function AuthPage({
           callbackURL: "/",
         });
         setPassword("");
+        try { sessionStorage.removeItem("porchday.signup-email"); } catch { /* optional */ }
         if (result.twoFactorRedirect) {
           setSecondFactor(true);
         } else {
@@ -161,8 +202,8 @@ export function AuthPage({
       <main id="main-content" tabIndex={-1} className="auth-layout wrap auth-simple">
         <section className="auth-card">
           {mode === "login" && <Tagline />}
-          <h1>
-            {join
+          <h1 ref={done ? successHeading : undefined} tabIndex={done ? -1 : undefined}>
+            {done ? reset ? "Password updated." : "Check your email." : join
               ? "Create account"
               : forgot
                 ? "Reset password"
@@ -170,30 +211,37 @@ export function AuthPage({
                   ? "Choose a new password"
                   : verify
                     ? "Verify your email"
-                    : "Log in"}
+                    : verificationState === "verified" ? "Email verified" : "Log in"}
           </h1>
-          <p>
+          {!done && <p>
             {join
-              ? "An invitation is required. You must be 18 or older to join. If your invitation email names a Friend or Family connection, accepting and verifying your email creates that connection automatically. Your invitation email describes your inviter’s history-sharing choice. Your own sharing starts with full history for that connection; you can change your sharing choice or label, or disconnect later."
+              ? "Use the email address that received your invitation. You must be 18 or older. After creating your account, verify your email, then log in to set up private sharing."
               : forgot
                 ? "We’ll email a reset link if there’s an eligible account. Your encryption recovery secret is separate."
                 : reset
                   ? "Resetting your password won’t unlock your encrypted history or restore lost encryption keys."
                   : verify
                     ? "Open the verification link in your email to continue."
-                    : "Enter your email and password."}
-          </p>
+                    : verificationState === "verified" ? "Log in to finish setup. If you opened this link on another device, you can return to the Porchday app to log in." : ""}
+          </p>}
           {done ? (
             <div className="form-success">
               <Icon name="mail" size={35} />
-              <h3 ref={successHeading} tabIndex={-1}>{reset ? "Password updated." : "Check your email."}</h3>
               <p>
                 {reset
                   ? "Your other sessions have been revoked. Log in with your new password."
+                  : join ? `Open the verification email sent to ${email.trim()}. The link expires in 1 hour. Then log in with the password you just chose.`
+                  : verify ? `If ${email.trim()} has an account that needs verification, a new link is on its way. The link expires in 1 hour.`
                   : "If the request is eligible, a message with your next step is on its way. Check your spam folder, too."}
               </p>
+              {(join || verify) && <>
+                <p>Check your spam folder if it hasn’t arrived. After your first login, we’ll help you save a recovery secret for your private content.</p>
+                <Alert>{action.error}</Alert>
+                <Button busy={action.busy} disabled={now < resendAt} onClick={resend}>{now < resendAt ? `Resend available in ${Math.ceil((resendAt - now) / 1000)}s` : "Resend verification email"}</Button>
+                <p className="small-copy">Wrong email address? Use the address that received your invitation. An invitation cannot be transferred to a different address. Ask your inviter for a new invitation if that address is wrong; don’t create another account to correct a typo.</p>
+              </>}
               <a className="button primary" href="/login">
-                Back to log in
+                {join || verify ? "I’ve verified my email — log in" : "Back to log in"}
               </a>
             </div>
           ) : (
@@ -230,11 +278,14 @@ export function AuthPage({
                   with your new password.
                 </Alert>
               )}
-              {query.has("verified") && (
-                <Alert success>
-                  Email verification complete. Please log in.
-                </Alert>
-              )}
+              {verificationState && verificationState !== "verified" && <Alert>
+                {verificationState === "expired" ? "This verification link has expired. Request a new link below."
+                  : verificationState === "used" ? "This link has already been used. Try logging in. If your email still needs verification, request a new link."
+                  : verificationState === "invalid" ? "We couldn’t use this verification link. Open the full link from your email or request a new one."
+                  : verificationState === "unavailable" ? "We couldn’t confirm verification right now. Try logging in, or try the email link again shortly."
+                  : "This verification result is no longer available. Try logging in; if verification is still needed, request a new link."}
+                {" "}<a href="/verify">Send a new verification email</a>
+              </Alert>}
               {query.has("emailChanged") && (
                 query.has("error") ? (
                   <Alert>
@@ -276,13 +327,15 @@ export function AuthPage({
                     autoComplete="username"
                     required
                   />
-                  <Field
-                    label="Invitation code"
-                    value={invite}
-                    onChange={(e) => setInvite(e.target.value.trim())}
-                    autoComplete="off"
-                    required
-                  />
+                  <Alert>{invitationError}</Alert>
+                  {invitationContext ? <>
+                    <p role="status">Invitation ready.{invitationContext.expiresAt && ` Expires ${localDate(invitationContext.expiresAt)}.`}</p>
+                    <details><summary>Use a different invitation code</summary><Field label="Invitation code" value={invite} onChange={e => setInvite(e.target.value.trim())} autoComplete="off" required /></details>
+                  </> : <Field label="Invitation code" value={invite} onChange={e => setInvite(e.target.value.trim())} autoComplete="off" required />}
+                  <p className="small-copy">{invitationContext ? invitationContext.kind
+                    ? `Verifying your email connects you to your inviter as ${invitationContext.kind === "family" ? "Family" : "Friends"}. Your inviter shares ${invitationContext.history === "future" ? "only new posts and photos after you connect" : "earlier and future posts and photos for that audience"}. Your own sharing starts with full history for this connection. You can change your sharing choice or label, or disconnect later.`
+                    : "This invitation does not automatically connect you to the inviter."
+                    : "If your invitation includes a Friend or Family connection, verifying your email creates it automatically. Your invitation email explains your inviter’s history choice. Your own sharing starts with full history; you can change it or disconnect later."}</p>
                 </>
               )}
               {!forgot && !verify && !secondFactor && (
@@ -357,7 +410,7 @@ export function AuthPage({
               </Button>
             </form>
           )}
-          <div className="auth-bottom">
+          {!done && verificationState !== "verified" && <div className="auth-bottom">
             {join ? (
               <span>
                 Already have an account? <a href="/login">Log in</a>
@@ -369,7 +422,7 @@ export function AuthPage({
             )}
             {!join && <a href="/verify">Resend email verification</a>}
             <a href="/stolen-account">My account was stolen</a>
-          </div>
+          </div>}
         </section>
       </main>
       <PublicFooter />

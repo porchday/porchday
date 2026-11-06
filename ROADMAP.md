@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+Owner follow-up November 6: approved [signup experience](design/signup-experience.md) implementation under #27 and the chronological view label **Feed** under #124 are in progress. [Larger-video proposal](design/larger-videos.md) under #108 is for review only; proposed limits do not change current upload support.
+
 The owner’s current product priorities are broader connection circles, first-class photos, simpler navigation, working mentions and notifications, and native app distribution. This is the repository's authoritative order of work. GitHub Issues hold acceptance criteria, implementation status and evidence; this file explains what comes next and why. A merged change to this file changes the default order. It does not authorize deployment, broaden admission or override an issue's approval requirements.
 
 Completed owner follow-up: [#151](https://github.com/porchday/porchday/issues/151) is completed for post-like photo action controls and a clean zoomable photo viewer across web/iOS/macOS. Remove the previously requested Photo badge. Deployed and verified November 4; see [release evidence](docs/evidence/photo-viewer-release-2026-11-04.md). Native source/build tests passed; signed distribution and device checks remain under #49/#114.

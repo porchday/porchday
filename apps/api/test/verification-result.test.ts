@@ -1,0 +1,22 @@
+import {it, expect, vi, afterEach} from 'vitest';
+import {Hono} from 'hono';
+import {readVerificationResult, verificationRedirect} from '../src/verification-result';
+import type {Env, Variables} from '../src/types';
+const env = {APP_URL:'https://example.test',BETTER_AUTH_SECRET:'synthetic-verification-result-secret'} as Env;
+const app = new Hono<{Bindings:Env;Variables:Variables}>();
+app.get('/issue',c=>verificationRedirect(c,'verified'));
+app.get('/api/auth/verification-result',readVerificationResult);
+afterEach(()=>vi.useRealTimers());
+it('requires a signed, unexpired server result, with no authentication or identity in the receipt',async()=>{
+ const result=await app.request('https://example.test/issue',{},env);
+ expect(result.status).toBe(303);
+ expect(result.headers.get('location')).toBe('https://example.test/login?verification=1');
+ const set=result.headers.get('set-cookie')!;
+ for(const flag of ['HttpOnly','Secure','SameSite=Lax','Max-Age=300','Path=/api/auth/verification-result'])expect(set).toContain(flag);
+ const cookie=set.split(';')[0];
+ expect(await (await app.request('https://example.test/api/auth/verification-result',{headers:{Cookie:cookie}},env)).json()).toEqual({state:'verified'});
+ expect(await (await app.request('https://example.test/api/auth/verification-result?verified=1',{},env)).json()).toEqual({state:null});
+ expect(await (await app.request('https://example.test/api/auth/verification-result',{headers:{Cookie:cookie+'bad'}},env)).json()).toEqual({state:null});
+ vi.useFakeTimers();vi.setSystemTime(Date.now()+301_000);
+ expect(await (await app.request('https://example.test/api/auth/verification-result',{headers:{Cookie:cookie}},env)).json()).toEqual({state:null});
+});
