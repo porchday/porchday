@@ -74,3 +74,7 @@ Feed photos and posts share ActivityAuthor on web and ActivityAuthorView on iOS/
 ## Connection limit
 
 Web, API and shared iOS/macOS connection counters and capacity controls use 150 accepted connections, including family. Migration 072 enforces the same limit for both endpoints during normal acceptance and invitation verification, retaining locking, history preferences and existing connections. Group and album limits are unchanged. Exact-source native CI is required; device and distribution follow-ups remain under #49/#114.
+
+## Signup guidance and Feed label — November 6
+
+Web and shared iOS/macOS rename the chronological view button to Feed (Calendar remains the alternate view). Native LoginView now has a check-email state, one-hour expiry/login/setup guidance, address retention in view state, resend with cooldown and neutral eligibility copy, invitation-context validation and the corrected full-history disclosure. Both native targets use “Set up private sharing” and retain recovery-secret safeguards. Verification links use the canonical browser result screen; returning to native login still requires password and existing two-factor checks. No automatic cross-app session transfer is introduced. Inbox and physical-device handoff checks remain follow-ups under #27/#49/#114; exact-source native CI is required before production.

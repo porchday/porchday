@@ -126,18 +126,56 @@ struct LoginView: View {
     @State private var busy = false
     @State private var info = ""
     @State private var recovery = false
+    @State private var invitationReady = false
+    @State private var invitationSummary = ""
+    @State private var awaitingVerification = false
+    @State private var resendAfter = Date.distantPast
     var body: some View {
         NavigationStack {
             Form {
                 Section { VStack(alignment: .leading, spacing: 12) { Image("PorchdayMark").resizable().frame(width: 64, height: 64).accessibilityHidden(true); Text("Porchday").font(.largeTitle.bold()); Text("a simple social network").font(.title3); Text("No ads. No influencers. No algorithm.").font(.headline); Text("Your private content is end-to-end encrypted.") }.padding(.vertical) }
-                Section(joining ? "Create account" : "Log in") {
+                if awaitingVerification {
+                    Section("Check your email") {
+                        Text("Open the verification email sent to \(email). The link expires in 1 hour. Then return here and log in with the password you chose.")
+                        Text("Check your spam folder, too. On your first login, we’ll help you protect your private content and save a recovery secret.")
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            Button(context.date < resendAfter ? "Resend available in \(Int(ceil(resendAfter.timeIntervalSince(context.date))))s" : "Resend verification email") {
+                                Task { busy = true; defer { busy = false }; await model.perform {
+                                    _ = try await model.api.auth("send-verification-email", body: .object(["email": .string(email), "callbackURL": .string(ServerConfiguration.origin.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/login?verified=1")]))
+                                    resendAfter = Date().addingTimeInterval(60)
+                                    info = "If this address needs verification, a new link is on its way."
+                                } }
+                            }.disabled(busy || context.date < resendAfter)
+                        }
+                        Text("Wrong email? Use the address that received the invitation. Ask your inviter for a new invitation if that address is wrong; invitations cannot be transferred.").font(.footnote)
+                        Button("I’ve verified my email — log in") { awaitingVerification = false; info = "" }
+                    }
+                }
+                if !awaitingVerification { Section(joining ? "Create account" : "Log in") {
                     TextField("Email address", text: $email).porchContentType(.emailAddress).porchKeyboard(.emailAddress).porchCapitalization(.never).autocorrectionDisabled()
                     SecureField("Password", text: $password).porchContentType(joining ? .newPassword : .password)
-                    if joining { Text("If your invitation email names a Friend or Family connection, verifying your email creates that connection and shares future posts for that audience. You can change your label or disconnect later."); TextField("Public handle", text: $handle).porchCapitalization(.never).autocorrectionDisabled(); SecureField("Invitation code", text: $invitation); Toggle("I am at least 18 years old", isOn: $adult); Toggle("I accept the community rules", isOn: $rules); Link("Read the community rules", destination: ServerConfiguration.origin.appendingPathComponent("community")) }
-                    Button(busy ? "Please wait…" : joining ? "Create account" : "Log in") { Task { busy = true; defer { busy = false }; await model.perform { if joining { _ = try await model.api.auth("sign-up/email", body: .object(["email": .string(email), "password": .string(password), "handle": .string(handle), "inviteCode": .string(invitation), "adult": .bool(adult), "acceptedRules": .bool(rules)])); info = "Check your email to verify your account, then log in here."; joining = false } else { try await model.signIn(email: email, password: password); password = "" } } } }.disabled(busy || email.isEmpty || password.isEmpty || (joining && (!adult || !rules)))
-                    if !info.isEmpty { Text(info).foregroundStyle(.secondary) }
-                }
-                Section { Button(joining ? "I already have an account" : "I have an invitation") { joining.toggle() }.accessibilityIdentifier("toggle-signup"); Button("Forgot password?") { Task { await model.perform { _ = try await model.api.auth("request-password-reset", body: .object(["email": .string(email), "redirectTo": .string(ServerConfiguration.passwordResetRedirect().absoluteString)])); info = "If this account exists, a password reset email is on its way. Encryption recovery is separate." } } }.disabled(email.isEmpty); Button("My account was stolen") { recovery = true }.accessibilityIdentifier("report-stolen-account") }
+                    if joining { Text("Use the email address that received your invitation. After creating your account, verify your email, then log in to set up private sharing. If the invitation names a Friend or Family connection, verification creates it automatically. The email describes your inviter’s history choice. Your own sharing starts with full history; you can change your sharing choice or label, or disconnect later."); TextField("Public handle", text: $handle).porchCapitalization(.never).autocorrectionDisabled(); if invitationReady {
+                            Text("Invitation ready. " + invitationSummary)
+                            DisclosureGroup("Use a different invitation code") { SecureField("Invitation code", text: $invitation).onChange(of: invitation) { _, _ in invitationReady = false } }
+                        } else {
+                            SecureField("Invitation code", text: $invitation)
+                            Button("Check invitation") { Task { busy = true; defer { busy = false }; await model.perform {
+                                let result = try await model.api.auth("invitation-policy", body: .object(["inviteCode": .string(invitation), "details": .bool(true)]))
+                                let kind = result["kind"].string
+                                invitationSummary = kind == nil ? "This invitation does not automatically connect you to the inviter." : "Verifying connects you as \(kind == "family" ? "Family" : "Friends"). Your inviter shares \(result["history"].string == "future" ? "only new posts and photos after you connect" : "earlier and future posts and photos for that audience"). Your own sharing starts with full history; you can change it later."
+                                invitationReady = true
+                            } } }.disabled(busy || invitation.isEmpty)
+                        }; Toggle("I am at least 18 years old", isOn: $adult); Toggle("I accept the community rules", isOn: $rules); Link("Read the community rules", destination: ServerConfiguration.origin.appendingPathComponent("community")) }
+                    Button(busy ? "Please wait…" : joining ? "Create account" : "Log in") { Task { busy = true; defer { busy = false }; await model.perform { if joining { _ = try await model.api.auth("sign-up/email", body: .object(["email": .string(email), "password": .string(password), "handle": .string(handle), "inviteCode": .string(invitation), "adult": .bool(adult), "acceptedRules": .bool(rules)])); password = ""; info = ""; joining = false; awaitingVerification = true; resendAfter = Date().addingTimeInterval(60) } else { try await model.signIn(email: email, password: password); password = "" } } } }.disabled(busy || email.isEmpty || password.isEmpty || (joining && (!adult || !rules)))
+                } }
+                if !info.isEmpty { Text(info).foregroundStyle(.secondary) }
+                if !awaitingVerification { Section {
+                    Button("Resend verification email") { Task { busy = true; defer { busy = false }; await model.perform {
+                        _ = try await model.api.auth("send-verification-email", body: .object(["email": .string(email), "callbackURL": .string(ServerConfiguration.origin.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")) + "/login?verified=1")]))
+                        awaitingVerification = true; resendAfter = Date().addingTimeInterval(60)
+                        info = "If this address needs verification, a new link is on its way."
+                    } } }.disabled(busy || email.isEmpty)
+                    Button(joining ? "I already have an account" : "I have an invitation") { joining.toggle() }.accessibilityIdentifier("toggle-signup"); Button("Forgot password?") { Task { await model.perform { _ = try await model.api.auth("request-password-reset", body: .object(["email": .string(email), "redirectTo": .string(ServerConfiguration.passwordResetRedirect().absoluteString)])); info = "If this account exists, a password reset email is on its way. Encryption recovery is separate." } } }.disabled(email.isEmpty); Button("My account was stolen") { recovery = true }.accessibilityIdentifier("report-stolen-account") } }
                 Section { Link("Privacy and encryption limits", destination: ServerConfiguration.origin.appendingPathComponent("privacy")); Text("Invitation-only adult pilot. Human members only; technical proof-of-humanity is future work.").font(.footnote) }
             }.navigationTitle("Porchday").porchInlineTitle()
                 .sheet(isPresented: $recovery) { NavigationStack { StolenAccountView() } }
@@ -156,7 +194,7 @@ struct UnlockView: View {
         NavigationStack { Form {
             Section { Label("Encryption keys", systemImage: "lock.shield").font(.title2); Text("Your encryption recovery secret is separate from your login password. Support cannot restore encrypted history without it.") }
             if vault.devices.isEmpty {
-                if vault.recoveryNote.isEmpty { Section { Button("Create my private keys") { Task { await model.perform { try vault.prepareInitial(member: member) } } } } }
+                if vault.recoveryNote.isEmpty { Section { Button("Set up private sharing") { Task { await model.perform { try vault.prepareInitial(member: member) } } } } }
                 else { Section("Save this recovery secret somewhere safe") { Text(vault.recoveryNote).font(.system(.body, design: .monospaced)).textSelection(.enabled).privacySensitive(); Text("Save it in a password manager or a private printed note. Do not send it to support."); Toggle("I saved my secret and understand it cannot be replaced", isOn: $saved); Button("Continue") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.finishInitial(member: member) } } }.disabled(!saved || busy) } }
             } else { Section(member.access.restoresKeysLocally ? "Restore your saved keys on this device" : "Restore and authorize this device") { if member.access.restoresKeysLocally { Text("This restores existing keys locally for reading and export. It does not enroll a device or restore social permissions.") }; SecureField("Recovery secret", text: $secret).porchContentType(.none).autocorrectionDisabled(); Button("Unlock") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.unlock(member: member, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines)); secret = "" } } }.disabled(secret.isEmpty || busy) } }
             Section { Button("Account, deletion and appeals without unlocking") { accountControls = true }; Text("This app stores your device keys in device-only Apple Keychain. Signing out clears local keys. Keep the recovery secret to restore after reinstalling or losing this device.").font(.footnote); Button("Sign out", role: .destructive) { Task { await model.signOut() } } }

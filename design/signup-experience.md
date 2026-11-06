@@ -1,0 +1,15 @@
+# Invitation signup and verification
+
+Owner-approved implementation of the audit recorded in issue #27, November 6, 2026.
+
+The journey is invitation → create account → check email → verify → log in → protect private content. Keep verification, password, two-factor, consent, invitation binding, rate limits, encrypted recovery and automatic connection/history semantics intact.
+
+Invitation emails lead with one join link, the invited-address requirement and expiry. Connection/history disclosures remain readable paragraphs; the manual code is a fallback below them. Signup validates the supplied code without consuming it or returning an email address, and folds a confirmed code behind an edit disclosure. The exact connection kind and inviter history choice are explained before submission. An invalid code has a recovery path to login/resend or the inviter, without disclosing whether another address has an account.
+
+After signup, show the submitted email and explicit one-hour verification/login steps. Clear the password. Resend remains rate-limited on the server with a 60-second UI cooldown and neutral eligibility wording. Remember only the email in optional browser session storage, never URL parameters or persistent local storage; clear it after login. Cross-device users enter their email normally. Invitations are bound to the address that received them: correction uses the original address or a new invitation from the inviter, never transferring an existing consumed invitation or creating another account to fix a typo.
+
+Verification emails explain the one-hour expiry, login and first-use private-sharing setup. Browser callbacks display server-confirmed verified/expired/used/invalid/unavailable results. The result is a five-minute signed HttpOnly, SameSite cookie containing no identity or token; it has no authentication authority. A bare `verified` query parameter no longer asserts success. Only a verified database result after transaction and privacy-journal confirmation produces success. API clients retain structured responses. Repeat clicks suggest login, not automatic account creation; ambiguous service failures never claim success. Password and two-factor checks still occur on login. Email-change confirmation and custom callbacks retain their distinct semantics.
+
+Web and shared iOS/macOS screens explain verification and recovery in everyday language. Email verification opens the canonical web flow and the member can return to the native app to log in. This does not add an automatic login or universal-link credential handoff. Native setup wording uses “Set up private sharing”; the recovery-secret safeguards remain unchanged.
+
+Validation must cover fresh signup, resend and throttling, invalid/expired/used links, spoofed query state and tampered receipts, invitation email mismatch, existing accounts, confirmed vs unconfirmed email-change steps, failed journal confirmation, and cross-browser/native fallback. Automated delivery capture verifies email content, not actual inbox delivery. Real inbox and physical-device acceptance remain explicitly tracked instead of being implied by deployment.

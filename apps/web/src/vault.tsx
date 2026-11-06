@@ -565,13 +565,13 @@ export function VaultProvider({
             </>
           ) : (
             <>
-              <h2>Create encryption keys</h2>
+              <h2>Protect your private content</h2>
               <p>
                 We’ll create your keys right here on your device. You’ll save a
                 recovery secret before continuing. It never goes to Porchday.
               </p>
               <Button variant="primary" busy={action.busy} onClick={generate}>
-                Create my private keys <Icon name="arrow" size={18} />
+                Set up private sharing <Icon name="arrow" size={18} />
               </Button>
             </>
           )}
