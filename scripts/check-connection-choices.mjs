@@ -52,7 +52,7 @@ const server = http.createServer(async (request, response) => {
   }
   response.setHeader("Content-Type", "application/json");
   if (request.method === "GET" && request.url === "/api/v1/connections") {
-    response.end(JSON.stringify({ items: state.items, requests: state.requests, handles: state.handles, limit: 300 })); return;
+    response.end(JSON.stringify({ items: state.items, requests: state.requests, handles: state.handles, limit: 150 })); return;
   }
   if (request.method === "GET" && request.url === "/api/v1/mutes") { response.end('{"items":[]}'); return; }
   const chunks = [];
@@ -130,8 +130,8 @@ try {
       await page.getByText("Connection request sent.", { exact: true }).waitFor();
       assert.deepEqual(state.calls.at(-1), { method: "POST", path: "/api/v1/connections/requests", body: { handle: "new_person", kind: "family", history: "future" } });
 
-      reset(); state.items = Array.from({ length: 300 }, (_, index) => ({ id: `c${index}`, member_a: "self", member_b: `p${index}`, kind: "friend", own_history: "future" }));
-      await page.goto(origin); await page.getByText("300 / 300", { exact: true }).waitFor();
+      reset(); state.items = Array.from({ length: 150 }, (_, index) => ({ id: `c${index}`, member_a: "self", member_b: `p${index}`, kind: "friend", own_history: "future" }));
+      await page.goto(origin); await page.getByText("150 / 150", { exact: true }).waitFor();
       assert.equal(await send.getByRole("button", { name: "Send request" }).isDisabled(), true);
       assert.equal(await incoming.getByRole("button", { name: "Accept connection request from @new_person" }).isDisabled(), true);
       console.log(JSON.stringify({ browser: name, version: browser.version(), passed: true, scenarios: 6, mobileWidth: 390 }));
