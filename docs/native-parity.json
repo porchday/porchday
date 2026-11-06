@@ -6,7 +6,8 @@
       "ios": "pending",
       "macos": "pending",
       "evidence": [
-        "docs/native-parity.md#navigation"
+        "docs/native-parity.md#navigation",
+        "docs/native-parity.md#native-responsiveness--november-6"
       ],
       "implementation": {
         "ios": "implemented",
@@ -14,7 +15,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/168"
       ]
     },
     {
@@ -28,7 +30,8 @@
         "docs/native-parity.md#unified-activity-headers",
         "docs/native-parity.md#signup-guidance-and-feed-label--november-6",
         "docs/native-parity.md#larger-videos--november-6-implementation",
-        "design/larger-videos.md"
+        "design/larger-videos.md",
+        "docs/native-parity.md#native-responsiveness--november-6"
       ],
       "implementation": {
         "ios": "implemented",
@@ -37,7 +40,8 @@
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
         "https://github.com/porchday/porchday/issues/114",
-        "https://github.com/porchday/porchday/issues/108"
+        "https://github.com/porchday/porchday/issues/108",
+        "https://github.com/porchday/porchday/issues/168"
       ]
     },
     {
