@@ -158,10 +158,14 @@ bounded encrypted video upload/playback. Typed @handles resolve only against the
 authorized directory and never expand the audience or imply push delivery.
 
 Calendar and social metadata use the existing web APIs and encrypted payloads.
-Video retains the web's 10 MiB and 4K limits; actual codec playback depends on the
-Apple OS. Unsupported codecs produce an explicit error, never a successful empty
-attachment. Temporary playback files are private, excluded from backup, removed
-when closed/backgrounded, and cleaned on the next launch after interruption.
+Video attachments now accept sources up to 1 GiB and prepare up to 10 minutes
+at 1080p or 720p, with a 250 MiB prepared limit and the existing 1 GiB member
+quota. Trimming, encrypted resumable uploads and progressive playback share the
+web protocol. Existing small videos remain readable. Unsupported codecs/HDR
+receive explicit guidance. Private temporary files are excluded from backup and
+cleaned after use or interruption; encrypted retry state survives relaunch.
+See [release evidence](../../docs/evidence/larger-videos-release-2026-11-06.md)
+for source/build parity versus signed native distribution.
 
 Account email/MFA, appeals, integration registration/consent, and allowlisted
 builder chat/feature voting use native screens. Builder disclosure version 2 is

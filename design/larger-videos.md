@@ -1,16 +1,16 @@
 # Larger and longer private videos
 
-Approved for implementation by the owner, November 6, 2026. Implementation and production acceptance are in progress under #108; no larger upload limits are live yet.
+Implemented and enabled in staging and production on November 6, 2026. [Release evidence](../docs/evidence/larger-videos-release-2026-11-06.md) records exact sources, live acceptance and remaining physical-device/distribution verification under #108.
 
 ## Recommendation
 
-Let people share a video up to **10 minutes**, selecting a source up to **1 GiB**, and prepare a private, broadly playable **1080p H.264/AAC** copy on their device. Cap the prepared upload at **250 MiB**. These are proposed initial product limits, conditional on memory, battery, codec and cost measurements across supported devices. Offer trimming and a smaller 720p option before upload. Keep the original untouched on the person’s device; explain that Porchday stores the prepared copy, not an original-quality backup.
+Let people share a video up to **10 minutes**, selecting a source up to **1 GiB**, and prepare a private, broadly playable **1080p H.264/AAC** copy on their device. Cap the prepared upload at **250 MiB**. These are the initial product limits; further device memory, battery, codec and cost measurements may lead to adjustments. Offer trimming and a smaller 720p option before upload. Keep the original untouched on the person’s device; explain that Porchday stores the prepared copy, not an original-quality backup.
 
 The experience should feel like sharing a photo: select, preview, optionally trim, choose audience, share. Show duration and approximate upload size. Use explicit Preparing / Uploading / Ready / Failed states, progress, Cancel and Retry. Publish only after all media and its encrypted manifest are durable. Never leave a broken public feed item when preparation or upload fails. A suspended mobile app may pause; show that honestly and resume when possible instead of promising background completion.
 
 A video in the feed has an encrypted poster, duration and Play control. Playback begins only on request, starts before the entire video downloads, and supports seek, fullscreen, mute, captions when supplied, and accessible controls. Keep the same comments, reactions, audience, expiry and album semantics as other media. Do not add another top-level navigation destination or change the meaning of the current Photos filter in this release; start with video attachments in posts. Standalone videos and album placement need an explicit follow-up product decision.
 
-## Current constraints
+## Constraints before implementation
 
 `apps/web/src/video.ts` limits original MP4/MOV/WebM bytes to 10 MiB, validates decoding and 4K dimensions, and makes no conversion. The whole media envelope is downloaded/decrypted for playback. The API has a 22,020,096-byte envelope bound, and archives have their own per-part limits. Increasing a constant would create memory, upload, playback and portability failures. Existing small-video envelopes must remain readable.
 
