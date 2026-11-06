@@ -469,7 +469,7 @@ authRoutes.all("/*", async (c) => {
                 {
                   error: {
                     code: "INVALID_INVITATION",
-                    message: "Check your invitation, email and handle.",
+                    message: "Use the email address that received your invitation, the complete invitation code, and a handle of 3–24 letters, numbers or underscores.",
                   },
                 },
                 400,
@@ -486,7 +486,7 @@ authRoutes.all("/*", async (c) => {
                   error: {
                     code: "INVALID_INVITATION",
                     message:
-                      "This invitation is invalid, expired, or already used.",
+                      "We couldn’t use this invitation with that email address. Check the original invitation email. If you already created your account, log in or resend verification; otherwise ask your inviter for a fresh link.",
                   },
                 },
                 403,

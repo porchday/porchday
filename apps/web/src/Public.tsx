@@ -202,8 +202,8 @@ export function AuthPage({
       <main id="main-content" tabIndex={-1} className="auth-layout wrap auth-simple">
         <section className="auth-card">
           {mode === "login" && <Tagline />}
-          <h1>
-            {join
+          <h1 ref={done ? successHeading : undefined} tabIndex={done ? -1 : undefined}>
+            {done ? reset ? "Password updated." : "Check your email." : join
               ? "Create account"
               : forgot
                 ? "Reset password"
@@ -213,7 +213,7 @@ export function AuthPage({
                     ? "Verify your email"
                     : verificationState === "verified" ? "Email verified" : "Log in"}
           </h1>
-          <p>
+          {!done && <p>
             {join
               ? "Use the email address that received your invitation. You must be 18 or older. After creating your account, verify your email, then log in to set up private sharing."
               : forgot
@@ -223,11 +223,10 @@ export function AuthPage({
                   : verify
                     ? "Open the verification link in your email to continue."
                     : verificationState === "verified" ? "Log in to finish setup. If you opened this link on another device, you can return to the Porchday app to log in." : ""}
-          </p>
+          </p>}
           {done ? (
             <div className="form-success">
               <Icon name="mail" size={35} />
-              <h3 ref={successHeading} tabIndex={-1}>{reset ? "Password updated." : "Check your email."}</h3>
               <p>
                 {reset
                   ? "Your other sessions have been revoked. Log in with your new password."
