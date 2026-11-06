@@ -1,7 +1,7 @@
 // Real browser codec/OPFS probe using synthetic media only.
 import {build} from 'esbuild';import {createServer} from 'node:http';import {readFileSync} from 'node:fs';import {resolve} from 'node:path';import {chromium,webkit} from 'playwright';import assert from 'node:assert/strict';
 const compiled=await build({stdin:{contents:"export * from './apps/web/src/video-prepare.ts'",resolveDir:process.cwd()},bundle:true,format:'esm',platform:'browser',write:false});
-const fixture=readFileSync('apps/web/test/fixtures/synthetic-video.mp4');
+const fixture=readFileSync(process.env.VIDEO_PREPARATION_FIXTURE??'apps/web/test/fixtures/synthetic-video.mp4');
 const server=createServer((req,res)=>{if(req.url==='/entry.js'){res.setHeader('Content-Type','text/javascript');res.end(compiled.outputFiles[0].contents);}else if(req.url==='/clip.mp4'){res.setHeader('Content-Type','video/mp4');res.end(fixture);}else{res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body><script type="module">import * as video from "/entry.js";window.video=video;</script></body></html>');}});await new Promise(r=>server.listen(0,'127.0.0.1',r));
 try{for(const[name,driver]of Object.entries({chrome:chromium,chromium,webkit})){
  const browser=await driver.launch({headless:true,...(name==='chrome'?{channel:'chrome'}:{})});try{const page=await browser.newPage();await page.goto(`http://127.0.0.1:${server.address().port}`);await page.waitForFunction(()=>window.video);
@@ -13,6 +13,7 @@ try{for(const[name,driver]of Object.entries({chrome:chromium,chromium,webkit})){
  console.log(JSON.stringify({browser:name,...result}));assert.equal(result.info.audio,true);assert(result.info.duration>0);
  // Codec availability differs by platform. Unsupported environments must give
  // explicit guidance and never silently discard the source audio.
+ if(result.prepared&&result.info.duration>=30){assert(result.size<result.info.duration*400_000,'720p output exceeded its 1.8Mbps video + 128kbps audio budget');}
  if(!result.prepared)assert.match(result.error,/cannot prepare|AAC|encoder|decoder|codec|WebCodecs|OPFS|storage|supported/i);
  }finally{await browser.close();}
 }}finally{await new Promise(r=>server.close(r));}
