@@ -57,6 +57,8 @@ export type Content = {
   [key: string]: unknown;
 };
 export type MediaPayload = {
+  videoVersion?: 2;
+  duration?: number;
   tags?: import("./PeopleTags").PersonTag[];
   id: string;
   alt: string;

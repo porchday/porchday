@@ -1,3 +1,4 @@
+import {validateVideoManifest} from "@porchday/crypto/video";
 import {PhotoAudienceSharing} from "./PhotoAudienceSharing";
 import { validatedMedia } from "./video";
 import React, {
@@ -820,15 +821,16 @@ function PostAudienceSharing() {
         },
         readMedia: (id, signal) => request<EncryptedEnvelope>(`/media/${id}/bytes`, { signal }),
         validatePhoto: async payload => {
+          if(payload.videoVersion===2){validateVideoManifest(payload.video);return;}
           if (typeof payload.mime !== "string" || typeof payload.bytes !== "string")
             throw Error("An earlier photo has an unsupported format.");
           await validatedMedia(base64ToBytes(payload.bytes), payload.mime);
         },
-        upload: async (id, envelope, revision) => {
+        upload: async (id, envelope, revision, streamId) => {
           if (!current()) throw new DOMException("Sharing stopped.", "AbortError");
           const bytes = new TextEncoder().encode(JSON.stringify(envelope));
-          const reservation = await request("/media", { method: "POST", backgroundSave: true, body: JSON.stringify({
-            id, envelope, byte_size: bytes.length,
+          const reservation = await request(streamId?"/videos":"/media", { method: "POST", backgroundSave: true, body: JSON.stringify({
+            id, envelope, byte_size: bytes.length,...(streamId?{stream_id:streamId}:{}),
             history_post_id: envelope.context.parentId, history_source_revision: revision,
           }) });
           if (!current()) throw new DOMException("Sharing stopped.", "AbortError");

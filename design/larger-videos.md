@@ -1,6 +1,6 @@
 # Larger and longer private videos
 
-Proposal for owner review, November 6, 2026. No larger upload limits or new video behavior are enabled by this document.
+Approved for implementation by the owner, November 6, 2026. Implementation and production acceptance are in progress under #108; no larger upload limits are live yet.
 
 ## Recommendation
 
@@ -37,7 +37,7 @@ Raising the current whole-file limit is a poor first step. Server-side transcodi
 3. Ship behind a default-off capability with small synthetic/member pilots and bounded quotas. Roll back publishing v2 while retaining its readers and deletion support; never strand uploaded media by rolling back to readers that cannot open it.
 4. Enable only after interruption/resume, repeat completion, tampered/reordered/truncated chunks, quota races, seek, expiry/revocation, orphan cleanup, backup restore and cross-client archive tests pass. Test portrait/landscape, silent clips, iPhone HEVC/HDR, variable frame rate, long GOPs, malformed containers and unsupported codecs. Record device acceptance separately from automated CI.
 
-Open choices: confirm 10 minutes / 1 GiB source / 250 MiB prepared limits; initial per-member storage allowance; whether 720p should be the default on cellular; whether independent videos belong in Albums or a later Media view. This proposal does not authorize implementation of those changes.
+Initial implementation choices: 10 minutes / 1 GiB source / 250 MiB prepared limits; preserve the existing 1 GiB per-member media quota; offer explicit 1080p and 720p choices with 1080p selected initially. Start with post attachments. Independent videos and video album placement remain outside this release. Device performance measurements may require lowering the initial limits, with evidence recorded before rollout.
 
 ## Platform references
 

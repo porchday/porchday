@@ -74,6 +74,7 @@ struct EncryptedMediaView: View {
     @EnvironmentObject var vault: CryptoVault
     @Environment(\.scenePhase) private var phase
     @State private var player: AVPlayer?
+    @State private var segmented: SegmentedVideoResourceLoader?
     @State private var webM: LocalWebM?
     @State private var file: PrivateMediaFile?
     @State private var expiry: Date?
@@ -104,7 +105,7 @@ struct EncryptedMediaView: View {
             .onChange(of: phase) { _, value in if value != .active { clear() } }
         }
     }
-    private func clear() { webM?.stop(); webM = nil; player?.pause(); player?.replaceCurrentItem(with: nil); player = nil; file = nil }
+    private func clear() { segmented?.stop(); segmented = nil; webM?.stop(); webM = nil; player?.pause(); player?.replaceCurrentItem(with: nil); player = nil; file = nil }
     private func open() async {
         busy = true; error = ""; defer { busy = false }
         let generation = model.authenticationGeneration
@@ -113,6 +114,14 @@ struct EncryptedMediaView: View {
             let bytes = try await model.api.bytes("/api/v1/media/" + id + "/bytes")
             let envelope = try JSONDecoder().decode(JSON.self, from: bytes)
             let content = try await vault.open(.object(["id": .string(id), "envelope": envelope]))
+            if media["videoVersion"].integer == 2 {
+                guard envelope["context"]["kind"].string == "media", content["mime"].string == "video/mp4" else { throw VideoV2Error.invalidManifest }
+                let manifest=try SegmentedVideoCrypto.decode(JSONEncoder().encode(content["video"]))
+                expiry=envelope["context"]["expiresAt"].string.flatMap(PorchDate.parse)
+                guard generation==model.authenticationGeneration,vault.unlocked,!Task.isCancelled,phase == .active else { return }
+                let loader=try SegmentedVideoResourceLoader(api:model.api,mediaID:id,manifest:manifest,expiry:expiry) { message in error=message;clear() }
+                segmented=loader;player=AVPlayer(playerItem:AVPlayerItem(asset:loader.asset));return
+            }
             guard envelope["context"]["kind"].string == "media", let data = content["bytes"].string.flatMap({ Data(base64Encoded: $0) }),
                   try VideoContainer.mime(data) == content["mime"].string, content["mime"] == media["mime"] else { throw PorchError.message("Video metadata does not match its encrypted content.") }
             expiry = envelope["context"]["expiresAt"].string.flatMap(PorchDate.parse)

@@ -1,0 +1,20 @@
+import {build} from 'esbuild';import {createServer} from 'node:http';import {chromium,webkit} from 'playwright';import assert from 'node:assert/strict';
+import {createVideoKey,encryptVideoSegment,VIDEO_CHUNK_BYTES} from '../packages/crypto/src/video.ts';
+const compiled=await build({entryPoints:['apps/web/src/video-sw.ts'],bundle:true,format:'iife',platform:'browser',write:false});
+const key=createVideoKey(),streamId=crypto.randomUUID(),mediaId=crypto.randomUUID(),plain=new Uint8Array(VIDEO_CHUNK_BYTES+100);for(let i=0;i<plain.length;i++)plain[i]=i%251;
+const chunks=[];for(let index=0;index<2;index++)chunks.push(await encryptVideoSegment(key,streamId,index,plain.slice(index*VIDEO_CHUNK_BYTES,(index+1)*VIDEO_CHUNK_BYTES)));
+const manifest={v:2,protocol:'porchday-video-aes256gcm-v2',streamId,key,mime:'video/mp4',size:plain.length,duration:4,width:640,height:480,chunkSize:VIDEO_CHUNK_BYTES,segments:chunks.map(c=>c.segment)};
+let allowed=true,requests=[];
+const server=createServer((req,res)=>{if(req.url==='/sw.js'){res.setHeader('Content-Type','text/javascript');res.end(compiled.outputFiles[0].contents);}else if(req.url.startsWith('/api/v1/videos/')){const index=Number(req.url.split('/').at(-1));requests.push(index);if(!allowed||!chunks[index]){res.statusCode=404;res.end();}else{res.setHeader('Content-Length',chunks[index].bytes.length);res.end(chunks[index].bytes);}}else{res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body>Video test</body></html>');}});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+try{for(const[name,driver]of Object.entries({chromium,webkit})){
+ allowed=true;requests=[];const browser=await driver.launch({headless:true});try{const context=await browser.newContext(),page=await context.newPage();await page.goto(`http://127.0.0.1:${server.address().port}`);await page.evaluate(async()=>{await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;});await page.reload();await page.waitForFunction(()=>navigator.serviceWorker.controller);
+ const token=crypto.randomUUID();assert.equal(await page.evaluate(async({token,manifest,mediaId})=>new Promise(resolve=>{const channel=new MessageChannel();channel.port1.onmessage=e=>resolve(e.data.ok);navigator.serviceWorker.controller.postMessage({type:'VIDEO_REGISTER',token,manifest,mediaId,expiresAt:null},[channel.port2]);}),{token,manifest,mediaId}),true);
+ const result=await page.evaluate(async({token,start,end})=>{const response=await fetch(`/__porchday_video/${token}.mp4`,{headers:{Range:`bytes=${start}-${end}`}});return{status:response.status,range:response.headers.get('Content-Range'),cache:response.headers.get('Cache-Control'),bytes:[...new Uint8Array(await response.arrayBuffer())]};},{token,start:VIDEO_CHUNK_BYTES-20,end:VIDEO_CHUNK_BYTES+50});
+ assert.equal(result.status,206);assert.equal(result.cache,'private, no-store');assert.deepEqual(result.bytes,[...plain.slice(VIDEO_CHUNK_BYTES-20,VIDEO_CHUNK_BYTES+51)]);assert.deepEqual(requests,[0,1]);
+ const other=await page.context().newPage();await other.goto(page.url());await other.waitForFunction(()=>navigator.serviceWorker.controller);assert.equal(await other.evaluate(async token=>(await fetch(`/__porchday_video/${token}.mp4`)).status,token),403);
+ assert.equal(await page.evaluate(async token=>(await fetch(`/__porchday_video/${token}.mp4`,{headers:{Range:'bytes=0-1,4-5'}})).status,token),416);
+ allowed=false;assert.equal(await page.evaluate(async token=>{try{const response=await fetch(`/__porchday_video/${token}.mp4`,{headers:{Range:'bytes=0-2'}});await response.arrayBuffer();return false;}catch{return true;}},token),true);
+ assert.equal(await page.evaluate(async token=>(await fetch(`/__porchday_video/${token}.mp4`)).status,token),403);
+ console.log(JSON.stringify({browser:name,passed:true,checks:['authenticated cross-chunk seek','private no-store response','tab isolation','invalid range','access revocation']}));
+ }finally{await browser.close();}
+}}finally{await new Promise(r=>server.close(r));}

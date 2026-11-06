@@ -37,6 +37,20 @@ actor API {
         }
         return data
     }
+    /// Bounds the response while reading it, including a missing/dishonest
+    /// Content-Length header. Video data never passes through the JSON decoder.
+    func videoChunk(_ path:String,expectedSize:Int) async throws -> Data {
+        guard (17...4_194_320).contains(expectedSize),path.hasPrefix("/api/v1/videos/"),let url=URL(string:path,relativeTo:baseURL)?.absoluteURL,ServerConfiguration.permits(url,origin:baseURL) else { throw VideoV2Error.integrity }
+        var request=URLRequest(url:url);request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue(baseURL.absoluteString,forHTTPHeaderField:"Origin")
+        if !cookies.isEmpty { request.setValue(cookies.map { "\($0.key)=\($0.value)" }.joined(separator:"; "),forHTTPHeaderField:"Cookie") }
+        let (stream,response)=try await session.bytes(for:request)
+        guard let http=response as? HTTPURLResponse,http.statusCode==200,
+              response.expectedContentLength<0 || response.expectedContentLength==Int64(expectedSize) else { throw VideoV2Error.integrity }
+        var data=Data();data.reserveCapacity(expectedSize)
+        for try await byte in stream { if data.count>=expectedSize { throw VideoV2Error.integrity };data.append(byte) }
+        guard data.count==expectedSize else { throw VideoV2Error.integrity };return data
+    }
     func social(_ path: String, method: String = "GET", body: JSON? = nil) async throws -> JSON { try await request("/api/v1" + path, method: method, body: body) }
     func auth(_ path: String, body: JSON? = nil, method: String = "POST") async throws -> JSON { try await request("/api/auth/" + path, method: method, body: body) }
     func clearSession() { cookies = [:]; SecureStore.delete("session") }

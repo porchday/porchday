@@ -27,6 +27,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Check browser and native video encryption interoperability
+        run: node --experimental-strip-types scripts/check-video-crypto.mjs
       - uses: actions/setup-go@v6
         with:
           go-version-file: packages/crypto/native/go.mod

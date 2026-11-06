@@ -159,6 +159,12 @@ struct ComposerView: View {
     @State private var onBehalf = ""
     @State private var camera = false
     @State private var videoFilePicker = false
+    @State private var largeVideosEnabled = false
+    @State private var selectedVideo: SelectedVideoFile?
+    @State private var pendingVideos: [NativeVideoOutbox.Pending] = []
+    @State private var videoProgress = ""
+    @State private var uploadTask: Task<Void,Never>?
+
     @State private var observedExpiry: Date?
     @State private var observedPostExpiry: Date?
     @State private var customExpiry = Date().addingTimeInterval(900)
@@ -169,6 +175,8 @@ struct ComposerView: View {
     }
     private var timerChoice: ComposerTimerChoice { timer == -1 ? .custom(customExpiry) : timer == 0 ? .inherit : .after(timer) }
     var body: some View { Form {
+        ForEach(pendingVideos) { pending in Section { Text("An encrypted post upload is saved on this device.");Button("Resume upload") { uploadTask=Task { await resumeVideo(pending.id) } };Button("Cancel upload") { Task { await model.perform { guard let member=model.member else{return};let outbox=try NativeVideoOutbox(owner:member.id);try await outbox.cancel(pending.id,api:model.api);pendingVideos=try outbox.pending() } } } } }
+        if !videoProgress.isEmpty { Section { Text(videoProgress);Button("Pause upload") { uploadTask?.cancel() } } }
         if shareTabs { Picker("Share", selection: $photosOnly) { Text("Post").tag(false); Text("Photos").tag(true) }.pickerStyle(.segmented) }
         if let member = model.member { HStack { MemberAvatarView(memberID: member.id, name: member.handle); Text("@" + member.handle) } }
         if !photosOnly { Section { TextEditor(text: $text).frame(minHeight: 130).accessibilityLabel(post == nil ? "Write a post" : "Write a comment"); Text("Use @handle to mention a connection. \(text.count)/5,000 characters").font(.caption).foregroundStyle(.secondary) } }
@@ -176,7 +184,7 @@ struct ComposerView: View {
         if post == nil && !photosOnly { Section { Picker("Posting on behalf of", selection: $onBehalf) { Text("Myself").tag(""); ForEach(people.children.filter { $0.raw["can_post"].boolean }) { Text($0.name).tag($0.id) } }; Text("You remain the author. Posting on a child’s behalf tags them without expanding the audience.").font(.caption) } }
         if shareTabs && !photosOnly { Section { Text("Add Photos to this Post").font(.headline); HStack(spacing: 0) { Text("(Skip the post and "); Button("add photos directly") { photosOnly = true }.buttonStyle(.plain); Text(")") }.font(.caption) } }
         if photosOnly { Section { Picker("Album", selection: $album) { Text("No album").tag(""); ForEach(albums) { Text($0.name).tag($0.id) } }; Text("Album access adds to the audience you choose below.").font(.caption) } }
-        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: .any(of: [.images, .videos])) { Label("Add photos or videos", systemImage: "photo.on.rectangle") }; Button("Add video from Files") { videoFilePicker = true }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if photosOnly { TextField("Photo date (YYYY-MM-DD)", text: $photo.photoDate) }; if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Caption", text: $photo.alt); if !photo.caption.isEmpty { TextField("Additional caption", text: $photo.caption) }; PeopleTagPicker(tags: $photo.tags, directory: people) } } } }
+        if post == nil { Section { if groupID == nil { Picker("Share with", selection: $audience) { ForEach(SharingAudience.allCases) { Text($0.label).tag($0.rawValue) } }; if audience == SharingAudience.friends.rawValue { Text("Excludes connections labeled family.").font(.footnote).foregroundStyle(.secondary) } }; PhotosPicker(selection: $photoSelection, maxSelectionCount: 10, matching: largeVideosEnabled ? .images : .any(of: [.images, .videos])) { Label(largeVideosEnabled ? "Add photos":"Add photos or videos", systemImage: "photo.on.rectangle") }; if !photosOnly { Button("Add video from Files") { videoFilePicker = true };if largeVideosEnabled { PhotosPicker(selection: Binding(get:{ nil as PhotosPickerItem? },set:{ item in guard let item else{return};Task { await model.perform { guard let selected=try await item.loadTransferable(type:SelectedVideoTransfer.self) else { throw PorchError.message("This video could not be read. Try selecting it from Files.") };selectedVideo=selected.file } } }),matching:.videos) { Text("Add video from Photos") } } }; if ApplePlatform.cameraAvailable { Button("Take a photo") { camera = true } }; ForEach($photos) { $photo in VStack { if photosOnly { TextField("Photo date (YYYY-MM-DD)", text: $photo.photoDate) }; if let image = PlatformImage(data: photo.bytes) { Image(platformImage: image).resizable().scaledToFit().frame(maxHeight: 150) }; TextField("Caption", text: $photo.alt); if !photo.caption.isEmpty { TextField("Additional caption", text: $photo.caption) }; PeopleTagPicker(tags: $photo.tags, directory: people) } } } }
         Section {
             TimelineView(.periodic(from: .now, by: 1)) { timeline in
                 VStack(alignment: .leading, spacing: 12) {
@@ -201,18 +209,19 @@ struct ComposerView: View {
                     if let error = deadlineContext.validationMessage(for: timerChoice, now: timeline.date) {
                         Text(error).foregroundStyle(.red).accessibilityIdentifier("composer-expiration-error")
                     }
-                    Button(busy ? "Encrypting and sharing…" : post == nil ? (photosOnly ? "Share photos" : "Share post") : "Comment") { Task { await submit() } }
+                    Button(busy ? "Encrypting and sharing…" : post == nil ? (photosOnly ? "Share photos" : "Share post") : "Comment") { uploadTask=Task { await submit() } }
                         .disabled(!model.canWriteSocial || busy || parentUnavailable || deadlineContext.validationMessage(for: timerChoice, now: timeline.date) != nil || (!photosOnly && text.count > 5000) || (photosOnly ? photos.isEmpty : (text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && photos.isEmpty)))
                 }
             }
         }
-    }.disabled(!model.canWriteSocial || busy).navigationTitle(shareTabs ? "" : post == nil ? "New post" : "Leave a comment").porchInlineTitle().toolbar { Button("Cancel") { dismiss() } }
-        .task { await people.load(model); if shareTabs { photosOnly = initialAlbum != nil; album = initialAlbum ?? ""; await model.perform { let service = try NativePhotos(model); var next: String?; var choices: [NativeAlbum] = []; repeat { let result = try await service.request("/albums" + (next.map { "?" + NativePhotos.query(["after": $0]) } ?? "")); for row in result["items"].array where row["role"].string != "read" { let content = try await model.vault.open(row); choices.append(.init(raw: row, name: content["name"].string ?? "Album")) }; next = result["next"].string } while next != nil; try service.check(); albums = choices } } }
+    }.disabled(!model.canWriteSocial || busy).navigationTitle(shareTabs ? "" : post == nil ? "New post" : "Leave a comment").porchInlineTitle().toolbar { if busy { Button("Pause upload") { uploadTask?.cancel() } };Button("Cancel") { uploadTask?.cancel();dismiss() } }
+        .task { if let capability=try? await model.api.social("/videos/capabilities") { largeVideosEnabled=capability["enabled"].boolean };if let member=model.member,let outbox=try? NativeVideoOutbox(owner:member.id) { pendingVideos=(try? outbox.pending()) ?? [] };await people.load(model); if shareTabs { photosOnly = initialAlbum != nil; album = initialAlbum ?? ""; await model.perform { let service = try NativePhotos(model); var next: String?; var choices: [NativeAlbum] = []; repeat { let result = try await service.request("/albums" + (next.map { "?" + NativePhotos.query(["after": $0]) } ?? "")); for row in result["items"].array where row["role"].string != "read" { let content = try await model.vault.open(row); choices.append(.init(raw: row, name: content["name"].string ?? "Album")) }; next = result["next"].string } while next != nil; try service.check(); albums = choices } } }
         .fileImporter(isPresented: $videoFilePicker, allowedContentTypes: [.movie, UTType(filenameExtension: "webm") ?? .data]) { result in
             Task { await model.perform {
                 let url = try result.get()
                 let accessed = url.startAccessingSecurityScopedResource(); defer { if accessed { url.stopAccessingSecurityScopedResource() } }
                 guard photos.count < 10 else { throw PorchError.message("Choose up to ten attachments.") }
+                if largeVideosEnabled { selectedVideo=try SelectedVideoFile(copying:url);return }
                 let handle = try FileHandle(forReadingFrom: url); defer { try? handle.close() }
                 let bytes = try handle.read(upToCount: VideoContainer.maximumBytes + 1) ?? Data()
                 let generation = model.authenticationGeneration
@@ -221,17 +230,29 @@ struct ComposerView: View {
                 photos.append(clip)
             } }
         }
+        .sheet(item:$selectedVideo) { source in LargeVideoPreparationView(source:source) { photo in photos.append(photo) } }
+        .onDisappear { uploadTask?.cancel() }
         .onChange(of: timer) { _, value in if value == -1 { customExpiry = deadlineContext.suggestedShorter(now: Date()) } }
         .onChange(of: photoSelection) { _, values in Task { await model.perform { var selected: [PreparedPhoto] = []; for item in values { if let bytes = try await item.loadTransferable(type: Data.self) { if item.supportedContentTypes.contains(where: { $0.conforms(to: .movie) }) { selected.append(try await VideoPipeline.prepare(bytes)) } else { selected.append(try PhotoPipeline.prepare(bytes)) } } }; photos = selected } } }
         #if os(iOS)
         .sheet(isPresented: $camera) { CameraView { image in Task { await model.perform { guard let data = image.jpegData(compressionQuality: 0.9) else { return }; photos.append(try PhotoPipeline.prepare(data)) } }; camera = false } }
         #endif
     }
+    private func resumeVideo(_ id:String) async {
+        busy=true;defer{busy=false;videoProgress=""}
+        await model.perform {
+            guard let member=model.member else{return};let generation=model.authenticationGeneration,outbox=try NativeVideoOutbox(owner:member.id)
+            defer{pendingVideos=(try? outbox.pending()) ?? []}
+            try await outbox.send(id,api:model.api,check:{guard generation==model.authenticationGeneration,model.member?.id==member.id,vault.unlocked else{throw CancellationError()}},progress:{videoProgress=$0})
+            submitted()
+        }
+    }
     private func submit() async { busy = true; defer { busy = false }; await model.perform {
         guard let member = model.member else { return }
         try member.access.requireSocialWrite()
         guard !parentUnavailable else { throw PorchError.message("The parent is no longer available. Your draft has not been published.") }
         if photosOnly {
+            guard !photos.contains(where:{$0.largeVideo != nil}) else { throw PorchError.message("Videos belong in a post. Switch to Post or remove the video.") }
             let service = try NativePhotos(model), expiry = try deadlineContext.deadline(for: timerChoice, now: Date())
             for var photo in photos where !completedPhotos.contains(photo.id) {
                 photo.tags = NativeMentions.resolve(photo.alt + " " + photo.caption, directory: people.people, existing: photo.tags)
@@ -244,11 +265,16 @@ struct ComposerView: View {
         let id = UUID().uuidString.lowercased(), expiry = try deadlineContext.deadline(for: timerChoice, now: Date()), share = post?.context["audience"].string ?? (groupID == nil ? audience : "group"), group = groupID ?? post?.context["groupId"].string
         let generation = model.authenticationGeneration
         @MainActor func checkSession() throws { guard generation == model.authenticationGeneration, model.member?.id == member.id, vault.unlocked, !Task.isCancelled else { throw CancellationError() } }
+        let durable=photos.contains(where:{$0.largeVideo != nil})
+        let outbox=durable ? try NativeVideoOutbox(owner:member.id):nil
+        var reservations:[JSON]=[],saved=false
+        defer { if let outbox,!saved { try? outbox.discard(id) };videoProgress="";if let outbox { pendingVideos=(try? outbox.pending()) ?? [] } }
         var media: [JSON] = []
         for var photo in photos {
             try checkSession()
             photo.tags = NativeMentions.resolve(photo.alt + " " + photo.caption, directory: people.people, existing: photo.tags)
-            media.append(try await model.uploadSurfacePhoto(photo, audience: share, parent: id, group: group, expiry: expiry))
+            if let outbox { videoProgress="Encrypting attachments…";let staged=try await outbox.stage(photo,postID:id,model:model,audience:share,group:group,expiry:expiry);media.append(staged.metadata);reservations.append(staged.reservation) }
+            else { media.append(try await model.uploadSurfacePhoto(photo, audience: share, parent: id, group: group, expiry: expiry)) }
         }
         try checkSession()
         var chosenTags = NativeMentions.resolve(text, directory: people.people, existing: tags)
@@ -279,7 +305,15 @@ struct ComposerView: View {
                 throw PorchError.message("The parent's timer changed. Review the updated inherited timeout above, then submit again.")
             }
         }
-        else { _ = try await model.api.social("/posts", method: "POST", body: .object(["envelope": envelope, "media_ids": .array(media.map { $0["id"] }), "on_behalf_of": onBehalf.isEmpty ? .null : .string(onBehalf)])) }
+        else {
+            let body:JSON = .object(["envelope":envelope,"media_ids":.array(media.map{$0["id"]}),"on_behalf_of":onBehalf.isEmpty ? .null:.string(onBehalf)])
+            if let outbox {
+                try outbox.save(id,media:reservations,post:body);saved=true
+                text="";photos=[];photoSelection=[];tags=[];onBehalf=""
+                pendingVideos=try outbox.pending()
+                try await outbox.send(id,api:model.api,check:checkSession,progress:{videoProgress=$0})
+            } else { _ = try await model.api.social("/posts",method:"POST",body:body) }
+        }
         text = ""; photos = []; photoSelection = []; tags = []; onBehalf = ""
         submitted(); dismiss()
     } }
