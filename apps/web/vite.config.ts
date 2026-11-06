@@ -1,4 +1,5 @@
 import { defineConfig } from "vite";
+import {buildSync} from "esbuild";
 import { readFileSync, writeFileSync, readdirSync, copyFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { createRequire } from "node:module";
@@ -85,6 +86,9 @@ export default defineConfig({
         // A same-origin public shell still works when the old homepage redirects.
         copyFileSync(resolve(dist, "index.html"), resolve(dist, "app-shell.html"));
         const installIcons = versionPwaIcons(dist);
+        const videoWorker=buildSync({entryPoints:[resolve(sourceDirectory,"video-sw.ts")],bundle:true,format:"iife",platform:"browser",minify:true,write:false}).outputFiles[0].contents;
+        const videoWorkerName=`assets/video-playback-${createHash("sha256").update(videoWorker).digest("hex").slice(0,16)}.js`;
+        writeFileSync(resolve(dist,videoWorkerName),videoWorker);
         const assets = readdirSync(resolve(dist, "assets"))
           .filter((name) => /\.(js|css)$/.test(name))
           .map((name) => "/assets/" + name);
@@ -107,7 +111,7 @@ export default defineConfig({
           `/${openpgpFile}`,
           ...assets,
         ];
-        let sw = readFileSync(resolve(dist, "sw.js"), "utf8");
+        let sw = `importScripts("/${videoWorkerName}");\n` + readFileSync(resolve(dist, "sw.js"), "utf8");
         const hash = createHash("sha256").update(sw);
         for (const path of [...shell].sort()) {
           hash.update(path);

@@ -82,6 +82,7 @@ targets:
     deploymentTarget: '14.0'
     sources:
       - PorchdayTests/AppleParityTests.swift
+      - PorchdayTests/SegmentedVideoTests.swift
       - PorchdayTests/NativePhotoContractTests.swift
       - PorchdayTests/PorchdayTests.swift
       - PorchdayTests/CryptoVaultAccessTests.swift
@@ -89,6 +90,8 @@ targets:
       - PorchdayTests/PlatformInvitationTests.swift
       - PorchdayTests/SharingAudienceTests.swift
       - PorchdayTests/RecipientKeyVerificationTests.swift
+      - path: ../web/test/fixtures/synthetic-video.mp4
+        buildPhase: resources
       - path: ../../packages/crypto/test/fixtures/openpgp-v1.json
         buildPhase: resources
     settings:
@@ -102,6 +105,8 @@ targets:
     platform: iOS
     sources:
       - PorchdayTests
+      - path: ../web/test/fixtures/synthetic-video.mp4
+        buildPhase: resources
       - path: ../../packages/crypto/test/fixtures/openpgp-v1.json
         buildPhase: resources
       - path: ../../packages/crypto/test/fixtures/reactions-v1.json

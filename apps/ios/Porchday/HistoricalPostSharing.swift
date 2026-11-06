@@ -91,7 +91,9 @@ import Foundation
             let envelope = try await io.seal(payload.replacing("id", with: .string(newID)), photoContext, audience)
             try io.check()
             let packed = try JSONEncoder().encode(envelope)
-            let reservation = try await io.reservePhoto(.object(["id": .string(newID), "envelope": envelope, "byte_size": .number(Double(packed.count)), "history_post_id": .string(postID), "history_source_revision": .number(Double(revision))]))
+            var reservationBody:JSON = .object(["id":.string(newID),"envelope":envelope,"byte_size":.number(Double(packed.count)),"history_post_id":.string(postID),"history_source_revision":.number(Double(revision))])
+            if payload["videoVersion"].integer==2 { let manifest=try SegmentedVideoCrypto.decode(JSONEncoder().encode(payload["video"]));reservationBody=reservationBody.replacing("stream_id",with:.string(manifest.streamId)) }
+            let reservation = try await io.reservePhoto(reservationBody)
             try io.check()
             guard reservation["upload_url"].string == "/api/v1/media/\(newID)/bytes" else {
                 throw PorchError.message("Photo upload was not authorized.")
