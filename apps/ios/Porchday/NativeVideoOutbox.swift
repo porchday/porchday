@@ -49,6 +49,7 @@ import Foundation
             payload=metadata.replacing("video",with:try JSONDecoder().decode(JSON.self,from:JSONEncoder().encode(manifest))).replacing("bytes",with:.string(try Data(contentsOf:fallback).base64EncodedString()))
         } else { payload=metadata.replacing("bytes",with:.string(photo.bytes.base64EncodedString())) }
         let envelope=try await model.vault.seal(payload,member:member,kind:"media",audience:audience,id:id,group:group,parent:postID,expiry:expiry),bytes=try JSONEncoder().encode(envelope)
+        guard bytes.count<=(stream == nil ? 22_020_096:1_048_576) else {throw PorchError.message("This encrypted attachment is too large for this audience. Choose a smaller audience or attachment.")}
         try write(bytes,to:folder.appendingPathComponent(id))
         var reservation:JSON = .object(["id":.string(id),"byte_size":.number(Double(bytes.count))])
         if let stream { reservation=reservation.replacing("stream_id",with:.string(stream.streamId)).replacing("segments",with:.array(stream.segments.map{ .object(["index":.number(Double($0.index)),"size":.number(Double($0.size)),"sha256":.string($0.sha256)]) })) }

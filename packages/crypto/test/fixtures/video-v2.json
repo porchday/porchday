@@ -1,0 +1,25 @@
+{
+  "description": "Public synthetic AES-GCM interoperability vector; never use this key or nonce for real media.",
+  "plaintext": "UG9yY2hkYXkgc3ludGhldGljIHZpZGVvIGludGVyb3BlcmFiaWxpdHkgdmVjdG9y",
+  "ciphertext": "nsgyXiUEChcnPby9zpv4bBsDI7xewk8b8cub+hB0Wv64ONBKJCaIDzjIL0EkeFmF4nHbFh0YIchxkUe18OxLow==",
+  "manifest": {
+    "v": 2,
+    "protocol": "porchday-video-aes256gcm-v2",
+    "streamId": "00000000-0000-4000-8000-000000000001",
+    "key": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "mime": "video/mp4",
+    "size": 48,
+    "duration": 1,
+    "width": 640,
+    "height": 480,
+    "chunkSize": 4194304,
+    "segments": [
+      {
+        "index": 0,
+        "size": 64,
+        "sha256": "829d437c76e218d6be406a4ae3ed863f4c38f1995ee329dc415587bec39aa3b2",
+        "nonce": "AAAAAAAAAAAAAAAA"
+      }
+    ]
+  }
+}

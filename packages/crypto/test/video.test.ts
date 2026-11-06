@@ -1,3 +1,4 @@
+import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createVideoKey,encryptVideoSegment,decryptVideoSegment,validateVideoManifest,videoByteRange,VIDEO_CHUNK_BYTES,type VideoManifest} from '../src/video.ts';
@@ -8,3 +9,5 @@ test('manifest rejects missing, extra, reordered, excessive and malformed data',
 test('manifest rejects nonce reuse across valid-sized segments',async()=>{const{manifest}=await fixture();const first={...manifest.segments[0],size:VIDEO_CHUNK_BYTES+16},second={...manifest.segments[0],index:1};assert.throws(()=>validateVideoManifest({...manifest,size:VIDEO_CHUNK_BYTES+5,segments:[first,second]}));});
 test('retry encryption generates fresh independent nonces',async()=>{const{plain,manifest,encrypted}=await fixture();const second=await encryptVideoSegment(manifest.key,streamId,0,plain);assert.notEqual(second.segment.nonce,encrypted.segment.nonce);assert.notEqual(second.segment.sha256,encrypted.segment.sha256);});
 test('bounded range parsing supports native and browser seeks',()=>{assert.deepEqual(videoByteRange(null,100),{start:0,end:99,partial:false});assert.deepEqual(videoByteRange('bytes=10-19',100),{start:10,end:19,partial:true});assert.deepEqual(videoByteRange('bytes=90-',100),{start:90,end:99,partial:true});assert.deepEqual(videoByteRange('bytes=-20',100),{start:80,end:99,partial:true});assert.deepEqual(videoByteRange('bytes=90-200',100),{start:90,end:99,partial:true});for(const range of ['bytes=100-','bytes=10-9','bytes=-0','bytes=0-1,3-4','bytes=9007199254740992-','items=1-2','bytes=-'])assert.equal(videoByteRange(range,100),null);});
+
+test('published synthetic wire vector decrypts exactly',async()=>{const vector=JSON.parse(await readFile(new URL('./fixtures/video-v2.json',import.meta.url),'utf8'));assert.deepEqual(Buffer.from(await decryptVideoSegment(vector.manifest,0,new Uint8Array(Buffer.from(vector.ciphertext,'base64')))),Buffer.from(vector.plaintext,'base64'));});
