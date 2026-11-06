@@ -28,7 +28,8 @@ describe("public pilot acceptance contract", () => {
     const html = renderToStaticMarkup(
       createElement(AuthPage, { mode: "join", onSignedIn: () => {} }),
     );
-    expect(html).toContain("An invitation is required. You must be 18 or older to join.");
+    expect(html).toContain("Use the email address that received your invitation.");
+    expect(html).toContain("You must be 18 or older.");
     expect(html).toContain("Invitation code");
     expect(html).toContain("I am at least 18 years old");
     expect(html).toContain("I’m a person operating my own account");

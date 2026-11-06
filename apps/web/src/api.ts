@@ -86,7 +86,7 @@ export class ApiError extends Error {
           AUDIENCE_CHANGED:
             "Your sharing audience changed. Review the audience and submit again to encrypt for the current recipients.",
           CONNECTION_LIMIT:
-            "One of you has reached the 300-person limit, including family. A connection cannot be accepted until both people have room.",
+            "One of you has reached the 150-person limit, including family. A connection cannot be accepted until both people have room.",
           MEDIA_QUOTA:
             "Your 1 GiB media storage is full. Remove older photos or videos before adding more. You can export copies first.",
           VIDEO_PUBLISHING_UNAVAILABLE:"New video uploads are temporarily unavailable. Your saved upload can be resumed when sharing is available again.",
