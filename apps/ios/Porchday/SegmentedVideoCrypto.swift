@@ -63,7 +63,9 @@ enum SegmentedVideoCrypto {
     static func encrypt(_ data: Data, key: String, stream: String, index: Int) throws -> (Data,VideoV2Segment) {
         let aad = try additionalData(stream: stream,index: index,size: data.count), key = SymmetricKey(data: try fixedBase64(key,count: 32))
         let nonce = AES.GCM.Nonce(), box = try AES.GCM.seal(data, using: key, nonce: nonce, authenticating: aad)
-        let bytes = box.ciphertext + box.tag
+        // CryptoKit may return a Data slice whose startIndex is 12 (past its
+        // nonce). Rebase before callers use zero-based chunk byte offsets.
+        var bytes=Data();bytes.reserveCapacity(data.count+16);bytes.append(box.ciphertext);bytes.append(box.tag)
         return (bytes,VideoV2Segment(index: index,size: bytes.count,sha256: hash(bytes),nonce: nonce.withUnsafeBytes { Data($0).base64EncodedString() }))
     }
     static func decrypt(_ data: Data, manifest: VideoV2Manifest, index: Int) throws -> Data {
@@ -72,6 +74,7 @@ enum SegmentedVideoCrypto {
         let s = manifest.segments[index]
         guard data.count == s.size, hash(data) == s.sha256 else { throw VideoV2Error.integrity }
         let box = try AES.GCM.SealedBox(nonce: AES.GCM.Nonce(data: fixedBase64(s.nonce,count: 12)),ciphertext: data.dropLast(16),tag: data.suffix(16))
-        return try AES.GCM.open(box,using: SymmetricKey(data: fixedBase64(manifest.key,count: 32)),authenticating: additionalData(stream: manifest.streamId,index: index,size: s.size-16))
+        let plaintext=try AES.GCM.open(box,using: SymmetricKey(data: fixedBase64(manifest.key,count: 32)),authenticating: additionalData(stream: manifest.streamId,index: index,size: s.size-16))
+        return plaintext.withUnsafeBytes { Data($0) }
     }
 }

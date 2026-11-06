@@ -362,13 +362,15 @@ export function createSocialRoutes() {
             if(!key)fail('DEVICE_NOT_TRUSTED',403);
             try {const proof=await verifyStatement(b.lifecycle,key.public_key);if(canonicalJson(proof)!==canonicalJson({purpose:'porchday-lifecycle',id:e.id,revision:e.revision,expiresAt:e.expiresAt}))fail('INVALID_PROOF',403);}catch{fail('INVALID_PROOF',403);}
             await checkEnvelope(db,c.get('memberId'),b.envelope,'post',{allowPast:true,historyPostId:source.id,skipEpoch:retry});
-            const attached=await db`select id,envelope from app.media_assets where post_id=${source.id} order by display_order for update`;
+            const attached=await db`select id,envelope,video_stream_id from app.media_assets where post_id=${source.id} order by display_order for update`;
             if(retry){if(canonicalJson(attached.map(r=>r.id))!==canonicalJson(b.media_ids))fail('MEDIA_ATTACHMENT_CHANGED',409);return {id:source.id,ok:true};}
             if(canonicalJson(attached.map(r=>r.id).sort())!==canonicalJson([...b.source_media_ids].sort())||b.source_media_ids.length!==b.media_ids.length||b.media_ids.some(id=>b.source_media_ids.includes(id)))fail('MEDIA_ATTACHMENT_CHANGED',409);
             if(b.media_ids.length){
-                const replacements=await db`select id,envelope from app.media_assets where id in ${db(b.media_ids)} and owner_id=${c.get('memberId')} and post_id is null and state='ready' for update`;
+                const replacements=await db`select id,envelope,video_stream_id from app.media_assets where id in ${db(b.media_ids)} and owner_id=${c.get('memberId')} and post_id is null and state='ready' for update`;
                 if(replacements.length!==b.media_ids.length)fail('MEDIA_NOT_READY',409);
                 for(let i=0;i<b.source_media_ids.length;i++){
+                    const previous=attached.find(row=>row.id===b.source_media_ids[i])!,replacement=replacements.find(row=>row.id===b.media_ids[i])!;
+                    if(previous.video_stream_id&&previous.video_stream_id!==replacement.video_stream_id)fail('CLIENT_UPDATE_REQUIRED',409);
                     const deadline=attached.find(row=>row.id===b.source_media_ids[i])!.envelope.context.expiresAt;
                     const next=replacements.find(row=>row.id===b.media_ids[i])!.envelope.context.expiresAt;
                     if(deadline&&(!next||Date.parse(next)>Date.parse(deadline)))fail('EXPIRY_CANNOT_EXTEND',409);
@@ -394,6 +396,8 @@ export function createSocialRoutes() {
             await checkEnvelope(db,c.get('memberId'),b.envelope,'post');
             const [existing]=await db`select id,envelope from app.posts where id=${e.id} and author_id=${c.get('memberId')}`;
             if(existing){if(canonicalJson(existing.envelope)!==canonicalJson(b.envelope))fail('CONFLICT',409);return {id:e.id};}
+            const sourceStreams=await db`select video_stream_id from app.media_assets where post_id=${source.id} and video_stream_id is not null order by display_order`;
+            if(sourceStreams.length){const replacements=await db`select video_stream_id from app.media_assets where id=any(${b.media_ids}::uuid[]) and owner_id=${c.get('memberId')} and state='ready' and video_stream_id is not null`;if(canonicalJson(sourceStreams.map(r=>r.video_stream_id).sort())!==canonicalJson(replacements.map(r=>r.video_stream_id).sort()))fail('CLIENT_UPDATE_REQUIRED',409);}
             await db`insert into app.posts(id,author_id,group_id,audience,envelope,epoch,created_at,expires_at) values(${e.id},${c.get('memberId')},${e.groupId},${e.audience},${db.json(b.envelope)},${e.epoch},${e.createdAt},${e.expiresAt})`;
             for(const r of b.envelope.recipients)await db`insert into app.post_recipients(post_id,device_id,member_id) values(${e.id},${r.deviceId},${r.memberId})`;
             await attachMedia(db,c.get('memberId'),e.id,b.media_ids);

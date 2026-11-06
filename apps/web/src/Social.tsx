@@ -1,3 +1,4 @@
+import {videoUpdatePlaceholder} from "./video-placeholder";
 import {validateVideoManifest} from "@porchday/crypto/video";
 import {VideoPicker} from "./VideoPicker";
 import type {PreparedLargeVideo} from "./video-prepare";
@@ -375,7 +376,7 @@ export function Composer({
         const video=photo.largeVideo?await stageVideo(vault.member.id,id,meta.id,photo.largeVideo,abort.signal,fraction=>setVideoProgress(`Encrypting video… ${Math.round(fraction*100)}%`)):undefined;
         const envelope = await vault.seal(
           {
-            ...(video?{video}:{bytes:bytesToBase64(new Uint8Array(await photo.blob.arrayBuffer()))}),
+            ...(video?{video,bytes:videoUpdatePlaceholder}:{bytes:bytesToBase64(new Uint8Array(await photo.blob.arrayBuffer()))}),
             ...meta,
           },
           {
@@ -2029,7 +2030,7 @@ function ReshareDialog({
           );
           const item = { ...photo, width, height, posterExpiresAt: photoExpiresAt, id: crypto.randomUUID() };
           const envelope = await vault.seal(
-            { ...item, ...(video?{video}:{bytes:original.bytes}) },
+            { ...item, ...(video?{video,bytes:videoUpdatePlaceholder}:{bytes:original.bytes}) },
             {
               id: item.id,
               kind: "media",

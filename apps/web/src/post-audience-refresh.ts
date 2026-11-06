@@ -101,7 +101,7 @@ export async function preparePostAudienceRefresh(
       // Register before reservation/upload: a lost response may have created the
       // unattached object. No post write has happened during preparation.
       uploaded.push(replacement.id);
-      await io.upload(replacement.id, envelope, context.revision, payload.videoVersion===2?validateVideoManifest(payload.video).streamId:undefined); check();
+      if(payload.videoVersion===2)await io.upload(replacement.id,envelope,context.revision,validateVideoManifest(payload.video).streamId);else await io.upload(replacement.id,envelope,context.revision); check();
       sourceMediaIds.push(photo.id);
       media.push(replacement);
     }

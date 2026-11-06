@@ -1,9 +1,9 @@
 import React,{useEffect,useRef,useState} from 'react';
-import {inspectVideo,prepareLargeVideo,type PreparedLargeVideo,type VideoInspection} from './video-prepare';
+import {cleanAbandonedVideoPreparation,inspectVideo,prepareLargeVideo,type PreparedLargeVideo,type VideoInspection} from './video-prepare';
 import {Alert,Button,Modal} from './ui';
 export function VideoPicker({disabled,onPrepared}:{disabled:boolean;onPrepared:(video:PreparedLargeVideo,name:string)=>void}){
  const input=useRef<HTMLInputElement>(null),active=useRef<AbortController|null>(null),[source,setSource]=useState<File|null>(null),[info,setInfo]=useState<VideoInspection|null>(null),[resolution,setResolution]=useState<720|1080>(1080),[start,setStart]=useState(0),[end,setEnd]=useState(0),[busy,setBusy]=useState(false),[progress,setProgress]=useState(0),[error,setError]=useState('');
- useEffect(()=>()=>active.current?.abort(),[]);
+ useEffect(()=>{void cleanAbandonedVideoPreparation().catch(()=>{});return()=>active.current?.abort();},[]);
  function close(){active.current?.abort();active.current=null;setSource(null);setInfo(null);setBusy(false);setError('');}
  async function choose(file:File){setSource(file);setInfo(null);setError('');setBusy(true);const abort=new AbortController();active.current=abort;try{const inspected=await inspectVideo(file);abort.signal.throwIfAborted();setInfo(inspected);setStart(0);setEnd(Math.min(600,inspected.duration));}catch(error){if(!abort.signal.aborted)setError((error as Error).message);}finally{if(active.current===abort)setBusy(false);}}
  async function prepare(){if(!source||!info)return;const abort=new AbortController();active.current=abort;setBusy(true);setProgress(0);setError('');try{const prepared=await prepareLargeVideo(source,{resolution,start,end,signal:abort.signal,progress:setProgress});if(abort.signal.aborted){await prepared.dispose();return;}onPrepared(prepared,source.name);close();}catch(error){if(!abort.signal.aborted)setError((error as Error).message);}finally{if(active.current===abort)setBusy(false);}}

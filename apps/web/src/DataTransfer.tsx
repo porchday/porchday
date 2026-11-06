@@ -1,3 +1,7 @@
+import {videoUpdatePlaceholder} from "./video-placeholder";
+import {exportVideoSegments,boundedVideoResponse,validateArchivedSegment,assembleArchivedVideo} from "./video-archive";
+import {stageVideo,stageMedia,sendStagedMedia,discardLocalPublication} from "./video-outbox";
+import {validatePreparedVideo} from "./video-prepare";
 import {importPhotoCollections,importedIdentity,restorePhotoSources} from "./photo-import";
 import {openPhoto,type PhotoRow} from "./photo-record";
 import {verifyAttachmentDate,signAttachmentDate} from "./attachment-photo-date";
@@ -86,6 +90,7 @@ type ImportPlan = {
   photos: Json[];
   albums: Json[];
   media: Map<string, { part: number; record: Json }>;
+  videoSegments:Map<string,{part:number;record:Json}>;
   profile: Json | null;
   emojiLibrary: EmojiLibrary | null;
   expired: number;
@@ -307,7 +312,7 @@ export function DataTransfer() {
                 archive[section].push(row);
               } else if (section === "media") {
                 const response = await fetch(
-                  `/api/v1/exports/${job.id}/media/${row.id}/bytes`,
+                  `/api/v1/exports/${job.id}/media/${row.id}/bytes?video_version=2`,
                   { credentials: "same-origin", cache: "no-store" },
                 );
                 if (!response.ok)
@@ -316,6 +321,10 @@ export function DataTransfer() {
                   );
                 const envelope = (await response.json()) as EncryptedEnvelope;
                 const payload = await vault.open({ envelope, id: row.id,author_key:row.author_key });
+                if(payload.videoVersion===2){
+                  const video=await exportVideoSegments(row.id,payload.video,async(index,size)=>{ensureContinue();return boundedVideoResponse(await fetch(`/api/v1/exports/${job.id}/media/${row.id}/chunks/${index}`,{credentials:"same-origin",cache:"no-store"}),size);},async(record,bytes)=>{await room(bytes.length+4096);archive.version=2;(archive.video_segments||=[]).push(record);files[record.path]=bytes;refs.push(reference("media",{...row,envelope}));});
+                  await room(32_000);archive.version=2;archive.media.push({id:row.id,path:`photos/${row.id}.mp4`,mime:"video/mp4",alt:String(payload.alt||""),name:String(payload.name||"video.mp4"),poster:payload.poster,...video,post_id:row.post_id||null,created_at:canonicalDate(row.created_at||envelope.context.createdAt),expires_at:canonicalDate(row.effective_expires_at||envelope.context.expiresAt)});refs.push(reference("media",{...row,envelope}));continue;
+                }
                 if (
                   (!isVideo(payload.mime) && payload.mime !== "image/jpeg") ||
                   typeof payload.bytes !== "string"
@@ -433,13 +442,16 @@ export function DataTransfer() {
       setPlan(null);
       const parts: PlannedPart[] = [];
       const media = new Map<string, { part: number; record: Json }>();
+      const videoSegments=new Map<string,{part:number;record:Json}>();
       let profile: Json | null = null;
       let emojiLibrary: EmojiLibrary | null = null;
       for (const file of Array.from(selected)) {
         ensureContinue();
         setProgress(`Checking ${file.name}…`);
         const { archive, files } = await unpackFile(file);
+        for(const segment of archive.video_segments||[]){if(videoSegments.has(segment.path))throw Error("This archive repeats a video segment.");validateArchivedSegment(segment,files);videoSegments.set(segment.path,{part:parts.length,record:segment});}
         for (const photo of archive.media) {
+          if(photo.videoVersion===2){if(media.has(photo.id))throw Error("This archive repeats a video.");media.set(photo.id,{part:parts.length,record:photo});continue;}
           if (!photo.expires_at || Date.parse(photo.expires_at) > Date.now())
             await validatedMedia(files[photo.path], photo.mime);
           if ((await checksum(files[photo.path])) !== photo.sha256)
@@ -476,6 +488,8 @@ export function DataTransfer() {
         parts.push({ file, archive });
       }
       validateSet(parts.map((p) => p.archive));
+      for(const {record}of media.values())if(record.videoVersion===2)for(const segment of record.segments){const found=videoSegments.get(segment.path)?.record;if(!found||found.id!==record.id||found.index!==segment.index||found.sha256!==segment.sha256||found.size!==segment.size)throw Error("A video segment is missing or inconsistent. Select every archive part.");}
+      for(const {record}of videoSegments.values())if(media.get(record.id)?.record.videoVersion!==2)throw Error("A video segment has no matching video record.");
       const entries = eligibleEntries(parts.map((p) => p.archive));
       const photoAvailable = (id: string) => {
         const photo = media.get(id)?.record;
@@ -576,6 +590,7 @@ export function DataTransfer() {
         0,
       );
       setPlan({
+        videoSegments,
         owner,
         parts,
         entries,
@@ -637,6 +652,19 @@ export function DataTransfer() {
         expiresAt: string | null,
       ) {
         ensureContinue();
+        const videoRecord=plan!.media.get(old.id)?.record;
+        if(videoRecord?.videoVersion===2){
+          if(!(await get("/videos/capabilities")).enabled)throw Error("Video imports are not enabled on this server yet.");
+          const assembled=await assembleArchivedVideo(videoRecord,async segment=>{ensureContinue();const found=plan!.videoSegments.get(segment.path);if(!found)throw Error("A video segment is missing.");const parsed=await unpackFile(plan!.parts[found.part].file);return parsed.files[segment.path];});
+          const operation=crypto.randomUUID(),mediaId=crypto.randomUUID();
+          try{await validatePreparedVideo(assembled.blob);const photoExpiresAt=preservedPhotoDeadline(videoRecord.expires_at,expiresAt);
+            const prepared={...assembled,mime:"video/mp4" as const,width:videoRecord.width,height:videoRecord.height,duration:videoRecord.duration,poster:videoRecord.poster||"",preview:""};
+            const video=await stageVideo(vault.member.id,operation,mediaId,prepared,new AbortController().signal,()=>ensureContinue());
+            const meta:MediaPayload={id:mediaId,mime:"video/mp4",videoVersion:2,duration:videoRecord.duration,alt:String(old.alt||videoRecord.alt||""),name:String(old.name||videoRecord.name||"video.mp4"),width:videoRecord.width,height:videoRecord.height,poster:videoRecord.poster,posterExpiresAt:photoExpiresAt};
+            const envelope=await vault.seal({...meta,video,bytes:videoUpdatePlaceholder},{id:mediaId,kind:"media",audience:"only_me",parentId,createdAt,expiresAt:photoExpiresAt});
+            const reservation=await stageMedia(vault.member.id,operation,envelope,video);await sendStagedMedia(vault.member.id,operation,reservation,new AbortController().signal,()=>ensureContinue());return meta;
+          }finally{await assembled.dispose();await discardLocalPublication(vault.member.id,operation);}
+        }
         const { bytes, record } = await loadPhoto(old.id);
         const photoExpiresAt = preservedPhotoDeadline(
           record.expires_at,

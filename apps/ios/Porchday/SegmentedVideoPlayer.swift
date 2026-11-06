@@ -47,8 +47,9 @@ import UniformTypeIdentifiers
                     let start=range.currentOffset > 0 ? range.currentOffset : range.requestedOffset
                     guard start>=0, start<=Int64(self.manifest.size), range.requestedLength>=0 else { throw VideoV2Error.integrity }
                     var offset=Int(start)
-                    let remaining=range.requestsAllDataToEndOfResource ? self.manifest.size-offset : min(range.requestedLength,self.manifest.size-offset)
-                    let end=offset+remaining
+                    guard range.requestedOffset>=0,start>=range.requestedOffset,range.requestedOffset<=Int64(self.manifest.size) else { throw VideoV2Error.integrity }
+                    let requestedEnd=range.requestsAllDataToEndOfResource ? self.manifest.size : Int(range.requestedOffset)+min(range.requestedLength,self.manifest.size-Int(range.requestedOffset))
+                    let end=max(offset,requestedEnd)
                     while offset<end {
                         try self.check();let index=offset/SegmentedVideoCrypto.chunkBytes
                         let bytes:Data

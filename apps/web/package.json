@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@noble/hashes": "2.4.0",
     "@porchday/crypto": "*",
     "fflate": "^0.8.2",
     "mediabunny": "1.65.2",
