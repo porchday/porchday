@@ -1,3 +1,4 @@
+import {verifyPhotoVideo,uploadPhotoMedia} from './photo-video';
 import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
 import {base64ToBytes,type EncryptedEnvelope} from "@porchday/crypto";
 import {get,post,request} from "./api";
@@ -17,8 +18,8 @@ async function readPhoto(vault:ReturnType<typeof useVault>,photo:PhotoRow,grants
    if(envelope.context.kind!=="media"||envelope.context.parentId!==photo.id)throw Error("Photo bytes do not belong to this photo.");
    const payload=await vault.open({id:media.id,envelope});
    if(payload.mime!==media.mime||typeof payload.bytes!=="string")throw Error("Photo bytes do not match the signed metadata.");
-   const bytes=base64ToBytes(payload.bytes);await verifyPhotoBytes(content.photoProof as PhotoProof,bytes);
-   await validatedMedia(bytes,media.mime);
+   if(media.videoVersion===3)await verifyPhotoVideo(content.photoProof as PhotoProof,payload.video);
+   else{const bytes=base64ToBytes(payload.bytes);await verifyPhotoBytes(content.photoProof as PhotoProof,bytes);await validatedMedia(bytes,media.mime);}
    return {content,payload};
   }catch(error){last=error;}
  }
@@ -35,8 +36,7 @@ export async function addPhotoToAlbum(vault:ReturnType<typeof useVault>,photoId:
  if(privateOnly&&encrypted.recipients.some(r=>r.memberId!==vault.member.id))throw Error("This imported album is now shared. Import stopped before adding private photos.");
  const bytes=new TextEncoder().encode(JSON.stringify(encrypted));
  if(bytes.length>22_020_096)throw Error("This encrypted photo is too large for this album's audience.");
- const upload=await post("/media",{id:media.id,envelope:encrypted,byte_size:bytes.length});
- await request(upload.upload_url,{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:new Blob([bytes])});
+ await uploadPhotoMedia(encrypted,media.videoVersion===3?payload.video:undefined);
  const envelope=await vault.seal({...content,media:[media]},{...common,id:crypto.randomUUID(),kind:"photo",photoDate:current.photo_date,revision:current.revision});
  if(privateOnly&&envelope.recipients.some(r=>r.memberId!==vault.member.id))throw Error("This imported album is now shared. Import stopped before adding private photos.");
  try{await post(`/photos/${photoId}/grants`,{envelope,media_id:media.id});}
@@ -60,9 +60,8 @@ export async function refreshPhotoGrant(vault:ReturnType<typeof useVault>,photo:
  const bytes=new TextEncoder().encode(JSON.stringify(encrypted));
  if(bytes.length>22_020_096)throw Error("This encrypted photo is too large for this album's audience.");
  checkCurrent();
- const upload=await post("/media",{id:media.id,envelope:encrypted,byte_size:bytes.length,photo_refresh_id:grant.id});
+ await uploadPhotoMedia(encrypted,media.videoVersion===3?payload.video:undefined,grant.id);
  checkCurrent();
- await request(upload.upload_url,{method:"PUT",headers:{"Content-Type":"application/octet-stream"},body:new Blob([bytes])});
  const envelope=await vault.sealPhotoRefresh({...content,media:[media]},context,grant.id);
  checkCurrent();
  try{await post(`/photos/${photo.id}/grants/${grant.id}/refresh`,{envelope,media_id:media.id,expected_media_id:grant.media_id,expected_revision:photo.revision});}

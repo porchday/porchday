@@ -5,7 +5,7 @@ import { bytesToBase64, canonicalJson, type Audience } from "@porchday/crypto";
 import { ApiError, get, post, request, type MediaPayload } from "./api";
 import type { PersonTag } from "./PeopleTags";
 import type { useVault } from "./vault";
-export type PhotoDraft={id:string;name:string;alt:string;blob:Blob;width:number;height:number;mime?:string;poster?:string;tags?:PersonTag[];photoDate?:string;source?:{postId:string;revision:number};existingSource?:{mediaId:string;postId:string}};
+export type PhotoDraft={archiveSha256?:string;id:string;name:string;alt:string;blob:Blob;width:number;height:number;mime?:string;poster?:string;tags?:PersonTag[];photoDate?:string;source?:{postId:string;revision:number};existingSource?:{mediaId:string;postId:string}};
 export function localPhotoDate(date=new Date()) {
   return `${date.getFullYear().toString().padStart(4,"0")}-${(date.getMonth()+1).toString().padStart(2,"0")}-${date.getDate().toString().padStart(2,"0")}`;
 }

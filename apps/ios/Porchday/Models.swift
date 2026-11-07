@@ -58,7 +58,7 @@ enum PorchError: LocalizedError { case message(String); case api(code:String,mes
         case .api(let code,let message,_):
             switch code {
             case "MEDIA_BUSY": return "Photo uploads are busy. Wait a moment, then try again. Your draft and selected photos are still here."
-            case "MEDIA_QUOTA": return "Your 1 GiB media storage is full. Remove older photos or videos before adding more. You can export copies first."
+            case "MEDIA_QUOTA": return "Your 10 GB media storage is full. Remove older photos or videos before adding more. You can export copies first."
             case "VIDEO_PUBLISHING_UNAVAILABLE": return "New video uploads are temporarily unavailable. Your saved upload can be resumed when sharing is available again."
             case "VIDEO_INCOMPLETE": return "This video is still uploading. Resume its saved upload to finish sharing."
             case "VIDEO_OPERATION_CONFLICT": return "This saved video upload conflicts with its reservation. Cancel it and select the video again."

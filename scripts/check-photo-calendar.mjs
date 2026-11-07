@@ -419,7 +419,7 @@ try {
   await shortcut.click();
   await page.getByRole('button',{name:'Post',exact:true}).click();
   assert.equal(await page.locator('textarea').first().inputValue(),'Retained draft');
-  assert.equal(await page.getByRole('button',{name:'Photos',exact:true}).count(),1);
+  assert.equal(await page.locator('[aria-label="What to share"]').getByRole('button',{name:'Photos & videos',exact:true}).count(),1);
   assert.deepEqual(errors, []);
   console.log(
     "Chromium calendar swipes/month boundaries, filters/highlights, video validation/upload/click-to-load playback, encrypted tag payload and child settings passed.",

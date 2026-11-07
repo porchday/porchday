@@ -1,3 +1,4 @@
+import {MEMBER_MEDIA_BYTES} from './media-limits.js';
 import type { Context, Hono } from 'hono';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
@@ -116,7 +117,7 @@ export function registerMediaRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
       const [existing]=await db`select * from app.media_assets where id=${b.id} and owner_id=${c.get('memberId')}`;
       if(existing){if(existing.video_stream_id||existing.envelope_sha256!==b.digest||Number(existing.byte_size)!==b.byte_size)fail('MEDIA_UPLOAD_MISMATCH',409);return{id:b.id,upload_url:'/api/v1/media/'+b.id+'/bytes',state:existing.state};}
       const [quota]=await db`select (select coalesce(sum(byte_size),0) from app.media_assets where owner_id=${c.get('memberId')})+(select coalesce(sum(byte_size),0) from app.video_streams where owner_id=${c.get('memberId')}) as bytes`;
-      if(Number(quota.bytes)+b.byte_size>1024*1024*1024)fail('MEDIA_QUOTA',413);
+      if(Number(quota.bytes)+b.byte_size>MEMBER_MEDIA_BYTES)fail('MEDIA_QUOTA',413);
       await db`insert into app.media_assets(id,owner_id,object_key,envelope,envelope_sha256,byte_size,state) values(${b.id},${c.get('memberId')},${'media/'+c.get('memberId')+'/'+b.id},${db.json(JSON.parse(canonicalJson(b.routing)))},${b.digest},${b.byte_size},'pending')`;
       return {id:b.id,upload_url:'/api/v1/media/'+b.id+'/bytes'};
     }),201);

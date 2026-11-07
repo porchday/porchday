@@ -2,6 +2,10 @@ import {beforeEach,describe,it,expect,vi} from "vitest";
 vi.mock("../src/api",async original=>({...await original<typeof import("../src/api")>(),get:vi.fn(),post:vi.fn()}));
 vi.mock("../src/photo-publish",()=>({publishPhoto:vi.fn()}));
 vi.mock("../src/photo-album",()=>({addPhotoToAlbum:vi.fn()}));
+vi.mock("../src/photo-video",()=>({stagePhotoVideo:vi.fn()}));
+vi.mock("../src/video-outbox",()=>({sendPublication:vi.fn()}));
+import {stagePhotoVideo} from "../src/photo-video";
+import {sendPublication} from "../src/video-outbox";
 import {get,post,ApiError} from "../src/api";
 import {publishPhoto} from "../src/photo-publish";
 import {addPhotoToAlbum} from "../src/photo-album";
@@ -22,6 +26,14 @@ describe("private photo collection import",()=>{
   expect(publishPhoto).toHaveBeenCalledWith(vault,expect.objectContaining({photoDate:"2001-02-03",alt:"caption"}),"only_me","2090-01-01T00:00:00.000Z",null);
   expect(addPhotoToAlbum).toHaveBeenCalledTimes(1);
   expect(addPhotoToAlbum).toHaveBeenCalledWith(vault,await importedIdentity("owner","source","photo",photo.id),await importedIdentity("owner","source","album",album.id),true);
+ });
+ it("restores segmented independent videos through the private durable outbox and disposes plaintext",async()=>{
+  const dispose=vi.fn(),prepared={blob:new Blob(['prepared']),width:640,height:480,duration:1,mime:'video/mp4',dispose,preview:''} as any;
+  await importPhotoCollections(vault,'source',[],[{...photo,album_ids:[]}],async()=>({bytes:new Uint8Array(),record:{mime:'video/mp4',width:640,height:480,sha256:'a'.repeat(64)},preparedVideo:prepared}),()=>{},()=>{});
+  expect(publishPhoto).not.toHaveBeenCalled();
+  expect(stagePhotoVideo).toHaveBeenCalledWith(vault,expect.objectContaining({photoDate:photo.photo_date,archiveSha256:'a'.repeat(64)}),prepared,'only_me',null,null,expect.any(AbortSignal),expect.any(Function));
+  expect(sendPublication).toHaveBeenCalledWith('owner',await importedIdentity('owner','source','photo',photo.id),expect.any(AbortSignal),expect.any(Function));
+  expect(dispose).toHaveBeenCalledOnce();
  });
  it("reconciles an album creation response loss using the same account-scoped identity",async()=>{
   vi.mocked(get).mockRejectedValueOnce(new ApiError(404,{error:{code:"NOT_FOUND"}})).mockResolvedValue({album:{owner_id:"owner",payload:{provenance:{source_member_id:"source",source_id:album.id}}},members:[{member_id:"owner"}]});

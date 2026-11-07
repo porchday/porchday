@@ -57,7 +57,8 @@ export type Content = {
   [key: string]: unknown;
 };
 export type MediaPayload = {
-  videoVersion?: 2;
+  videoVersion?: 2 | 3;
+  archiveSha256?: string;
   duration?: number;
   tags?: import("./PeopleTags").PersonTag[];
   id: string;
@@ -88,7 +89,7 @@ export class ApiError extends Error {
           CONNECTION_LIMIT:
             "One of you has reached the 150-person limit, including family. A connection cannot be accepted until both people have room.",
           MEDIA_QUOTA:
-            "Your 1 GiB media storage is full. Remove older photos or videos before adding more. You can export copies first.",
+            "Your 10 GB media storage is full. Remove older photos or videos before adding more. You can export copies first.",
           VIDEO_PUBLISHING_UNAVAILABLE:"New video uploads are temporarily unavailable. Your saved upload can be resumed when sharing is available again.",
           VIDEO_INCOMPLETE:"This video is still uploading. Resume its saved upload to finish sharing.",
           VIDEO_OPERATION_CONFLICT:"This saved video upload conflicts with its reservation. Cancel it and select the video again.",

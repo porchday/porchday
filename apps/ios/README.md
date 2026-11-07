@@ -159,7 +159,7 @@ authorized directory and never expand the audience or imply push delivery.
 
 Calendar and social metadata use the existing web APIs and encrypted payloads.
 Video attachments now accept sources up to 1 GiB and prepare up to 10 minutes
-at 1080p or 720p, with a 250 MiB prepared limit and the existing 1 GiB member
+at 1080p or 720p, with a 250 MiB prepared limit and the 10 GB member
 quota. Trimming, encrypted resumable uploads and progressive playback share the
 web protocol. Existing small videos remain readable. Unsupported codecs/HDR
 receive explicit guidance. Private temporary files are excluded from backup and
