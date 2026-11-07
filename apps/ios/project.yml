@@ -88,6 +88,7 @@ targets:
       - PorchdayTests/AppleParityTests.swift
       - PorchdayTests/SegmentedVideoTests.swift
       - PorchdayTests/NativeReadCacheTests.swift
+      - PorchdayTests/FeedReadTests.swift
       - PorchdayTests/NativePhotoContractTests.swift
       - PorchdayTests/PorchdayTests.swift
       - PorchdayTests/CryptoVaultAccessTests.swift

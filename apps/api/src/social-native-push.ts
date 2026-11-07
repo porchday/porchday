@@ -1,4 +1,5 @@
 import {event} from './telemetry';
+import {feedPushMetadata} from './feed-push-payload';
 import {runtimeSessionDenied} from './session-denial';
 import { Hono, type Context } from "hono";
 import { z } from "zod";
@@ -119,8 +120,10 @@ export function nativePushRequest(
   subscription: Subscription,
   env: NativePushEnv,
   providerToken: string,
+  metadata?: unknown,
 ) {
   const input = nativeSubscriptionSchema.parse(subscription);
+  const feed=feedPushMetadata(metadata);
   if (!nativePushConfigured(env)) throw new Error("NATIVE_PUSH_NOT_CONFIGURED");
   const host =
     input.environment === "sandbox"
@@ -139,9 +142,9 @@ export function nativePushRequest(
         "apns-push-type": "alert",
         "apns-priority": "5",
         "apns-expiration": "0",
-        "apns-collapse-id": "porchday-update",
+        "apns-collapse-id": feed?.badgeOnly ? "porchday-feed-badge" : feed?.tag || "porchday-update",
       },
-      body: GENERIC_NATIVE_PAYLOAD,
+      body: feed ? JSON.stringify({aps:{...(feed.badgeOnly?{}:{alert:{title:"Porchday",body:feed.feed?"New activity in your feed":"You have a new update"}}),badge:feed.count},destination:feed.feed||feed.badgeOnly?"feed":"notifications"}) : GENERIC_NATIVE_PAYLOAD,
     } satisfies RequestInit,
   };
 }
@@ -286,7 +289,7 @@ export async function processNativePush(
           try {
             if(await runtimeSessionDenied(env,row.delivery.sessionId)){result.outcome="failed";denialConfirmed=true;}
             else {
-              const request = nativePushRequest(row.delivery.subscription, env, token);
+              const request = nativePushRequest(row.delivery.subscription, env, token, row.delivery.feed);
               result = await nativePushOutcome(
                 await send(request.url, request.init),
                 Number(job.attempts),

@@ -1,3 +1,4 @@
+import {ReadableFeedItem} from "./FeedUnread";
 import {ActivityAuthor,postAudienceLabel} from "./ActivityAuthor";
 import {useCalendarScrollAnchor} from "./calendar-scroll-anchor";
 import {AttachmentAlbumPicker} from "./AttachmentAlbumPicker";
@@ -43,13 +44,17 @@ export function usePhotos(month?:string,enabled=true,owned=false,content:FeedCon
  const available=entries.filter(entry=>{const expires=entry.photo?.expires_at||entry.post?.effective_expires_at||entry.post?.expires_at;return !expires||Date.parse(expires)>clock;});
  return {entries:available,next,loaded,busy:action.busy,error:action.error,load};
 }
-function EntryCard({entry,refresh}:{entry:Entry;refresh:()=>void}){
+function EntryCardContent({entry,refresh}:{entry:Entry;refresh:()=>void}){
  const vault=useVault(),action=useAction(),[editing,setEditing]=useState(false),[date,setDate]=useState(entry.day),[adding,setAdding]=useState(false);
  if(entry.kind==="post"&&entry.post)return <PostCard row={{...entry.post,author_handle:entry.author_handle}} onChange={refresh}/>;
  return <div>{entry.photo?<PhotoCard photo={entry.photo} onChanged={refresh} header={<ActivityAuthor memberId={entry.author_id} handle={entry.author_handle} date={entry.day} photoDate sharing="Shared photo"/>}/>:<article className="panel independent-photo feed-photo-card"><header className="post-heading"><ActivityAuthor memberId={entry.author_id} handle={entry.author_handle} date={entry.day} photoDate sharing={postAudienceLabel(entry.post!.audience,entry.post!.group_id)}/></header><Alert>{entry.error||action.error}</Alert>{entry.media&&<EncryptedPhoto media={entry.media}/>}<p><a href={"/post/"+entry.post!.id}>View post</a></p>{entry.author_id===vault.member.id&&vault.member.status==="active"&&<><Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo date</Button>{entry.media&&!entry.error&&<Button variant="quiet" onClick={()=>setAdding(true)}>Add to album</Button>}</>}</article>}
  {adding&&<AttachmentAlbumPicker mediaId={entry.id} postId={entry.post!.id} day={entry.day} onClose={()=>setAdding(false)} onSaved={refresh}/>}
  {editing&&<Modal title="Edit photo date" onClose={()=>setEditing(false)}><form className="form-stack" onSubmit={e=>{e.preventDefault();void action.runSave(async()=>{await updateAttachmentDate(vault,entry.id,entry.post!.id,date);setEditing(false);refresh();});}}><Field label="Photo date" type="date" min="0001-01-01" max="9999-12-31" required value={date} disabled={action.busy} onChange={e=>setDate(e.target.value)}/><p>This changes where the photo appears in the photo calendar. The post date and audience stay the same.</p><Alert>{action.error}</Alert><Button type="submit" busy={action.busy}>Save date</Button></form></Modal>}
  </div>;
+}
+function EntryCard({entry,refresh}:{entry:Entry;refresh:()=>void}){
+ const kind=entry.kind==='photo'?'photo':'post',id=kind==='photo'?entry.id:entry.post?.id;
+ return id?<ReadableFeedItem item={{kind,id}} ready={!entry.error} photo={kind==='photo'}><EntryCardContent entry={entry} refresh={refresh}/></ReadableFeedItem>:<EntryCardContent entry={entry} refresh={refresh}/>;
 }
 export function PhotoFeed({authorFilter,content="photos"}:{authorFilter:AuthorFilter;content?:FeedContent}){
  const data=usePhotos(undefined,true,false,content,"shared"),sentinel=useRef<HTMLDivElement>(null);
