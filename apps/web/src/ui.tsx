@@ -328,7 +328,20 @@ export function Modal({
 }
 export function PendingSaveStatus() {
   const status = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getStatus, () => "");
-  return status ? <div className="pending-save-status" role="status" aria-live="polite">{status === "saving" ? "Saving… Keep this page open until saving finishes." : "Finishing background updates…"}</div> : null;
+  // Measure the real dock, including safe-area padding and larger text, rather
+  // than guessing its height and covering its navigation links.
+  const [dockHeight, setDockHeight] = useState(0);
+  React.useLayoutEffect(() => {
+    if (!status) return;
+    const dock = document.querySelector(".mobile-nav");
+    if (!dock) return;
+    const measure = () => setDockHeight(dock.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(dock);
+    return () => observer.disconnect();
+  }, [status]);
+  return status ? <div style={{ bottom: dockHeight + 12 }} className="pending-save-status" role="status" aria-live="polite">{status === "saving" ? "Saving… Navigation will be available when saving finishes." : "Finishing background updates… Navigation will be available shortly."}</div> : null;
 }
 export function useAction() {
   const [busy, setBusy] = useState(false);

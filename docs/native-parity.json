@@ -8,7 +8,8 @@
       "evidence": [
         "docs/native-parity.md#navigation",
         "docs/native-parity.md#native-responsiveness--november-6",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#saving-navigation-feedback"
       ],
       "implementation": {
         "ios": "implemented",
@@ -17,7 +18,8 @@
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
         "https://github.com/porchday/porchday/issues/114",
-        "https://github.com/porchday/porchday/issues/168"
+        "https://github.com/porchday/porchday/issues/168",
+        "https://github.com/porchday/porchday/issues/177"
       ]
     },
     {

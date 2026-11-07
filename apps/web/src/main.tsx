@@ -4,7 +4,7 @@ import { PhotoCollection } from "./PhotoCollection";
 import { Albums, AlbumDetail } from "./Albums";
 import {PeopleDirectory} from "./PeopleTags";
 import { FeatureAdditions } from "./FeatureAdditions";
-import { hasPendingSaves } from "./pending-saves";
+import { hasPendingSaves, pendingSaves } from "./pending-saves";
 import { MemberAvatar, MemberAvatarProvider } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -363,6 +363,7 @@ function AppShell({
   onAccountDeleted: () => Promise<void>;
 }) {
   const vault = useVault();
+  const navigationDisabled = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getSnapshot, () => 0) > 0;
   const [count, setCount] = useState<number | null>(vault.member.connection_count ?? null);
   const countedPath = useRef(path);
   useEffect(() => {
@@ -406,7 +407,7 @@ function AppShell({
   else if (path.startsWith("/albums/")) content = <AlbumDetail key={path.split("/")[2]} id={path.split("/")[2]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
   else if (path === "/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
   else if (path === "/share") content = <><div className="page-heading mobile-tab-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
-  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features"><Icon name="code"/>Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button onClick={logout}><Icon name="logout"/>Log out</Button></section>;
+  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features"><Icon name="code"/>Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button disabled={navigationDisabled} onClick={logout}><Icon name="logout"/>Log out</Button></section>;
   else if (path.startsWith("/post/"))
     content = <Feed singleId={path.split("/")[2]} />;
   else if (path.startsWith("/wall"))
@@ -457,6 +458,7 @@ function AppShell({
               return (
                 <a
                   className={`nav-item ${active ? "active" : ""}`}
+                  aria-disabled={navigationDisabled || undefined}
                   aria-current={active ? "page" : undefined}
                   key={href}
                   href={href}
@@ -479,6 +481,7 @@ function AppShell({
             className="icon-button"
             onClick={logout}
             aria-label="Sign out"
+            disabled={navigationDisabled}
           >
             <Icon name="logout" size={17} />
           </button>
@@ -540,6 +543,7 @@ function AppShell({
                 : ""
             }
             href={href}
+            aria-disabled={navigationDisabled || undefined}
             aria-current={(href === "/" ? path === "/" : path.startsWith(href)) ? "page" : undefined}
           >
             <Icon name={icon} size={21} />

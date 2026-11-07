@@ -4519,6 +4519,7 @@ hr {
 .pending-save-status {
   position: fixed;
   bottom: 16px;
+  pointer-events: none;
   left: 50%;
   transform: translateX(-50%);
   z-index: 10000;
@@ -4892,3 +4893,12 @@ button.trace-row:focus-visible {
 
 .feed-unread-badge { display:inline-flex; align-items:center; justify-content:center; min-width:1.4em; padding:.1em .35em; border-radius:1em; background:#b72d24; color:white; font-size:.75rem; line-height:1.2; font-weight:600; }
 .feed-read-controls { display:flex; align-items:center; gap:1rem; justify-content:space-between; margin-block:.75rem; }
+
+/* Saving blocks navigation; reflect that without hiding the destinations. */
+.mobile-nav > a[aria-disabled="true"],
+.sidebar .nav-item[aria-disabled="true"] {
+  opacity: .45;
+  filter: grayscale(1);
+  cursor: not-allowed;
+}
+.pending-save-status { width: max-content; }
