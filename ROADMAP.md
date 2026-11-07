@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner upload request:** [#181](https://github.com/porchday/porchday/issues/181) raises total media storage to 10 GB per person and supports videos without a post, including encrypted retries, albums and portability. [Design](design/direct-videos-and-storage.md). Implementation and release verification are in progress; per-video size/duration limits remain unchanged.
+**Delivered November 7:** [#181](https://github.com/porchday/porchday/issues/181) raises total media storage to 10 GB per person and supports videos without a post, including encrypted retries, albums and portability. [Release evidence](docs/evidence/direct-videos-release-2026-11-07.md) records live staging/production verification and passing exact-source web/iOS/macOS CI. Per-video limits remain unchanged; physical upload/playback acceptance stays in #181.
 
 **Implemented upload fix:** [PR #175](https://github.com/porchday/porchday/pull/175) accepts iPhone recordings with alternate spatial audio tracks while preserving compatible sound and strict prepared-video checks. Rollout evidence and original-recording/device acceptance are tracked in [#174](https://github.com/porchday/porchday/issues/174); HDR handling is unchanged. The follow-up removes trimming, keeps full recordings, and makes optional thumbnail failure non-blocking; #174 also tracks this finalization fix and device acceptance.
 
