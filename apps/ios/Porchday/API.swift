@@ -24,16 +24,17 @@ actor API {
         if method == "GET", body == nil, NativeReadCache.permits(path) {
             return try await reads.read(path) { try await self.networkBytes(path, method: method, body: body, contentType: contentType) }
         }
-        if method != "GET" {
+        let invalidates = method != "GET" && !["/api/v1/feed/read", "/api/v1/feed/read-all"].contains(path)
+        if invalidates {
             if path.hasPrefix("/api/auth/") { sessionGeneration += 1 }
             await reads.invalidate()
         }
         do {
             let result = try await networkBytes(path, method: method, body: body, contentType: contentType)
-            if method != "GET" { await reads.invalidate() }
+            if invalidates { await reads.invalidate() }
             return result
         } catch {
-            if method != "GET" { await reads.invalidate() }
+            if invalidates { await reads.invalidate() }
             throw error
         }
     }

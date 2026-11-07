@@ -69,28 +69,32 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
-self.addEventListener("push", (event) =>
-  event.waitUntil(
+self.addEventListener("push", (event) => {
+  let payload = {}; try { payload = event.data?.json() || {}; } catch {}
+  const feed = payload.url === "/";
+  const tag = typeof payload.tag === "string" && /^[a-f0-9]{32}$/.test(payload.tag) ? payload.tag : "porchday-update";
+  event.waitUntil(Promise.all([
     self.registration.showNotification("Porchday", {
-      body: "You have a new update.",
-      icon: "/icon-192.png",
-      badge: "/icon-192.png",
-      tag: "porchday-update",
-      data: { url: "/" },
+      body: feed ? "New activity in your feed" : "You have a new update.",
+      icon: "/icon-192.png", badge: "/icon-192.png", tag,
+      data: { url: feed ? "/" : "/notifications" },
     }),
-  ),
-);
+    Number.isSafeInteger(payload.count) && payload.count >= 0 ?
+      (payload.count ? self.navigator.setAppBadge?.(payload.count) : self.navigator.clearAppBadge?.())?.catch(() => {}) : Promise.resolve(),
+  ]));
+});
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
+  const destination = event.notification.data?.url === "/notifications" ? "/notifications" : "/";
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((clients) => {
       for (const client of clients) {
         if ("focus" in client) {
-          client.navigate("/");
+          client.navigate(destination);
           return client.focus();
         }
       }
-      return self.clients.openWindow("/");
+      return self.clients.openWindow(destination);
     }),
   );
 });

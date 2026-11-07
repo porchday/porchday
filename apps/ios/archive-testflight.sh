@@ -52,7 +52,7 @@ xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday -configuration 
   archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' \
   DEVELOPMENT_TEAM="$team" PORCHDAY_PROFILE="$uuid" \
   OTHER_CODE_SIGN_FLAGS="--keychain $keychain" \
-  CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_APNS_ENVIRONMENT=production PORCHDAY_PUSH_ENABLED=NO
+  CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_APNS_ENVIRONMENT=production PORCHDAY_PUSH_ENABLED=YES
 xcodebuild -exportArchive -archivePath apps/ios/build/Porchday.xcarchive \
   -exportPath apps/ios/build/TestFlight -exportOptionsPlist "$private/export.plist"
 python3 - <<'PY'
@@ -60,6 +60,8 @@ import pathlib,hashlib,json,subprocess,plistlib
 p=pathlib.Path('apps/ios/build/TestFlight');ipa=list(p.glob('*.ipa'));assert len(ipa)==1
 app=pathlib.Path('apps/ios/build/Porchday.xcarchive/Products/Applications/Porchday.app')
 info=plistlib.loads((app/'Info.plist').read_bytes());assert info['CFBundleIdentifier']=='org.porchday.app'
+assert info.get('PorchdayPushEnabled')=='YES', 'Signed app must expose enabled notification configuration'
+assert info.get('PorchdayAPNsEnvironment')=='production', 'Signed app must select the production APNs provider'
 assert (app/'PrivacyInfo.xcprivacy').is_file()
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
 (p/'evidence.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'bundleId':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'ipaSha256':hashlib.sha256(ipa[0].read_bytes()).hexdigest(),'uploaded':False},indent=2))

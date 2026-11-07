@@ -38,6 +38,7 @@ security cms -D -i "$private/profile.provisionprofile" > "$private/profile.plist
 python3 - <<'PY'
 import os,pathlib,plistlib,datetime,re
 p=pathlib.Path(os.environ['PORCHDAY_SIGNING_DIR']);profile=plistlib.loads((p/'profile.plist').read_bytes());team=profile['TeamIdentifier'][0]
+assert profile['Entitlements'].get('com.apple.developer.aps-environment')=='production'
 assert profile['Platform']==['OSX']
 assert profile['Entitlements']['com.apple.application-identifier']==team+'.org.porchday.app'
 assert not profile['Entitlements'].get('get-task-allow',False)
@@ -64,7 +65,7 @@ xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac -configurati
  -destination 'generic/platform=macOS' -archivePath apps/ios/build/PorchdayMac.xcarchive \
  archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='3rd Party Mac Developer Application' \
  DEVELOPMENT_TEAM="$team" PORCHDAY_MAC_PROFILE="$uuid" \
- OTHER_CODE_SIGN_FLAGS="--keychain $keychain" CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_PUSH_ENABLED=NO
+ OTHER_CODE_SIGN_FLAGS="--keychain $keychain" CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_PUSH_ENABLED=YES PORCHDAY_APNS_ENVIRONMENT=production
 xcodebuild -exportArchive -archivePath apps/ios/build/PorchdayMac.xcarchive \
  -exportPath apps/ios/build/MacTestFlight -exportOptionsPlist "$private/export.plist"
 python3 - <<'PY'
@@ -72,6 +73,8 @@ import pathlib,hashlib,json,subprocess,plistlib,os,stat
 p=pathlib.Path('apps/ios/build/MacTestFlight');pkg=list(p.glob('*.pkg'));assert len(pkg)==1
 app=pathlib.Path('apps/ios/build/PorchdayMac.xcarchive/Products/Applications/Porchday.app')
 info=plistlib.loads((app/'Contents/Info.plist').read_bytes());assert info['CFBundleIdentifier']=='org.porchday.app'
+assert info.get('PorchdayPushEnabled')=='YES', 'Signed app must expose enabled notification configuration'
+assert info.get('PorchdayAPNsEnvironment')=='production', 'Signed app must select the production APNs provider'
 assert (app/'Contents/Resources/PrivacyInfo.xcprivacy').is_file()
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
 entitlements=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(app)],stderr=subprocess.DEVNULL))

@@ -59,12 +59,14 @@ struct MainTabs: View {
     @State private var destination: String? = "feed"
     @State private var shareAlbum: String?
     @StateObject private var activity = NativeActivityStore()
+    @StateObject private var feedReads = FeedReadState()
+    @Environment(\.scenePhase) private var phase
     var body: some View {
         Group {
             #if os(macOS)
             NavigationSplitView {
                 List(selection: $destination) {
-                    Label("Feed", systemImage: "rectangle.stack").tag("feed")
+                    Label("Feed", systemImage: "rectangle.stack").badge(feedReads.count ?? 0).tag("feed")
                     Label("Share", systemImage: "plus.square").tag("share")
                     Label("Albums", systemImage: "rectangle.stack.badge.person.crop").tag("albums")
                     Label("Connections", systemImage: "person.2").tag("connections")
@@ -79,7 +81,7 @@ struct MainTabs: View {
                 .frame(minWidth: 800, minHeight: 600)
             #else
             TabView(selection: $destination) {
-                NavigationStack { screen("feed") }.tabItem { Label("Feed", systemImage: "rectangle.stack") }.tag(Optional("feed"))
+                NavigationStack { screen("feed") }.tabItem { Label("Feed", systemImage: "rectangle.stack") }.badge(feedReads.count ?? 0).tag(Optional("feed"))
                 NavigationStack { screen("share") }.tabItem { Label("Share", systemImage: "plus.square") }.tag(Optional("share"))
                 NavigationStack { screen("albums") }.tabItem { Label("Albums", systemImage: "rectangle.stack.badge.person.crop") }.tag(Optional("albums"))
                 NavigationStack { screen("connections") }.tabItem { Label("Connections", systemImage: "person.2") }.tag(Optional("connections"))
@@ -87,6 +89,13 @@ struct MainTabs: View {
             }
             #endif
         }
+        .environmentObject(feedReads)
+        .environment(\.feedReadActive, destination == "feed")
+        .task(id: model.authenticationGeneration) { feedReads.active = phase == .active; await feedReads.run(model) }
+        .onChange(of: phase) { _, value in feedReads.active = value == .active; if value == .active { Task { await feedReads.refresh() } } }
+        .onAppear { if notifications.showFeed { destination = "feed"; notifications.showFeed = false } }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PorchdayPushReceived"))) { _ in Task { await feedReads.refresh() } }
+        .onChange(of: notifications.showFeed) { _, value in if value { destination = "feed"; notifications.showFeed = false; NotificationCenter.default.post(name: Notification.Name("PorchdayFeedOpened"), object: nil); Task { await feedReads.refresh() } } }
         .task(id: member.id) { builderAvailable = (try? await model.api.social("/builder-chat")) != nil; await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }

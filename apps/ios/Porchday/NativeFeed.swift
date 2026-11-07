@@ -53,6 +53,7 @@ struct NativeActivity: Identifiable {
     }
 }
 struct NativeFeedView: View {
+    @EnvironmentObject private var feedReads: FeedReadState
     @EnvironmentObject var model: AppModel
     @ObservedObject var store: NativeActivityStore
     @State private var content = "everything"
@@ -66,9 +67,12 @@ struct NativeFeedView: View {
         let deadline = row.expiry
         return (row.post?.active ?? true) && (deadline.map { $0 > Date() } ?? true) && NativePhotoContract.matchesAuthor(row.raw, selection: from, member: model.member?.id ?? "") } }
     var body: some View {
+        GeometryReader { viewport in
         TimelineView(.explicit(store.rows.compactMap(\.expiry))) { _ in
         List {
             Picker("View", selection: $calendar) { Text("Feed").tag(false); Text("Calendar").tag(true) }.pickerStyle(.segmented)
+            HStack { Text(feedReads.count.map { $0 == 0 ? "You’re caught up" : "\($0) unread" } ?? "Checking unread activity…"); Spacer(); if (feedReads.count ?? 0) > 0 { Button("Mark all as read") { Task { await feedReads.markAll() } }.disabled(feedReads.busy) } }
+            if !feedReads.error.isEmpty { Text(feedReads.error).foregroundStyle(.red) }
             DisclosureGroup("Filters") {
                 Picker("Show", selection: $content) { Text("Everything").tag("everything"); Text("Posts").tag("posts"); Text("Photos").tag("photos") }
                 Picker("From", selection: $from) { Text("Only me").tag("me"); Text("Friends").tag("friends"); Text("Family").tag("family"); Text("Friends & Family").tag("connections"); Text("Extended family").tag("extended_family"); Text("Community").tag("community") }
@@ -92,9 +96,11 @@ struct NativeFeedView: View {
             if !store.busy && store.error.isEmpty && visible.isEmpty { Text("No matching activity loaded.") }
             if store.next != .null { Button("Load more") { Task { await load(more: true) } }.disabled(store.busy) }
         }
+        }.environment(\.feedViewport, viewport.frame(in: .global))
         }.task(id: filterKey) { await load() }.refreshable { await load(force: true) }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PorchdayFeedOpened"))) { _ in Task { await load(force: true) } }
         .onChange(of: model.historySharingVersion) { _, _ in Task { await load() } }
-        .sheet(isPresented: Binding(get: { selectedDay != nil }, set: { if !$0 { selectedDay = nil } })) { NavigationStack { List { ForEach(visible.filter { $0.day == selectedDay }) { NativeActivityCard(entry: $0, changed: { Task { await load() } }) }; if store.next != .null { Button("Load more in this month") { Task { await load(more: true) } }.disabled(store.busy) } }.navigationTitle(selectedDay ?? "Day").toolbar { Button("Done") { selectedDay = nil } } } }
+        .sheet(isPresented: Binding(get: { selectedDay != nil }, set: { if !$0 { selectedDay = nil } })) { NavigationStack { GeometryReader { dayViewport in List { ForEach(visible.filter { $0.day == selectedDay }) { NativeActivityCard(entry: $0, changed: { Task { await load() } }) }; if store.next != .null { Button("Load more in this month") { Task { await load(more: true) } }.disabled(store.busy) } }.environment(\.feedViewport, dayViewport.frame(in: .global)) }.navigationTitle(selectedDay ?? "Day").toolbar { Button("Done") { selectedDay = nil } } } }
     }
     private func load(more: Bool = false, force: Bool = false) async { await store.load(model, content: content, month: monthKey, more: more, force: force) }
 }
@@ -108,7 +114,7 @@ struct NativeActivityCard: View {
             NativePhotoCard(photo: entry.raw["photo"], feedAuthor: entry.raw["author_handle"].string ?? "member", changed: changed)
         }
         else if let post = entry.post {
-            if entry.raw["kind"].string == "post" { NavigationLink { PostDetailView(id: post.id) } label: { MomentCard(item: post) } }
+            if entry.raw["kind"].string == "post" { NavigationLink { PostDetailView(id: post.id) } label: { MomentCard(item: post) }.modifier(FeedReadVisibility(item: FeedReadItem(kind: "post", id: post.id), ready: post.payload != nil && post.error == nil && post.active)) }
             else { VStack(alignment: .leading) { ActivityAuthorView(memberID: post.authorID, handle: post.authorHandle, photoDay: entry.day); if let media = post.payload?["media"].array.first(where: { $0["id"] == entry.raw["id"] }) { EncryptedMediaView(media: media) }; if post.authorID == model.member?.id && model.canWriteSocial { Button("Change photo date") { editingDate = true }.sheet(isPresented: $editingDate) { NavigationStack { NativeAttachmentDateEditor(media: entry.raw["id"].string!, post: post.id, originalDay: entry.day, saved: changed) } } }; NavigationLink("View post") { PostDetailView(id: post.id) }; if let error = post.error { Text(error).foregroundStyle(.red) } } }
         }
     }
@@ -163,7 +169,7 @@ struct NativePhotoCard: View {
                     }
                 }
             }
-        }.task(id: photo.replacing("_foreground", with: .number(Double(model.foregroundVersion)))) { await load() }.task(id: row["expires_at"]) { if let expiry = row["expires_at"].string.flatMap(PorchDate.parse) { try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))); if !Task.isCancelled { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil; content = .null } } }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
+        }.modifier(FeedReadVisibility(item: FeedReadItem(kind: "photo", id: row["id"].string ?? ""), ready: feedAuthor != nil && image != nil && error.isEmpty && !removed)).task(id: photo.replacing("_foreground", with: .number(Double(model.foregroundVersion)))) { await load() }.task(id: row["expires_at"]) { if let expiry = row["expires_at"].string.flatMap(PorchDate.parse) { try? await Task.sleep(for: .seconds(max(0, expiry.timeIntervalSinceNow))); if !Task.isCancelled { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil; content = .null } } }.onDisappear { player?.pause(); player = nil; webM?.stop(); webM = nil; file = nil; image = nil }
         .confirmationDialog(removing == "delete" ? "Delete this photo and its original post attachment? Saved copies cannot be recalled." : "Remove this album’s access? Other audiences keep access.", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Confirm", role: .destructive) { let action = removing; removing = nil; Task { busy = true; defer { busy = false }; await model.perform {
                 let service = try NativePhotos(model)
