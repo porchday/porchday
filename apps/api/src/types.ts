@@ -29,7 +29,7 @@ export interface Env {
   SESSION_DENIAL_WRITER_V1?: string;
   ASSETS: Fetcher;
   EMAIL: SendEmail;
-  JOBS: Queue<{ kind: string; id?: string; denialProgressEtag?: string }>;
+  JOBS: Queue<{ kind: string; id?: string }>;
   APP_URL: string;
   /** Explicit old HTTPS origin retained during a canonical-domain transition. */
   LEGACY_APP_URL?: string;
@@ -57,7 +57,6 @@ export interface Env {
 }
 export interface Variables {
   requestTiming?: RequestTiming;
-  operationsAuthorized?: boolean;
   preparedMemberAuth?: PreparedMemberAuth;
   memberId: string;
   authTime: number;
