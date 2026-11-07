@@ -410,10 +410,10 @@ export function useRoute(navigationEpoch?: { current: number }) {
       navigateAfterSaves(destination);
     };
     window.addEventListener("porchday:native-navigate", nativeNavigate);
-    nativeNavigate();
     document.addEventListener("click", protectLinks, true);
     window.addEventListener("popstate", pop);
     document.addEventListener("click", clicks);
+    nativeNavigate();
     return () => {
       window.removeEventListener("porchday:native-navigate", nativeNavigate);
       document.removeEventListener("click", protectLinks, true);

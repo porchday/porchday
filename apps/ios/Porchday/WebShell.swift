@@ -48,7 +48,7 @@ enum WebShellPolicy {
         default: return nil
         }
     }
-    func register(prompt: Bool, reply: @escaping (Any?, String?) -> Void) {
+    func register(prompt: Bool, reply: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
         guard environment != nil else { reply(nil, "Notifications require a signed push-capable build."); return }
         guard self.reply == nil else { reply(nil, "Notification registration is already in progress."); return }
         self.reply = reply
@@ -85,7 +85,7 @@ enum WebShellPolicy {
 @MainActor private final class WeakShellBridge: NSObject, WKScriptMessageHandlerWithReply {
     weak var store: WebShellStore?
     init(_ store: WebShellStore) { self.store = store }
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
         guard let store else { replyHandler(nil, "App window closed."); return }
         store.userContentController(controller, didReceive: message, replyHandler: replyHandler)
     }
@@ -150,7 +150,7 @@ private final class ShellObservers: @unchecked Sendable {
         guard WebShellPolicy.trusted(url) else { return }
         navigate(url.path + (url.query.map { "?" + $0 } ?? "") + (url.fragment.map { "#" + $0 } ?? ""))
     }
-    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping (Any?, String?) -> Void) {
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage, replyHandler: @escaping @MainActor @Sendable (Any?, String?) -> Void) {
         let frame = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, WebShellPolicy.trusted(message.frameInfo.request.url), WebShellPolicy.trusted(webView.url), frame.protocol == "https", frame.host == ServerConfiguration.origin.host,
               let body = message.body as? [String: Any], body["version"] as? Int == 1, let command = body["command"] as? String else { replyHandler(nil, "Untrusted native request."); return }
@@ -185,14 +185,14 @@ private final class ShellObservers: @unchecked Sendable {
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { self.webView(webView, didFailProvisionalNavigation: navigation, withError: error) }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failure = "Porchday needs to reopen this page. Unsaved changes may need to be entered again." }
-    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+    func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }
         if action.shouldPerformDownload && WebShellPolicy.downloadable(url) { decisionHandler(.download); return }
         if WebShellPolicy.trusted(url) { decisionHandler(.allow); return }
         if action.navigationType == .linkActivated && WebShellPolicy.external(url) { openExternal(url) }
         decisionHandler(.cancel)
     }
-    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+    func webView(_ webView: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping @MainActor @Sendable (WKNavigationResponsePolicy) -> Void) {
         decisionHandler(WebShellPolicy.downloadable(response.response.url) ? (response.canShowMIMEType ? .allow : .download) : .cancel)
     }
     func webView(_ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
@@ -214,14 +214,14 @@ private final class ShellObservers: @unchecked Sendable {
         guard frame.isMainFrame, WebShellPolicy.trusted(frame.request.url), dialog == nil else { completionHandler(false); return }
         dialog = ShellDialog(message: message, kind: .confirm, reply: { completionHandler($0 != nil) })
     }
-    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
+    func webView(_ webView: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable (String?) -> Void) {
         guard frame.isMainFrame, WebShellPolicy.trusted(frame.request.url), dialog == nil else { completionHandler(nil); return }
         dialogInput = defaultText ?? ""
         dialog = ShellDialog(message: prompt, kind: .prompt, reply: completionHandler)
     }
     func answerDialog(_ accepted: Bool) { let current = dialog; dialog = nil; current?.reply(accepted ? dialogInput : nil); dialogInput = "" }
     #if os(macOS)
-    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+    func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping @MainActor @Sendable ([URL]?) -> Void) {
         guard frame.isMainFrame, WebShellPolicy.trusted(frame.request.url) else { completionHandler(nil); return }
         let panel = NSOpenPanel(); panel.allowsMultipleSelection = parameters.allowsMultipleSelection; panel.canChooseDirectories = false
         panel.begin { [weak self] result in
@@ -234,7 +234,7 @@ private final class ShellObservers: @unchecked Sendable {
     #endif
     func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { download.delegate = self }
     func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { download.delegate = self }
-    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping (URL?) -> Void) {
+    func download(_ download: WKDownload, decideDestinationUsing response: URLResponse, suggestedFilename: String, completionHandler: @escaping @MainActor @Sendable (URL?) -> Void) {
         guard WebShellPolicy.downloadable(response.url) else { completionHandler(nil); return }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchday-shell-" + UUID().uuidString)
         do {
@@ -243,7 +243,7 @@ private final class ShellObservers: @unchecked Sendable {
             downloads[ObjectIdentifier(download)] = url; completionHandler(url)
         } catch { failure = "The export could not be saved."; completionHandler(nil) }
     }
-    func download(_ download: WKDownload, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, decisionHandler: @escaping (WKDownload.RedirectPolicy) -> Void) {
+    func download(_ download: WKDownload, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, decisionHandler: @escaping @MainActor @Sendable (WKDownload.RedirectPolicy) -> Void) {
         decisionHandler(WebShellPolicy.trusted(request.url) ? .allow : .cancel)
     }
     func downloadDidFinish(_ download: WKDownload) {
