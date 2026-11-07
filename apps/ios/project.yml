@@ -39,13 +39,15 @@ targets:
     type: application
     platform: iOS
     sources:
-      - Porchday
+      - path: Porchday
+        excludes: [Info.plist]
       - path: ../../packages/crypto/data/video-update-required.mp4
         buildPhase: resources
       - path: ../../packages/crypto/data/emoji-17.0.json
         buildPhase: resources
     settings:
       base:
+        INFOPLIST_FILE: Porchday/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: 'UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: 'UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight'
@@ -61,13 +63,15 @@ targets:
     platform: macOS
     deploymentTarget: '14.0'
     sources:
-      - Porchday
+      - path: Porchday
+        excludes: [Info.plist]
       - path: ../../packages/crypto/data/video-update-required.mp4
         buildPhase: resources
       - path: ../../packages/crypto/data/emoji-17.0.json
         buildPhase: resources
     settings:
       base:
+        INFOPLIST_FILE: Porchday/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app
         PRODUCT_NAME: Porchday
         PROVISIONING_PROFILE_SPECIFIER: "$(PORCHDAY_MAC_PROFILE)"

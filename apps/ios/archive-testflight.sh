@@ -60,6 +60,8 @@ import pathlib,hashlib,json,subprocess,plistlib
 p=pathlib.Path('apps/ios/build/TestFlight');ipa=list(p.glob('*.ipa'));assert len(ipa)==1
 app=pathlib.Path('apps/ios/build/Porchday.xcarchive/Products/Applications/Porchday.app')
 info=plistlib.loads((app/'Info.plist').read_bytes());assert info['CFBundleIdentifier']=='org.porchday.app'
+assert info.get('PorchdayPushEnabled')=='YES', 'Signed app must expose enabled notification configuration'
+assert info.get('PorchdayAPNsEnvironment')=='production', 'Signed app must select the production APNs provider'
 assert (app/'PrivacyInfo.xcprivacy').is_file()
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
 (p/'evidence.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'bundleId':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'ipaSha256':hashlib.sha256(ipa[0].read_bytes()).hexdigest(),'uploaded':False},indent=2))
