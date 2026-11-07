@@ -106,14 +106,14 @@ import AppKit
         return true
     }
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
-        Task { await NativeNotifications.shared.received(token: deviceToken) }
+        WebShellPush.shared.received(deviceToken); Task { await NativeNotifications.shared.received(token: deviceToken) }
     }
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
-        NativeNotifications.shared.registrationFailed()
+        WebShellPush.shared.failed(); NativeNotifications.shared.registrationFailed()
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
         let feed = response.notification.request.content.userInfo["destination"] as? String == "feed"
-        await MainActor.run { if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } }
+        await MainActor.run { WebShellPush.shared.destination = feed ? "/" : "/notifications"; NotificationCenter.default.post(name: Notification.Name("PorchdayPushDestination"), object: feed ? "feed" : "notifications"); if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         // Avoid another banner while the member is already using the app.
@@ -124,10 +124,10 @@ import AppKit
 #else
 @MainActor final class PorchdayAppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) { UNUserNotificationCenter.current().delegate = self }
-    func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) { Task { await NativeNotifications.shared.received(token: deviceToken) } }
-    func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) { NativeNotifications.shared.registrationFailed() }
+    func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) { WebShellPush.shared.received(deviceToken); Task { await NativeNotifications.shared.received(token: deviceToken) } }
+    func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) { WebShellPush.shared.failed(); NativeNotifications.shared.registrationFailed() }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async { let feed = response.notification.request.content.userInfo["destination"] as? String == "feed"
-        await MainActor.run { if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } } }
+        await MainActor.run { WebShellPush.shared.destination = feed ? "/" : "/notifications"; NotificationCenter.default.post(name: Notification.Name("PorchdayPushDestination"), object: feed ? "feed" : "notifications"); if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } } }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { await MainActor.run { NotificationCenter.default.post(name: Notification.Name("PorchdayPushReceived"), object: nil) }; return [] }
 }
 #endif

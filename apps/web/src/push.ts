@@ -1,9 +1,35 @@
+import { isNativeShell, nativeCall } from "./native-shell";
 import { del, get, post } from "./api";
 
 const storageKey = "porchday-push-subscription";
 
 /** Public subscription metadata only. No content, auth tokens, or encryption keys. */
+let nativeGeneration = 0;
+const nativeStorageKey = "porchday-native-push-subscription";
+export async function enableNativePush(memberId: string, requestPermission = true) {
+  const generation = nativeGeneration;
+  const config = await get("/native-push/config");
+  if (!config.enabled) throw new Error("Native push delivery is not configured yet.");
+  const registration = await nativeCall("push", { requestPermission }) as { token?: string; environment?: string };
+  if (!registration || !/^[a-f0-9]{64,200}$/.test(registration.token || "") || !["production", "sandbox"].includes(registration.environment || "")) throw new Error("Native notification registration failed.");
+  if (generation !== nativeGeneration) throw new Error("Notification enrollment was cancelled.");
+  const result = await post("/native-push/subscriptions", registration);
+  if (generation !== nativeGeneration) return;
+  localStorage.setItem(nativeStorageKey, JSON.stringify({ id: result.id, memberId }));
+}
+export async function refreshNativePush(memberId: string) {
+  if (!isNativeShell()) return;
+  let stored; try { stored = JSON.parse(localStorage.getItem(nativeStorageKey) || "null"); } catch { return; }
+  if (stored?.memberId !== memberId) return;
+  // A revoked subscription or global opt-out must never silently opt the member back in.
+  const subscriptions = await get("/native-push/subscriptions");
+  if (!subscriptions.items?.some((item: { id: string }) => item.id === stored.id)) {
+    localStorage.removeItem(nativeStorageKey); await nativeCall("clear"); return;
+  }
+  await enableNativePush(memberId, false);
+}
 export async function enableCurrentPush(memberId: string) {
+  if (isNativeShell()) { await enableNativePush(memberId); return; }
   if (
     !("Notification" in window) ||
     !("serviceWorker" in navigator) ||
@@ -58,6 +84,14 @@ export async function enableCurrentPush(memberId: string) {
 }
 
 export async function unsubscribeCurrentPush() {
+  if (isNativeShell()) {
+    nativeGeneration++;
+    let stored; try { stored = JSON.parse(localStorage.getItem(nativeStorageKey) || "null"); } catch {}
+    try { if (stored?.id) await del(`/native-push/subscriptions/${encodeURIComponent(stored.id)}`); }
+    catch { /* Server sign-out revokes session-bound delivery too. */ }
+    finally { localStorage.removeItem(nativeStorageKey); await nativeCall("clear").catch(() => {}); }
+    return;
+  }
   let stored: { id?: string } | null = null;
   try {
     stored = JSON.parse(localStorage.getItem(storageKey) || "null");
@@ -84,5 +118,6 @@ export async function unsubscribeCurrentPush() {
 
 export async function disableAllPush() {
   await del("/push/subscriptions");
+  await del("/native-push/subscriptions");
   await unsubscribeCurrentPush();
 }

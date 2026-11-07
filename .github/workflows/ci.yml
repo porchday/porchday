@@ -63,6 +63,7 @@ jobs:
       - run: node scripts/check-video-outbox.mjs
       - run: node scripts/check-video-picker.mjs
       - run: node scripts/check-feed-read.mjs
+      - run: node scripts/check-native-shell.mjs
       - run: node scripts/check-photo-calendar.mjs
       - run: node scripts/check-existing-album-photos.mjs
       - run: node scripts/check-photo-interactions.mjs

@@ -432,7 +432,7 @@ function PrivacySettings() {
         notification_preferences: { ...prefs, push: true },
       });
       setPrefs((p) => ({ ...p, push: true }));
-    }, "Notifications enabled on this browser. Push messages never include private content.");
+    }, "Notifications enabled on this device. Push messages never include private content.");
   }
   async function disablePush() {
     await action.run(async () => {
@@ -468,7 +468,7 @@ function PrivacySettings() {
         <Button variant="outline" busy={action.busy} onClick={enablePush}>
           <Icon name="bell" size={17} />
           {prefs.push
-            ? "Enable push on this browser"
+            ? "Enable push on this device"
             : "Notify me about new feed posts and photos"}
         </Button>
         {prefs.push && (

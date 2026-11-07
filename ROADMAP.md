@@ -1,5 +1,8 @@
 # Porchday roadmap
 
+**Current owner request:** replace the separate Swift screens with thin iOS/macOS shells around the PWA UI. Track performance and retained-web-view acceptance in [#168](https://github.com/porchday/porchday/issues/168), distribution in #49/#114, and native push in #7. [Design](design/shared-web-native-shell.md). Implementation and release verification are in progress.
+
+
 Implemented owner follow-up November 6: [PR #169](https://github.com/porchday/porchday/pull/169) addresses repeated native tab reloads and slow navigation with bounded memory caching, request coalescing, stable feed state and background photo decoding. Exact-source iOS/macOS builds and cache regressions pass. [#168](https://github.com/porchday/porchday/issues/168) retains installed-device responsiveness and updated signed app delivery verification.
 
 Delivered November 6: the [signup experience](design/signup-experience.md) improvements under #27 and chronological view label **Feed** under #124 are live in staging and production. [Release evidence](docs/evidence/signup-release-2026-11-06.md) records automated native parity, hosted signup checks and final production verification. #27 retains inbox/device acceptance and the original unconfirmed recipient report. Larger video attachments are also live under #108: 10 minutes, 1 GiB source and 250 MiB prepared, with local trim/quality selection and resumable encrypted uploads. [Video release evidence](docs/evidence/larger-videos-release-2026-11-06.md) records deployment, automated native parity and remaining device/distribution checks.

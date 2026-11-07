@@ -402,10 +402,20 @@ export function useRoute(navigationEpoch?: { current: number }) {
       event.preventDefault();
       event.stopImmediatePropagation();
     };
+    const nativeNavigate = () => {
+      const nativeWindow = window as Window & { porchdayNativeDestination?: string };
+      const destination = nativeWindow.porchdayNativeDestination;
+      if (typeof destination !== "string" || !destination.startsWith("/") || destination.startsWith("//")) return;
+      delete nativeWindow.porchdayNativeDestination;
+      navigateAfterSaves(destination);
+    };
+    window.addEventListener("porchday:native-navigate", nativeNavigate);
     document.addEventListener("click", protectLinks, true);
     window.addEventListener("popstate", pop);
     document.addEventListener("click", clicks);
+    nativeNavigate();
     return () => {
+      window.removeEventListener("porchday:native-navigate", nativeNavigate);
       document.removeEventListener("click", protectLinks, true);
       window.removeEventListener("popstate", pop);
       document.removeEventListener("click", clicks);

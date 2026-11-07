@@ -7,7 +7,8 @@
       "macos": "pending",
       "evidence": [
         "docs/native-parity.md#navigation",
-        "docs/native-parity.md#native-responsiveness--november-6"
+        "docs/native-parity.md#native-responsiveness--november-6",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -34,7 +35,8 @@
         "docs/native-parity.md#native-responsiveness--november-6",
         "design/feed-notifications.md",
         "docs/native-parity.md#feed-unread-counts-and-system-notifications",
-        "docs/evidence/feed-notifications-release-2026-11-06.md"
+        "docs/evidence/feed-notifications-release-2026-11-06.md",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -55,7 +57,8 @@
       "evidence": [
         "docs/native-parity.md#albums",
         "design/photo-interactions.md",
-        "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up"
+        "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -75,7 +78,8 @@
         "design/photo-interactions.md",
         "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
         "docs/native-parity.md#larger-videos--november-6-implementation",
-        "design/larger-videos.md"
+        "design/larger-videos.md",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -91,7 +95,10 @@
       "id": "photo-dates",
       "ios": "pending",
       "macos": "pending",
-      "evidence": ["docs/native-parity.md#photo-dates"],
+      "evidence": [
+        "docs/native-parity.md#photo-dates",
+        "docs/native-parity.md#shared-web-shell"
+      ],
       "implementation": {
         "ios": "implemented",
         "macos": "implemented"
@@ -107,7 +114,8 @@
       "macos": "pending",
       "evidence": [
         "docs/native-parity.md#audiences",
-        "docs/native-parity.md#connection-limit"
+        "docs/native-parity.md#connection-limit",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -125,7 +133,8 @@
       "evidence": [
         "docs/native-parity.md#invitations",
         "docs/native-parity.md#signup-guidance-and-feed-label--november-6",
-        "design/signup-experience.md"
+        "design/signup-experience.md",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -144,7 +153,8 @@
       "evidence": [
         "docs/native-parity.md#history",
         "docs/native-parity.md#larger-videos--november-6-implementation",
-        "design/larger-videos.md"
+        "design/larger-videos.md",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -164,7 +174,8 @@
         "docs/native-parity.md#portability",
         "design/photo-interactions.md",
         "docs/native-parity.md#larger-videos--november-6-implementation",
-        "design/larger-videos.md"
+        "design/larger-videos.md",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
@@ -185,7 +196,8 @@
         "design/feed-notifications.md",
         "docs/native-parity.md#feed-unread-counts-and-system-notifications",
         "docs/evidence/feed-notifications-release-2026-11-06.md",
-        "docs/evidence/apns-provider-release-2026-11-07.md"
+        "docs/evidence/apns-provider-release-2026-11-07.md",
+        "docs/native-parity.md#shared-web-shell"
       ],
       "implementation": {
         "ios": "implemented",
