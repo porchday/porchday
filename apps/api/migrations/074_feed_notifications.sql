@@ -66,8 +66,15 @@ BEGIN
  PERFORM set_config('app.member_id',coalesce(previous,''),true);
  RETURN NULL;
 END $$;
-CREATE CONSTRAINT TRIGGER feed_post_published AFTER INSERT ON app.posts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION app.publish_feed_activity();
-CREATE CONSTRAINT TRIGGER feed_photo_published AFTER INSERT ON app.photos DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION app.publish_feed_activity();
+-- Do not even queue a deferred trigger while disabled or during restore. This
+-- keeps older restore tooling free to change table trigger state in its replay.
+CREATE FUNCTION app.feed_publication_enabled() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,app AS $$
+ SELECT coalesce(current_setting('app.restore_replay',true),'off')<>'on' AND EXISTS(SELECT FROM app.feed_notification_config WHERE enabled)
+$$;
+REVOKE ALL ON FUNCTION app.feed_publication_enabled() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION app.feed_publication_enabled() TO porchday_social;
+CREATE CONSTRAINT TRIGGER feed_post_published AFTER INSERT ON app.posts DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN(app.feed_publication_enabled()) EXECUTE FUNCTION app.publish_feed_activity();
+CREATE CONSTRAINT TRIGGER feed_photo_published AFTER INSERT ON app.photos DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN(app.feed_publication_enabled()) EXECUTE FUNCTION app.publish_feed_activity();
 
 CREATE FUNCTION app.mark_feed_read(items jsonb,all_visible boolean DEFAULT false) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,app AS $$
 DECLARE changed integer;

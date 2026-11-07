@@ -67,6 +67,18 @@ async function read(member:string,items:unknown[],all=false){return sql.begin(as
   await ready;try{expect(await read(b.id,[],true)).toBe(0);}finally{release();await writer;}
   expect(await count(b.id)).toBe(1);
  });
+ it('queues one feed alert, rechecks reads before delivery, and queues a native badge clear',async()=>{
+  const {a,b}=await pair(),session=randomUUID();
+  await sql`insert into public.auth_user(id,name,email,"emailVerified") values(${b.id},'Synthetic feed test',${b.id+'@example.test'},true)`;
+  await sql`insert into public.auth_session(id,"userId",token,"expiresAt") values(${session},${b.id},${randomUUID()},now()+interval '1 day')`;
+  await sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${b.id},true)`;await db`select app.register_native_push(${session},${'cd'.repeat(32)},'sandbox')`;});
+  const post=await publish(a,b);
+  const claimed=await sql.begin(async db=>{await db`set local role porchday_jobs`;const jobs=await db`select * from app.claim_native_push(20)`;expect(jobs).toHaveLength(1);const j=jobs[0];const [r]=await db`select app.prepare_native_push_delivery(${j.id},${j.lease}) as delivery`;expect(r.delivery.feed).toMatchObject({kind:'feed_activity',count:1});return j;});
+  await read(b.id,[{kind:'post',id:post}]);
+  await sql.begin(async db=>{await db`set local role porchday_jobs`;expect((await db`select app.prepare_native_push_delivery(${claimed.id},${claimed.lease}) as delivery`)[0].delivery).toBeNull();const jobs=await db`select * from app.claim_native_push(20)`;expect(jobs).toHaveLength(1);const j=jobs[0];const [r]=await db`select app.prepare_native_push_delivery(${j.id},${j.lease}) as delivery`;expect(r.delivery.feed).toMatchObject({kind:'feed_badge',count:0});await db`select app.finish_native_push(${j.id},${j.lease},'sent',60)`;});
+  expect(await read(b.id,[{kind:'post',id:post}])).toBe(0);
+  expect(await sql`select id from app.native_push_outbox where completed_at is null`).toHaveLength(0);
+ });
  it('rechecks mute, block, deletion and current membership',async()=>{
   const {a,b}=await pair(),post=await publish(a,b);expect(await count(b.id)).toBe(1);
   await sql`insert into app.mutes(actor,target) values(${b.id},${a.id})`;expect(await count(b.id)).toBe(0);

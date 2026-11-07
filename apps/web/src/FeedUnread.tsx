@@ -4,10 +4,10 @@ import {get,request,message} from './api';
 import {useVault} from './vault';
 import {Button,Alert} from './ui';
 export type FeedReadItem={kind:'post'|'photo';id:string};
-type State={count:number;seen:(item:FeedReadItem)=>void;markAll:()=>Promise<void>};
-const Context=createContext<State>({count:0,seen:()=>{},markAll:async()=>{}});
+type State={count:number|null;seen:(item:FeedReadItem)=>void;markAll:()=>Promise<void>};
+const Context=createContext<State>({count:null,seen:()=>{},markAll:async()=>{}});
 export function FeedUnreadProvider({children}:{children:React.ReactNode}){
- const vault=useVault(),[count,setCount]=useState(0),controller=useRef<State>({count:0,seen:()=>{},markAll:async()=>{}});
+ const vault=useVault(),[count,setCount]=useState<number|null>(null),controller=useRef<State>({count:null,seen:()=>{},markAll:async()=>{}});
  useEffect(()=>{
   let retryDelay=2000;let alive=true,serial=Promise.resolve(),timer:ReturnType<typeof setTimeout>|undefined;
   const pending=new Map<string,FeedReadItem>(),acknowledged=new Set<string>();
@@ -23,15 +23,15 @@ export function FeedUnreadProvider({children}:{children:React.ReactNode}){
   });
   const schedule=()=>{if(timer||document.visibilityState==='hidden'||!navigator.onLine)return;timer=setTimeout(()=>{timer=undefined;void flush().catch(()=>{retryDelay=Math.min(60000,retryDelay*2);if(alive&&pending.size)schedule();});},retryDelay);};
   const refresh=()=>{if(document.visibilityState==='hidden')return;void enqueue(async()=>apply(await get('/feed/unread'))).catch(()=>{});if(pending.size)schedule();};
-  controller.current={count:0,seen:x=>{if(!alive||acknowledged.has(key(x))||pending.size>=1000)return;pending.set(key(x),x);schedule();},markAll:()=>enqueue(async()=>{const r=await request('/feed/read-all',{method:'PUT',body:'{}'});if(alive){pending.clear();acknowledged.clear();apply(r);}})};
-  setCount(0);refresh();const poll=setInterval(refresh,30000);
+  controller.current={count:null,seen:x=>{if(!alive||acknowledged.has(key(x))||pending.size>=1000)return;pending.set(key(x),x);schedule();},markAll:()=>enqueue(async()=>{const r=await request('/feed/read-all',{method:'PUT',body:'{}'});if(alive){pending.clear();acknowledged.clear();apply(r);}})};
+  setCount(null);refresh();const poll=setInterval(refresh,30000);
   document.addEventListener('visibilitychange',refresh);window.addEventListener('online',refresh);window.addEventListener('porchday:posts-shared',refresh);
-  return()=>{alive=false;clearInterval(poll);clearTimeout(timer);pending.clear();controller.current={count:0,seen:()=>{},markAll:async()=>{}};document.removeEventListener('visibilitychange',refresh);window.removeEventListener('online',refresh);window.removeEventListener('porchday:posts-shared',refresh);badge(0);};
+  return()=>{alive=false;clearInterval(poll);clearTimeout(timer);pending.clear();controller.current={count:null,seen:()=>{},markAll:async()=>{}};document.removeEventListener('visibilitychange',refresh);window.removeEventListener('online',refresh);window.removeEventListener('porchday:posts-shared',refresh);badge(0);};
  },[vault.member.id]);
  return <Context.Provider value={{count,seen:item=>controller.current.seen(item),markAll:()=>controller.current.markAll()}}>{children}</Context.Provider>;
 }
-export function FeedBadge(){const {count}=useContext(Context);return count>0?<span className="feed-unread-badge" aria-label={`${count} unread feed items`}>{count>99?'99+':count}</span>:null;}
-export function FeedReadControls(){const {count,markAll}=useContext(Context),[busy,setBusy]=useState(false),[error,setError]=useState('');return <><div className="feed-read-controls"><span>{count?`${count} unread`:'You’re caught up'}</span>{count>0&&<Button busy={busy} onClick={async()=>{setBusy(true);setError('');try{await markAll();}catch(e){setError(message(e));}finally{setBusy(false);}}}>Mark all as read</Button>}</div><Alert>{error}</Alert></>;}
+export function FeedBadge(){const {count}=useContext(Context);return count!==null&&count>0?<span className="feed-unread-badge" aria-label={`${count} unread feed items`}>{count>99?'99+':count}</span>:null;}
+export function FeedReadControls(){const {count,markAll}=useContext(Context),[busy,setBusy]=useState(false),[error,setError]=useState('');return <><div className="feed-read-controls"><span>{count===null?'Checking unread activity…':count?`${count} unread`:'You’re caught up'}</span>{count!==null&&count>0&&<Button busy={busy} onClick={async()=>{setBusy(true);setError('');try{await markAll();}catch(e){setError(message(e));}finally{setBusy(false);}}}>Mark all as read</Button>}</div><Alert>{error}</Alert></>;}
 /** Continuous foreground visibility, not list loading or observer prefetch. */
 export function ReadableFeedItem({item,ready,photo=false,children}:{item:FeedReadItem;ready:boolean;photo?:boolean;children:React.ReactNode}){
  const ref=useRef<HTMLDivElement>(null),{seen}=useContext(Context),callback=useRef(seen);callback.current=seen;

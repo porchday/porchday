@@ -1,4 +1,4 @@
-# Native iOS notifications
+# Native iOS and macOS notifications
 
 APNs delivery is implemented but **disabled until real Apple signing and provider credentials are configured**. Unit and local database tests exercise signed requests through an injected fetch function; they do not establish physical-device delivery or production HTTP/2 transport compatibility.
 
@@ -26,15 +26,11 @@ The client asks system permission only after the member chooses notifications. I
 
 Migration `029_native_push.sql` adds a separate native subscription table, durable notification outbox, and jobs-only provider token cache. Notification creation queues work transactionally. The jobs role claims bounded batches with leases and rechecks the member, session, global preference, unread state, blocks/mutes, current post/comment access, expiration, and group membership immediately before sending. Removed access or deleted notifications suppress queued deliveries.
 
-The only payload is:
+Non-feed notifications retain the generic “You have a new update” alert and open Notifications. Migration `074_feed_notifications.sql` adds feed publication alerts with the generic body “New activity in your feed”, `aps.badge` containing the authorized unread count, and `destination: "feed"`. Read acknowledgments queue badge-only updates without an alert. Feed delivery rechecks the receipt’s current visibility and unread state immediately before sending.
 
-```json
-{"aps":{"alert":{"title":"Porchday","body":"You have a new update"}}}
-```
+No names, post IDs, comment IDs, photos, content, keys, or evidence enter APNs. Apple sees the unread count, generic alert, app topic, device delivery token, provider account, and timing. The per-publication collapse identifier is an opaque notification identifier. Tapping opens Feed and fetches authorized state again. Infrastructure stores delivery capabilities as restricted operational metadata; they are not end-to-end encrypted social content.
 
-No names, post IDs, comment IDs, photos, content, counts, keys, or evidence enter APNs. Tapping opens Notifications and the client fetches authorized state again. Apple necessarily sees the app topic, device delivery token, provider account, timing, and generic alert. Infrastructure stores these delivery capabilities as restricted operational metadata; they are not end-to-end encrypted social content.
-
-The sender permits only `api.push.apple.com` and `api.sandbox.push.apple.com`, constructs the device path from validated hex, refuses redirects, uses a bounded timeout, and does not log token URLs, authorization headers, private keys, or provider response bodies. Provider errors are parsed under a 1 KiB limit and reduced to known outcome categories. `apns-expiration: 0` asks Apple not to store the alert; a fixed collapse identifier coalesces duplicate generic updates. Already in-flight or delivered alerts cannot be recalled, including the small interval between the final authorization check and send. Apple describes expiration as best effort, so no strict recall guarantee is made.
+The sender permits only `api.push.apple.com` and `api.sandbox.push.apple.com`, constructs the device path from validated hex, refuses redirects, uses a bounded timeout, and does not log token URLs, authorization headers, private keys, or provider response bodies. Provider errors are parsed under a 1 KiB limit and reduced to known outcome categories. `apns-expiration: 0` asks Apple not to store the alert; a per-publication collapse identifier coalesces retries of each feed alert; badge-only updates and other generic updates use separate fixed identifiers. Already in-flight or delivered alerts cannot be recalled, including the small interval between the final authorization check and send. Apple describes expiration as best effort, so no strict recall guarantee is made.
 
 `jose` signs ES256 provider JWTs. The jobs-only database cache reuses a token for 45 minutes across Worker isolates; concurrent refreshes reuse the first stored token. This avoids minting a provider token for each notification. The `.p8` private key stays in Worker secrets. Cached JWTs are also delivery credentials: social/database API roles cannot read the cache or invoke its function; telemetry and exports exclude it. Configuration changes use a different cache key, and entries older than 24 hours are removed on cache access.
 

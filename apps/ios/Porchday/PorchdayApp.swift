@@ -95,7 +95,7 @@ struct MainTabs: View {
         .onChange(of: phase) { _, value in feedReads.active = value == .active; if value == .active { Task { await feedReads.refresh() } } }
         .onAppear { if notifications.showFeed { destination = "feed"; notifications.showFeed = false } }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PorchdayPushReceived"))) { _ in Task { await feedReads.refresh() } }
-        .onChange(of: notifications.showFeed) { _, value in if value { destination = "feed"; notifications.showFeed = false; Task { await feedReads.refresh() } } }
+        .onChange(of: notifications.showFeed) { _, value in if value { destination = "feed"; notifications.showFeed = false; NotificationCenter.default.post(name: Notification.Name("PorchdayFeedOpened"), object: nil); Task { await feedReads.refresh() } } }
         .task(id: member.id) { builderAvailable = (try? await model.api.social("/builder-chat")) != nil; await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
