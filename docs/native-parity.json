@@ -79,7 +79,8 @@
         "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
         "docs/native-parity.md#larger-videos--november-6-implementation",
         "design/larger-videos.md",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "https://github.com/porchday/porchday/issues/174"
       ],
       "implementation": {
         "ios": "implemented",

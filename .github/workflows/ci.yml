@@ -62,6 +62,12 @@ jobs:
       - run: node scripts/check-video-playback.mjs
       - run: node scripts/check-video-outbox.mjs
       - run: node scripts/check-video-picker.mjs
+      - name: Prepare alternate iPhone audio with a compatible track
+        run: node scripts/check-video-preparation.mjs
+        env:
+          VIDEO_PREPARATION_FIXTURE: apps/web/test/fixtures/synthetic-alternate-audio.mov
+          VIDEO_PREPARATION_BROWSERS: chromium
+          VIDEO_PREPARATION_REQUIRE_SUCCESS: '1'
       - run: node scripts/check-feed-read.mjs
       - run: node scripts/check-native-shell.mjs
       - run: node scripts/check-photo-calendar.mjs
