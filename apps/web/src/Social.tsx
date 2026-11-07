@@ -1,3 +1,4 @@
+import {stagePhotoVideo} from './photo-video';
 import {videoUpdatePlaceholder} from "./video-placeholder";
 import {validateVideoManifest} from "@porchday/crypto/video";
 import {VideoPicker} from "./VideoPicker";
@@ -281,12 +282,13 @@ export function Composer({
   const [timer, setTimer] = useState("");
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [largeVideosEnabled,setLargeVideosEnabled]=useState(false);
+  const [directVideosEnabled,setDirectVideosEnabled]=useState(false);
   const [pendingVideos,setPendingVideos]=useState<{id:string;createdAt:string}[]>([]);
   const [videoProgress,setVideoProgress]=useState("");
   const uploadAbort=useRef<AbortController|null>(null);
   const preparedVideos=useRef(new Map<string,PreparedLargeVideo>());
   const refreshPendingVideos=async()=>{if(typeof navigator.storage?.getDirectory==="function")setPendingVideos(await pendingPublications(vault.member.id));};
-  useEffect(()=>{let alive=true;void get("/videos/capabilities").then(value=>{if(alive)setLargeVideosEnabled(value.enabled===true);}).catch(()=>{});void refreshPendingVideos().catch(()=>{});return()=>{alive=false;uploadAbort.current?.abort();for(const video of preparedVideos.current.values())void video.dispose();};},[vault.member.id]);
+  useEffect(()=>{let alive=true;void get("/videos/capabilities").then(value=>{if(alive){setLargeVideosEnabled(value.enabled===true);setDirectVideosEnabled(value.enabled===true&&value.direct_uploads===true);}}).catch(()=>{});void refreshPendingVideos().catch(()=>{});return()=>{alive=false;uploadAbort.current?.abort();for(const video of preparedVideos.current.values())void video.dispose();};},[vault.member.id]);
   useEffect(()=>{const ids=new Set(photos.map(p=>p.id));for(const[id,video]of preparedVideos.current)if(!ids.has(id)){void video.dispose();preparedVideos.current.delete(id);}},[photos]);
   const draftUrls = useRef(new Set<string>());
   useEffect(() => {
@@ -332,16 +334,24 @@ export function Composer({
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if(mode==="photos"&&photos.some(p=>p.largeVideo)){await action.run(async()=>{throw Error("Videos belong in a post. Switch to Post or remove the video before sharing photos.");});return;}
+    if(mode==="photos"&&photos.some(p=>p.largeVideo)&&!directVideosEnabled){await action.run(async()=>{throw Error("Direct video uploads are not enabled on this server yet. Please reload and try again.");});return;}
     if(mode==="photos"&&shareTabs){
       if(!photos.length)return;
       const destination=await action.runSave(async()=>{
         if(album&&(!albumsLoaded||!albums.some(a=>a.id===album)))throw Error("Select an album where you have Add or Album-admin permission and working encryption keys.");
         const expiresAt=deadline(timer);setPhotosShared(0);
-        for(const photo of photos){await publishPhoto(vault,photo,audience,expiresAt,album||null);setPhotos(current=>current.filter(p=>p.id!==photo.id));setPhotosShared(count=>count+1);}
+        for(const photo of photos){
+          if(photo.largeVideo){const abort=new AbortController();uploadAbort.current=abort;
+            try{await stagePhotoVideo(vault,{...photo,photoDate:photo.photoDate||localPhotoDate()},photo.largeVideo,audience,expiresAt,album||null,abort.signal,setVideoProgress);
+              setPhotos(current=>current.filter(p=>p.id!==photo.id));await refreshPendingVideos();
+              await sendPublication(vault.member.id,photo.id,abort.signal,setVideoProgress);
+            }finally{uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}
+          }else{await publishPhoto(vault,photo,audience,expiresAt,album||null);setPhotos(current=>current.filter(p=>p.id!==photo.id));}
+          setPhotosShared(count=>count+1);
+        }
         setTimer("");onPosted();
         if(album&&!text.trim())return "/albums/"+album;
-      },"Photos shared. Your post draft is preserved.");
+      },"Photos and videos shared. Your post draft is preserved.");
       if(destination)navigateAfterSaves(destination);
       return;
     }
@@ -438,10 +448,10 @@ export function Composer({
       data-unsaved-draft={Boolean(text.trim() || photos.length) || undefined}
       onSubmit={submit}
     >
-      {pendingVideos.map(p=><div className="panel" key={p.id}><p>An encrypted post upload is saved on this device ({localDate(p.createdAt)}).</p><Button type="button" disabled={action.busy} onClick={()=>void action.runSave(async()=>{const abort=new AbortController();uploadAbort.current=abort;try{await sendPublication(vault.member.id,p.id,abort.signal,setVideoProgress);onPosted();}finally{uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}},"Post shared.")}>Resume upload</Button><Button type="button" disabled={action.busy} onClick={()=>void action.run(async()=>{await cancelPublication(vault.member.id,p.id);await refreshPendingVideos();})}>Cancel upload</Button></div>)}
+      {pendingVideos.map(p=><div className="panel" key={p.id}><p>An encrypted upload is saved on this device ({localDate(p.createdAt)}).</p><Button type="button" disabled={action.busy} onClick={()=>void action.runSave(async()=>{const abort=new AbortController();uploadAbort.current=abort;try{await sendPublication(vault.member.id,p.id,abort.signal,setVideoProgress);onPosted();}finally{uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}},"Upload shared.")}>Resume upload</Button><Button type="button" disabled={action.busy} onClick={()=>void action.run(async()=>{await cancelPublication(vault.member.id,p.id);await refreshPendingVideos();})}>Cancel upload</Button></div>)}
       {videoProgress&&<div role="status"><p>{videoProgress}</p><Button type="button" onClick={()=>uploadAbort.current?.abort()}>Pause upload</Button></div>}
       <fieldset disabled={action.busy} className="composer-fields">
-      {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos</button></div>}
+      {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos & videos</button></div>}
       {mode==="post"&&<>
       <div className="composer-start">
         <MemberAvatar memberId={vault.member.id} name={vault.member.handle} />
@@ -504,7 +514,7 @@ export function Composer({
           ))}
         </div>
       )}
-      {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} photo{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos are still selected.":""}</p>}
+      {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} item{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos and videos are still selected.":""}</p>}
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
       <div className={"composer-controls"+(mode==="post"?" composer-post-controls":"")}>
@@ -527,7 +537,7 @@ export function Composer({
             <Icon name="photo" size={18} />
             <span>{largeVideosEnabled?"Photos":"Photos & videos"}</span>
           </button>
-          {largeVideosEnabled&&mode==="post"&&<VideoPicker disabled={action.busy||photos.length>=10} onPrepared={(video,name)=>{const id=crypto.randomUUID();preparedVideos.current.set(id,video);setPhotos(current=>[...current,{id,name,alt:"",photoDate:localPhotoDate(),blob:video.blob,width:video.width,height:video.height,mime:video.mime,poster:video.poster,preview:video.preview,largeVideo:video}]);}}/>}
+          {largeVideosEnabled&&(mode==="post"||directVideosEnabled)&&<VideoPicker disabled={action.busy||photos.length>=10} onPrepared={(video,name)=>{const id=crypto.randomUUID();preparedVideos.current.set(id,video);setPhotos(current=>[...current,{id,name,alt:"",photoDate:localPhotoDate(),blob:video.blob,width:video.width,height:video.height,mime:video.mime,poster:video.poster,preview:video.preview,largeVideo:video}]);}}/>}
           <TimerSelect value={timer} onChange={setTimer} />
         </div>
         <Button
@@ -536,10 +546,10 @@ export function Composer({
           busy={action.busy}
           disabled={mode==="photos"?!photos.length:!text.trim()&&!photos.length}
         >
-          {mode==="photos"?(album?"Add photos to album":"Add photos"):"Share post"} <Icon name="arrow" size={16} />
+          {mode==="photos"?(album?"Add to album":"Share photos & videos"):"Share post"} <Icon name="arrow" size={16} />
         </Button>
       </div>
-      <p className="muted">{largeVideosEnabled?"Videos in posts: choose a source up to 1 GiB, then trim to 10 minutes and prepare at 1080p or 720p. Prepared videos can be up to 250 MiB. Uploads share your 1 GiB media allowance.":"Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience."}</p>
+      <p className="muted">{largeVideosEnabled?"Videos: choose a full recording up to 10 minutes and a 1 GiB source. Prepare at 1080p or 720p, up to 250 MiB. Photos and videos share your 10 GB media allowance.":"Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience."}</p>
       <div className="composer-privacy">
         <Icon name="lock" size={13} />
         {groupId ? (
@@ -1097,7 +1107,7 @@ export function PostCard({
     </article>
   );
 }
-export function EncryptedPhoto(props:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){return props.media.videoVersion===2?<SegmentedVideo media={props.media} thumbnail={props.thumbnail}/>:<LegacyEncryptedPhoto {...props}/>;}
+export function EncryptedPhoto(props:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){return (props.media.videoVersion===2||props.media.videoVersion===3)?<SegmentedVideo media={props.media} thumbnail={props.thumbnail} photoProof={props.photoProof}/>:<LegacyEncryptedPhoto {...props}/>;}
 function LegacyEncryptedPhoto({ media, thumbnail=false, photoProof }: { media: MediaPayload; thumbnail?:boolean; photoProof?:PhotoProof }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();

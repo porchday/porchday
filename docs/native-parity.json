@@ -38,7 +38,8 @@
         "design/feed-notifications.md",
         "docs/native-parity.md#feed-unread-counts-and-system-notifications",
         "docs/evidence/feed-notifications-release-2026-11-06.md",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#direct-videos-and-10-gb-storage"
       ],
       "implementation": {
         "ios": "implemented",
@@ -49,7 +50,8 @@
         "https://github.com/porchday/porchday/issues/114",
         "https://github.com/porchday/porchday/issues/108",
         "https://github.com/porchday/porchday/issues/168",
-        "https://github.com/porchday/porchday/issues/7"
+        "https://github.com/porchday/porchday/issues/7",
+        "https://github.com/porchday/porchday/issues/181"
       ]
     },
     {
@@ -60,7 +62,8 @@
         "docs/native-parity.md#albums",
         "design/photo-interactions.md",
         "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#direct-videos-and-10-gb-storage"
       ],
       "implementation": {
         "ios": "implemented",
@@ -68,7 +71,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/181"
       ]
     },
     {
@@ -83,7 +87,8 @@
         "design/larger-videos.md",
         "docs/native-parity.md#shared-web-shell",
         "https://github.com/porchday/porchday/issues/174",
-        "docs/native-parity.md#full-video-preparation-and-optional-thumbnails"
+        "docs/native-parity.md#full-video-preparation-and-optional-thumbnails",
+        "docs/native-parity.md#direct-videos-and-10-gb-storage"
       ],
       "implementation": {
         "ios": "implemented",
@@ -92,7 +97,8 @@
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
         "https://github.com/porchday/porchday/issues/114",
-        "https://github.com/porchday/porchday/issues/108"
+        "https://github.com/porchday/porchday/issues/108",
+        "https://github.com/porchday/porchday/issues/181"
       ]
     },
     {
@@ -101,7 +107,8 @@
       "macos": "pending",
       "evidence": [
         "docs/native-parity.md#photo-dates",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#direct-videos-and-10-gb-storage"
       ],
       "implementation": {
         "ios": "implemented",
@@ -109,7 +116,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/181"
       ]
     },
     {
@@ -119,7 +127,8 @@
       "evidence": [
         "docs/native-parity.md#audiences",
         "docs/native-parity.md#connection-limit",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#direct-videos-and-10-gb-storage"
       ],
       "implementation": {
         "ios": "implemented",
@@ -127,7 +136,8 @@
       },
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
-        "https://github.com/porchday/porchday/issues/114"
+        "https://github.com/porchday/porchday/issues/114",
+        "https://github.com/porchday/porchday/issues/181"
       ]
     },
     {
@@ -158,7 +168,8 @@
         "docs/native-parity.md#history",
         "docs/native-parity.md#larger-videos--november-6-implementation",
         "design/larger-videos.md",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#direct-videos-and-10-gb-storage"
       ],
       "implementation": {
         "ios": "implemented",
@@ -167,7 +178,8 @@
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
         "https://github.com/porchday/porchday/issues/114",
-        "https://github.com/porchday/porchday/issues/108"
+        "https://github.com/porchday/porchday/issues/108",
+        "https://github.com/porchday/porchday/issues/181"
       ]
     },
     {
@@ -179,7 +191,8 @@
         "design/photo-interactions.md",
         "docs/native-parity.md#larger-videos--november-6-implementation",
         "design/larger-videos.md",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#direct-videos-and-10-gb-storage"
       ],
       "implementation": {
         "ios": "implemented",
@@ -188,7 +201,8 @@
       "followUpIssues": [
         "https://github.com/porchday/porchday/issues/49",
         "https://github.com/porchday/porchday/issues/114",
-        "https://github.com/porchday/porchday/issues/108"
+        "https://github.com/porchday/porchday/issues/108",
+        "https://github.com/porchday/porchday/issues/181"
       ]
     },
     {

@@ -1,3 +1,4 @@
+import {verifyPhotoVideo} from './photo-video';
 import {videoUpdatePlaceholder} from "./video-placeholder";
 import {exportVideoSegments,boundedVideoResponse,validateArchivedSegment,assembleArchivedVideo} from "./video-archive";
 import {stageVideo,stageMedia,sendStagedMedia,discardLocalPublication} from "./video-outbox";
@@ -321,7 +322,8 @@ export function DataTransfer() {
                   );
                 const envelope = (await response.json()) as EncryptedEnvelope;
                 const payload = await vault.open({ envelope, id: row.id,author_key:row.author_key });
-                if(payload.videoVersion===2){
+                if(payload.videoVersion===2||payload.videoVersion===3){
+                  if(payload.videoVersion===3){const {photo}=await get('/photos/'+envelope.context.parentId);const grant=photo.grants.find((g:Json)=>g.media_id===row.id);if(!grant)throw Error('This video changed during export. Start a fresh export.');const content=await openPhoto(vault,photo,grant);await verifyPhotoVideo(content.photoProof as import("@porchday/crypto/photos").PhotoProof,payload.video);}
                   const video=await exportVideoSegments(row.id,payload.video,async(index,size)=>{ensureContinue();return boundedVideoResponse(await fetch(`/api/v1/exports/${job.id}/media/${row.id}/chunks/${index}`,{credentials:"same-origin",cache:"no-store"}),size);},async(record,bytes)=>{await room(bytes.length+4096);archive.version=2;(archive.video_segments||=[]).push(record);files[record.path]=bytes;refs.push(reference("media",{...row,envelope}));});
                   await room(32_000);archive.version=2;archive.media.push({id:row.id,path:`photos/${row.id}.mp4`,mime:"video/mp4",alt:String(payload.alt||""),name:String(payload.name||"video.mp4"),poster:payload.poster,...video,post_id:row.post_id||null,created_at:canonicalDate(row.created_at||envelope.context.createdAt),expires_at:canonicalDate(row.effective_expires_at||envelope.context.expiresAt)});refs.push(reference("media",{...row,envelope}));continue;
                 }
@@ -634,6 +636,11 @@ export function DataTransfer() {
       async function loadPhoto(oldId: string) {
         const found = plan!.media.get(oldId);
         if (!found) throw new Error("A referenced photo is missing.");
+        if(found.record.videoVersion===2){
+          const record=found.record;
+          const assembled=await assembleArchivedVideo(record,async segment=>{ensureContinue();const chunk=plan!.videoSegments.get(segment.path);if(!chunk)throw Error("A video segment is missing.");const parsed=await unpackFile(plan!.parts[chunk.part].file);return parsed.files[segment.path];});
+          try{await validatePreparedVideo(assembled.blob);return {bytes:new Uint8Array(),record,preparedVideo:{...assembled,mime:"video/mp4" as const,width:record.width,height:record.height,duration:record.duration,poster:record.poster||"",preview:""}};}catch(error){await assembled.dispose();throw error;}
+        }
         if (cachedPart !== found.part) {
           const parsed = await unpackFile(plan!.parts[found.part].file);
           cachedPart = found.part;

@@ -120,3 +120,9 @@ Both current Apple shells use the shared privacy settings UI: enrollment is chec
 ## Full-video preparation and optional thumbnails
 
 The current iOS/macOS web shells share the fixed preparation UI: no Start/End controls, no crop, full duration/framing, explicit over-10-minute rejection, and “Finishing video…” after conversion. The shared web implementation decodes an optional thumbnail directly from the prepared file with bounded waiting; thumbnail failure does not discard validated media. Cancellation and H.264/AAC validation still apply. Legacy Swift source also removes trimming and exports the full duration; its changed controls require a future signed binary, while current default shells receive the web fix immediately. Exact-source native CI checks this source; original iPhone/device verification remains #174.
+
+## Direct videos and 10 GB storage
+
+The default iOS and macOS shells use the same Share → Photos & videos uploader, resumable encrypted outbox, owner-verified video playback, album grants and portability implementation as the PWA. Videos can be published without a post, preserving dates, captions, tags, comments/reactions and audiences. Total account media storage is 10,000,000,000 bytes; the 1 GiB source, 250 MiB prepared and 10-minute per-video limits remain unchanged. No native bridge changes or new signed binary are needed for the default shells. The optional Previous app remains a migration fallback and does not implement direct segmented-video creation.
+
+[#181](https://github.com/porchday/porchday/issues/181) tracks API/browser acceptance, exact-source native CI and remaining physical Photos-library/upload/playback verification. Automated checks are distinct from installed-device verification and TestFlight availability. [Design](../design/direct-videos-and-storage.md).

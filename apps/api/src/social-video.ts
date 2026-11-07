@@ -1,3 +1,4 @@
+import {MEMBER_MEDIA_BYTES,VIDEO_SOURCE_BYTES} from './media-limits.js';
 import type {Hono} from 'hono';
 import {z} from 'zod';
 import {createHash} from 'node:crypto';
@@ -5,10 +6,10 @@ import {canonicalJson} from '@porchday/crypto';
 import {envelopeSchema} from './social-contract.js';
 import {envelopeDigest,mediaRouting,limitedMediaBody,type MediaDependencies,type SocialContext} from './social-media.js';
 import type {Env,Variables} from './types.js';
-const CHUNK=4*1024*1024,MAX=250*1024*1024,QUOTA=1024*1024*1024;
+const CHUNK=4*1024*1024,MAX=250*1024*1024,QUOTA=MEMBER_MEDIA_BYTES;
 const segment=z.object({index:z.number().int().min(0).max(62),size:z.number().int().min(17).max(CHUNK+16),sha256:z.string().regex(/^[a-f0-9]{64}$/)}).strict();
 export const videoSpecification=z.array(segment).min(1).max(63).refine(parts=>parts.every((p,i)=>p.index===i&&(i===parts.length-1||p.size===CHUNK+16))&&parts.reduce((n,p)=>n+p.size-16,0)<=MAX,'Invalid video segments');
-const reservation=z.object({id:z.uuid(),envelope:envelopeSchema,byte_size:z.number().int().min(1).max(1024*1024),stream_id:z.uuid(),segments:videoSpecification.optional(),history_post_id:z.uuid().optional(),history_source_revision:z.number().int().positive().optional()}).strict().refine(b=>(b.history_post_id===undefined)===(b.history_source_revision===undefined));
+const reservation=z.object({id:z.uuid(),envelope:envelopeSchema,byte_size:z.number().int().min(1).max(1024*1024),stream_id:z.uuid(),segments:videoSpecification.optional(),photo_refresh_id:z.uuid().optional(),history_post_id:z.uuid().optional(),history_source_revision:z.number().int().positive().optional()}).strict().refine(b=>(b.history_post_id===undefined)===(b.history_source_revision===undefined));
 /** Immutable ciphertext writer. Hash verification precedes R2 commit; retrying an
  * uncertain PUT reads the same object instead of deleting or overwriting it. */
 export async function putVideoChunk(request:Request,bucket:R2Bucket,row:{object_key:string;byte_size:number;sha256:string},fail:MediaDependencies['fail']){
@@ -25,16 +26,16 @@ export async function putVideoChunk(request:Request,bucket:R2Bucket,row:{object_
 export function registerVideoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>,deps:MediaDependencies){
  const{tx,body,checkEnvelope,writeAllowed,fail,id}=deps;
  function publishing(c:SocialContext){if(c.env.VIDEO_UPLOADS_V2!=='true'||c.env.MEDIA_UPLOADS_PAUSED==='true'||c.env.CONTENT_WRITES_PAUSED==='true')fail('VIDEO_PUBLISHING_UNAVAILABLE',409);}
- app.get('/videos/capabilities',c=>c.json({version:2,enabled:c.env.VIDEO_UPLOADS_V2==='true'&&c.env.MEDIA_UPLOADS_PAUSED!=='true'&&c.env.CONTENT_WRITES_PAUSED!=='true',max_source_bytes:QUOTA,max_bytes:MAX,max_seconds:600,chunk_bytes:CHUNK}));
+ app.get('/videos/capabilities',c=>c.json({version:2,enabled:c.env.VIDEO_UPLOADS_V2==='true'&&c.env.MEDIA_UPLOADS_PAUSED!=='true'&&c.env.CONTENT_WRITES_PAUSED!=='true',direct_uploads:true,member_media_bytes:QUOTA,max_source_bytes:VIDEO_SOURCE_BYTES,max_bytes:MAX,max_seconds:600,chunk_bytes:CHUNK}));
  app.post('/videos',async c=>{
   publishing(c);const b=await body(c,reservation,2*1024*1024),routing=mediaRouting(b.envelope),digest=await envelopeDigest(b.envelope);
-  if(b.id!==routing.context.id||routing.context.parentId===null||['album','photo','moderators'].includes(routing.context.audience))fail('ENVELOPE_CONTEXT');
+  if(b.id!==routing.context.id||routing.context.parentId===null||['photo','moderators'].includes(routing.context.audience))fail('ENVELOPE_CONTEXT');
   return c.json(await tx(c,async db=>{
-   await writeAllowed(db);await checkEnvelope(db,c.get('memberId'),routing,'media',{allowPast:routing.context.audience==='only_me',historyPostId:b.history_post_id,historySourceRevision:b.history_source_revision});
+   await writeAllowed(db);await checkEnvelope(db,c.get('memberId'),routing,'media',{allowPast:routing.context.audience==='only_me',historyPostId:b.history_post_id,historySourceRevision:b.history_source_revision,photoRefreshId:b.photo_refresh_id});
    await db`select member_id from app.profiles where member_id=${c.get('memberId')} for update`;
    const[old]=await db`select * from app.media_assets where id=${b.id} and owner_id=${c.get('memberId')}`;
    if(old){const[stream]=await db`select specification from app.video_streams where id=${b.stream_id}`;if(old.envelope_sha256!==digest||old.video_stream_id!==b.stream_id||Number(old.byte_size)!==b.byte_size||!stream||b.segments&&canonicalJson(stream.specification)!==canonicalJson(b.segments))fail('VIDEO_OPERATION_CONFLICT',409);return{id:b.id,upload_url:'/api/v1/media/'+b.id+'/bytes',state:old.state};}
-   const[existing]=await db`select * from app.video_streams where id=${b.stream_id} and owner_id=${c.get('memberId')} for update`;
+   const[existing]=await db`select * from app.video_streams where id=${b.stream_id} and (owner_id=${c.get('memberId')} or app.can_rewrap_photo_video(id,${db.json(JSON.parse(canonicalJson(routing)))}))`;
    if(existing&&(!existing.complete||b.segments&&canonicalJson(existing.specification)!==canonicalJson(b.segments)))fail('VIDEO_OPERATION_CONFLICT',409);
    if(!existing&&!b.segments)fail('NOT_FOUND',404);
    const bytes=b.segments?.reduce((n,p)=>n+p.size,0)??0;

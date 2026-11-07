@@ -105,10 +105,10 @@ type Person=Awaited<ReturnType<typeof person>>;
 async function connect(a:Person,b:Person){await db`insert into app.connections(member_a,member_b,kind) values(${[a.id,b.id].sort()[0]},${[a.id,b.id].sort()[1]},'friend')`;}
 
 async function binary(member:string,path:string,bytes:Uint8Array){return app.request('https://local.test'+path,{method:'PUT',headers:{'x-member':member,'content-type':'application/octet-stream'},body:new Blob([bytes as BlobPart])},env);}
-async function draft(owner:Person,audience:ContentContext['audience']='only_me'){
+async function draft(owner:Person,audience:ContentContext['audience']='only_me',groupId:string|null=null){
  const mediaId=randomUUID(),postId=randomUUID(),streamId=randomUUID(),key=createVideoKey(),plain=new Uint8Array([1,2,3,4]);
  const chunk=await encryptVideoSegment(key,streamId,0,plain),manifest={v:2,protocol:'porchday-video-aes256gcm-v2',streamId,key,mime:'video/mp4',size:plain.length,duration:1,width:640,height:480,chunkSize:VIDEO_CHUNK_BYTES,segments:[chunk.segment]};
- const envelope=await seal(owner,{id:mediaId,mime:'video/mp4',video:manifest},1,{id:mediaId,kind:'media',parentId:postId,audience});
+ const envelope=await seal(owner,{id:mediaId,mime:'video/mp4',video:manifest},1,{id:mediaId,kind:'media',parentId:postId,audience,groupId});
  const bytes=new TextEncoder().encode(JSON.stringify(envelope)),segments=[{index:0,size:chunk.bytes.length,sha256:chunk.segment.sha256}];
  const request={id:mediaId,envelope,byte_size:bytes.length,stream_id:streamId,segments};
  return{mediaId,postId,streamId,chunk,bytes,request,audience,manifest};
@@ -226,13 +226,75 @@ suite("Encrypted segmented video API", () => {
    expect((await app.request('https://local.test/videos/'+video.mediaId+'/chunks/0',{headers:{'x-member':owner.id}},env)).status).toBe(404);
   });
   it('reserves the existing member quota concurrently and frees canceled uploads',async()=>{
-   const owner=await person(),drafts=await Promise.all(Array.from({length:5},()=>draft(owner)));
+   expect((await call((await person()).id,'/videos/capabilities')).data).toMatchObject({direct_uploads:true,member_media_bytes:10_000_000_000,max_source_bytes:1_073_741_824,max_bytes:262_144_000,max_seconds:600});
+   const owner=await person(),drafts=await Promise.all(Array.from({length:40},()=>draft(owner)));
    for(const video of drafts)video.request.segments=Array.from({length:63},(_,index)=>({index,size:(index===62?2:4)*1024*1024+16,sha256:'0'.repeat(64)}));
    const results=await Promise.all(drafts.map(video=>call(owner.id,'/videos','POST',video.request)));
-   expect(results.map(r=>r.status).sort()).toEqual([201,201,201,201,413]);
+   expect(results.map(r=>r.status).sort()).toEqual([...Array(38).fill(201),413,413]);
    const reserved=results.findIndex(r=>r.status===201),blocked=results.findIndex(r=>r.status===413);
    expect((await call(owner.id,`/videos/${drafts[reserved].mediaId}`,'DELETE')).status).toBe(200);
    expect((await call(owner.id,'/videos','POST',drafts[blocked].request)).status).toBe(201);
+  });
+
+  it('publishes standalone videos, grants albums access, shares one stream and preserves revocation',async()=>{
+   const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
+   const video=await draft(owner,'connections');await upload(owner,video);
+   const photoDate='2026-11-01',grant=await seal(owner,{media:[{id:video.mediaId,mime:'video/mp4',videoVersion:3}]},1,{id:randomUUID(),kind:'photo',parentId:video.postId,audience:'connections',photoDate});
+   const published=await call(owner.id,'/photos','POST',{id:video.postId,photo_date:photoDate,expires_at:null,grants:[{envelope:grant,media_id:video.mediaId}]});
+   expect(published.status,JSON.stringify(published.data)).toBe(201);
+   expect(await db`select id from app.posts where id=${video.postId}`).toHaveLength(0);
+   expect((await call(reader.id,'/photos/'+video.postId)).status).toBe(200);
+   expect((await call(outsider.id,'/photos/'+video.postId)).status).toBe(404);
+   expect((await app.request('https://local.test/videos/'+video.mediaId+'/chunks/0',{headers:{'x-member':reader.id}},env)).status).toBe(200);
+   const comment=await seal(reader,{text:'Direct video comment'},1,{id:randomUUID(),kind:'comment',audience:'photo',parentId:video.postId});
+   expect((await call(reader.id,`/photos/${video.postId}/interactions`,'POST',{envelope:comment})).status).toBe(201);
+   const album=randomUUID(),albumEnvelope=await seal(owner,{name:'Video album'},1,{id:album,kind:'album'});
+   expect((await call(owner.id,'/albums','POST',{envelope:albumEnvelope})).status).toBe(201);
+   const shared=await seal(owner,{name:'Video album'},2,{...albumEnvelope.context,audience:'album',groupId:album,revision:2},{memberId:outsider.id,role:'read'});
+   expect((await call(owner.id,`/albums/${album}/members/${outsider.id}`,'PUT',{role:'read',expected_revision:1,envelope:shared})).status).toBe(200);
+   const mediaId=randomUUID(),envelope=await seal(owner,{video:video.manifest,mime:'video/mp4'},1,{id:mediaId,kind:'media',parentId:video.postId,audience:'album',groupId:album});
+   const bytes=new TextEncoder().encode(JSON.stringify(envelope));
+   expect((await call(owner.id,'/videos','POST',{id:mediaId,envelope,byte_size:bytes.length,stream_id:video.streamId})).status).toBe(201);
+   expect((await binary(owner.id,`/media/${mediaId}/bytes`,bytes)).status).toBe(200);
+   const albumGrant=await seal(owner,{media:[{id:mediaId,mime:'video/mp4',videoVersion:3}]},1,{id:randomUUID(),kind:'photo',parentId:video.postId,audience:'album',groupId:album,photoDate});
+   const added=await call(owner.id,`/photos/${video.postId}/grants`,'POST',{envelope:albumGrant,media_id:mediaId});expect(added.status,JSON.stringify(added.data)).toBe(201);
+   expect(await db`select id from app.video_streams where owner_id=${owner.id}`).toHaveLength(1);
+   expect((await app.request('https://local.test/videos/'+mediaId+'/chunks/0',{headers:{'x-member':outsider.id}},env)).status).toBe(200);
+   expect((await call(owner.id,`/videos/${video.mediaId}`,'DELETE')).status).toBe(409);
+   await db`delete from app.album_members where album_id=${album} and member_id=${outsider.id}`;
+   expect((await app.request('https://local.test/videos/'+mediaId+'/chunks/0',{headers:{'x-member':outsider.id}},env)).status).toBe(404);
+   expect((await app.request('https://local.test/videos/'+video.mediaId+'/chunks/0',{headers:{'x-member':reader.id}},env)).status).toBe(200);
+  });
+
+  it('limits an album administrator to refreshing the same photo stream and keeps uploader ownership',async()=>{
+   const owner=await person(),manager=await person(),reader=await person();await connect(owner,manager);await connect(owner,reader);
+   const album=randomUUID(),first=await seal(owner,{name:'History'},1,{id:album,kind:'album'});
+   expect((await call(owner.id,'/albums','POST',{envelope:first})).status).toBe(201);
+   async function memberChange(who:Person,role:string,revision:number){const envelope=await seal(owner,{name:'History'},revision+1,{...first.context,revision:revision+1,audience:'album',groupId:album},{memberId:who.id,role});expect((await call(owner.id,`/albums/${album}/members/${who.id}`,'PUT',{envelope,role,expected_revision:revision})).status).toBe(200);}
+   await memberChange(manager,'admin',1);
+   const video=await draft(owner,'album',album);await upload(owner,video);
+   const gid=randomUUID(),photoDate='2026-11-01',grant=await seal(owner,{media:[{id:video.mediaId,mime:'video/mp4',videoVersion:3}]},1,{id:gid,kind:'photo',parentId:video.postId,audience:'album',groupId:album,photoDate});
+   const directId=randomUUID(),directEnvelope=await seal(owner,{video:video.manifest,mime:'video/mp4'},1,{id:directId,kind:'media',parentId:video.postId}),directBytes=new TextEncoder().encode(JSON.stringify(directEnvelope));
+   expect((await call(owner.id,'/videos','POST',{id:directId,envelope:directEnvelope,stream_id:video.streamId,byte_size:directBytes.length})).status).toBe(201);
+   expect((await binary(owner.id,`/media/${directId}/bytes`,directBytes)).status).toBe(200);
+   const directGrant=await seal(owner,{media:[{id:directId,mime:'video/mp4',videoVersion:3}]},1,{id:randomUUID(),kind:'photo',parentId:video.postId,photoDate});
+   const published=await call(owner.id,'/photos','POST',{id:video.postId,photo_date:photoDate,expires_at:null,grants:[{envelope:directGrant,media_id:directId},{envelope:grant,media_id:video.mediaId}]});expect(published.status,JSON.stringify(published.data)).toBe(201);
+   await memberChange(reader,'read',2);
+   const path=`/photos/${video.postId}/grants/${gid}`,snapshot=(await call(manager.id,path+'/refresh-audience')).data;
+   async function refreshSeal(payload:unknown,context:ContentContext){return encryptObject({payload,context:{...context,authorId:manager.id,authorDeviceId:manager.deviceId,epoch:snapshot.epoch},signingKey:manager.key,recipients:snapshot.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});}
+   const {photoDate:_,...context}=grant.context,media=randomUUID(),envelope=await refreshSeal({video:video.manifest,mime:'video/mp4'},{...context,id:media,kind:'media'}),bytes=new TextEncoder().encode(JSON.stringify(envelope));
+   const reserve=await call(manager.id,'/videos','POST',{id:media,envelope,stream_id:video.streamId,byte_size:bytes.length,photo_refresh_id:gid});expect(reserve.status,JSON.stringify(reserve.data)).toBe(201);
+   expect((await binary(manager.id,`/media/${media}/bytes`,bytes)).status).toBe(200);
+   const updated=await refreshSeal({media:[{id:media,mime:'video/mp4',videoVersion:3}]},grant.context);
+   const result=await call(manager.id,path+'/refresh','POST',{envelope:updated,media_id:media,expected_media_id:video.mediaId,expected_revision:1});expect(result.status,JSON.stringify(result.data)).toBe(200);
+   expect(await db`select owner_id from app.media_assets where id=${media}`).toMatchObject([{owner_id:owner.id}]);
+   expect(await db`select owner_id from app.video_streams where id=${video.streamId}`).toMatchObject([{owner_id:owner.id}]);
+   expect((await app.request('https://local.test/videos/'+media+'/chunks/0',{headers:{'x-member':reader.id}},env)).status).toBe(200);
+   // Even an administrator who can play it cannot borrow that stream for another photo.
+   const borrowed=await draft(manager,'album',album);
+   const bad=await call(manager.id,'/videos','POST',{...borrowed.request,segments:undefined,stream_id:video.streamId});expect(bad.status,JSON.stringify(bad.data)).toBe(404);
+   await db`delete from app.members where id=${manager.id}`;
+   expect((await app.request('https://local.test/videos/'+media+'/chunks/0',{headers:{'x-member':reader.id}},env)).status).toBe(200);
   });
 
   it('exports only through a live authorized job and requires a video-capable reader',async()=>{

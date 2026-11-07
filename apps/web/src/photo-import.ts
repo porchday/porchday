@@ -1,3 +1,7 @@
+import {stagePhotoVideo} from './photo-video';
+import {sendPublication} from './video-outbox';
+import {openPhoto} from './photo-record';
+import type {PreparedLargeVideo} from './video-prepare';
 import {signAttachmentDate} from "./attachment-photo-date";
 import { ApiError, get, post, type Json } from "./api";
 import { checksum, preservedPhotoDeadline } from "./archive";
@@ -12,7 +16,7 @@ export async function importedIdentity(owner: string, source: string, kind: stri
 }
 export async function importPhotoCollections(
   vault: ReturnType<typeof useVault>, source: string, albums: Json[], photos: Json[],
-  load: (id: string) => Promise<{bytes: Uint8Array; record: Json}>,
+  load: (id: string) => Promise<{bytes: Uint8Array; record: Json;preparedVideo?:PreparedLargeVideo}>,
   ensureContinue: () => void,
   progress: (text: string) => void,
 ) {
@@ -42,7 +46,8 @@ export async function importPhotoCollections(
     ensureContinue();
     const photo = photos[index], old = photo.payload.media[0];
     if (photo.expires_at && Date.parse(photo.expires_at)<=Date.now()) continue;
-    const {bytes,record} = await load(old.id);
+    const {bytes,record,preparedVideo} = await load(old.id);
+    try{
     if (record.expires_at && Date.parse(record.expires_at)<=Date.now()) continue;
     progress(`Restoring photos (${index+1}/${photos.length})…`);
     const id = await importedIdentity(vault.member.id,source,"photo",photo.id);
@@ -61,7 +66,11 @@ export async function importPhotoCollections(
         }
       }catch(error){if(!(error instanceof ApiError&&error.status===404))throw error;}
     }
-    await publishPhoto(vault,{
+    if(preparedVideo){
+      let exists=false;
+      try{const {photo:current}=await get('/photos/'+id);if(current.owner_id!==vault.member.id)throw Error('This imported video belongs to another account.');const content=await openPhoto(vault,current,current.grants[0]);if(content.media?.[0]?.archiveSha256!==record.sha256||current.photo_date!==photo.photo_date||(current.expires_at?new Date(current.expires_at).toISOString():null)!==preservedPhotoDeadline(record.expires_at,photo.expires_at)||content.media?.[0]?.alt!==(old.alt||'')||JSON.stringify(content.media?.[0]?.tags||[])!==JSON.stringify(old.tags||[])||!current.grants.some((g:Json)=>!g.album_id&&g.audience==='only_me'))throw Error('This imported video differs from the current archive.');exists=true;}catch(error){if(!(error instanceof ApiError&&error.status===404))throw error;}
+      if(!exists){const signal=new AbortController().signal;await stagePhotoVideo(vault,{id,name:old.name||record.name||'video.mp4',alt:old.alt||'',blob:preparedVideo.blob,width:record.width,height:record.height,mime:'video/mp4',poster:record.poster,tags:old.tags||[],photoDate:photo.photo_date,archiveSha256:record.sha256},preparedVideo,'only_me',preservedPhotoDeadline(record.expires_at,photo.expires_at),null,signal,()=>ensureContinue());await sendPublication(vault.member.id,id,signal,()=>ensureContinue());}
+    }else await publishPhoto(vault,{
       id,name:old.name || record.name || "photo.jpg",alt:old.alt || "",
       blob:new Blob([bytes as BlobPart],{type:record.mime}),mime:record.mime,
       width:record.width,height:record.height,poster:record.poster,
@@ -72,6 +81,7 @@ export async function importPhotoCollections(
       const album = mapped.get(original);
       if (album) await addPhotoToAlbum(vault,id,album,true);
     }
+    }finally{await preparedVideo?.dispose();}
   }
 }
 
