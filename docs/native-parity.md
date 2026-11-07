@@ -44,7 +44,7 @@ Native archive import/export now includes albums, standalone photos and attachme
 
 ## notifications
 
-Existing native inbox, badge and opt-in mention push implementations remain. Hardware APNs delivery, permission defaults, disabled push behavior and release signing capabilities require existing #7 device acceptance; simulator/build results do not substitute for it.
+Native inbox behavior remains separate from unread Feed receipts and opt-in new-feed alerts. Signed iOS 239 and macOS 198 support the shared implementation. APNs provider setup and hardware delivery remain open under #7; simulator/build results do not establish actual lock-screen delivery.
 
 ## Release checklist
 
@@ -97,4 +97,4 @@ Native responsiveness acceptance at `252021e`: [iOS CI](https://github.com/porch
 
 The shared SwiftUI client adds an authoritative unread-feed count, one-second foreground visibility acknowledgments, explicit mark-all, Feed tab/sidebar and Dock/icon badges, and Feed notification navigation. Visibility uses the actual viewport intersection and cancels when another tab or scene is active. Read writes preserve the recent content cache. Web uses the same authenticated receipt/read API and visibility rules. Notifications remain opt-in with generic previews; publication receipts exclude old history, own publications and adopted post attachments.
 
-Design and release acceptance: [Feed notifications](../design/feed-notifications.md). Source implementation and local tests are in progress; exact-source native CI, provider configuration, production activation and signed distribution are not yet claimed. [#7](https://github.com/porchday/porchday/issues/7) retains physical lock-screen/Dock checks separately from automated parity and web/API deployment.
+Design and release acceptance: [Feed notifications](../design/feed-notifications.md). Web/API production activation, local visibility/receipt tests and exact-source native CI passed. Signed iOS 239 and macOS 198 are available to the owner’s internal TestFlight group. [Release evidence](evidence/feed-notifications-release-2026-11-06.md) separates deployed sources, signed distribution and remaining APNs provider setup. Native lock-screen delivery is not enabled or verified. [#7](https://github.com/porchday/porchday/issues/7) retains physical lock-screen/Dock checks separately from automated parity and web/API deployment.

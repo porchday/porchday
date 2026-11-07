@@ -33,7 +33,8 @@
         "design/larger-videos.md",
         "docs/native-parity.md#native-responsiveness--november-6",
         "design/feed-notifications.md",
-        "docs/native-parity.md#feed-unread-counts-and-system-notifications"
+        "docs/native-parity.md#feed-unread-counts-and-system-notifications",
+        "docs/evidence/feed-notifications-release-2026-11-06.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -184,7 +185,8 @@
       "evidence": [
         "docs/native-parity.md#notifications",
         "design/feed-notifications.md",
-        "docs/native-parity.md#feed-unread-counts-and-system-notifications"
+        "docs/native-parity.md#feed-unread-counts-and-system-notifications",
+        "docs/evidence/feed-notifications-release-2026-11-06.md"
       ],
       "implementation": {
         "ios": "implemented",

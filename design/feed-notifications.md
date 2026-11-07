@@ -1,6 +1,6 @@
 # Feed unread counts and notifications
 
-Status: approved owner request, implementation in progress. Tracking: [#7](https://github.com/porchday/porchday/issues/7). November 6, 2026.
+Status: web/API live; iOS 239 and macOS 198 available in internal TestFlight. Native APNs provider setup and device verification remain pending. [Release evidence](../docs/evidence/feed-notifications-release-2026-11-06.md). Tracking: [#7](https://github.com/porchday/porchday/issues/7). November 6, 2026.
 
 Porchday should show how much new activity is waiting and let members catch up by scrolling. The Feed badge counts unread posts and standalone photos. Members can opt into a system notification for every new eligible feed item. This extends the existing notification inbox, durable Web Push/APNs queues, and shared native Apple client.
 
