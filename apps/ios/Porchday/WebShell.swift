@@ -134,17 +134,17 @@ private final class ShellObservers: @unchecked Sendable {
     func setActive(_ value: Bool) {
         active = value
         guard WebShellPolicy.trusted(webView.url) else { return }
-        webView.callAsyncJavaScript("window.porchdayNativeActive = active; window.dispatchEvent(new Event('porchday:native-active'));", arguments: ["active": value], in: nil, contentWorld: .page, completionHandler: nil)
+        webView.callAsyncJavaScript("window.porchdayNativeActive = active; window.dispatchEvent(new Event('porchday:native-active'));", arguments: ["active": value], in: nil, in: .page, completionHandler: nil)
     }
     private func event(_ name: String) {
         guard WebShellPolicy.trusted(webView.url) else { return }
-        webView.callAsyncJavaScript("window.dispatchEvent(new Event(name));", arguments: ["name": name], in: nil, contentWorld: .page, completionHandler: nil)
+        webView.callAsyncJavaScript("window.dispatchEvent(new Event(name));", arguments: ["name": name], in: nil, in: .page, completionHandler: nil)
     }
     func navigate(_ path: String) {
         guard path.hasPrefix("/"), !path.hasPrefix("//") else { return }
         guard WebShellPolicy.trusted(webView.url), !webView.isLoading else { pendingDestination = path; return }
         WebShellPush.shared.destination = nil
-        webView.callAsyncJavaScript("window.porchdayNativeDestination = path; window.dispatchEvent(new Event('porchday:native-navigate'));", arguments: ["path": path], in: nil, contentWorld: .page, completionHandler: nil)
+        webView.callAsyncJavaScript("window.porchdayNativeDestination = path; window.dispatchEvent(new Event('porchday:native-navigate'));", arguments: ["path": path], in: nil, in: .page, completionHandler: nil)
     }
     func open(_ url: URL) {
         guard WebShellPolicy.trusted(url) else { return }
