@@ -52,7 +52,7 @@ xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday -configuration 
   archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' \
   DEVELOPMENT_TEAM="$team" PORCHDAY_PROFILE="$uuid" \
   OTHER_CODE_SIGN_FLAGS="--keychain $keychain" \
-  CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_APNS_ENVIRONMENT=production PORCHDAY_PUSH_ENABLED=NO
+  CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_APNS_ENVIRONMENT=production PORCHDAY_PUSH_ENABLED=YES
 xcodebuild -exportArchive -archivePath apps/ios/build/Porchday.xcarchive \
   -exportPath apps/ios/build/TestFlight -exportOptionsPlist "$private/export.plist"
 python3 - <<'PY'
