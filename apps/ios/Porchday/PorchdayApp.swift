@@ -6,36 +6,26 @@ import SwiftUI
     #else
     @NSApplicationDelegateAdaptor(PorchdayAppDelegate.self) private var appDelegate
     #endif
-    @StateObject private var model = AppModel()
-    @AppStorage("display-color-scheme") private var colorScheme = "system"
-    @AppStorage("display-time-zone") private var displayZone = ""
     @Environment(\.scenePhase) private var scenePhase
     init() { PrivateMediaFile.cleanAbandonedFiles() }
     var body: some Scene {
         WindowGroup {
-            RootView().environmentObject(model).environmentObject(model.vault).formStyle(.grouped)
-                #if os(macOS)
-                .frame(minWidth: 800, minHeight: 650)
+            Group {
+                #if DEBUG
+                if ProcessInfo.processInfo.arguments.contains("--legacy-native-ui-testing") { PreviousNativeApp() }
+                else { WebShellRoot() }
+                #else
+                WebShellRoot()
                 #endif
-                .preferredColorScheme(colorScheme == "dark" ? .dark : colorScheme == "light" ? .light : nil)
-                .environment(\.timeZone, DisplayPreferences.timeZone(displayZone))
-                .tint(Color(red: 0.27, green: 0.39, blue: 0.29))
-                .task { model.setSceneActive(scenePhase == .active); await model.restore(); await model.refreshHistoricalPosts() }
-                .onOpenURL { model.handleURL($0) }
-                #if os(iOS)
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.didReceiveMemoryWarningNotification)) { _ in
-                    model.vault.clearPresentationCache(); Task { await model.api.invalidateReads() }
-                }
-                #endif
-                .task(id: model.member?.id) { await NativeNotifications.shared.refresh(model: model) }
-                .onChange(of: scenePhase) { _, phase in
-                    model.setSceneActive(phase == .active)
-                    if phase == .active, model.member != nil { Task { await model.refreshForeground() } }
-                }
-                .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(HStack(spacing: 12) { Image("PorchdayMark").resizable().frame(width: 48, height: 48).accessibilityHidden(true); Text("Porchday").font(.largeTitle) }) } }
+            }
+            #if os(macOS)
+            .frame(minWidth: 800, minHeight: 650)
+            #endif
+            .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(Text("Porchday").font(.largeTitle)) } }
         }
     }
 }
+
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault

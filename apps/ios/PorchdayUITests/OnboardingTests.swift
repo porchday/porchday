@@ -1,7 +1,15 @@
 import XCTest
 final class OnboardingTests:XCTestCase {
+    @MainActor func testDefaultLaunchUsesSharedWebInterface() {
+        let app = XCUIApplication(); app.launchArguments = ["--ui-testing"]; app.launch()
+        XCTAssertTrue(app.webViews.firstMatch.waitForExistence(timeout: 15))
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        XCTAssertTrue(app.buttons["App help"].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot()); screenshot.name = "Shared web shell"; screenshot.lifetime = .keepAlways; add(screenshot)
+    }
+
     @MainActor private func openApp()->XCUIApplication {
-        let app=XCUIApplication();app.launchArguments=["--ui-testing"];app.launch()
+        let app=XCUIApplication();app.launchArguments=["--ui-testing", "--legacy-native-ui-testing"];app.launch()
         XCTAssertTrue(app.staticTexts["a simple social network"].waitForExistence(timeout:10));return app
     }
     @MainActor private func tapVisible(_ element:XCUIElement,in app:XCUIApplication) {

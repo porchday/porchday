@@ -96,6 +96,7 @@ targets:
       - PorchdayTests/SegmentedVideoTests.swift
       - PorchdayTests/NativeReadCacheTests.swift
       - PorchdayTests/FeedReadTests.swift
+      - PorchdayTests/WebShellTests.swift
       - PorchdayTests/NativePhotoContractTests.swift
       - PorchdayTests/PorchdayTests.swift
       - PorchdayTests/CryptoVaultAccessTests.swift
