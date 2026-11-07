@@ -116,3 +116,7 @@ The shared web shell measures the mobile navigation dock and positions saving st
 ## Push settings feedback
 
 Both current Apple shells use the shared privacy settings UI: enrollment is checked for this member/device/server session rather than inferred from the account-wide preference. Checking never prompts or enrolls. The enable action shows explicit progress, then persistent confirmation; setup errors and success are adjacent to the control. Browser permission and subscription are checked where supported, with blocked/Home Screen guidance. Native registration reflects server enrollment; device notification settings still control permission and actual delivery. Physical APNs/Web Push receipt remains tracked in #7; synthetic bridge UI tests are not device delivery evidence.
+
+## Full-video preparation and optional thumbnails
+
+The current iOS/macOS web shells share the fixed preparation UI: no Start/End controls, no crop, full duration/framing, explicit over-10-minute rejection, and “Finishing video…” after conversion. The shared web implementation decodes an optional thumbnail directly from the prepared file with bounded waiting; thumbnail failure does not discard validated media. Cancellation and H.264/AAC validation still apply. Legacy Swift source also removes trimming and exports the full duration; its changed controls require a future signed binary, while current default shells receive the web fix immediately. Exact-source native CI checks this source; original iPhone/device verification remains #174.
