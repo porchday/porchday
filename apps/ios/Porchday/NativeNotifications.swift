@@ -13,6 +13,7 @@ import AppKit
     @Published private(set) var busy = false
     @Published private(set) var message = "In-app notifications are always available."
     @Published var showInbox = false
+    @Published var showFeed = false
     private weak var model: AppModel?
     private var registeringMember: String?
     private var environment: String? {
@@ -36,7 +37,7 @@ import AppKit
         if enabled {
             registeringMember = member.id
             ApplePlatform.registerPush()
-        } else { message = "Choose whether this device receives generic updates. Notification previews never include private posts or names." }
+        } else { message = "Notify this device about every new feed post and photo. Notification previews never include private posts or names." }
     }
     private nonisolated static func permissionGranted() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -68,7 +69,7 @@ import AppKit
             let result = try await model.api.social("/native-push/subscriptions", method: "POST", body: .object(["token": .string(encoded), "environment": .string(environment)]))
             guard model.member?.id == member.id, let id = result["id"].string else { throw PorchError.message("Notification enrollment was interrupted.") }
             UserDefaults.standard.set(id, forKey: subscription(member.id))
-            enabled = true; message = "This device receives generic updates. Private content stays inside Porchday."
+            enabled = true; message = "This device receives notifications for new feed posts and photos. Private content stays inside Porchday."
         } catch { enabled = false; message = "Notification enrollment did not finish. Try Enable again." }
     }
     func registrationFailed() { enabled = false; message = "Push registration is unavailable. Check network access and this build's Apple signing capabilities, then try again." }
@@ -94,7 +95,7 @@ import AppKit
         UserDefaults.standard.removeObject(forKey: choice(member)); UserDefaults.standard.removeObject(forKey: subscription(member))
         ApplePlatform.unregisterPush()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
-        registeringMember = nil; enabled = false; showInbox = false
+        registeringMember = nil; enabled = false; showInbox = false; showFeed = false; FeedReadState.badge(0)
     }
 }
 
@@ -111,11 +112,13 @@ import AppKit
         NativeNotifications.shared.registrationFailed()
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        await MainActor.run { NativeNotifications.shared.showInbox = true }
+        let feed = response.notification.request.content.userInfo["destination"] as? String == "feed"
+        await MainActor.run { if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } }
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         // Avoid another banner while the member is already using the app.
-        []
+        await MainActor.run { NotificationCenter.default.post(name: Notification.Name("PorchdayPushReceived"), object: nil) }
+        return []
     }
 }
 #else
@@ -123,8 +126,9 @@ import AppKit
     func applicationDidFinishLaunching(_ notification: Notification) { UNUserNotificationCenter.current().delegate = self }
     func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) { Task { await NativeNotifications.shared.received(token: deviceToken) } }
     func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) { NativeNotifications.shared.registrationFailed() }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async { await MainActor.run { NativeNotifications.shared.showInbox = true } }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { [] }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async { let feed = response.notification.request.content.userInfo["destination"] as? String == "feed"
+        await MainActor.run { if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } } }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { await MainActor.run { NotificationCenter.default.post(name: Notification.Name("PorchdayPushReceived"), object: nil) }; return [] }
 }
 #endif
 

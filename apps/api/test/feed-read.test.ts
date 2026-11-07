@@ -1,0 +1,77 @@
+import {beforeAll,afterAll,describe,it,expect} from 'vitest';
+import {randomUUID} from 'node:crypto';
+import {readdir,readFile} from 'node:fs/promises';
+import postgres,{type Sql} from 'postgres';
+import {feedReadBatch} from '../src/social-feed-read';
+import {nativePushRequest} from '../src/social-native-push';
+import {feedPushMetadata} from '../src/feed-push-payload';
+
+describe('feed read contract',()=>{
+ it('bounds and types acknowledgment batches',()=>{
+  expect(feedReadBatch.safeParse({items:[{kind:'photo',id:randomUUID()}]}).success).toBe(true);
+  for(const items of [[{kind:'comment',id:randomUUID()}],[{kind:'post',id:'invalid'}],Array.from({length:101},()=>({kind:'post',id:randomUUID()}))])expect(feedReadBatch.safeParse({items}).success).toBe(false);
+ });
+ it('rejects untrusted badge fields and uses opaque per-publication identity',()=>{
+  const id=randomUUID();expect(feedPushMetadata({kind:'feed_activity',count:3,id})).toEqual({count:3,feed:true,badgeOnly:false,tag:id.replaceAll('-','')});
+  expect(feedPushMetadata({kind:'feed_activity',count:-1,id})).toBeNull();
+  const config={APNS_TEAM_ID:'TEAM123456',APNS_KEY_ID:'KEY1234567',APNS_BUNDLE_ID:'org.porchday.app',APNS_PRIVATE_KEY:'-----BEGIN PRIVATE KEY-----'};
+  const req=nativePushRequest({token:'ab'.repeat(32),environment:'production'},config,'test',{kind:'feed_badge',count:0,id});
+  expect(JSON.parse(req.init.body)).toEqual({aps:{badge:0},destination:'feed'});
+ });
+});
+const url=process.env.FEED_READ_TEST_DATABASE_URL;
+let sql:Sql;
+async function member(){const id=randomUUID(),device=randomUUID();await sql`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`;await sql`insert into app.device_keys(id,member_id,public_key,fingerprint,authorization_proof) values(${device},${id},${'k'.repeat(100)},${randomUUID().replaceAll('-','')+'a'.repeat(8)},'{}')`;return {id,device};}
+async function pair(){const a=await member(),b=await member();await sql`insert into app.connections(member_a,member_b,kind) values(${[a.id,b.id].sort()[0]},${[a.id,b.id].sort()[1]},'friend')`;return {a,b};}
+async function publish(a:{id:string},b:{id:string;device:string},imported=false){const id=randomUUID();await sql.begin(async db=>{await db`insert into app.posts(id,author_id,audience,envelope,epoch,import_source) values(${id},${a.id},'connections','{}',1,${imported?'imported-'+id:null})`;await db`insert into app.post_recipients(post_id,member_id,device_id) values(${id},${b.id},${b.device})`;});return id;}
+async function count(member:string){return sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${member},true)`;return (await db`select app.feed_unread_state() as state`)[0].state.count;});}
+async function read(member:string,items:unknown[],all=false){return sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${member},true)`;return (await db`select app.mark_feed_read(${db.json(items as any)},${all}) as state`)[0].state.count;});}
+(url?describe:describe.skip)('feed publication and read isolation',()=>{
+ beforeAll(async()=>{if(!url||!new URL(url).pathname.endsWith('feed_read_test'))throw Error('Disposable feed_read_test database only');sql=postgres(url,{max:4,prepare:false,onnotice:()=>{}});await sql`drop schema if exists app cascade`;await sql`drop schema public cascade`;await sql`create schema public`;for(const n of (await readdir(new URL('../migrations/',import.meta.url))).filter(n=>n.endsWith('.sql')).sort())await sql.unsafe(await readFile(new URL('../migrations/'+n,import.meta.url),'utf8'));},30000);
+ afterAll(async()=>{if(sql)await sql.end();});
+ it('does not backfill disabled publications and records final transaction recipients once',async()=>{
+  const {a,b}=await pair();await publish(a,b);expect(await count(b.id)).toBe(0);
+  await sql`update app.feed_notification_config set enabled=true`;
+  const post=await publish(a,b);expect(await count(b.id)).toBe(1);expect(await count(a.id)).toBe(0);
+  await sql`update app.posts set envelope='{"edited":true}' where id=${post}`;expect(await count(b.id)).toBe(1);
+  expect(await read(b.id,[{kind:'post',id:post}])).toBe(0);expect(await read(b.id,[{kind:'post',id:post}])).toBe(0);
+ });
+ it('isolates members and typed identities, then clears only currently visible items',async()=>{
+  const {a,b}=await pair(),c=await member(),post=await publish(a,b);
+  expect(await read(c.id,[{kind:'post',id:post}])).toBe(0);expect(await count(b.id)).toBe(1);
+  expect(await read(b.id,[{kind:'photo',id:post}])).toBe(1);expect(await read(b.id,[],true)).toBe(0);
+  await publish(a,b);expect(await count(b.id)).toBe(1);
+ });
+ it('does not notify imports or recipients added by later history catch-up',async()=>{
+  const {a,b}=await pair();await publish(a,b,true);expect(await count(b.id)).toBe(0);
+  const id=randomUUID();await sql`insert into app.posts(id,author_id,audience,envelope,epoch) values(${id},${a.id},'connections','{}',1)`;
+  await sql`insert into app.post_recipients(post_id,member_id,device_id) values(${id},${b.id},${b.device})`;expect(await count(b.id)).toBe(0);
+ });
+ it('counts backdated standalone photos once and excludes adopted attachments',async()=>{
+  const {a,b}=await pair();
+  async function photo(adopted=false){const id=randomUUID(),media=randomUUID(),grant=randomUUID();await sql.begin(async db=>{
+   await db`insert into app.photos(id,owner_id,photo_date,source_post_id,source_media_id) values(${id},${a.id},'1999-01-01',${adopted?randomUUID():null},${adopted?randomUUID():null})`;
+   await db`insert into app.media_assets(id,owner_id,object_key,envelope,byte_size,state) values(${media},${a.id},${'fixture/'+media},'{}',100,'attached')`;
+   await db`insert into app.photo_grants(id,photo_id,audience,envelope,media_id) values(${grant},${id},'connections',${db.json({context:{authorId:a.id,authorDeviceId:a.device}})},${media})`;
+   await db`insert into app.photo_grant_recipients(grant_id,member_id) values(${grant},${b.id})`;
+  });return id;}
+  const id=await photo();expect(await count(b.id)).toBe(1);
+  await photo(true);expect(await count(b.id)).toBe(1);
+  await sql`update app.photos set photo_date='2000-01-01' where id=${id}`;expect(await count(b.id)).toBe(1);
+  expect(await read(b.id,[{kind:'photo',id}])).toBe(0);
+ });
+ it('does not mark an uncommitted concurrent publication read',async()=>{
+  const {a,b}=await pair();await publish(a,b);
+  let release!:()=>void,started!:()=>void;const ready=new Promise<void>(resolve=>{started=resolve;}),hold=new Promise<void>(resolve=>{release=resolve;});
+  const writer=sql.begin(async db=>{const id=randomUUID();await db`insert into app.posts(id,author_id,audience,envelope,epoch) values(${id},${a.id},'connections','{}',1)`;await db`insert into app.post_recipients(post_id,member_id,device_id) values(${id},${b.id},${b.device})`;started();await hold;});
+  await ready;try{expect(await read(b.id,[],true)).toBe(0);}finally{release();await writer;}
+  expect(await count(b.id)).toBe(1);
+ });
+ it('rechecks mute, block, deletion and current membership',async()=>{
+  const {a,b}=await pair(),post=await publish(a,b);expect(await count(b.id)).toBe(1);
+  await sql`insert into app.mutes(actor,target) values(${b.id},${a.id})`;expect(await count(b.id)).toBe(0);
+  await sql`delete from app.mutes where actor=${b.id}`;expect(await count(b.id)).toBe(1);
+  await sql`delete from app.connections where member_a in(${a.id},${b.id}) and member_b in(${a.id},${b.id})`;expect(await count(b.id)).toBe(0);
+  await sql`delete from app.posts where id=${post}`;expect(await sql`select id from app.feed_activity where post_id=${post}`).toHaveLength(0);
+ });
+});

@@ -1,3 +1,4 @@
+import {FeedUnreadProvider,FeedBadge} from "./FeedUnread";
 import { isMemberPath } from "./routes";
 import { PhotoCollection } from "./PhotoCollection";
 import { Albums, AlbumDetail } from "./Albums";
@@ -439,7 +440,7 @@ function AppShell({
       </Empty>
     );
   return (
-    <MemberAvatarProvider><PeopleDirectory>
+    <FeedUnreadProvider><MemberAvatarProvider><PeopleDirectory>
     <div className="app-layout">
       <header className="app-mobile-header">
         <Logo small href="/" />
@@ -461,7 +462,7 @@ function AppShell({
                   href={href}
                 >
                   <Icon name={icon} size={21} />
-                  <span>{name}</span>
+                  <span>{name}</span>{href === "/" && <FeedBadge/>}
                   {active && <span className="nav-dot" />}
                 </a>
               );
@@ -542,12 +543,12 @@ function AppShell({
             aria-current={(href === "/" ? path === "/" : path.startsWith(href)) ? "page" : undefined}
           >
             <Icon name={icon} size={21} />
-            <span>{name}</span>
+            <span>{name}</span>{href === "/" && <FeedBadge/>}
           </a>
         ))}
       </nav>
     </div>
-    </PeopleDirectory></MemberAvatarProvider>
+    </PeopleDirectory></MemberAvatarProvider></FeedUnreadProvider>
   );
 }
 const canonicalDestination = canonicalNavigation(new URL(location.href));

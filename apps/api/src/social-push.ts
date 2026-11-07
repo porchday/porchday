@@ -1,3 +1,4 @@
+import {feedPushMetadata} from './feed-push-payload';
 import {runtimeSessionDenied} from './session-denial';
 import {Hono, type Context} from 'hono';
 import {z} from 'zod';
@@ -76,17 +77,19 @@ export function registerPushRoutes(app: Hono<{Bindings: Env; Variables: Variable
 
 /** No social identifiers, names, text, counts or secret keys enter this payload. */
 export const GENERIC_PUSH_PAYLOAD = JSON.stringify({title: 'Porchday', body: 'You have a new update', url: '/notifications'});
-export function generatePushRequest(subscription: PushSubscription, env: PushEnv) {
+export function generatePushRequest(subscription: PushSubscription, env: PushEnv, metadata?: unknown) {
   if (!configured(env) || !validPushEndpoint(subscription.endpoint)) throw new Error('PUSH_UNAVAILABLE');
-  return webPush.generateRequestDetails(subscription, GENERIC_PUSH_PAYLOAD, {
+  const feed=feedPushMetadata(metadata);
+  const payload=feed?JSON.stringify({title:"Porchday",body:feed.feed?"New activity in your feed":"You have a new update",url:feed.feed?"/":"/notifications",count:feed.count,tag:feed.tag}):GENERIC_PUSH_PAYLOAD;
+  return webPush.generateRequestDetails(subscription, payload, {
     vapidDetails: {subject: env.VAPID_SUBJECT!, publicKey: env.VAPID_PUBLIC_KEY!, privateKey: env.VAPID_PRIVATE_KEY!},
-    contentEncoding: 'aes128gcm', TTL: 60, urgency: 'normal', topic: 'porchday-update',
+    contentEncoding: 'aes128gcm', TTL: 60, urgency: 'normal', topic: feed?.tag || 'porchday-update',
   });
 }
 
 /** Manual redirects keep VAPID credentials and ciphertext on the validated endpoint. */
-export function webPushRequest(subscription: PushSubscription, env: PushEnv) {
-  const request = generatePushRequest(subscription, env);
+export function webPushRequest(subscription: PushSubscription, env: PushEnv, metadata?: unknown) {
+  const request = generatePushRequest(subscription, env, metadata);
   return {url: request.endpoint, init: {
     method: request.method, headers: request.headers, body: new Uint8Array(request.body!),
     redirect: 'manual', signal: AbortSignal.timeout(8000),
@@ -109,7 +112,7 @@ export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'|'ENVIRONME
         try {
           if(await runtimeSessionDenied(env,row.delivery.sessionId)){outcome='failed';}
           else {
-            const request = webPushRequest(row.delivery.subscription, env);
+            const request = webPushRequest(row.delivery.subscription, env, row.delivery.feed);
             const response = await send(request.url, request.init);
             if (response.status >= 300 && response.status < 400) outcome = 'failed';
             else if (response.ok) outcome = 'sent';
