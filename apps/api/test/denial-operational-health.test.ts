@@ -32,3 +32,11 @@ it('releases the SQL connection while a bounded independent health read is still
   expect(result.snapshot.cleanup_age_seconds).toBe(0);expect(result.status).toBe('degraded');expect(result.issues).toEqual(['session_denial_cleanup_unavailable']);
  }finally{vi.useRealTimers();}
 });
+it.each(['active','dual'])('%s operational health requires every partition even when legacy cleanup is fresh',async mode=>{
+ const now=Date.now(),store={get:async(key:string)=>{
+  const match=/^session-denial-maintenance\/v4\/range-([012])\.json$/.exec(key);expect(match).not.toBeNull();const partition=Number(match![1]),at=now-(partition===2?301000:0);
+  return{etag:'e',text:async()=>JSON.stringify({v:4,strategy:'sql-session-ranges',partition,cursor:null,pageCompletedAt:at,passStartedAt:null,passSeen:0,passInvalid:0,lastPass:{completedAt:at,durationMs:0,seen:10,invalid:0}})};
+ }};
+ const env={HYPERDRIVE_JOBS:{connectionString:'postgres://not-connected'},SESSION_DENIAL_CLEANUP_V1:'true',SESSION_DENIAL_PARTITIONS_V1:mode,RECOVERY_JOURNAL:store} as unknown as Env;
+ const result=await readOperationalHealth(env);expect(result.status).toBe('degraded');expect(result.issues).toContain('session_denial_pass_stale');expect(result.denial_cleanup?.last_pass_seen).toBe(30);
+});

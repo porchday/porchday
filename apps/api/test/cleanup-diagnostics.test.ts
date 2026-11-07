@@ -1,7 +1,7 @@
 import {beforeEach,describe,it,expect,vi} from 'vitest';
 import type {Env} from '../src/types';
 
-const steps=vi.hoisted(()=>({journal:vi.fn(),expiry:vi.fn(),identity:vi.fn(),metadata:vi.fn(),webPush:vi.fn(),nativePush:vi.fn(),email:vi.fn(),heartbeat:vi.fn(),denial:vi.fn()}));
+const steps=vi.hoisted(()=>({journal:vi.fn(),expiry:vi.fn(),identity:vi.fn(),metadata:vi.fn(),webPush:vi.fn(),nativePush:vi.fn(),email:vi.fn(),heartbeat:vi.fn(),denial:vi.fn(),partition:vi.fn()}));
 vi.mock('../src/db',async original=>({...await original<typeof import('../src/db')>(),cleanupExpired:steps.expiry}));
 vi.mock('../src/privacy-journal',async original=>({...await original<typeof import('../src/privacy-journal')>(),withPrivacyJournal:steps.journal}));
 vi.mock('../src/identity-cleanup',()=>({cleanupDeletedIdentities:steps.identity}));
@@ -11,20 +11,37 @@ vi.mock('../src/social-native-push',async original=>({...await original<typeof i
 vi.mock('../src/email-outbox',async original=>({...await original<typeof import('../src/email-outbox')>(),processAccountEmails:steps.email}));
 vi.mock('../src/operations-health',async original=>({...await original<typeof import('../src/operations-health')>(),recordCleanupSuccess:steps.heartbeat}));
 vi.mock('../src/session-denial-candidates',async original=>({...await original<typeof import('../src/session-denial-candidates')>(),cleanupDeniedSessionCandidates:steps.denial}));
+vi.mock('../src/session-denial-runtime',async original=>({...await original<typeof import('../src/session-denial-runtime')>(),cleanupDenialPartition:steps.partition}));
 import worker from '../src/index';
 
 describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{
- let points:AnalyticsEngineDataPoint[],env:Env,message:{body:{kind:string;denialProgressEtag?:string};ack:ReturnType<typeof vi.fn>;retry:ReturnType<typeof vi.fn>};
+ let points:AnalyticsEngineDataPoint[],env:Env,message:{body:{kind:string;denialProgressEtag?:string;denialPartition?:number};ack:ReturnType<typeof vi.fn>;retry:ReturnType<typeof vi.fn>};
  const secretError=()=>Object.assign(Error('private SQL password=email-link member@example.test'),{code:'private-error-code'});
  beforeEach(()=>{
   for(const step of Object.values(steps))step.mockReset();
-  steps.denial.mockResolvedValue({seen:2,deleted:1,invalid:1,advanced:false});
+  steps.denial.mockResolvedValue({seen:2,deleted:1,invalid:1,advanced:false});steps.partition.mockResolvedValue({seen:2,deleted:1,invalid:0,advanced:false});
   steps.journal.mockImplementation(async(_env,work)=>work());steps.expiry.mockResolvedValue({posts:0,comments:0,abandoned_media:0,deleted_objects:2});
   for(const name of ['identity','metadata','webPush','nativePush','email','heartbeat'] as const)steps[name].mockResolvedValue(undefined);
   points=[];env={ENVIRONMENT:'staging',METRICS:{writeDataPoint:(point:AnalyticsEngineDataPoint)=>{points.push(point);}}} as Env;
   message={body:{kind:'expiry'},ack:vi.fn(),retry:vi.fn()};
  });
- async function run(){await worker.queue({messages:[message]} as never,env);}
+ async function run(queue='porchday-staging-jobs'){await worker.queue({queue,messages:[message]} as never,env);}
+ function isolate(){env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1='active';env.SESSION_DENIAL_QUEUE_TOPOLOGY_V1='isolated';for(const key of ['JOBS','DENIAL_RANGE_0','DENIAL_RANGE_1','DENIAL_RANGE_2'] as const)env[key]={send:vi.fn(async()=>{})} as never;}
+ it('processes only the assigned isolated range and sends continuation before acknowledgement',async()=>{
+  isolate();const order:string[]=[];vi.mocked(env.DENIAL_RANGE_1!.send).mockImplementation(async()=>{order.push('send');});message.ack.mockImplementation(()=>{order.push('ack');});
+  message.body={kind:'session_denial_cleanup_partition',denialPartition:1,denialProgressEtag:'v4:1:old'};
+  steps.partition.mockResolvedValueOnce({seen:100,deleted:1,invalid:0,advanced:true,continuation:'v4:1:new'});await run('porchday-staging-denial-1');
+  expect(steps.partition).toHaveBeenCalledExactlyOnceWith(env,1,'v4:1:old');expect(env.JOBS.send).not.toHaveBeenCalled();expect(env.DENIAL_RANGE_1!.send).toHaveBeenCalledExactlyOnceWith({kind:'session_denial_cleanup_partition',denialPartition:1,denialProgressEtag:'v4:1:new'});expect(order).toEqual(['send','ack']);expect(steps.journal).not.toHaveBeenCalled();
+ });
+ it('rejects a wrongly routed batch before any SQL work or acknowledgement',async()=>{
+  isolate();message.body={kind:'expiry'};await expect(run('porchday-staging-denial-1')).rejects.toThrow();
+  for(const step of Object.values(steps))expect(step).not.toHaveBeenCalled();expect(message.ack).not.toHaveBeenCalled();expect(message.retry).not.toHaveBeenCalled();
+ });
+ it('acknowledges obsolete topology messages without processing them in either direction',async()=>{
+  isolate();message.body={kind:'session_denial_cleanup_partition',denialPartition:1};await run();
+  delete env.SESSION_DENIAL_QUEUE_TOPOLOGY_V1;await run('porchday-staging-denial-1');
+  expect(message.ack).toHaveBeenCalledTimes(2);for(const step of Object.values(steps))expect(step).not.toHaveBeenCalled();expect(env.JOBS.send).not.toHaveBeenCalled();expect(env.DENIAL_RANGE_1!.send).not.toHaveBeenCalled();
+ });
  it.each([
   ['expiry','cleanup_expiry_failed'],['identity','cleanup_identity_failed'],['metadata','cleanup_auth_metadata_failed'],
   ['webPush','cleanup_web_push_failed'],['nativePush','cleanup_native_push_failed'],['email','cleanup_email_failed'],['heartbeat','cleanup_heartbeat_failed'],
@@ -95,6 +112,27 @@ describe('Cleanup failure phase diagnostics preserve queue behavior',()=>{
   message.body.kind='session_denial_cleanup';steps.denial.mockRejectedValueOnce(secretError());await run();
   expect(steps.journal).not.toHaveBeenCalled();expect(message.ack).not.toHaveBeenCalled();expect(message.retry).toHaveBeenCalledExactlyOnceWith({delaySeconds:60});
   expect(points.map(point=>point.blobs?.[5])).toEqual(['session_denial_cleanup_retry']);expect(JSON.stringify(points)).not.toMatch(/private|password|member@example/);
+ });
+
+ it('routes active partition work outside the privacy journal and preserves scoped continuation ordering',async()=>{
+  env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1='active';const order:string[]=[];env.JOBS={send:vi.fn(async()=>{order.push('send');})} as never;
+  message.body={kind:'session_denial_cleanup_partition',denialPartition:1,denialProgressEtag:'v4:1:old'};message.ack.mockImplementation(()=>{order.push('ack');});
+  steps.partition.mockResolvedValueOnce({seen:100,deleted:1,invalid:0,advanced:true,continuation:'v4:1:new'});await run();
+  expect(steps.partition).toHaveBeenCalledExactlyOnceWith(env,1,'v4:1:old');expect(steps.denial).not.toHaveBeenCalled();expect(steps.expiry).not.toHaveBeenCalled();expect(steps.journal).not.toHaveBeenCalled();expect(order).toEqual(['send','ack']);
+  expect(env.JOBS.send).toHaveBeenCalledExactlyOnceWith({kind:'session_denial_cleanup_partition',denialPartition:1,denialProgressEtag:'v4:1:new'});
+ });
+ it.each([['active','session_denial_cleanup'],['disabled','session_denial_cleanup_partition']] as const)('acknowledges obsolete %s deliveries without restarting another namespace',async(mode,kind)=>{
+  env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1=mode;message.body={kind,denialPartition:0};await run();
+  expect(message.ack).toHaveBeenCalledTimes(1);expect(message.retry).not.toHaveBeenCalled();expect(steps.denial).not.toHaveBeenCalled();expect(steps.partition).not.toHaveBeenCalled();expect(steps.expiry).not.toHaveBeenCalled();expect(steps.journal).not.toHaveBeenCalled();
+ });
+ it.each(['shadow','dual'])('keeps both scan namespaces available in %s mode and rejects unknown mode settings',async mode=>{
+  env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1=mode;message.body={kind:'session_denial_cleanup'};await run();message.body={kind:'session_denial_cleanup_partition',denialPartition:2};await run();expect(steps.denial).toHaveBeenCalledTimes(1);expect(steps.partition).toHaveBeenCalledTimes(1);
+  env.SESSION_DENIAL_PARTITIONS_V1='invalid';message.ack.mockClear();await run();expect(message.ack).not.toHaveBeenCalled();expect(message.retry).toHaveBeenCalledExactlyOnceWith({delaySeconds:60});expect(steps.partition).toHaveBeenCalledTimes(1);
+ });
+ it('retries uncertain partition sends without acknowledging or registering a global intent',async()=>{
+  env.SESSION_DENIAL_CLEANUP_V1='true';env.SESSION_DENIAL_PARTITIONS_V1='active';env.JOBS={send:vi.fn().mockRejectedValueOnce(secretError())} as never;
+  message.body={kind:'session_denial_cleanup_partition',denialPartition:0};steps.partition.mockResolvedValueOnce({seen:100,deleted:0,invalid:0,advanced:true,continuation:'v4:0:next'});await run();
+  expect(message.ack).not.toHaveBeenCalled();expect(message.retry).toHaveBeenCalledExactlyOnceWith({delaySeconds:60});expect(steps.journal).not.toHaveBeenCalled();expect(JSON.stringify(points)).not.toMatch(/private|password|checkpoint/);
  });
 
 });
