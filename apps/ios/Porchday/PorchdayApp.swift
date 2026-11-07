@@ -7,7 +7,7 @@ import SwiftUI
     @NSApplicationDelegateAdaptor(PorchdayAppDelegate.self) private var appDelegate
     #endif
     @Environment(\.scenePhase) private var scenePhase
-    init() { PrivateMediaFile.cleanAbandonedFiles() }
+    init() { PrivateMediaFile.cleanAbandonedFiles(); WebShellPolicy.cleanAbandonedExports() }
     var body: some Scene {
         WindowGroup {
             Group {

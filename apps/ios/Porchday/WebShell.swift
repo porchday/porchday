@@ -10,6 +10,16 @@ import AppKit
 
 /// Keep URL policy independent of WebKit so redirects and bridge frames use the same rule.
 enum WebShellPolicy {
+    static func exportName(_ suggested: String) -> String {
+        let name = (suggested as NSString).lastPathComponent
+        return name.isEmpty || name == "." || name == ".." || name.utf8.count > 240 || name.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }) ? "Porchday export" : name
+    }
+    static func cleanAbandonedExports() {
+        let manager = FileManager.default
+        for url in (try? manager.contentsOfDirectory(at: manager.temporaryDirectory, includingPropertiesForKeys: nil)) ?? [] where url.lastPathComponent.hasPrefix("porchday-shell-") {
+            try? manager.removeItem(at: url)
+        }
+    }
     static func trusted(_ url: URL?, origin: URL = ServerConfiguration.origin) -> Bool {
         guard let url else { return false }
         return url.scheme == "https" && url.host == origin.host && url.port == origin.port && url.user == nil && url.password == nil
@@ -229,10 +239,12 @@ private final class ShellObservers: @unchecked Sendable {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("porchday-shell-" + UUID().uuidString)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
-            let name = URL(fileURLWithPath: suggestedFilename).lastPathComponent
-            let url = directory.appendingPathComponent(name.isEmpty ? "Porchday export" : name)
+            let url = directory.appendingPathComponent(WebShellPolicy.exportName(suggestedFilename))
             downloads[ObjectIdentifier(download)] = url; completionHandler(url)
         } catch { failure = "The export could not be saved."; completionHandler(nil) }
+    }
+    func download(_ download: WKDownload, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, decisionHandler: @escaping (WKDownload.RedirectPolicy) -> Void) {
+        decisionHandler(WebShellPolicy.trusted(request.url) ? .allow : .cancel)
     }
     func downloadDidFinish(_ download: WKDownload) {
         guard let url = downloads.removeValue(forKey: ObjectIdentifier(download)) else { return }

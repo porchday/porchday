@@ -7,6 +7,11 @@ final class WebShellTests: XCTestCase {
         for url in ["https://porchday.org/", "https://porchday.org/albums?view=all#photo"] { XCTAssertTrue(WebShellPolicy.trusted(URL(string: url))) }
         for url in ["http://porchday.org", "https://porchday.org.evil.example/", "https://porchday.org:8443", "https://someone@porchday.org/", "file:///tmp/test", "javascript:alert(1)", "https://porchday.com"] { XCTAssertFalse(WebShellPolicy.trusted(URL(string: url))) }
     }
+    func testExportNamesCannotEscapeTheTemporaryDirectory() {
+        XCTAssertEqual(WebShellPolicy.exportName("../../photo.jpg"), "photo.jpg")
+        XCTAssertEqual(WebShellPolicy.exportName(".."), "Porchday export")
+        XCTAssertEqual(WebShellPolicy.exportName("bad\nname"), "Porchday export")
+    }
     func testDownloadAndBadgeInputBoundaries() {
         XCTAssertTrue(WebShellPolicy.downloadable(URL(string: "blob:https://porchday.org/123")))
         XCTAssertFalse(WebShellPolicy.downloadable(URL(string: "blob:https://porchday.org.evil.example/123")))
