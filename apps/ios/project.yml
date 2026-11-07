@@ -76,6 +76,9 @@ targets:
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
+      configs:
+        Release:
+          CODE_SIGN_ENTITLEMENTS: Porchday/Porchday-Mac-Push.entitlements
     dependencies:
       - package: ZIPFoundation
       - framework: ../../packages/crypto/native/build/Porchcrypto.xcframework

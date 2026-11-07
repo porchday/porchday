@@ -243,11 +243,12 @@ describe("PWA privacy boundaries", () => {
       "Porchday",
       expect.objectContaining({
         body: "You have a new update.",
-        data: { url: "/" },
+        data: { url: "/notifications" },
       }),
     );
     expect(data.text).not.toHaveBeenCalled();
-    expect(data.json).not.toHaveBeenCalled();
+    expect(data.json).toHaveBeenCalledOnce();
+    expect(JSON.stringify(notify.mock.calls)).not.toContain("PRIVATE CONTENT");
     handlers.message({ data: "something else" });
     expect(skipWaiting).not.toHaveBeenCalled();
     handlers.message({ data: "ACTIVATE_UPDATE" });
