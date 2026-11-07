@@ -98,8 +98,9 @@ struct NativeFeedView: View {
         }
         }.environment(\.feedViewport, viewport.frame(in: .global))
         }.task(id: filterKey) { await load() }.refreshable { await load(force: true) }
+        .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PorchdayFeedOpened"))) { _ in Task { await load(force: true) } }
         .onChange(of: model.historySharingVersion) { _, _ in Task { await load() } }
-        .sheet(isPresented: Binding(get: { selectedDay != nil }, set: { if !$0 { selectedDay = nil } })) { NavigationStack { List { ForEach(visible.filter { $0.day == selectedDay }) { NativeActivityCard(entry: $0, changed: { Task { await load() } }) }; if store.next != .null { Button("Load more in this month") { Task { await load(more: true) } }.disabled(store.busy) } }.navigationTitle(selectedDay ?? "Day").toolbar { Button("Done") { selectedDay = nil } } } }
+        .sheet(isPresented: Binding(get: { selectedDay != nil }, set: { if !$0 { selectedDay = nil } })) { NavigationStack { GeometryReader { dayViewport in List { ForEach(visible.filter { $0.day == selectedDay }) { NativeActivityCard(entry: $0, changed: { Task { await load() } }) }; if store.next != .null { Button("Load more in this month") { Task { await load(more: true) } }.disabled(store.busy) } }.environment(\.feedViewport, dayViewport.frame(in: .global)) }.navigationTitle(selectedDay ?? "Day").toolbar { Button("Done") { selectedDay = nil } } } }
     }
     private func load(more: Bool = false, force: Bool = false) async { await store.load(model, content: content, month: monthKey, more: more, force: force) }
 }
