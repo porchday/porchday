@@ -6,6 +6,26 @@ const storageKey = "porchday-push-subscription";
 /** Public subscription metadata only. No content, auth tokens, or encryption keys. */
 let nativeGeneration = 0;
 const nativeStorageKey = "porchday-native-push-subscription";
+export type CurrentPushStatus = "enabled" | "off" | "blocked" | "unsupported";
+/** Check enrollment without prompting for permission or enrolling a device. */
+export async function currentPushStatus(memberId: string): Promise<CurrentPushStatus> {
+  const native = isNativeShell();
+  if (!native) {
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) return "unsupported";
+    if (Notification.permission === "denied") return "blocked";
+    if (Notification.permission !== "granted") return "off";
+  }
+  let stored;
+  try { stored = JSON.parse(localStorage.getItem(native ? nativeStorageKey : storageKey) || "null"); } catch { return "off"; }
+  if (!stored?.id || stored.memberId !== memberId) return "off";
+  if (!native) {
+    const registration = await navigator.serviceWorker.getRegistration("/");
+    if (!await registration?.pushManager?.getSubscription()) return "off";
+  }
+  const [subscriptions, me] = await Promise.all([get(native ? "/native-push/subscriptions" : "/push/subscriptions"), get("/me")]);
+  return me.notification_preferences?.push && subscriptions.items?.some((item: { id: string; current_session: boolean }) => item.id === stored.id && item.current_session) ? "enabled" : "off";
+}
+
 export async function enableNativePush(memberId: string, requestPermission = true) {
   const generation = nativeGeneration;
   const config = await get("/native-push/config");

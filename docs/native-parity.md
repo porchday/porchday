@@ -112,3 +112,7 @@ Alternate iPhone audio tracks (#174): the shared web preparation path selects a 
 ## Saving navigation feedback
 
 The shared web shell measures the mobile navigation dock and positions saving status above it, including safe-area padding and text/layout changes. Mobile and desktop primary navigation expose `aria-disabled` and dim while the existing save guard blocks route changes; logout is disabled too. iOS and macOS use this same React UI. Failed and completed saves release the guard. Physical device layout acceptance is tracked in #177; automated source checks are separate from signed build availability.
+
+## Push settings feedback
+
+Both current Apple shells use the shared privacy settings UI: enrollment is checked for this member/device/server session rather than inferred from the account-wide preference. Checking never prompts or enrolls. The enable action shows explicit progress, then persistent confirmation; setup errors and success are adjacent to the control. Browser permission and subscription are checked where supported, with blocked/Home Screen guidance. Native registration reflects server enrollment; device notification settings still control permission and actual delivery. Physical APNs/Web Push receipt remains tracked in #7; synthetic bridge UI tests are not device delivery evidence.
