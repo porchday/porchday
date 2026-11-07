@@ -200,7 +200,8 @@
         "docs/native-parity.md#feed-unread-counts-and-system-notifications",
         "docs/evidence/feed-notifications-release-2026-11-06.md",
         "docs/evidence/apns-provider-release-2026-11-07.md",
-        "docs/native-parity.md#shared-web-shell"
+        "docs/native-parity.md#shared-web-shell",
+        "docs/native-parity.md#push-settings-feedback"
       ],
       "implementation": {
         "ios": "implemented",

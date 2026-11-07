@@ -36,7 +36,7 @@ import { AssetPicker, useAssetUpload, type PendingAsset } from "./Media";
 import { DataTransfer } from "./DataTransfer";
 import { PerformanceTracing } from "./PerformanceTracing";
 import { TimeSettings } from "./TimeSettings";
-import { enableCurrentPush, disableAllPush } from "./push";
+import { enableCurrentPush, disableAllPush, currentPushStatus, type CurrentPushStatus } from "./push";
 import { PROFILE_SLOTS, planSurfacePhotos } from "./surface-media";
 import { WALLPAPERS, wallpaperId } from "./wallpaper";
 import { DeletionUnconfirmedError, requestAccountDeletion } from "./account-deletion";
@@ -410,6 +410,14 @@ function PrivacySettings() {
   const [reports, setReports] = useState<Json[]>([]);
   const [prefs, setPrefs] = useState({ in_app: true, push: false });
   const action = useAction();
+  const pushAction = useAction();
+  const [devicePush, setDevicePush] = useState<CurrentPushStatus | "checking" | "unknown">("checking");
+  const [pushOperation, setPushOperation] = useState<"enable" | "disable" | null>(null);
+  useEffect(() => {
+    let active = true;
+    currentPushStatus(vault.member.id).then(status => { if (active) setDevicePush(status); }).catch(() => { if (active) setDevicePush("unknown"); });
+    return () => { active = false; };
+  }, [vault.member.id]);
   async function refresh() {
     const [b, m, r, me] = await Promise.all([
       get("/blocks"),
@@ -426,22 +434,28 @@ function PrivacySettings() {
     action.run(refresh);
   }, []);
   async function enablePush() {
-    await action.run(async () => {
+    setPushOperation("enable");
+    await pushAction.run(async () => {
       await enableCurrentPush(vault.member.id);
       await patch("/me", {
         notification_preferences: { ...prefs, push: true },
       });
       setPrefs((p) => ({ ...p, push: true }));
-    }, "Notifications enabled on this device. Push messages never include private content.");
+      setDevicePush("enabled");
+    }, "This device is registered for notifications about new feed posts and photos.");
+    setPushOperation(null);
   }
   async function disablePush() {
-    await action.run(async () => {
+    setPushOperation("disable");
+    await pushAction.run(async () => {
       await disableAllPush();
       await patch("/me", {
         notification_preferences: { ...prefs, push: false },
       });
       setPrefs((p) => ({ ...p, push: false }));
+      setDevicePush("off");
     }, "Push notifications are off for all your devices. In-app preferences are unchanged.");
+    setPushOperation(null);
   }
   return (
     <>
@@ -455,6 +469,7 @@ function PrivacySettings() {
           <input
             type="checkbox"
             checked={prefs.in_app}
+            disabled={action.busy || pushAction.busy}
             onChange={(e) =>
               action.run(async () => {
                 const next = { ...prefs, in_app: e.target.checked };
@@ -465,17 +480,25 @@ function PrivacySettings() {
           />
           <span>In-app social notifications</span>
         </label>
-        <Button variant="outline" busy={action.busy} onClick={enablePush}>
-          <Icon name="bell" size={17} />
-          {prefs.push
-            ? "Enable push on this device"
-            : "Notify me about new feed posts and photos"}
-        </Button>
-        {prefs.push && (
-          <Button variant="quiet" busy={action.busy} onClick={disablePush}>
-            Turn off push on all devices
-          </Button>
-        )}
+        <div className="form-stack" aria-busy={pushAction.busy}>
+          <p role="status" aria-live="polite">
+            <strong>{devicePush === "enabled" ? "Push enabled on this device" : devicePush === "checking" ? "Checking this device…" : devicePush === "blocked" ? "Notifications are blocked on this device" : devicePush === "unsupported" ? "Push is unavailable in this browser" : devicePush === "unknown" ? "Couldn’t check this device’s push status" : "Push is off on this device"}</strong>
+          </p>
+          {devicePush === "enabled" ? <p className="small-copy">You’re registered for new feed posts and photos. Notification permission, sounds and previews are controlled in your device’s notification settings.</p> : <>
+            {devicePush === "blocked" && <p className="small-copy">Allow notifications for Porchday in your device or browser settings, then try again.</p>}
+            {devicePush === "unsupported" && <p className="small-copy">On iPhone or iPad, add Porchday to your Home Screen, open it there, and enable notifications. In-app notifications are still available here.</p>}
+            {devicePush === "unknown" && <p className="small-copy">Check your connection, then try enabling push again. We’ll confirm when this device is registered.</p>}
+            <Button variant="outline" disabled={action.busy || pushAction.busy || devicePush === "checking" || devicePush === "unsupported"} onClick={enablePush}>
+              {pushOperation === "enable" ? <><span className="spinner" />Enabling notifications…</> : <><Icon name="bell" size={17} />Enable push on this device</>}
+            </Button>
+          </>}
+          {pushOperation === "enable" && <p role="status">Allow notifications if your device asks. Keep this page open while setup finishes.</p>}
+          <Alert>{pushAction.error}</Alert>
+          <Alert success>{pushAction.notice}</Alert>
+          {prefs.push && <Button variant="quiet" disabled={action.busy || pushAction.busy || devicePush === "checking"} onClick={disablePush}>
+            {pushOperation === "disable" ? <><span className="spinner" />Turning off notifications…</> : "Turn off push on all devices"}
+          </Button>}
+        </div>
         <p className="small-copy">
           Push says only “You have a new update.” We never put post text,
           photos, or reaction choices in a notification.
