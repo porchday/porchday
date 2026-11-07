@@ -53,3 +53,5 @@ ffmpeg -i synthetic-video.mp4 -c copy -movflags +faststart synthetic-video.mov
 ```
 
 These are synthetic codec/container checks, not real iPhone HEVC/HDR or device acceptance.
+
+`synthetic-alternate-audio.mov` duplicates the synthetic AAC track into two audio tracks using FFmpeg (`-map 0:v:0 -map 0:a:0 -map 0:a:0 -c copy -disposition:a:0 default -disposition:a:1 0`). In the first audio sample entry, its three `mp4a` markers are changed to `apac` and its first `esds` box to `free`. This deliberately makes the first audio track unsupported while retaining a valid AAC compatibility track. It models alternate-track selection, **not genuine Apple spatial audio decoding or HDR color fidelity**. Both tracks contain only the generated tone.
