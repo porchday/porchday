@@ -61,14 +61,13 @@ private final class VideoExportCancellation: @unchecked Sendable {
         let duration=try await asset.load(.duration).seconds
         guard duration.isFinite,duration>0 else { throw PorchError.message("This video has an invalid duration.") };return duration
     }
-    static func prepare(_ source: SelectedVideoFile, resolution:Int, start:Double, end:Double) async throws -> PreparedPhoto {
+    static func prepare(_ source: SelectedVideoFile, resolution:Int) async throws -> PreparedPhoto {
         let duration=try await inspect(source)
-        guard [720,1080].contains(resolution),start.isFinite,end.isFinite,start>=0,end<=duration+0.001,end>start,end-start<=600 else { throw PorchError.message("Choose a section up to 10 minutes within this video.") }
+        guard [720,1080].contains(resolution),duration<=600 else { throw PorchError.message("Choose a video no longer than 10 minutes. The full video is kept without trimming.") }
         try Task.checkCancellation()
         let asset=AVURLAsset(url:source.url),destination=source.directory.appendingPathComponent(UUID().uuidString+".mp4")
         guard let export=AVAssetExportSession(asset:asset,presetName:resolution==1080 ? AVAssetExportPreset1920x1080:AVAssetExportPreset1280x720) else { throw PorchError.message("This video cannot be prepared on this device. Export an H.264/AAC MP4 first.") }
         export.outputURL=destination;export.outputFileType = .mp4;export.shouldOptimizeForNetworkUse=true;export.metadata=[]
-        export.timeRange=CMTimeRange(start:CMTime(seconds:start,preferredTimescale:600),end:CMTime(seconds:end,preferredTimescale:600))
         export.fileLengthLimit=Int64(SegmentedVideoCrypto.maximumBytes)
         let cancellation=VideoExportCancellation(export)
         do {
@@ -87,7 +86,7 @@ private final class VideoExportCancellation: @unchecked Sendable {
             guard min(width,height)>0,max(width,height)<=1920,min(width,height)<=1080 else { throw VideoV2Error.invalidManifest }
             let generator=AVAssetImageGenerator(asset:output);generator.appliesPreferredTrackTransform=true;generator.maximumSize=CGSize(width:320,height:320)
             let(frame,_)=try await generator.image(at:.zero),poster=try AppleImageEncoder.encode(AppleImageEncoder.opaque(frame),jpeg:true)
-            let prepared=PreparedLargeNativeVideo(source:source,url:destination,width:width,height:height,duration:end-start)
+            let prepared=PreparedLargeNativeVideo(source:source,url:destination,width:width,height:height,duration:duration)
             return PreparedPhoto(bytes:Data(),width:width,height:height,mime:"video/mp4",poster:poster.base64EncodedString(),largeVideo:prepared)
         } catch { try? FileManager.default.removeItem(at:destination);throw error }
     }

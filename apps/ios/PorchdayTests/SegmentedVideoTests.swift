@@ -1,4 +1,5 @@
 import XCTest
+import AVFoundation
 @testable import Porchday
 final class SegmentedVideoTests: XCTestCase {
     func testPublishedWireVector() throws {
@@ -38,15 +39,17 @@ final class SegmentedVideoTests: XCTestCase {
         try reloaded.discard(postID);XCTAssertTrue(try outbox.pending().isEmpty)
     }
 
-    @MainActor func testFileBackedPreparationRetainsAudioAndTrims() async throws {
+    @MainActor func testFileBackedPreparationRetainsAudioAndFullDuration() async throws {
         let fixture=try XCTUnwrap(Bundle(for:Self.self).url(forResource:"synthetic-video",withExtension:"mp4"))
         let selected=try SelectedVideoFile(copying:fixture)
         let duration=try await LargeVideoPreparation.inspect(selected)
         XCTAssertGreaterThan(duration,0.4)
-        let photo=try await LargeVideoPreparation.prepare(selected,resolution:720,start:0.1,end:0.4)
+        let photo=try await LargeVideoPreparation.prepare(selected,resolution:720)
         XCTAssertTrue(photo.bytes.isEmpty)
         XCTAssertNotNil(photo.largeVideo)
-        XCTAssertEqual(photo.largeVideo!.duration,0.3,accuracy:0.001)
+        XCTAssertEqual(photo.largeVideo!.duration,duration,accuracy:0.001)
+        let outputDuration=try await AVURLAsset(url:photo.largeVideo!.url).load(.duration).seconds
+        XCTAssertEqual(outputDuration,duration,accuracy:0.1)
         XCTAssertFalse(photo.poster.isEmpty)
         XCTAssertThrowsError(try SegmentedVideoCrypto.validate(VideoV2Manifest(v:2,protocol:"porchday-video-aes256gcm-v2",streamId:UUID().uuidString.lowercased(),key:SegmentedVideoCrypto.newKey(),mime:"video/mp4",size:1,duration:601,width:640,height:480,chunkSize:SegmentedVideoCrypto.chunkBytes,segments:[])))
     }

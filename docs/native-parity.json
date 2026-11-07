@@ -82,7 +82,8 @@
         "docs/native-parity.md#larger-videos--november-6-implementation",
         "design/larger-videos.md",
         "docs/native-parity.md#shared-web-shell",
-        "https://github.com/porchday/porchday/issues/174"
+        "https://github.com/porchday/porchday/issues/174",
+        "docs/native-parity.md#full-video-preparation-and-optional-thumbnails"
       ],
       "implementation": {
         "ios": "implemented",
