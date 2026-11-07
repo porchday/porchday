@@ -10,9 +10,9 @@ import {recoverDeployment,type DeploymentPlan,type DeploymentObservation,type Re
 const sha=(text:string)=>createHash('sha256').update(text).digest('hex');
 const origin='https://staging.porchday.com';
 const form=`document.body.innerHTML='<label for="email">Email address</label><input id="email" type="email"><input type="password">';`;
-function fixture(fault:'none'|'exception'|'mime'|'old-bytes'|'shell'|'requests'='none'){
+function fixture(fault:'none'|'exception'|'mime'|'old-bytes'|'shell'|'requests'|'named-export'='none'){
  const oldHtml='<html><body><script type="module" src="/assets/index-old.js"></script></body></html>',newHtml=oldHtml.replace('index-old','index-new');
- const oldEntry=form+'\nexport const lazy=()=>import("./Lazy-old.js");',lazy='export default function Lazy(){}';
+ const oldEntry=form+'\nexport const lazy=()=>import("./Lazy-old.js");',lazy=fault==='named-export'?'export const loaded=true;':'export default function Lazy(){}';
  const newEntry=form+(fault==='exception'?'\nthrow Error("private synthetic exception");':fault==='mime'?'\nawait import("./missing.js").catch(()=>{});':fault==='requests'?'\nawait Promise.all([fetch("https://elsewhere.invalid/test").catch(()=>{}),fetch("/api/should-not-write",{method:"POST",body:"synthetic"}).catch(()=>{})]);':'');
  const files={'index.html':sha(oldHtml),'assets/index-old.js':sha(oldEntry),'assets/Lazy-old.js':sha(lazy)};
  const baseline={source:'a'.repeat(40),files},candidate={source:'b'.repeat(40),files:{...files,'index.html':sha(newHtml),'assets/index-new.js':sha(newEntry)}};
@@ -79,6 +79,7 @@ describe.skipIf(process.env.RELEASE_ASSET_BROWSER_TESTS!=='1')('hosted observer 
   expect(JSON.stringify(report)).not.toContain('private synthetic exception');
   await expect(observer.finish()).rejects.toThrow('FINISH_ALREADY_STARTED');await observer.close();expect(f.counts().closed).toBe(1);
  });
+ it('accepts successfully evaluated lazy modules with only named exports',async()=>{const f=fixture('named-export'),observer=await beginHostedAssetTransition({origin,...f});try{f.switch();const report=await observer.finish();expect(report.passed).toBe(true);expect(report.loadedModules).toBe(report.lazyModules.length);}finally{await observer.close();}});
  it('closes on cancellation and does not pretend the candidate was observed',async()=>{
   const f=fixture(),controller=new AbortController(),observer=await beginHostedAssetTransition({origin,...f,signal:controller.signal});
   controller.abort();await expect(observer.finish()).rejects.toThrow();await observer.close();expect(f.counts().closed).toBe(1);

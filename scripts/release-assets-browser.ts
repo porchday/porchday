@@ -65,7 +65,7 @@ export async function verifyAssetTransition(baselineDirectory:string,targetDirec
    switched=true;
    let loadedModules=0;
    for(const path of lazyModules){
-    const loaded=await page.evaluate(async path=>{try{const module=await import(path);return typeof module.default==='function';}catch{return false;}},path);
+    const loaded=await page.evaluate(async path=>{try{await import(path);return true;}catch{return false;}},path);
     if(loaded)loadedModules++;
    }
    const oldDocumentRetained=await page.getByLabel('Email address',{exact:true}).inputValue()==='retained-tab@example.test'&&await page.locator('input[type="password"]').isVisible();
