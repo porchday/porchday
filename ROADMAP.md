@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner request:** replace the separate Swift screens with thin iOS/macOS shells around the PWA UI. Track performance and retained-web-view acceptance in [#168](https://github.com/porchday/porchday/issues/168), distribution in #49/#114, and native push in #7. [Design](design/shared-web-native-shell.md). Implementation and release verification are in progress.
+**Current owner request:** replace the separate Swift screens with thin iOS/macOS shells around the PWA UI. Track performance and retained-web-view acceptance in [#168](https://github.com/porchday/porchday/issues/168), distribution in #49/#114, and native push in #7. [Design](design/shared-web-native-shell.md). Implemented in [PR #172](https://github.com/porchday/porchday/pull/172); the shared web bridge is live in production. Exact-source iOS/macOS automated checks pass. Signed build availability and remaining physical-device checks are recorded in the linked issues.
 
 
 Implemented owner follow-up November 6: [PR #169](https://github.com/porchday/porchday/pull/169) addresses repeated native tab reloads and slow navigation with bounded memory caching, request coalescing, stable feed state and background photo decoding. Exact-source iOS/macOS builds and cache regressions pass. [#168](https://github.com/porchday/porchday/issues/168) retains installed-device responsiveness and updated signed app delivery verification.
