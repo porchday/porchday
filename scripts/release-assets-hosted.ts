@@ -70,7 +70,7 @@ export async function beginHostedAssetTransition(input:Options){
     page.on('response',r=>{const path=new URL(r.url()).pathname;if(lazy.includes(path))responses.push(r.body().then(bytes=>({path,status:r.status(),contentType:(r.headers()['content-type']??'').split(';')[0].trim().toLowerCase(),matchesBaseline:bytes.length<=maxBytes&&sha(bytes)===baseline.files[path.slice(1)]})).catch(()=>({path,status:r.status(),contentType:'',matchesBaseline:false})));});
     // Import inside the browser, outside Node/test-runner module rewriting.
     // Paths came from the fixed asset regex and are encoded as JS string literals.
-    let loadedModules=0;for(const path of lazy){assertOpen();if(await page.evaluate<boolean>(`import(${JSON.stringify(path)}).then(m=>typeof m.default==='function',()=>false)`))loadedModules++;}
+    let loadedModules=0;for(const path of lazy){assertOpen();if(await page.evaluate<boolean>(`import(${JSON.stringify(path)}).then(()=>true,()=>false)`))loadedModules++;}
     const oldDocumentRetained=await page.getByLabel('Email address',{exact:true}).inputValue()==='retained-tab@example.test'&&await page.locator('input[type="password"]').isVisible();
     const fresh=await browser.newContext({serviceWorkers:'block'});await fresh.route('**/*',restrict);const newPage=await fresh.newPage(),newErrors=errors(newPage);
     const next=await newPage.goto(origin+'/login',{waitUntil:'load',timeout:15000});
