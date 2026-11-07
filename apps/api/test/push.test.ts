@@ -207,7 +207,7 @@ suite('Push HTTP authorization, durable delivery and revocation', () => {
       await db`select app.finish_push(${job.id},${job.lease},'failed',60)`;
       return row;
     });
-    expect(result.delivery).toEqual({sessionId:a.session,subscription});expect(result.legacy).toEqual(subscription);
+    expect(result.delivery).toEqual({sessionId:a.session,subscription,feed:{count:0,kind:"comment",id:expect.any(String)}});expect(result.legacy).toEqual(subscription);
     await expect(sql.begin(async db=>{await db`set local role porchday_social`;return db`select app.prepare_push_delivery(${randomUUID()},${randomUUID()})`;})).rejects.toMatchObject({code:'42501'});
   });
 

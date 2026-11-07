@@ -4889,3 +4889,6 @@ button.trace-row:focus-visible {
 .video-preparation-fields input, .video-preparation-fields select { width: 100%; min-width: 0; }
 .video-preparation-fields p { margin: 0; }
 .video-preparation-actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+
+.feed-unread-badge { display:inline-flex; align-items:center; justify-content:center; min-width:1.4em; padding:.1em .35em; border-radius:1em; background:#b72d24; color:white; font-size:.75rem; line-height:1.2; font-weight:600; }
+.feed-read-controls { display:flex; align-items:center; gap:1rem; justify-content:space-between; margin-block:.75rem; }

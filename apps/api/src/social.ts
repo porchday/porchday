@@ -1,3 +1,4 @@
+import {registerFeedReadRoutes} from './social-feed-read';
 import {photoInteractionSnapshot,registerPhotoInteractionRoutes} from "./photo-interactions";
 import {attachmentDateProof,setAttachmentDate} from "./attachment-photo-dates";
 import { registerPhotoRoutes, photoGrantSnapshot, photoRefreshSnapshot } from "./social-photos";
@@ -171,6 +172,7 @@ export function createSocialRoutes() {
         if (!allowed)
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
+    registerFeedReadRoutes(app,{tx,body});
     registerPhotoRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerPhotoInteractionRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerAlbumRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});

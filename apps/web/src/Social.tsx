@@ -911,7 +911,7 @@ export function PostCard({
       </div>
     );
   return (
-    <article ref={cardRef} className="post-card panel">
+    <article ref={cardRef} data-feed-readable={content ? "true" : "false"} className="post-card panel">
       <header className="post-heading">
         <ActivityAuthor memberId={row.author_id} handle={row.author_handle} date={row.created_at} sharing={postAudienceLabel(row.audience,row.group_id)}/>
         <div className="post-menu">

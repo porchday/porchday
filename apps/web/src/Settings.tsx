@@ -469,7 +469,7 @@ function PrivacySettings() {
           <Icon name="bell" size={17} />
           {prefs.push
             ? "Enable push on this browser"
-            : "Enable push notifications"}
+            : "Notify me about new feed posts and photos"}
         </Button>
         {prefs.push && (
           <Button variant="quiet" busy={action.busy} onClick={disablePush}>
