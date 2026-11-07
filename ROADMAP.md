@@ -47,6 +47,8 @@ Owner follow-up: invitations offer the same full-history (default) or future-onl
 
 ## Execution queue
 
+**Active owner request (November 6):** implement unread Feed counts, scroll-to-read and opt-in system alerts for every new feed post/photo across web, iOS and macOS. Design: [Feed notifications](design/feed-notifications.md); tracking [#7](https://github.com/porchday/porchday/issues/7). This expands the earlier mention-only push scope.
+
 Ranks continue across the sections below. This is an order for selecting work, not a promise to finish every item before taking any lower-ranked verification step.
 
 ### Owner top product priorities
