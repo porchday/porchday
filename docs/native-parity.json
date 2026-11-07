@@ -91,9 +91,7 @@
       "id": "photo-dates",
       "ios": "pending",
       "macos": "pending",
-      "evidence": [
-        "docs/native-parity.md#photo-dates"
-      ],
+      "evidence": ["docs/native-parity.md#photo-dates"],
       "implementation": {
         "ios": "implemented",
         "macos": "implemented"
@@ -186,7 +184,8 @@
         "docs/native-parity.md#notifications",
         "design/feed-notifications.md",
         "docs/native-parity.md#feed-unread-counts-and-system-notifications",
-        "docs/evidence/feed-notifications-release-2026-11-06.md"
+        "docs/evidence/feed-notifications-release-2026-11-06.md",
+        "docs/evidence/apns-provider-release-2026-11-07.md"
       ],
       "implementation": {
         "ios": "implemented",

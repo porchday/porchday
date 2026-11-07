@@ -1,12 +1,12 @@
 # Native iOS and macOS notifications
 
-APNs delivery is implemented but **disabled until real Apple signing and provider credentials are configured**. Unit and local database tests exercise signed requests through an injected fetch function; they do not establish physical-device delivery or production HTTP/2 transport compatibility.
+APNs provider configuration is enabled in staging and production. Signed iOS 239 and macOS 198 support opt-in notifications. A deployed Worker check verified the provider path with an invalid synthetic token; this does not establish physical-device delivery. See [release evidence](evidence/apns-provider-release-2026-11-07.md).
 
 ## Configuration and release gate
 
 The API Worker accepts `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_BUNDLE_ID`, and `APNS_PRIVATE_KEY` (the complete PKCS#8 `.p8` key) as private environment configuration. Never commit these values or put them in browser assets. All four are required. The native app must also be signed with the matching push entitlement and environment before exposing its opt-in control. No Apple account is purchased by this implementation.
 
-Before enabling delivery for members, test a signed sandbox build on a real device and verify the deployed Worker's HTTP/2/TLS connection, provider key/topic/environment, permission denial, token rotation, foreground handling, generic lock-screen preview, tap navigation, logout, and session revocation. Repeat with the production entitlement before distribution. App Store publication is not needed for development-device testing, but Apple signing/provisioning and APNs access are still prerequisites.
+Production release checks cover provider configuration, deployed transport, session authorization and revocation, automated native parity, and signed app entitlements. Track real-device permission denial, token rotation, foreground handling, generic lock-screen preview, tap navigation, logout, and badge behavior under #7. These physical checks are follow-up verification, not production blockers, and remain pending until observed. The configured key supports production; sandbox testing needs a separate sandbox-capable credential.
 
 ## API contract
 
