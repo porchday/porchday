@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current upload fix:** [#174](https://github.com/porchday/porchday/issues/174) — accept iPhone recordings with alternate spatial audio tracks; preserve a compatible audio track and strict prepared-video checks. Original-device acceptance remains pending.
+**Implemented upload fix:** [PR #175](https://github.com/porchday/porchday/pull/175) accepts iPhone recordings with alternate spatial audio tracks while preserving compatible sound and strict prepared-video checks. Rollout evidence and original-recording/device acceptance are tracked in [#174](https://github.com/porchday/porchday/issues/174); HDR handling is unchanged.
 
 **Current owner request:** replace the separate Swift screens with thin iOS/macOS shells around the PWA UI. Track performance and retained-web-view acceptance in [#168](https://github.com/porchday/porchday/issues/168), distribution in #49/#114, and native push in #7. [Design](design/shared-web-native-shell.md). Implemented in [PR #172](https://github.com/porchday/porchday/pull/172); the shared web bridge is live in production. Exact-source iOS/macOS automated checks pass. Signed build availability and remaining physical-device checks are recorded in the linked issues.
 
