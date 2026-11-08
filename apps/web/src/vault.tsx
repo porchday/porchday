@@ -590,6 +590,7 @@ export function VaultProvider({
     groupId?: string | null,
     postId?: string,
     signal?: AbortSignal,
+    allowPending = false,
   ) {
     const qs = new URLSearchParams(
       postId
@@ -600,8 +601,8 @@ export function VaultProvider({
     const list = items<Device>(r);
     if(list.length>4000)throw Error("This circle has more than 4,000 devices. Choose a smaller audience.");
     if (
-      (Array.isArray(r.pending_members) && r.pending_members.length) ||
-      (typeof r.pending_members === "number" && r.pending_members > 0)
+      !allowPending && ((Array.isArray(r.pending_members) && r.pending_members.length) ||
+      (typeof r.pending_members === "number" && r.pending_members > 0))
     )
       throw new Error(
         "Someone in this audience has not set up encryption yet. Wait for their keys before sharing; no one will be silently left out.",
@@ -624,6 +625,7 @@ export function VaultProvider({
       partial.groupId,
       postId,
       signal,
+      !postId && !partial.groupId && ["connections", "friends", "family", "community", "extended_family"].includes(partial.audience) && ["post", "media"].includes(partial.kind),
     );
     const context: ContentContext = {
       id: crypto.randomUUID(),
@@ -803,9 +805,6 @@ function PostAudienceSharing() {
         readPost, open: vault.open,
         prepareAudience: async (post, signal) => {
           const snapshot = await request(`/posts/${post.id}/audience-refresh/audience`, { signal });
-          if ((Array.isArray(snapshot.pending_members) && snapshot.pending_members.length) ||
-              (typeof snapshot.pending_members === "number" && snapshot.pending_members > 0))
-            throw Error("A connection still needs to set up encryption.");
           const devices = items<Device>(snapshot);
           for (const device of devices) await checkDevice(device);
           if (!current() || signal.aborted) throw new DOMException("Sharing stopped.", "AbortError");

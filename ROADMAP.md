@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current P1 fix:** [#185](https://github.com/porchday/porchday/issues/185) lets social posts and attachments publish while a connection finishes encryption setup, with retained future-only eligibility and encrypted author-side catch-up. Implementation and release verification in progress.
+
 **Delivered November 8:** [#183](https://github.com/porchday/porchday/issues/183) unifies Add photos/videos, preserves original capture dates, and adds a macOS Photos sharing inbox. Web changes are live; macOS build 236 is available in the existing TestFlight group. [Release evidence](docs/evidence/unified-media-picker-release-2026-11-08.md) distinguishes automated verification from remaining physical picker/share-menu checks.
 
 **Delivered November 7:** [#181](https://github.com/porchday/porchday/issues/181) raises total media storage to 10 GB per person and supports videos without a post, including encrypted retries, albums and portability. [Release evidence](docs/evidence/direct-videos-release-2026-11-07.md) records live staging/production verification and passing exact-source web/iOS/macOS CI. Per-video limits remain unchanged; physical upload/playback acceptance stays in #181.

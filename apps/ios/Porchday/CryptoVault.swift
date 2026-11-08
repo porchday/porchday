@@ -138,11 +138,11 @@ import Porchcrypto
         if let known = UserDefaults.standard.string(forKey: pin), known != actual { throw PorchError.message("A person's encryption key changed. Compare fingerprints before sharing.") }
         UserDefaults.standard.set(actual, forKey: pin)
     }
-    func audience(_ audience: String, group: String? = nil, post: String? = nil) async throws -> (Int, [Device]) {
+    func audience(_ audience: String, group: String? = nil, post: String? = nil, allowPending: Bool = false) async throws -> (Int, [Device]) {
         var params = URLComponents(); params.queryItems = post.map { [URLQueryItem(name: "post_id", value: $0)] } ?? [URLQueryItem(name: "audience", value: audience)] + (group.map { [URLQueryItem(name: "group_id", value: $0)] } ?? [])
         let path = audience == "album" ? "/albums/" + (group ?? "") + "/audience" : "/audiences?" + (params.percentEncodedQuery ?? "")
         let result = try await social(path)
-        guard result["pending_members"].array.isEmpty else { throw PorchError.message("Someone in this audience has not set up encryption. Try again after their keys are ready.") }
+        guard allowPending || result["pending_members"].array.isEmpty else { throw PorchError.message("Someone in this audience has not set up encryption. Try again after their keys are ready.") }
         let devices = try (result["devices"].array.isEmpty ? result["items"].array : result["devices"].array).map(Device.init)
         for device in devices { try verify(device) }; guard let epoch = result["epoch"].integer else { throw PorchError.message("The sharing audience is unavailable.") }; return (epoch, devices)
     }
@@ -153,14 +153,13 @@ import Porchcrypto
             guard ["post", "media"].contains(kind), group == nil,
                   ["connections", "friends", "family", "community", "extended_family"].contains(audience),
                   let value = historySnapshot["epoch"].integer, value >= 0,
-                  case .array(let pending) = historySnapshot["pending_members"], pending.isEmpty,
                   case .array(let devices) = historySnapshot["devices"] else { throw PorchError.message("The history-sharing audience is unavailable.") }
             epoch = value; recipients = try devices.map(Device.init)
             guard !recipients.isEmpty, recipients.count <= 4000,
                   recipients.contains(where: { $0.id == device.id && $0.memberID == member.id && !$0.revoked }),
                   recipients.allSatisfy({ !$0.revoked }), Set(recipients.map(\.id)).count == recipients.count else { throw PorchError.message("The history-sharing audience is unavailable.") }
             for recipient in recipients { try verify(recipient) }
-        } else { let resolved = try await self.audience(audience, group: group, post: post); epoch = resolved.0; recipients = resolved.1 }
+        } else { let resolved = try await self.audience(audience, group: group, post: post, allowPending: post == nil && group == nil && ["post", "media"].contains(kind) && ["connections", "friends", "family", "community", "extended_family"].contains(audience)); epoch = resolved.0; recipients = resolved.1 }
         var context = original?.object ?? ["id": .string(id), "kind": .string(kind), "createdAt": .string(PorchDate.string()), "revision": .number(1)]
         context["authorId"] = .string(member.id); context["authorDeviceId"] = .string(device.id); context["audience"] = .string(audience)
         context["parentId"] = parent.map(JSON.string) ?? .null; context["groupId"] = group.map(JSON.string) ?? .null; context["epoch"] = .number(Double(epoch)); context["expiresAt"] = expiry.map { .string(PorchDate.string($0)) } ?? .null

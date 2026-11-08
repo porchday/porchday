@@ -528,6 +528,7 @@ export function Composer({
       {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} item{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos and videos are still selected.":""}</p>}
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
+      {mode === "post" && !groupId && ["connections", "friends", "family", "community", "extended_family"].includes(audience) && <p className="small-copy">People still setting up private sharing won’t hold up your post. After they finish, open Porchday to share it with them securely.</p>}
       {shareTabs&&<SharedMediaInbox disabled={action.busy||videoSources.length>0} remaining={10-photos.length} onImport={selectPhotos} onBusy={setImportingMedia}/>}
       <div className={"composer-controls"+(mode==="post"?" composer-post-controls":"")}>
         <div className="composer-tools">
