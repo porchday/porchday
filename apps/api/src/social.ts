@@ -114,7 +114,11 @@ async function checkEnvelope(db: Db, member: string, envelope: Pick<EncryptedEnv
       ? await albumSnapshot(db, e.groupId!, options.albumChange)
       : await snapshot(db, e.audience, e.groupId, options.postId ?? null, options.historyPostId ?? null);
     if(s.devices.length>4000)fail("AUDIENCE_TOO_LARGE",413);
-    if (s.pending_members.length)
+    // Publish to every ready device. Pending direct connections are retained by
+    // the database for author-side encrypted catch-up after their setup completes.
+    const deferredPostAudience = !e.groupId && !options.postId && !options.photoGrantId && !options.photoRefreshId &&
+      ["post", "media"].includes(kind) && ["connections", "friends", "family", "community", "extended_family"].includes(e.audience);
+    if (s.pending_members.length && !deferredPostAudience)
         fail('KEY_SETUP_REQUIRED', 409, { pending_members: s.pending_members });
     if (!options.skipEpoch && e.epoch !== s.epoch)
         fail('AUDIENCE_CHANGED', 409, { epoch: s.epoch });

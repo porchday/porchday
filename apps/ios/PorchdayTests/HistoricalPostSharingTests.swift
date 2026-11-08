@@ -133,14 +133,17 @@ final class HistoricalPostSharingTests: XCTestCase {
         }
     }
 
-    @MainActor func testMissingLivePhotoReferenceAndUnreadyAudienceDoNotWrite() async throws {
+    @MainActor func testMissingLivePhotoReferenceDoesNotWriteButPendingMemberDoesNotBlockReadyDevices() async throws {
         let f = HistoryFixture(); f.addPhoto()
         f.source = f.source.replacing("envelope", with: f.source["envelope"].replacing("test_payload", with: f.source["envelope"]["test_payload"].replacing("media", with: .array([]))))
         do { try await f.refresh(); XCTFail("Accepted missing photo") } catch { }
         XCTAssertTrue(f.reservations.isEmpty); XCTAssertTrue(f.published.isEmpty)
         let pending = HistoryFixture(); pending.audience = pending.audience.replacing("pending_members", with: .array([.string("not-ready")]))
-        do { try await pending.refresh(); XCTFail("Accepted unready audience") } catch { }
-        XCTAssertTrue(pending.snapshots.isEmpty); XCTAssertTrue(pending.published.isEmpty)
+        try await pending.refresh()
+        XCTAssertEqual(pending.snapshots, [pending.audience]); XCTAssertEqual(pending.published.count, 1)
+        let empty = HistoryFixture(); empty.audience = empty.audience.replacing("devices", with: .array([]))
+        do { try await empty.refresh(); XCTFail("Accepted empty audience") } catch { }
+        XCTAssertTrue(empty.published.isEmpty)
     }
 }
 

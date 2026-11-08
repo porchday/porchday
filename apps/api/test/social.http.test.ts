@@ -250,6 +250,63 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         await connection(a,b,'friend',null);
         expect((await request(a.id,'/connections')).data.items[0]).toMatchObject({own_history:'full',peer_history:'full'});
     },60000);
+    it('publishes four photos with keyless connections and catches up only the original eligible future-only connection',async()=>{
+        const owner=await person(),ready=await person(),pending=await person(),stillPending=await person(),later=await person();
+        await connection(owner,ready);
+        const older=await seal(owner,{text:'Before connection'});
+        expect((await request(owner.id,'/posts','POST',{envelope:older})).status).toBe(201);
+        await connection(owner,pending);await connection(owner,stillPending);
+        // No active key is the same directory state as accepted signup before setup.
+        await sql`update app.device_keys set revoked_at=now() where member_id in (${pending.id},${stillPending.id})`;
+        await sql`update app.directory_epoch set epoch=epoch+1 where id`;
+        const id=randomUUID(),media:any[]=[];
+        const upload=async(envelope:any,history?:object)=>{
+            const bytes=new TextEncoder().encode(JSON.stringify(envelope));
+            const result=await request(owner.id,'/media','POST',{id:envelope.context.id,envelope,byte_size:bytes.length,...history});
+            expect(result.status,JSON.stringify(result.data)).toBe(201);
+            expect((await app.request('https://porchday.test/media/'+envelope.context.id+'/bytes',{method:'PUT',headers:{'x-test-member':owner.id,'content-type':'application/octet-stream'},body:bytes},env)).status).toBe(200);
+        };
+        for(let i=0;i<4;i++){
+            const envelope=await seal(owner,{mime:'image/jpeg',bytes:'cGhvdG8=',alt:'Photo '+i},{kind:'media',parentId:id});
+            await upload(envelope);media.push(envelope);
+        }
+        const envelope=await seal(owner,{text:'Four photos',media:media.map(e=>({id:e.context.id}))},{id});
+        const missingReady={...envelope,recipients:envelope.recipients.filter(r=>r.memberId!==ready.id)};
+        expect((await request(owner.id,'/posts','POST',{envelope:missingReady,media_ids:media.map(e=>e.context.id)})).data.error.code).toBe('AUDIENCE_CHANGED');
+        expect((await request(owner.id,'/posts','POST',{envelope,media_ids:media.map(e=>e.context.id)})).status).toBe(201);
+        expect((await request(ready.id,'/posts/'+id)).data.post.media).toHaveLength(4);
+        expect((await request(pending.id,'/posts/'+id)).status).toBe(404);
+        expect(await sql`select * from app.pending_post_members where post_id=${id}`).toHaveLength(2);
+        await connection(owner,later);
+        await sql`update app.device_keys set revoked_at=null where member_id=${pending.id}`;
+        await sql`update app.directory_epoch set epoch=epoch+1 where id`;
+        const snap=(await request(owner.id,'/posts/'+id+'/audience-refresh/audience')).data;
+        expect(snap.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,ready.id,pending.id].sort());
+        expect(snap.pending_members).toHaveLength(1);
+        expect((await request(owner.id,'/posts/'+older.context.id+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===pending.id)).toBe(false);
+        const encrypt=(context:ContentContext,payload:unknown)=>encryptObject({context:{...context,epoch:snap.epoch},payload,signingKey:owner.key,recipients:snap.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+        const replacement:any[]=[];
+        for(const source of media){
+            const next=await encrypt({...source.context,id:randomUUID()}, {mime:'image/jpeg',bytes:'cGhvdG8='});
+            await upload(next,{history_post_id:id,history_source_revision:1});replacement.push(next);
+        }
+        const refreshed=await encrypt({...envelope.context,revision:2},{text:'Four photos',media:replacement.map(e=>({id:e.context.id}))});
+        const result=await request(owner.id,'/posts/'+id+'/audience-refresh','POST',{
+            envelope:refreshed,lifecycle:await signStatement({purpose:'porchday-lifecycle',id,revision:2,expiresAt:null},owner.key),
+            source_revision:1,source_expires_at:null,source_media_ids:media.map(e=>e.context.id),media_ids:replacement.map(e=>e.context.id)
+        });
+        expect(result.status,JSON.stringify(result.data)).toBe(200);
+        const detail=await request(pending.id,'/posts/'+id);expect(detail.status).toBe(200);
+        expect(await decryptObject({envelope:detail.data.post.envelope,expectedContext:refreshed.context,privateKey:pending.key,authorPublicKey:owner.publicKey})).toMatchObject({text:'Four photos'});
+        for(const photo of replacement){const response=await app.request('https://porchday.test/media/'+photo.context.id+'/bytes',{headers:{'x-test-member':pending.id}},env);expect(response.status).toBe(200);expect(await decryptObject({envelope:await response.json() as any,expectedContext:photo.context,privateKey:pending.key,authorPublicKey:owner.publicKey})).toMatchObject({bytes:'cGhvdG8='});}
+        expect((await request(later.id,'/posts/'+id)).status).toBe(404);
+        expect((await request(owner.id,'/blocks/'+stillPending.id,'PUT')).status).toBe(200);
+        expect(await sql`select * from app.pending_post_members where post_id=${id} and member_id=${stillPending.id}`).toHaveLength(0);
+        const edge=(await request(owner.id,'/connections')).data.items.find((r:any)=>[r.member_a,r.member_b].includes(pending.id));
+        expect((await request(owner.id,'/connections/'+edge.id,'DELETE')).status).toBe(200);
+        await connection(owner,pending);
+        expect((await request(owner.id,'/posts/'+id+'/audience-refresh/audience')).data.devices.some((d:any)=>d.member_id===pending.id)).toBe(false);
+    },90000);
     it('refreshes author-signed history and immutable photos only for consented audiences, retaining original dates and hiding old children',async()=>{
         const owner=await person(),oldFriend=await person(),full=await person(),future=await person(),relative=await person(),outsider=await person();
         await connection(owner,oldFriend);

@@ -40,8 +40,7 @@ import Foundation
         let audience = try await io.readAudience(postID)
         try io.check()
         guard let epoch = audience["epoch"].integer, epoch >= 0,
-              case .array(let devices) = audience["devices"], !devices.isEmpty,
-              case .array(let pending) = audience["pending_members"], pending.isEmpty else {
+              case .array(let devices) = audience["devices"], !devices.isEmpty else {
             throw PorchError.message("Sharing earlier posts is waiting for encryption setup.")
         }
         let originalPayload = try await io.open(source)
