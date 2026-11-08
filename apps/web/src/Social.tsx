@@ -1,3 +1,4 @@
+import {usePostDraft,type PendingPhoto} from './use-post-draft';
 import {SharedMediaInbox} from './SharedMediaInbox';
 import {photoCaptureDate} from './media-date';
 import {stagePhotoVideo} from './photo-video';
@@ -243,20 +244,6 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
     preview: await readObjectURL(blob),
   };
 }
-type PendingPhoto = {
-  largeVideo?:PreparedLargeVideo;
-  photoDate?: string;
-  mime?: string;
-  poster?: string;
-  tags?: PersonTag[];
-  id: string;
-  name: string;
-  alt: string;
-  blob: Blob;
-  width: number;
-  height: number;
-  preview: string;
-};
 export function Composer({
   onPosted,
   groupId,
@@ -269,22 +256,15 @@ export function Composer({
   groupId?: string;
 }) {
   const vault = useVault();
-  const [mode,setMode]=useState<"post"|"photos">(initialAlbum||(shareTabs&&new URLSearchParams(location.search).get("mode")==="photos")?"photos":"post");
-  const [album,setAlbum]=useState(initialAlbum||"");
+  const draft=usePostDraft(vault,shareTabs,{mode:initialAlbum||(shareTabs&&new URLSearchParams(location.search).get("mode")==="photos")?"photos":"post",album:initialAlbum||"",text:"",tags:[],onBehalf:"",audience:groupId?"group":initialAlbum?"only_me":"connections",timer:"",photos:[],videoSources:[]});
+  const {mode,album,text,tags,onBehalf,audience,timer,photos,videoSources}=draft.value;
+  const setter=<K extends keyof typeof draft.value>(key:K)=>(value:(typeof draft.value)[K]|((old:(typeof draft.value)[K])=>(typeof draft.value)[K]))=>draft.change(key,value);
+  const setMode=setter("mode"),setAlbum=setter("album"),setText=setter("text"),setTags=setter("tags"),setOnBehalf=setter("onBehalf"),setAudience=setter("audience"),setTimer=setter("timer"),setPhotos=setter("photos"),setVideoSources=setter("videoSources");
   const [albums,setAlbums]=useState<{id:string;name:string;role:string}[]>([]);
   const [albumsLoaded,setAlbumsLoaded]=useState(false);
   const [photosShared,setPhotosShared]=useState(0);
-  const [text, setText] = useState("");
-  const [tags,setTags]=useState<PersonTag[]>([]);
-  const [onBehalf,setOnBehalf]=useState("");
   const directory=usePeopleDirectory();
-  const [audience, setAudience] = useState<Audience>(
-    groupId ? "group" : initialAlbum ? "only_me" : "connections",
-  );
-  const [timer, setTimer] = useState("");
-  const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [importingMedia,setImportingMedia]=useState(false);
-  const [videoSources,setVideoSources]=useState<File[]>([]);
   const [largeVideosEnabled,setLargeVideosEnabled]=useState(false);
   const [directVideosEnabled,setDirectVideosEnabled]=useState(false);
   const [pendingVideos,setPendingVideos]=useState<{id:string;createdAt:string}[]>([]);
@@ -296,7 +276,7 @@ export function Composer({
   useEffect(()=>{const ids=new Set(photos.map(p=>p.id));for(const[id,video]of preparedVideos.current)if(!ids.has(id)){void video.dispose();preparedVideos.current.delete(id);}},[photos]);
   const draftUrls = useRef(new Set<string>());
   useEffect(() => {
-    const current = new Set(photos.filter(p => isVideo(p.mime)).map(p => p.preview));
+    const current = new Set(photos.filter(p => p.preview.startsWith("blob:")).map(p => p.preview));
     for (const url of draftUrls.current) if (!current.has(url)) URL.revokeObjectURL(url);
     draftUrls.current = current;
   }, [photos]);
@@ -343,6 +323,7 @@ export function Composer({
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if(!draft.ready)return;
     if(photos.some(photo=>!photo.photoDate)){await action.run(async()=>{throw Error("Choose a date for each photo or video. Its original date was not available in the selected file.");});return;}
     if(mode==="photos"&&photos.some(p=>p.largeVideo)&&!directVideosEnabled){await action.run(async()=>{throw Error("Direct video uploads are not enabled on this server yet. Please reload and try again.");});return;}
     if(mode==="photos"&&shareTabs){
@@ -437,12 +418,15 @@ export function Composer({
         },
       );
       const publication={envelope,photo_dates:photoDates,media_ids:media.map(p=>p.id),on_behalf_of:onBehalf||null};
+      await draft.beforePublish(id);
       if(durable){await savePublication(vault.member.id,id,staged,publication);saved=true;
         // The durable encrypted post now owns this intent. Remove the live draft
         // before sending so an uncertain response cannot create a duplicate post.
+        await draft.clear().catch(()=>{});
         setText("");setTags([]);setOnBehalf("");setPhotos([]);setTimer("");
         await refreshPendingVideos();await sendPublication(vault.member.id,id,abort.signal,setVideoProgress);
       }else await post("/posts",publication);
+      if(shareTabs)await draft.clear().catch(()=>{});
       setText("");
       setTags([]);setOnBehalf("");
       setPhotos([]);
@@ -455,12 +439,14 @@ export function Composer({
   return (
     <form
       className="composer panel"
-      data-unsaved-draft={Boolean(text.trim() || photos.length || videoSources.length || importingMedia) || undefined}
+      data-unsaved-draft={(Boolean(text.trim() || photos.length || videoSources.length || importingMedia)&&(!shareTabs||draft.unsaved||!draft.ready||importingMedia)) || undefined}
+      data-draft-saved={shareTabs&&draft.ready&&!draft.unsaved&&!importingMedia?"true":undefined}
       onSubmit={submit}
     >
+      {shareTabs&&<div className="draft-status"><p className="small-copy" role="status">{!draft.ready&&!draft.error?"Restoring draft…":draft.status}</p><Alert>{draft.error}</Alert>{draft.error&&!draft.ready&&<Button type="button" onClick={draft.retryRestore}>Try restoring draft again</Button>}{draft.error&&draft.ready&&<Button type="button" onClick={draft.retry}>Retry saving draft</Button>}{(text||photos.length||videoSources.length||draft.error)&&<Button type="button" variant="outline compact" disabled={action.busy||importingMedia} onClick={()=>{if(window.confirm("Discard this draft and its selected photos/videos?"))void action.run(()=>draft.discard());}}>Discard draft</Button>}</div>}
       {pendingVideos.map(p=><div className="panel" key={p.id}><p>An encrypted upload is saved on this device ({localDate(p.createdAt)}).</p><Button type="button" disabled={action.busy} onClick={()=>void action.runSave(async()=>{const abort=new AbortController();uploadAbort.current=abort;try{await sendPublication(vault.member.id,p.id,abort.signal,setVideoProgress);onPosted();}finally{uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}},"Upload shared.")}>Resume upload</Button><Button type="button" disabled={action.busy} onClick={()=>void action.run(async()=>{await cancelPublication(vault.member.id,p.id);await refreshPendingVideos();})}>Cancel upload</Button></div>)}
       {videoProgress&&<div role="status"><p>{videoProgress}</p><Button type="button" onClick={()=>uploadAbort.current?.abort()}>Pause upload</Button></div>}
-      <fieldset disabled={action.busy||importingMedia} className="composer-fields">
+      <fieldset disabled={action.busy||importingMedia||!draft.ready} className="composer-fields">
       {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos & videos</button></div>}
       {mode==="post"&&<>
       <div className="composer-start">

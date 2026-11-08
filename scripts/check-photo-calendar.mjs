@@ -12,7 +12,7 @@ const self = "00000000-0000-4000-8000-000000000001",
 const fixtureKeys=await generateDeviceKeys(self,"00000000-0000-4000-8000-000000000099");
 const bundle = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';import {isMemberPath} from './apps/web/src/routes';const root=createRoot(document.getElementById('root'));window.fixtureReady.then(()=>root.render(<PeopleDirectory>{location.pathname!=='/'&&isMemberPath(location.pathname)?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>));`,
+    contents: `import {PostDraftStore} from './apps/web/src/post-draft-store';window.PostDraftStore=PostDraftStore;import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';import {isMemberPath} from './apps/web/src/routes';const root=createRoot(document.getElementById('root'));window.showRoute=path=>root.render(<PeopleDirectory><AppShell path={path} routeKey={path} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/></PeopleDirectory>);window.fixtureReady.then(()=>root.render(<PeopleDirectory>{location.pathname!=='/'&&isMemberPath(location.pathname)?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>));`,
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -37,7 +37,7 @@ const bundle = await build({
           namespace: "fixture",
         }));
         b.onLoad({ filter: /.*/, namespace: "fixture" }, () => ({
-          contents: `import {unlockPrivateKey} from '@porchday/crypto';const vault={member:{id:'${self}',handle:'parent',status:'active'},device:{id:'00000000-0000-4000-8000-000000000099'},open:async row=>row.envelope.payload,seal:async(payload,context)=>({payload,context})};window.fixtureReady=unlockPrivateKey(${JSON.stringify(fixtureKeys.encryptedPrivateKey)},${JSON.stringify(fixtureKeys.recoverySecret)}).then(key=>{vault.privateKey=key;});export const useVault=()=>vault;export const useOptionalVault=useVault;export const Fingerprint=()=>null;export const VaultProvider=({children})=>children;`,
+          contents: `import {unlockPrivateKey,decryptObject} from '@porchday/crypto';const vault={member:{id:'${self}',handle:'parent',status:'active'},device:{id:'00000000-0000-4000-8000-000000000099',member_id:'${self}',public_key:${JSON.stringify(fixtureKeys.publicKey)},fingerprint:${JSON.stringify(fixtureKeys.fingerprint)}},open:async row=>row.envelope.payload||decryptObject({envelope:row.envelope,expectedContext:row.envelope.context,privateKey:vault.privateKey,authorPublicKey:${JSON.stringify(fixtureKeys.publicKey)}}),seal:async(payload,context)=>({payload,context})};window.fixtureReady=unlockPrivateKey(${JSON.stringify(fixtureKeys.encryptedPrivateKey)},${JSON.stringify(fixtureKeys.recoverySecret)}).then(key=>{vault.privateKey=key;});export const useVault=()=>vault;export const useOptionalVault=useVault;export const Fingerprint=()=>null;export const VaultProvider=({children})=>children;`,
           loader: "js",
           resolveDir:process.cwd(),
         }));
@@ -185,6 +185,7 @@ try {
     errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   const origin = "http://127.0.0.1:" + server.address().port;
+  if(!process.env.DRAFTS_ONLY){
   await page.goto(origin);
   await page
     .getByRole("img", { name: "Synthetic photo", exact: true }).first()
@@ -195,7 +196,8 @@ try {
   const preservedMonth=page.locator(`[data-calendar-month="${firstMonth}"]`);
   await preservedMonth.locator('.loading').waitFor({state:'hidden'});
   const previousTop=(await preservedMonth.boundingBox()).y;
-  await page.getByRole('button',{name:'Load earlier month'}).click();
+  // Keep Playwright's automatic pointer scrolling out of the anchor measurement.
+  await page.getByRole('button',{name:'Load earlier month'}).evaluate(button=>button.click());
   await page.waitForFunction(before => document.querySelectorAll('[data-calendar-month]').length > before, beforeMonths);
   const monthKeys = await page.locator('[data-calendar-month]').evaluateAll(elements => elements.map(e => e.dataset.calendarMonth));
   assert.equal(monthKeys.at(-1), firstMonth);
@@ -409,6 +411,7 @@ try {
     ),
     false,
   );
+  }
   await page.goto(`http://127.0.0.1:${server.address().port}/share`);
   await page.getByRole('heading',{name:'Add Photos/Videos to this Post',exact:true}).waitFor();
   await page.addStyleTag({content:await readFile('apps/web/src/retro.css','utf8')});
@@ -439,7 +442,59 @@ try {
   assert.equal(await page.locator('form.composer').evaluate(form=>form.checkValidity()),false);
   await page.getByLabel('Photo/video date',{exact:true}).last().fill('2019-08-15');
   assert.equal(await page.locator('form.composer').evaluate(form=>form.checkValidity()),true);
+  await page.getByRole('button',{name:'Post',exact:true}).click();
+  await page.getByText('Draft saved on this device',{exact:true}).waitFor().catch(async error=>{console.error(await page.locator('.draft-status').innerText());throw error;});
+  await page.evaluate(()=>{window.keptDraftTextarea=document.querySelector('#post-text');window.showRoute('/connections');});
+  assert.equal(await page.locator('textarea#post-text').isVisible(),false);
+  await page.evaluate(()=>window.showRoute('/share'));
+  await page.locator('textarea#post-text').waitFor({state:'visible'});
+  assert.equal(await page.evaluate(()=>window.keptDraftTextarea===document.querySelector('#post-text')),true,'Share composer stays mounted across app routes');
+  assert.equal(await page.locator('textarea#post-text').inputValue(),'Retained draft');
+  assert.equal(await page.locator('.photo-draft').count(),2);
+  await page.reload();
+  await page.getByText('Draft restored · saved on this device',{exact:true}).waitFor();
+  assert.equal(await page.locator('textarea#post-text').inputValue(),'Retained draft');
+  assert.deepEqual(await page.getByLabel('Photo/video date',{exact:true}).evaluateAll(elements=>elements.map(e=>e.value)),['2018-07-14','2019-08-15']);
+  // Persistent stores contain ciphertext, not the draft text, captions or JPEG bytes.
+  assert.equal(await page.evaluate(()=>new Promise(resolve=>{const r=indexedDB.open('porchday-encrypted-post-drafts-v1');r.onsuccess=()=>{const db=r.result,q=db.transaction('drafts').objectStore('drafts').getAll();q.onsuccess=()=>{resolve(JSON.stringify(q.result).includes('Retained draft'));db.close();};};})),false);
+  await page.route('**/api/v1/posts',route=>route.request().method()==='POST'?route.fulfill({status:503,contentType:'application/json',body:JSON.stringify({error:{code:'UNAVAILABLE'}})}):route.continue());
+  await page.getByRole('button',{name:'Share post',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('fieldset.composer-fields').disabled);
+  assert.equal(await page.locator('textarea#post-text').inputValue(),'Retained draft');
+  assert.equal(await page.locator('.photo-draft').count(),2);
+  await page.unroute('**/api/v1/posts');
+  await page.getByRole('button',{name:'Share post',exact:true}).click();
+  await page.getByText('Post shared.',{exact:true}).waitFor();
+  await page.reload();await page.locator('textarea#post-text').waitFor();
+  assert.equal(await page.locator('textarea#post-text').inputValue(),'');assert.equal(await page.locator('.photo-draft').count(),0);
+  // Failed persistent writes must retain the current editable draft and show a retry.
+  await page.evaluate(()=>{window.originalDraftPut=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(){throw new DOMException('Synthetic quota exhaustion','QuotaExceededError');};});
+  await page.locator('textarea#post-text').fill('Keep this unsaved draft');
+  await page.getByText(/Draft not saved/).waitFor();
+  assert.equal(await page.locator('textarea#post-text').inputValue(),'Keep this unsaved draft');
+  await page.evaluate(()=>{IDBObjectStore.prototype.put=window.originalDraftPut;});
+  await page.getByRole('button',{name:'Retry saving draft',exact:true}).click();
+  await page.getByText('Draft saved on this device',{exact:true}).waitFor();
+  page.once('dialog',dialog=>dialog.accept());
+  await page.getByRole('button',{name:'Discard draft',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#post-text').value==='');
+  await page.reload();await page.locator('textarea#post-text').waitFor();
+  assert.equal(await page.locator('textarea#post-text').inputValue(),'');
+  assert.equal(await page.locator('.photo-draft').count(),0);
   assert.deepEqual(errors, []);
+  const storageChecks=await page.evaluate(async()=>{
+    const a=new window.PostDraftStore('synthetic-owner','store-test'),b=new window.PostDraftStore('synthetic-owner','store-test'),other=new window.PostDraftStore('other-owner','store-test');
+    await a.load();await b.load();const bytes=new Uint8Array(2*1024*1024+29);bytes.fill(71);
+    const original=new File([bytes],'private-video.mp4',{type:'video/mp4'}),file=await a.file(original,original.name);
+    await a.commit({test:'opaque-metadata'},[file]);
+    let conflict=false;try{await b.commit({test:'stale'},[]);}catch{conflict=true;}
+    const restored=await a.readFile(file);const roundtrip=new Uint8Array(await restored.arrayBuffer());
+    const result={conflict,isolated:await other.load()===null,roundtrip:roundtrip.length===bytes.length&&roundtrip.every(v=>v===71),name:restored.name,type:restored.type};
+    await a.commit(null,[]);let missing=false;try{await a.readFile(file);}catch{missing=true;}
+    return {...result,removed:missing};
+  });
+  assert.deepEqual(storageChecks,{conflict:true,isolated:true,roundtrip:true,name:'private-video.mp4',type:'video/mp4',removed:true});
+  console.log('Encrypted drafts preserve text and photos across navigation/reload and clear on discard.');
   console.log(
     "Chromium calendar swipes/month boundaries, filters/highlights, video validation/upload/click-to-load playback, encrypted tag payload and child settings passed.",
   );
