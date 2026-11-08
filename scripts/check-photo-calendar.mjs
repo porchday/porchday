@@ -308,6 +308,7 @@ try {
   await page.locator('input[type=file]').setInputFiles({name:'memory.webm',mimeType:'video/webm',buffer:Buffer.from(encoded,'base64')});
   await page.getByLabel('Video preview').waitFor();
   await page.getByLabel('Photo or video description').fill('Synthetic video');
+  await page.getByLabel('Photo/video date',{exact:true}).fill('2020-01-02');
   await page.getByRole('button',{name:/Share/}).click();
   await page.waitForFunction(()=>!document.querySelector('[aria-label="Video preview"]'));
   const saved=calls.filter(c=>c.path==='/api/v1/posts').at(-1).body.envelope.payload.media[0];
@@ -409,17 +410,35 @@ try {
     false,
   );
   await page.goto(`http://127.0.0.1:${server.address().port}/share`);
-  await page.getByRole('heading',{name:'Add Photos to this Post',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Add Photos/Videos to this Post',exact:true}).waitFor();
   await page.addStyleTag({content:await readFile('apps/web/src/retro.css','utf8')});
   assert.equal(await page.locator('.app-mobile-header').getByRole('link').count(),1);
   assert((await page.locator('.app-mobile-header').boundingBox()).height<=60);
   assert((await page.getByRole('heading',{name:'Share',exact:true}).boundingBox()).height<=1);
-  const shortcut=page.getByRole('link',{name:'add photos directly',exact:true});
+  const shortcut=page.getByRole('link',{name:'add photos/videos directly',exact:true});
   await page.locator('textarea').first().fill('Retained draft');
   await shortcut.click();
   await page.getByRole('button',{name:'Post',exact:true}).click();
   assert.equal(await page.locator('textarea').first().inputValue(),'Retained draft');
   assert.equal(await page.locator('[aria-label="What to share"]').getByRole('button',{name:'Photos & videos',exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Add photos/videos',exact:true}).count(),1);
+  assert.equal(await page.getByRole('button',{name:'Add video',exact:true}).count(),0);
+  assert.equal(await page.locator('input[type=file]').getAttribute('accept'),'image/*,video/*');
+  const raw=Buffer.from(jpeg,'base64');
+  const text=Buffer.from('2017:06:13 23:15:00\0'),tiff=Buffer.alloc(44+text.length);
+  tiff.set([0x49,0x49,42,0,8,0,0,0]);tiff.writeUInt16LE(1,8);tiff.writeUInt16LE(0x8769,10);tiff.writeUInt16LE(4,12);tiff.writeUInt32LE(1,14);tiff.writeUInt32LE(26,18);tiff.writeUInt16LE(1,26);tiff.writeUInt16LE(0x9003,28);tiff.writeUInt16LE(2,30);tiff.writeUInt32LE(text.length,32);tiff.writeUInt32LE(44,36);tiff.set(text,44);
+  const app1=Buffer.concat([Buffer.from([255,225,0,0,69,120,105,102,0,0]),tiff]);app1.writeUInt16BE(app1.length-2,2);
+  const dated=Buffer.concat([raw.subarray(0,2),app1,raw.subarray(2)]);
+  await page.locator('input[type=file]').setInputFiles([{name:'old-photo.jpg',mimeType:'image/jpeg',buffer:dated},{name:'missing-date.jpg',mimeType:'image/jpeg',buffer:raw}]);
+  await page.waitForFunction(()=>document.querySelectorAll('.photo-draft').length===2);
+  assert.deepEqual(await page.getByLabel('Photo/video date',{exact:true}).evaluateAll(elements=>elements.map(e=>e.value)),['2017-06-13','']);
+  await page.getByText('The original date wasn’t included in this file. Please choose its date.').waitFor();
+  await page.getByLabel('Photo/video date',{exact:true}).first().fill('2018-07-14');
+  await page.getByRole('button',{name:'Photos & videos',exact:true}).click();
+  assert.equal(await page.getByLabel('Photo/video date',{exact:true}).first().inputValue(),'2018-07-14');
+  assert.equal(await page.locator('form.composer').evaluate(form=>form.checkValidity()),false);
+  await page.getByLabel('Photo/video date',{exact:true}).last().fill('2019-08-15');
+  assert.equal(await page.locator('form.composer').evaluate(form=>form.checkValidity()),true);
   assert.deepEqual(errors, []);
   console.log(
     "Chromium calendar swipes/month boundaries, filters/highlights, video validation/upload/click-to-load playback, encrypted tag payload and child settings passed.",

@@ -155,6 +155,23 @@ private final class ShellObservers: @unchecked Sendable {
         guard message.frameInfo.isMainFrame, WebShellPolicy.trusted(message.frameInfo.request.url), WebShellPolicy.trusted(webView.url), frame.protocol == "https", frame.host == ServerConfiguration.origin.host,
               let body = message.body as? [String: Any], body["version"] as? Int == 1, let command = body["command"] as? String else { replyHandler(nil, "Untrusted native request."); return }
         switch command {
+        #if os(macOS)
+        case "sharedMediaList":
+            do {
+                let batches = try SharedMediaInbox.batches()
+                let data = try JSONEncoder().encode(batches)
+                replyHandler(try JSONSerialization.jsonObject(with: data), nil)
+            } catch { replyHandler(nil, "Shared photos and videos could not be read.") }
+        case "sharedMediaRead":
+            guard let batch = body["batch"] as? String, let item = body["item"] as? String,
+                  let offset = body["offset"] as? Int, let count = body["count"] as? Int else { replyHandler(nil, "Invalid shared file request."); return }
+            do { replyHandler(try SharedMediaInbox.chunk(batch: batch, item: item, offset: offset, count: count), nil) }
+            catch { replyHandler(nil, "This shared file could not be read. Share it again from Photos.") }
+        case "sharedMediaRemove":
+            guard let batch = body["batch"] as? String else { replyHandler(nil, "Invalid shared file request."); return }
+            do { try SharedMediaInbox.remove(batch); replyHandler(true, nil) }
+            catch { replyHandler(nil, "Shared files could not be cleared.") }
+        #endif
         case "badge":
             guard let count = WebShellPolicy.badge(body["count"]) else { replyHandler(nil, "Invalid badge count."); return }
             FeedReadState.badge(count); replyHandler(true, nil)

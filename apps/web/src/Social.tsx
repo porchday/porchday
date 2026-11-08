@@ -1,3 +1,5 @@
+import {SharedMediaInbox} from './SharedMediaInbox';
+import {photoCaptureDate} from './media-date';
 import {stagePhotoVideo} from './photo-video';
 import {videoUpdatePlaceholder} from "./video-placeholder";
 import {validateVideoManifest} from "@porchday/crypto/video";
@@ -281,6 +283,8 @@ export function Composer({
   );
   const [timer, setTimer] = useState("");
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
+  const [importingMedia,setImportingMedia]=useState(false);
+  const [videoSources,setVideoSources]=useState<File[]>([]);
   const [largeVideosEnabled,setLargeVideosEnabled]=useState(false);
   const [directVideosEnabled,setDirectVideosEnabled]=useState(false);
   const [pendingVideos,setPendingVideos]=useState<{id:string;createdAt:string}[]>([]);
@@ -310,30 +314,36 @@ export function Composer({
       if(alive){setAlbums(found);setAlbumsLoaded(true);}
     });return()=>{alive=false;};
   },[shareTabs,vault.member.id]);
-  async function selectPhotos(files: FileList | null) {
+  async function selectPhotos(files: FileList | File[] | null) {
     if (!files) return;
-    await action.run(async () => {
+    const added = await action.run(async () => {
       if (files.length + photos.length > 10)
         throw new Error("You can share up to 10 photos or videos at a time.");
       const next: PendingPhoto[] = [];
+      const videos: File[] = [];
       try { for (const file of Array.from(files)) {
+        if(largeVideosEnabled&&(mode==="post"||directVideosEnabled)&&(file.type.startsWith("video/")||/\.(mp4|mov|webm)$/i.test(file.name))){videos.push(file);continue;}
         const prepared = file.type.startsWith("video/") || /\.(mp4|mov|webm)$/i.test(file.name)
           ? await prepareVideo(file) : await preparePhoto(file);
         next.push({
           id: crypto.randomUUID(),
           name: file.name,
           alt: "",
-          photoDate: localPhotoDate(),
+          photoDate: await photoCaptureDate(file),
           ...prepared,
         });
       }
       } catch (error) { for (const item of next) if (isVideo(item.mime)) URL.revokeObjectURL(item.preview); throw error; }
-      setPhotos([...photos, ...next]);
+      setPhotos(current=>[...current, ...next]);
+      setVideoSources(videos);
+      return true;
     });
     if (input.current) input.current.value = "";
+    return added;
   }
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if(photos.some(photo=>!photo.photoDate)){await action.run(async()=>{throw Error("Choose a date for each photo or video. Its original date was not available in the selected file.");});return;}
     if(mode==="photos"&&photos.some(p=>p.largeVideo)&&!directVideosEnabled){await action.run(async()=>{throw Error("Direct video uploads are not enabled on this server yet. Please reload and try again.");});return;}
     if(mode==="photos"&&shareTabs){
       if(!photos.length)return;
@@ -445,12 +455,12 @@ export function Composer({
   return (
     <form
       className="composer panel"
-      data-unsaved-draft={Boolean(text.trim() || photos.length) || undefined}
+      data-unsaved-draft={Boolean(text.trim() || photos.length || videoSources.length || importingMedia) || undefined}
       onSubmit={submit}
     >
       {pendingVideos.map(p=><div className="panel" key={p.id}><p>An encrypted upload is saved on this device ({localDate(p.createdAt)}).</p><Button type="button" disabled={action.busy} onClick={()=>void action.runSave(async()=>{const abort=new AbortController();uploadAbort.current=abort;try{await sendPublication(vault.member.id,p.id,abort.signal,setVideoProgress);onPosted();}finally{uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}},"Upload shared.")}>Resume upload</Button><Button type="button" disabled={action.busy} onClick={()=>void action.run(async()=>{await cancelPublication(vault.member.id,p.id);await refreshPendingVideos();})}>Cancel upload</Button></div>)}
       {videoProgress&&<div role="status"><p>{videoProgress}</p><Button type="button" onClick={()=>uploadAbort.current?.abort()}>Pause upload</Button></div>}
-      <fieldset disabled={action.busy} className="composer-fields">
+      <fieldset disabled={action.busy||importingMedia} className="composer-fields">
       {shareTabs&&<div className="tabs" aria-label="What to share"><button type="button" disabled={action.busy} className={mode==="post"?"active":""} aria-pressed={mode==="post"} onClick={()=>setMode("post")}>Post</button><button type="button" disabled={action.busy} className={mode==="photos"?"active":""} aria-pressed={mode==="photos"} onClick={()=>setMode("photos")}>Photos & videos</button></div>}
       {mode==="post"&&<>
       <div className="composer-start">
@@ -472,9 +482,9 @@ export function Composer({
       {<label>Posting on behalf of <select aria-label="Posting on behalf of" onFocus={directory.ensure} value={onBehalf} onChange={e=>{setOnBehalf(e.target.value);const child=directory.people.find(p=>p.kind==="child"&&p.id===e.target.value);if(child&&!tags.some(t=>t.id===child.id))setTags([...tags,child]);}}><option value="">Myself</option>{directory.children.filter(c=>c.can_post).map(c=><option key={c.id} value={c.id}>{c.name} · posted by @{vault.member.handle}</option>)}</select></label>}
       {onBehalf && <p className="muted">The child will be tagged automatically. You remain the author.</p>}
       </>}
-      {mode==="post"?<><hr className="composer-photo-divider"/><h2 className="composer-photo-heading">Add Photos to this Post</h2>{shareTabs&&<p className="composer-photo-shortcut">(Skip the post and <a href="/share?mode=photos" aria-disabled={action.busy} onClick={event=>{event.preventDefault();if(!action.busy)setMode("photos");}}>add photos directly</a>.)</p>}</>:<>
-        <h2 className="composer-photo-heading">Add photos</h2>
-        <p>Each photo has its own date, caption and audience. No post is created.</p>
+      {mode==="post"?<><hr className="composer-photo-divider"/><h2 className="composer-photo-heading">Add Photos/Videos to this Post</h2>{shareTabs&&<p className="composer-photo-shortcut">(Skip the post and <a href="/share?mode=photos" aria-disabled={action.busy} onClick={event=>{event.preventDefault();if(!action.busy)setMode("photos");}}>add photos/videos directly</a>.)</p>}</>:<>
+        <h2 className="composer-photo-heading">Add photos/videos</h2>
+        <p>Each photo or video has its own date, caption and audience. No post is created.</p>
         <label>Album<select value={album} disabled={action.busy||!albumsLoaded} onChange={e=>setAlbum(e.target.value)}><option value="">No album</option>{initialAlbum&&!albums.some(a=>a.id===initialAlbum)&&<option value={initialAlbum}>Selected album (checking access…)</option>}{albums.map(a=><option key={a.id} value={a.id}>{a.name}</option>)}</select></label>
         {album&&<p>Everyone in {albums.find(a=>a.id===album)?.name||"this album"} can view these photos, in addition to the audience selected below. Future album members may receive album history.</p>}
         {text.trim()&&<p className="muted">Your post text is saved in the Post tab for this visit.</p>}
@@ -484,7 +494,8 @@ export function Composer({
           {photos.map((photo,index) => (
             <div className="photo-draft" key={photo.id}>
               {isVideo(photo.mime) ? <video src={photo.preview} controls playsInline preload="metadata" aria-label="Video preview" /> : <img src={photo.preview} alt="Photo preview" />}
-              <Field type="date" min="0001-01-01" max="9999-12-31" label="Photo date" required value={photo.photoDate||localPhotoDate()} disabled={action.busy} onChange={e=>setPhotos(current=>current.map(p=>p.id===photo.id?{...p,photoDate:e.target.value}:p))}/>
+              <Field type="date" min="0001-01-01" max="9999-12-31" label="Photo/video date" required value={photo.photoDate??""} disabled={action.busy} onChange={e=>setPhotos(current=>current.map(p=>p.id===photo.id?{...p,photoDate:e.target.value}:p))}/>
+              {!photo.photoDate&&<p className="muted">The original date wasn’t included in this file. Please choose its date.</p>}
               <Field
                 label="Photo or video description"
                 value={photo.alt}
@@ -517,13 +528,14 @@ export function Composer({
       {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} item{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos and videos are still selected.":""}</p>}
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
+      {shareTabs&&<SharedMediaInbox disabled={action.busy||videoSources.length>0} remaining={10-photos.length} onImport={selectPhotos} onBusy={setImportingMedia}/>}
       <div className={"composer-controls"+(mode==="post"?" composer-post-controls":"")}>
         <div className="composer-tools">
           <input
             ref={input}
             type="file"
-            disabled={action.busy}
-            accept={largeVideosEnabled?PHOTO_ACCEPT:`${PHOTO_ACCEPT},${VIDEO_ACCEPT}`}
+            disabled={action.busy||videoSources.length>0||photos.length>=10}
+            accept="image/*,video/*"
             multiple
             className="sr-only"
             tabIndex={-1}
@@ -531,20 +543,22 @@ export function Composer({
           />
           <button
             type="button"
-            className="text-button"
+            className="text-button composer-add-media"
+            aria-label="Add photos/videos"
+            disabled={action.busy||videoSources.length>0||photos.length>=10}
             onClick={() => input.current?.click()}
           >
             <Icon name="photo" size={18} />
-            <span>{largeVideosEnabled?"Photos":"Photos & videos"}</span>
+            <span>Add photos/videos</span>
           </button>
-          {largeVideosEnabled&&(mode==="post"||directVideosEnabled)&&<VideoPicker disabled={action.busy||photos.length>=10} onPrepared={(video,name)=>{const id=crypto.randomUUID();preparedVideos.current.set(id,video);setPhotos(current=>[...current,{id,name,alt:"",photoDate:localPhotoDate(),blob:video.blob,width:video.width,height:video.height,mime:video.mime,poster:video.poster,preview:video.preview,largeVideo:video}]);}}/>}
+          {videoSources[0]&&<VideoPicker key={videoSources[0].name+videoSources.length} file={videoSources[0]} onDone={()=>setVideoSources(current=>current.slice(1))} onPrepared={(video,name,captureDate)=>{const id=crypto.randomUUID();preparedVideos.current.set(id,video);setPhotos(current=>[...current,{id,name,alt:"",photoDate:captureDate,blob:video.blob,width:video.width,height:video.height,mime:video.mime,poster:video.poster,preview:video.preview,largeVideo:video}]);}}/>}
           <TimerSelect value={timer} onChange={setTimer} />
         </div>
         <Button
           variant="primary compact"
           type="submit"
           busy={action.busy}
-          disabled={mode==="photos"?!photos.length:!text.trim()&&!photos.length}
+          disabled={videoSources.length>0||(mode==="photos"?!photos.length:!text.trim()&&!photos.length)}
         >
           {mode==="photos"?(album?"Add to album":"Share photos & videos"):"Share post"} <Icon name="arrow" size={16} />
         </Button>

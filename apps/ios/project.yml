@@ -63,6 +63,7 @@ targets:
     platform: macOS
     deploymentTarget: '14.0'
     sources:
+      - path: SharedMedia
       - path: Porchday
         excludes: [Info.plist]
       - path: ../../packages/crypto/data/video-update-required.mp4
@@ -77,6 +78,7 @@ targets:
         PROVISIONING_PROFILE_SPECIFIER: "$(PORCHDAY_MAC_PROFILE)"
         MACOSX_DEPLOYMENT_TARGET: '14.0'
         CODE_SIGN_ENTITLEMENTS: Porchday/Porchday-Mac.entitlements
+        INFOPLIST_KEY_PorchdayMediaGroup: "$(DEVELOPMENT_TEAM).org.porchday.media"
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
@@ -84,9 +86,28 @@ targets:
         Release:
           CODE_SIGN_ENTITLEMENTS: Porchday/Porchday-Mac-Push.entitlements
     dependencies:
+      - target: PorchdayShare
+        embed: true
       - package: ZIPFoundation
       - framework: ../../packages/crypto/native/build/Porchcrypto.xcframework
         embed: true
+  PorchdayShare:
+    type: app-extension
+    platform: macOS
+    deploymentTarget: '14.0'
+    sources:
+      - path: PorchdayShare
+        excludes: [Info.plist, PorchdayShare.entitlements]
+      - path: SharedMedia
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app.share
+        INFOPLIST_FILE: PorchdayShare/Info.plist
+        CODE_SIGN_ENTITLEMENTS: PorchdayShare/PorchdayShare.entitlements
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+        ENABLE_APP_SANDBOX: YES
+        ASSETCATALOG_COMPILER_APPICON_NAME: ''
   PorchdayMacTests:
     type: bundle.unit-test
     platform: macOS

@@ -128,3 +128,7 @@ The default iOS and macOS shells use the same Share → Photos & videos uploader
 [#181](https://github.com/porchday/porchday/issues/181) tracks API/browser acceptance, exact-source native CI and remaining physical Photos-library/upload/playback verification. Automated checks are distinct from installed-device verification and TestFlight availability. [Design](../design/direct-videos-and-storage.md).
 
 Direct-video release acceptance (November 7): [release evidence](evidence/direct-videos-release-2026-11-07.md) records passing exact-source frontend/API native CI, staged and production encrypted upload/playback/export/revocation checks, and final monitoring. Default shells receive the hosted UI update; signed binary availability and physical device acceptance remain separately recorded.
+
+### Unified media selection and capture dates
+
+The shared UI uses one Add photos/videos file input with multiple mixed-media selection. WebKit supplies the native iOS Photos picker, without a replacement grid. Photos read original embedded creation dates before metadata normalization; missing dates require an explicit choice rather than silently becoming today. This works in existing web-shell builds. macOS adds an embedded Share extension and local app-group inbox; a new signed build is required for that entry point. It imports into the same encrypted Share draft, never automatically publishes. Automated tests and physical picker/share-menu acceptance are separate; #183 tracks both. [Design](../design/unified-media-picker.md).
