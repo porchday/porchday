@@ -1,0 +1,11 @@
+# Unified media selection and original dates
+
+Owner request, November 8, 2026. Tracking: #183.
+
+Use one **Add photos/videos** button in both Share modes. A native multiple file input accepting `image/*,video/*` delegates library browsing to iOS/WebKit, including the OS photo grid, selection indicators/count and supported zoom controls. The application does not recreate that picker; exact controls vary by OS version. Keep ten total attachments. Prepare selected videos sequentially using the existing encrypted, resumable upload flow, without trimming/cropping. Cancellation skips the current video; already prepared attachments remain.
+
+Read photo capture metadata before normalization strips EXIF. Prefer DateTimeOriginal, then embedded creation date. Preserve its calendar day without timezone conversion. Do not use upload time or filesystem modification time as capture time. If unavailable, show an empty required date with an explanation. User edits override the suggestion. Photo dates attached to posts follow this rule; post dates remain publication time. Video container creation dates are used when present; otherwise request a date.
+
+The macOS Share extension accepts up to ten photos/movies into a team-scoped app-group inbox. It has no networking, account keys, or publishing capability. It copies the provider's original file before the provider releases it, bounds file/batch size, writes the completed manifest last, and expires unfinished/old entries after seven days. The main app's trusted-origin bridge exposes opaque batch/item IDs and bounded chunks, never arbitrary paths. Share reads the local inbox into file-backed browser storage, then uses the normal composer and encryption. Draft import is explicit and sharing never posts automatically. Cancel/discard and failure feedback remain available. Installing a new signed macOS build is necessary for this extension; old shells still support the unified file input.
+
+Verification: original EXIF dates and malformed/missing dates; ten-item/cancel/mixed selection; no date changes to posts; native app-group boundaries and compiling/testing the embedded extension; web deployment and signed TestFlight distribution recorded independently. Physical iOS Photos controls and macOS Photos share menu acceptance remain device checks, not prerequisites to web deployment.

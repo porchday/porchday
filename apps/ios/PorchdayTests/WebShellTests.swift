@@ -3,6 +3,12 @@ import WebKit
 @testable import Porchday
 
 final class WebShellTests: XCTestCase {
+    #if os(macOS)
+    func testSharedFileIdentifiersCannotEscapeInbox() {
+        XCTAssertTrue(SharedMediaInbox.validID("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"))
+        for value in ["../secret", "/tmp/photo.jpg", "", "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE"] { XCTAssertFalse(SharedMediaInbox.validID(value)) }
+    }
+    #endif
     func testOnlyExactHTTPSOriginIsPrivileged() {
         for url in ["https://porchday.org/", "https://porchday.org/albums?view=all#photo"] { XCTAssertTrue(WebShellPolicy.trusted(URL(string: url))) }
         for url in ["http://porchday.org", "https://porchday.org.evil.example/", "https://porchday.org:8443", "https://someone@porchday.org/", "file:///tmp/test", "javascript:alert(1)", "https://porchday.com"] { XCTAssertFalse(WebShellPolicy.trusted(URL(string: url))) }

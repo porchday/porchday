@@ -1,7 +1,7 @@
 import {videoPoster} from './video-poster';
 import type {Conversion,Input,Output} from 'mediabunny';
 import {VIDEO_MAX_BYTES,VIDEO_MAX_SECONDS,VIDEO_SOURCE_MAX_BYTES} from '@porchday/crypto/video';
-export interface VideoInspection {duration:number;width:number;height:number;audio:boolean;alternateAudioTracks?:number}
+export interface VideoInspection {captureDate?:string;duration:number;width:number;height:number;audio:boolean;alternateAudioTracks?:number}
 export interface VideoPreparationOptions {resolution:720|1080;signal:AbortSignal;progress?:(fraction:number)=>void}
 export interface PreparedLargeVideo {blob:File;mime:'video/mp4';width:number;height:number;duration:number;poster:string;preview:string;dispose:()=>Promise<void>}
 const storageError='This browser cannot prepare a private video here. Try an updated browser with local file storage.';
@@ -23,7 +23,7 @@ async function inspect(input:Input,prepared=false):Promise<VideoInspection>{
  if(await track.hasHighDynamicRange())throw Error('This HDR video needs an SDR export before sharing. Export an H.264 SDR copy so its colors stay correct.');
  return{duration,width,height,audio:audio.length>0,...(audio.length>1?{alternateAudioTracks:audio.length-1}:{})};
 }
-export async function inspectVideo(file:File){const input=await open(file);try{return await inspect(input);}finally{input.dispose();}}
+export async function inspectVideo(file:File){const input=await open(file);try{const info=await inspect(input);try{const tags=await input.getMetadataTags();if(tags.creationTime&&Number.isFinite(tags.creationTime.getTime()))info.captureDate=tags.creationTime.toISOString().slice(0,10);}catch{/* Missing metadata does not prevent preparation. */}return info;}finally{input.dispose();}}
 export function preparedVideoSize(width:number,height:number,resolution:720|1080){const scale=Math.min(1,(resolution===1080?1920:1280)/Math.max(width,height),resolution/Math.min(width,height));return{width:Math.max(2,Math.floor(width*scale/2)*2),height:Math.max(2,Math.floor(height*scale/2)*2)};}
 export async function prepareLargeVideo(file:File,options:VideoPreparationOptions):Promise<PreparedLargeVideo>{
  const{ALL_FORMATS,BlobSource,Conversion,Input,Mp4OutputFormat,Output,Quality,StreamTarget}=await import('mediabunny');
