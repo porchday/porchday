@@ -144,3 +144,5 @@ November 8, #185: the default iOS and macOS web shells use the same post compose
 ## Share draft autosave
 
 November 8, #187: default iOS and macOS shells use the same persistent Share composer and encrypted IndexedDB draft store as web/PWA. Text, media and sharing choices survive app-tab navigation and reload after unlocking. Storage failures keep the in-memory draft and show an explicit retry; publication/discard clear saved state. The status is inline and does not disable navigation. The app-update action allows a fully saved draft to reload. No new native bridge or binary is required. [Design and automated verification scope](../design/post-draft-autosave.md). Exact-source iOS/macOS CI remains required; physical-device storage eviction and app termination timing are not claimed verified. The optional previous Swift UI remains a migration fallback.
+
+Draft autosave released November 8: [release evidence](evidence/post-draft-release-2026-11-08.md) records deployed UI recovery/publishing checks and passing exact-source iOS/macOS CI. Existing default shells receive the update; physical storage/termination acceptance remains #49/#114.

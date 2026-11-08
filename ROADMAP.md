@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current P1:** [#187](https://github.com/porchday/porchday/issues/187) preserves Share drafts across navigation and adds encrypted device-local autosave, reload recovery, saved/error feedback and explicit discard. Implementation and release verification in progress. [Design](design/post-draft-autosave.md).
+**Delivered November 8:** [#187](https://github.com/porchday/porchday/issues/187) preserves Share drafts across navigation and adds encrypted device-local autosave, reload recovery, saved/error feedback and explicit discard. Verified on staging and production, with passing Chromium/WebKit and exact-source iOS/macOS checks. [Release evidence](docs/evidence/post-draft-release-2026-11-08.md).
 
 **Delivered November 8:** [#185](https://github.com/porchday/porchday/issues/185) lets social posts and attachments publish while connections finish encryption setup, with retained future-only eligibility and encrypted author-side catch-up. Verified with four-photo publication, real initial key registration and recipient decryption on staging and production. [Release evidence](docs/evidence/pending-encryption-release-2026-11-08.md).
 
