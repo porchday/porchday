@@ -5,7 +5,7 @@ import {generateDeviceKeys} from "@porchday/crypto";
 import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { build } from "esbuild";
-import { chromium } from "playwright";
+import { chromium, webkit } from "playwright";
 const self = "00000000-0000-4000-8000-000000000001",
   friend = "00000000-0000-4000-8000-000000000002",
   child = "00000000-0000-4000-8000-000000000003";
@@ -180,7 +180,7 @@ const server = createServer(async (req, res) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 let browser;
 try {
-  browser = await chromium.launch();
+  browser = await (process.env.DRAFTS_BROWSER==="webkit"?webkit:chromium).launch();
   const page = await browser.newPage({ viewport: { width: 390, height: 844 } }),
     errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
@@ -444,11 +444,11 @@ try {
   assert.equal(await page.locator('form.composer').evaluate(form=>form.checkValidity()),true);
   await page.getByRole('button',{name:'Post',exact:true}).click();
   await page.getByText('Draft saved on this device',{exact:true}).waitFor().catch(async error=>{console.error(await page.locator('.draft-status').innerText());throw error;});
-  await page.evaluate(()=>{window.keptDraftTextarea=document.querySelector('#post-text');window.showRoute('/connections');});
+  await page.evaluate(()=>{window.keptDraftComposer=document.querySelector('form.composer');window.showRoute('/connections');});
   assert.equal(await page.locator('textarea#post-text').isVisible(),false);
   await page.evaluate(()=>window.showRoute('/share'));
   await page.locator('textarea#post-text').waitFor({state:'visible'});
-  assert.equal(await page.evaluate(()=>window.keptDraftTextarea===document.querySelector('#post-text')),true,'Share composer stays mounted across app routes');
+  assert.equal(await page.evaluate(()=>window.keptDraftComposer===document.querySelector('form.composer')),true,'Share composer stays mounted across app routes');
   assert.equal(await page.locator('textarea#post-text').inputValue(),'Retained draft');
   assert.equal(await page.locator('.photo-draft').count(),2);
   await page.reload();
@@ -464,7 +464,7 @@ try {
   assert.equal(await page.locator('.photo-draft').count(),2);
   await page.unroute('**/api/v1/posts');
   await page.getByRole('button',{name:'Share post',exact:true}).click();
-  await page.getByText('Post shared.',{exact:true}).waitFor();
+  await page.getByText('Post shared.',{exact:true}).waitFor().catch(async error=>{console.error(await page.locator('form.composer').innerText());throw error;});
   await page.reload();await page.locator('textarea#post-text').waitFor();
   assert.equal(await page.locator('textarea#post-text').inputValue(),'');assert.equal(await page.locator('.photo-draft').count(),0);
   // Failed persistent writes must retain the current editable draft and show a retry.
@@ -496,7 +496,7 @@ try {
   assert.deepEqual(storageChecks,{conflict:true,isolated:true,roundtrip:true,name:'private-video.mp4',type:'video/mp4',removed:true});
   console.log('Encrypted drafts preserve text and photos across navigation/reload and clear on discard.');
   console.log(
-    "Chromium calendar swipes/month boundaries, filters/highlights, video validation/upload/click-to-load playback, encrypted tag payload and child settings passed.",
+    "Browser acceptance checks passed.",
   );
 } finally {
   await browser?.close();

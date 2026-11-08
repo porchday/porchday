@@ -418,7 +418,7 @@ export function Composer({
         },
       );
       const publication={envelope,photo_dates:photoDates,media_ids:media.map(p=>p.id),on_behalf_of:onBehalf||null};
-      await draft.beforePublish(id);
+      await draft.beforePublish(id,durable);
       if(durable){await savePublication(vault.member.id,id,staged,publication);saved=true;
         // The durable encrypted post now owns this intent. Remove the live draft
         // before sending so an uncertain response cannot create a duplicate post.
@@ -432,7 +432,7 @@ export function Composer({
       setPhotos([]);
       setTimer("");
       onPosted();
-      }finally{if(durable&&!saved)await discardLocalPublication(vault.member.id,id);uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}
+      }finally{if(durable&&!saved)await discardLocalPublication(vault.member.id,id);uploadAbort.current=null;setVideoProgress("");if(durable)await refreshPendingVideos();}
     }, "Post shared.");
   }
   if (vault.member.status === "restricted") return null;
