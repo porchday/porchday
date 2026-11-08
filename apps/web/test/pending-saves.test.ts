@@ -60,3 +60,15 @@ describe("pending saves", () => {
     expect(hasPendingSaves()).toBe(false);
   });
 });
+
+it('keeps unload protection but permits app navigation during persistent history writes',async()=>{
+ const target=new EventTarget();vi.stubGlobal('window',target);
+ const deferredHistory=deferred(),deferredPost=deferred();
+ const history=withPendingSave(()=>deferredHistory.promise,true,true);
+ expect(hasPendingSaves()).toBe(true);expect(pendingSaves.getNavigationSnapshot()).toBe(0);expect(pendingSaves.getStatus()).toBe('');
+ expect(target.dispatchEvent(new Event('beforeunload',{cancelable:true}))).toBe(false);
+ const post=withPendingSave(()=>deferredPost.promise);
+ expect(pendingSaves.getNavigationSnapshot()).toBe(1);expect(pendingSaves.getStatus()).toBe('saving');
+ deferredPost.resolve(new Response());await post;expect(pendingSaves.getNavigationSnapshot()).toBe(0);
+ deferredHistory.resolve(new Response());await history;expect(hasPendingSaves()).toBe(false);
+});

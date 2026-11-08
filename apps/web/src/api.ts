@@ -139,9 +139,9 @@ export function accessLost(error: unknown): boolean {
 }
 export async function request<T = Json>(
   path: string,
-  options: RequestInit & { backgroundSave?: boolean } = {},
+  options: RequestInit & { backgroundSave?: boolean; keepNavigation?: boolean } = {},
 ): Promise<T> {
-  const { backgroundSave = false, ...fetchOptions } = options;
+  const { backgroundSave = false, keepNavigation = false, ...fetchOptions } = options;
   const perform = async (): Promise<T> => {
     const response = await fetch(
       path.startsWith("/api/") ? path : `/api/v1${path}`,
@@ -162,7 +162,7 @@ export async function request<T = Json>(
     return data as T;
   };
   return ["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase())
-    ? perform() : withPendingSave(perform, backgroundSave);
+    ? perform() : withPendingSave(perform, backgroundSave, keepNavigation);
 }
 export const get = <T = Json>(path: string) => request<T>(path);
 export const post = <T = Json>(path: string, data: unknown = {}) =>

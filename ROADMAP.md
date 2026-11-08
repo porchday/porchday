@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner follow-up:** #22 avoids redundant own-device history updates after recovery and keeps background catch-up from blocking member navigation; #124 removes mobile link icons and desktop More; #15 rounds the native Mac Dock/switcher icon. Implementation and release verification in progress. [Design](design/recovered-device-history.md).
+
 **Delivered November 8:** [#187](https://github.com/porchday/porchday/issues/187) preserves Share drafts across navigation and adds encrypted device-local autosave, reload recovery, saved/error feedback and explicit discard. Verified on staging and production, with passing Chromium/WebKit and exact-source iOS/macOS checks. [Release evidence](docs/evidence/post-draft-release-2026-11-08.md).
 
 **Delivered November 8:** [#185](https://github.com/porchday/porchday/issues/185) lets social posts and attachments publish while connections finish encryption setup, with retained future-only eligibility and encrypted author-side catch-up. Verified with four-photo publication, real initial key registration and recipient decryption on staging and production. [Release evidence](docs/evidence/pending-encryption-release-2026-11-08.md).

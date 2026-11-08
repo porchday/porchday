@@ -1,3 +1,5 @@
+import {onlyRecoveredOwnDevicesMissing,hasRecoveredAccess} from './recovered-history-access';
+import type {Device,EncryptedEnvelope} from './api';
 import {useEffect,useRef,useState} from "react";
 import {get} from "./api";
 import {useVault} from "./vault";
@@ -15,27 +17,37 @@ export function PhotoAudienceSharing(){
  useEffect(()=>{
   setState("idle");
   if((vault.member.status||"active")!=="active"||vault.device.revoked_at)return;
-  let mounted=true,running=false,paused=false;
+  let mounted=true,running=false,paused=false,after:string|null=null;
+  const covered=new Set<string>();
+  const fingerprints=new Set((vault.keys||[vault.privateKey]).filter(Boolean).map(key=>key.getFingerprint()));
   const current=()=>mounted&&latest.current===context;
   const enabled=()=>current()&&navigator.onLine&&document.visibilityState!=="hidden";
   const check=()=>{if(!enabled())throw new DOMException("Sharing stopped.","AbortError");};
   const run=async()=>{
    if(running||paused||!enabled())return;
-   running=true;let failed=false,after:string|null=null;
+   running=true;let failed=false;
    try{
-    do{
+    {
      check();
      const page:{items:PhotoRow[];next:string|null}=await get(`/photos/history-refresh${after?"?after="+encodeURIComponent(after):""}`);
      check();
      for(const photo of page.items){
-      check();setState("sharing");
+      check();
       const grant=photo.grants.find(g=>g.album_id===null);
       if(photo.owner_id!==vault.member.id||!grant)throw Error("Photo history is unavailable.");
-      try{await refreshPhotoGrant(vault,photo,grant,check);check();window.dispatchEvent(new Event("porchday:posts-shared"));}
+      try{
+       const snapshot=await get(`/photos/${photo.id}/grants/${grant.id}/refresh-audience`);check();
+       if(onlyRecoveredOwnDevicesMissing(grant.envelope,snapshot.devices as Device[],vault.member.id,fingerprints,snapshot.existing_peer_grants_complete===true)){
+         const cacheKey=JSON.stringify([grant.id,photo.revision,grant.media_id,grant.envelope.recipients,snapshot.epoch]);
+         if(covered.has(cacheKey))continue;
+         const media=await get<EncryptedEnvelope>(`/media/${grant.media_id}/bytes`);check();
+         if(hasRecoveredAccess(media,vault.member.id,fingerprints)){covered.add(cacheKey);continue;}
+       }
+       setState("sharing");await refreshPhotoGrant(vault,photo,grant,check,true);check();window.dispatchEvent(new Event("porchday:posts-shared"));}
       catch(error){check();failed=true;}
      }
      after=page.next;
-    }while(after);
+    }
    }catch{failed=true;}
    finally{
     running=false;
@@ -59,5 +71,5 @@ export function PhotoAudienceSharing(){
   };
  },[context]);
  if(state==="idle")return null;
- return <div className="panel" role="status"><p>{state==="sharing"?"Sharing earlier photos with their current audience…":"Sharing earlier photos hasn’t finished. Your account is ready to use."}</p>{state==="unfinished"&&<button type="button" onClick={()=>retry.current()}>Try sharing again</button>}</div>;
+ return <div className="panel" role="status"><p>{state==="sharing"?"Updating encrypted photo access for eligible devices… You can keep using Porchday.":"Some encrypted photo access updates are pending. Your photos have not been reposted. You can keep using Porchday."}</p>{state==="unfinished"&&<button type="button" onClick={()=>retry.current()}>Retry access updates</button>}</div>;
 }

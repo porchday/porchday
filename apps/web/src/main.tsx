@@ -365,7 +365,8 @@ function AppShell({
   const vault = useVault();
   const shareVisited=useRef(path==="/share");
   if(path==="/share")shareVisited.current=true;
-  const navigationDisabled = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getSnapshot, () => 0) > 0;
+  const navigationDisabled = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getNavigationSnapshot, () => 0) > 0;
+  const writesPending = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getSnapshot, () => 0) > 0;
   const [count, setCount] = useState<number | null>(vault.member.connection_count ?? null);
   const countedPath = useRef(path);
   useEffect(() => {
@@ -378,7 +379,7 @@ function AppShell({
   useEffect(() => {
     if (vault.member.status !== "suspended") builderChatAvailable().then(setBuilderChat);
   }, []);
-  const sidebarLinks = vault.member.status === "suspended" ? [settingsLink] : [...primaryLinks, ...secondaryLinks, ...(builderChat ? [featureLink] : []), settingsLink];
+  const sidebarLinks = vault.member.status === "suspended" ? [settingsLink] : [...primaryLinks.filter(([href])=>href!=="/menu"), ...secondaryLinks, ...(builderChat ? [featureLink,["/builder-chat","chat","Builder chat"]] : []), settingsLink];
   async function logout() {
     if (hasPendingSaves()) return;
     await vault.clear();
@@ -409,7 +410,7 @@ function AppShell({
   else if (path.startsWith("/albums/")) content = <AlbumDetail key={path.split("/")[2]} id={path.split("/")[2]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
   else if (path === "/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
   else if (path === "/share") content = null;
-  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features"><Icon name="code"/>Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button disabled={navigationDisabled} onClick={logout}><Icon name="logout"/>Log out</Button></section>;
+  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features">Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button disabled={writesPending} onClick={logout}><Icon name="logout"/>Log out</Button></section>;
   else if (path.startsWith("/post/"))
     content = <Feed singleId={path.split("/")[2]} />;
   else if (path.startsWith("/wall"))
@@ -483,7 +484,7 @@ function AppShell({
             className="icon-button"
             onClick={logout}
             aria-label="Sign out"
-            disabled={navigationDisabled}
+            disabled={writesPending}
           >
             <Icon name="logout" size={17} />
           </button>
