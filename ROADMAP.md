@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner follow-up:** #22 avoids redundant own-device history updates after recovery and keeps background catch-up from blocking member navigation; #124 removes mobile link icons and desktop More; #15 rounds the native Mac Dock/switcher icon. Implementation and release verification in progress. [Design](design/recovered-device-history.md).
+**Delivered November 8:** #22 skips redundant own-device history updates after key recovery and keeps necessary persistent catch-up from blocking member navigation; #124 removes mobile link icons and desktop More; #15 rounds the native Mac Dock/switcher icon. Web/API changes are live and Mac build 255 is available in the existing TestFlight group. [Release evidence](docs/evidence/recovered-device-release-2026-11-08.md) records remaining physical-device/member-specific verification.
 
 **Delivered November 8:** [#187](https://github.com/porchday/porchday/issues/187) preserves Share drafts across navigation and adds encrypted device-local autosave, reload recovery, saved/error feedback and explicit discard. Verified on staging and production, with passing Chromium/WebKit and exact-source iOS/macOS checks. [Release evidence](docs/evidence/post-draft-release-2026-11-08.md).
 
@@ -27,7 +27,7 @@ Completed feed-header follow-up: [#28](https://github.com/porchday/porchday/issu
 
 Completed owner follow-up: [#161](https://github.com/porchday/porchday/issues/161) lowers the mutual connection cap to 150, including family. Deployed and verified November 4 across normal acceptance, invitation verification, API metadata and web UI; shared native source and CI updated. Existing connections are preserved. See [release evidence](docs/evidence/connection-limit-release-2026-11-04.md).
 
-Last reviewed: **November 4, 2026**. The original November 1 inventory covered 40 open product-backlog issues; the release status below supersedes that snapshot. The owner’s November 1 priority list supersedes the earlier reliability-first planning order; active incidents and release safeguards still take precedence. Priority labels below reflect GitHub labels; #15 has no priority label yet. Status summaries are a dated snapshot, so read the linked issue's recent evidence before starting.
+Last reviewed: **November 4, 2026**. The original November 1 inventory covered 40 open product-backlog issues; the release status below supersedes that snapshot. The owner’s November 1 priority list supersedes the earlier reliability-first planning order; active incidents and release safeguards still take precedence. Priority labels below reflect GitHub labels; #15 is P2. Status summaries are a dated snapshot, so read the linked issue's recent evidence before starting.
 
 Owner follow-up November 3: #123 adds an album picker for any available past upload, including older post attachments, preserving existing audiences. #124 simplifies mobile headers and Share, moves notifications/logout to More, and labels both photo subtabs Photos. **Delivered to staging and production (November 3)**; see [release verification](docs/evidence/mobile-album-picker-release-2026-11-03.md).
 
