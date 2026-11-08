@@ -5,7 +5,7 @@ import http from 'node:http';
 import assert from 'node:assert/strict';
 import {writeFile} from 'node:fs/promises';
 const root=process.cwd();
-const result=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{PostCard}from'./apps/web/src/Social';import{PendingSaveStatus,useRoute,navigate}from'./apps/web/src/ui';import{withPendingSave}from'./apps/web/src/pending-saves';window.startSave=()=>withPendingSave(()=>new Promise((resolve,reject)=>{window.endSave=resolve;window.failSave=reject})).catch(()=>{});window.nav=navigate;function Route(){const path=useRoute();return <output id='route'>{path}</output>}
+const result=await build({stdin:{contents:`import React from 'react';import{createRoot}from'react-dom/client';import{PostCard}from'./apps/web/src/Social';import{PendingSaveStatus,useRoute,navigate}from'./apps/web/src/ui';import{withPendingSave}from'./apps/web/src/pending-saves';window.startSave=()=>withPendingSave(()=>new Promise((resolve,reject)=>{window.endSave=resolve;window.failSave=reject})).catch(()=>{});window.startHistory=()=>withPendingSave(()=>new Promise(resolve=>window.endHistory=resolve),true,true);window.nav=navigate;function Route(){const path=useRoute();return <output id='route'>{path}</output>}
 const rows=Array.from({length:30},(_,i)=>({id:'post-'+i,author_id:'self',created_at:new Date().toISOString(),expires_at:null,audience:'only_me',envelope:{ciphertext:'x',context:{id:'post-'+i,authorId:'self',revision:1,expiresAt:null}}}));
 createRoot(document.getElementById('root')).render(<><Route/><PendingSaveStatus/><a id='next' href='/next'>Next</a>{rows.map(row=><div style={{minHeight:600}} key={row.id}><PostCard row={row} onChange={()=>{}}/></div>)}</>);`,resolveDir:root,loader:'tsx'},plugins:[{name:'synthetic-only',setup(b){
 b.onResolve({filter:/^@porchday\/crypto$/},()=>({path:'crypto',namespace:'fixture'}));
@@ -42,6 +42,12 @@ try {for(const engine of [chromium,webkit]){
   assert.equal(await page.evaluate(()=>!window.dispatchEvent(new Event('beforeunload',{cancelable:true}))),true);
   await page.evaluate(()=>window.endSave());await page.locator('.pending-save-status').waitFor({state:'hidden'});
   assert.equal(await page.evaluate(()=>!window.dispatchEvent(new Event('beforeunload',{cancelable:true}))),false);
+  await page.evaluate(()=>{window.nav('/');window.startHistory();});
+  await page.evaluate(()=>window.nav('/connections'));await page.waitForFunction(()=>location.pathname==='/connections');
+  assert.equal(await page.locator('.pending-save-status').count(),0);
+  assert.equal(await page.evaluate(()=>!window.dispatchEvent(new Event('beforeunload',{cancelable:true}))),true);
+  await page.evaluate(()=>window.nav('/login'));assert.equal(new URL(page.url()).pathname,'/connections');
+  await page.evaluate(()=>window.endHistory());
   await page.evaluate(()=>window.nav('/done'));await page.waitForFunction(()=>location.pathname==='/done');
   for(const fail of [true,false]){
    failWrite=fail;pendingWrite=undefined;

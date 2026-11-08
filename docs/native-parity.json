@@ -10,7 +10,8 @@
         "docs/native-parity.md#native-responsiveness--november-6",
         "docs/native-parity.md#shared-web-shell",
         "docs/native-parity.md#saving-navigation-feedback",
-        "docs/native-parity.md#share-draft-autosave"
+        "docs/native-parity.md#share-draft-autosave",
+        "docs/native-parity.md#recovered-device-access-updates"
       ],
       "implementation": {
         "ios": "implemented",
@@ -97,7 +98,8 @@
         "docs/native-parity.md#full-video-preparation-and-optional-thumbnails",
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
         "docs/native-parity.md#pending-encryption-setup",
-        "docs/native-parity.md#share-draft-autosave"
+        "docs/native-parity.md#share-draft-autosave",
+        "docs/native-parity.md#recovered-device-access-updates"
       ],
       "implementation": {
         "ios": "implemented",
@@ -178,7 +180,8 @@
         "docs/native-parity.md#larger-videos--november-6-implementation",
         "design/larger-videos.md",
         "docs/native-parity.md#shared-web-shell",
-        "docs/native-parity.md#direct-videos-and-10-gb-storage"
+        "docs/native-parity.md#direct-videos-and-10-gb-storage",
+        "docs/native-parity.md#recovered-device-access-updates"
       ],
       "implementation": {
         "ios": "implemented",

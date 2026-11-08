@@ -51,7 +51,7 @@ export async function refreshAlbumPhoto(vault:ReturnType<typeof useVault>,photo:
  const grant=photo.grants.find(g=>g.album_id===albumId);if(!grant)throw Error("This album photo is no longer available.");
  return refreshPhotoGrant(vault,photo,grant);
 }
-export async function refreshPhotoGrant(vault:ReturnType<typeof useVault>,photo:PhotoRow,grant:PhotoGrant,checkCurrent:()=>void=()=>{}){
+export async function refreshPhotoGrant(vault:ReturnType<typeof useVault>,photo:PhotoRow,grant:PhotoGrant,checkCurrent:()=>void=()=>{},keepNavigation=false){
  checkCurrent();
  const {content,payload}=await readPhoto(vault,photo,[grant]);
  const media={...content.media![0],id:crypto.randomUUID()},context={...grant.envelope.context,createdAt:new Date().toISOString()};
@@ -60,11 +60,13 @@ export async function refreshPhotoGrant(vault:ReturnType<typeof useVault>,photo:
  const bytes=new TextEncoder().encode(JSON.stringify(encrypted));
  if(bytes.length>22_020_096)throw Error("This encrypted photo is too large for this album's audience.");
  checkCurrent();
- await uploadPhotoMedia(encrypted,media.videoVersion===3?payload.video:undefined,grant.id);
+ await uploadPhotoMedia(encrypted,media.videoVersion===3?payload.video:undefined,grant.id,keepNavigation);
  checkCurrent();
  const envelope=await vault.sealPhotoRefresh({...content,media:[media]},context,grant.id);
  checkCurrent();
- try{await post(`/photos/${photo.id}/grants/${grant.id}/refresh`,{envelope,media_id:media.id,expected_media_id:grant.media_id,expected_revision:photo.revision});}
+ try{const path=`/photos/${photo.id}/grants/${grant.id}/refresh`,body={envelope,media_id:media.id,expected_media_id:grant.media_id,expected_revision:photo.revision};
+  if(keepNavigation)await request(path,{method:"POST",backgroundSave:true,keepNavigation:true,body:JSON.stringify(body)});else await post(path,body);
+ }
  catch(error){
   checkCurrent();
   const latest=(await get("/photos/"+photo.id)).photo as PhotoRow;

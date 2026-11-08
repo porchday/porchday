@@ -1,5 +1,5 @@
-import { canonicalPath } from "./routes";
-import { hasPendingSaves, pendingSaves, withPendingSave } from "./pending-saves";
+import { canonicalPath, isMemberPath } from "./routes";
+import { hasNavigationBlockingSaves, hasPendingSaves, pendingSaves, withPendingSave } from "./pending-saves";
 import React, { useEffect, useState } from "react";
 import { message } from "./api";
 import { canonicalNavigation, needsDomainNavigation } from "./domain-navigation";
@@ -376,7 +376,7 @@ export function useRoute(navigationEpoch?: { current: number }) {
   useEffect(() => {
     const pop = () => {
       const next = location.pathname + location.search;
-      if (next !== observedPath.current && hasPendingSaves()) {
+      if (next !== observedPath.current && navigationIsBlocked(new URL(next,location.href))) {
         history.pushState({}, "", observedPath.current);
         return;
       }
@@ -409,9 +409,12 @@ export function useRoute(navigationEpoch?: { current: number }) {
     };
     const protectLinks = (event: MouseEvent) => {
       const anchor = (event.target as Element)?.closest?.("a[href]");
-      if (!hasPendingSaves() || !anchor || (anchor as HTMLAnchorElement).target ||
+      if (!anchor || (anchor as HTMLAnchorElement).target ||
           (anchor as HTMLAnchorElement).hasAttribute("download") || event.button !== 0 ||
           event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const destination=new URL((anchor as HTMLAnchorElement).href,location.href);
+      const blocks=navigationIsBlocked(destination);
+      if(!blocks)return;
       event.preventDefault();
       event.stopImmediatePropagation();
     };
@@ -476,9 +479,13 @@ export function useRoute(navigationEpoch?: { current: number }) {
   }, [path]);
   return path;
 }
+function navigationIsBlocked(destination:URL){
+  const retainedVault=destination.origin===location.origin&&!needsDomainNavigation(destination,location.origin)&&isMemberPath(new URL(location.href).pathname)&&isMemberPath(destination.pathname);
+  return retainedVault?hasNavigationBlockingSaves():hasPendingSaves();
+}
 export function navigate(path: string) {
-  if (hasPendingSaves()) return;
   const destination = new URL(path, location.href);
+  if (navigationIsBlocked(destination)) return;
   if (needsDomainNavigation(destination, location.origin)) {
     location.assign(canonicalNavigation(destination) ?? destination.href);
     return;
@@ -495,7 +502,7 @@ export function navigateAfterSaves(path: string) {
   const cancel = () => { unsubscribe(); window.removeEventListener("popstate", cancel); };
   const attempt = () => {
     if (location.href !== from) { cancel(); return; }
-    if (!hasPendingSaves()) { cancel(); navigate(path); }
+    if (!navigationIsBlocked(new URL(path,location.href))) { cancel(); navigate(path); }
   };
   unsubscribe = pendingSaves.subscribe(attempt);
   window.addEventListener("popstate", cancel);

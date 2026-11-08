@@ -159,7 +159,11 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
   app.get("/photos/:id/grants/:grant/refresh-audience",async c=>c.json(await tx(c,async db=>{
     const photo=await requirePhoto(db,id(c.req.param("id"))),grant=id(c.req.param("grant"));
     const [row]=await db`select id from app.photo_grants where id=${grant} and photo_id=${photo.id}`;if(!row)fail("NOT_FOUND",404);
-    return photoRefreshSnapshot(db,grant);
+    const audience=await photoRefreshSnapshot(db,grant);
+    const [coverage]=await db`select not exists(select from app.photo_refresh_devices(${grant}) d
+      where d.member_id<>app.actor() and not exists(select from app.photo_grant_recipients r
+        where r.grant_id=${grant} and r.member_id=d.member_id)) as complete`;
+    return {...audience,existing_peer_grants_complete:coverage.complete};
   })));
   app.post("/photos/:id/grants/:grant/refresh",async c=>{
     const photoId=id(c.req.param("id")),grant=id(c.req.param("grant"));

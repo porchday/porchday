@@ -11,12 +11,13 @@ import type {PhotoDraft} from './photo-publish';
 export function photoVideoBytes(video:unknown){return new TextEncoder().encode(canonicalJson(validateVideoManifest(video)));}
 export async function verifyPhotoVideo(proof:PhotoProof,video:unknown){await verifyPhotoBytes(proof,photoVideoBytes(video));return validateVideoManifest(video);}
 /** Rewrap a complete stream without copying its ciphertext or weakening the source proof. */
-export async function uploadPhotoMedia(envelope:EncryptedEnvelope,video?:unknown,photoRefreshId?:string){
+export async function uploadPhotoMedia(envelope:EncryptedEnvelope,video?:unknown,photoRefreshId?:string,keepNavigation=false){
  const manifest=video?validateVideoManifest(video):undefined;
  const bytes=new TextEncoder().encode(JSON.stringify(envelope));
  if(bytes.length>(manifest?1024*1024:22_020_096))throw Error('This encrypted attachment is too large for this audience.');
- const upload=await post(manifest?'/videos':'/media',{id:envelope.context.id,envelope,byte_size:bytes.length,...(manifest?{stream_id:manifest.streamId}:{}),...(photoRefreshId?{photo_refresh_id:photoRefreshId}:{})});
- await request(upload.upload_url,{method:'PUT',headers:{'Content-Type':'application/octet-stream'},body:new Blob([bytes])});
+ const path=manifest?'/videos':'/media',body={id:envelope.context.id,envelope,byte_size:bytes.length,...(manifest?{stream_id:manifest.streamId}:{}),...(photoRefreshId?{photo_refresh_id:photoRefreshId}:{})};
+ const upload=keepNavigation?await request(path,{method:'POST',backgroundSave:true,keepNavigation:true,body:JSON.stringify(body)}):await post(path,body);
+ await request(upload.upload_url,{method:'PUT',backgroundSave:keepNavigation,keepNavigation,headers:{'Content-Type':'application/octet-stream'},body:new Blob([bytes])});
 }
 export async function stagePhotoVideo(vault:ReturnType<typeof useVault>,photo:PhotoDraft,prepared:PreparedLargeVideo,audience:Audience,expiresAt:string|null,album:string|null,signal:AbortSignal,progress?:(text:string)=>void){
  if(await hasSavedPublication(vault.member.id,photo.id))throw Error('This video has a saved encrypted upload. Resume or cancel it before sharing it again.');
