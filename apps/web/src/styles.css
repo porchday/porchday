@@ -4902,3 +4902,7 @@ button.trace-row:focus-visible {
   cursor: not-allowed;
 }
 .pending-save-status { width: max-content; }
+
+/* Keep the single mixed-media action named on narrow screens too. */
+.composer-tools .composer-add-media > span { display: inline; }
+.composer-tools:has(.composer-add-media) { flex-wrap: wrap; }

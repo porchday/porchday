@@ -10,7 +10,7 @@ export function SharedMediaInbox({disabled,remaining,onImport,onBusy}:{disabled:
  async function refresh(){if(!isNativeShell())return;try{const found=await nativeCall('sharedMediaList');if(live.current&&Array.isArray(found))setBatches(found);}catch{/* Older shells and iOS have no shared inbox. */}}
  useEffect(()=>{live.current=true;void refresh();window.addEventListener('porchday:native-active',refresh);return()=>{live.current=false;window.removeEventListener('porchday:native-active',refresh);};},[]);
  // File snapshots can be read later by video preparation, so retain backing files until unmount.
- useEffect(()=>()=>{void navigator.storage.getDirectory().then(root=>Promise.all(retained.current.map(name=>root.removeEntry(name).catch(()=>{})))).catch(()=>{});},[]);
+ useEffect(()=>()=>{if(typeof navigator.storage?.getDirectory==="function")void navigator.storage.getDirectory().then(root=>Promise.all(retained.current.map(name=>root.removeEntry(name).catch(()=>{})))).catch(()=>{});},[]);
  async function importBatch(batch:Batch){
   setBusy(true);onBusy(true);setError('');
   try {

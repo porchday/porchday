@@ -543,7 +543,8 @@ export function Composer({
           />
           <button
             type="button"
-            className="text-button"
+            className="text-button composer-add-media"
+            aria-label="Add photos/videos"
             disabled={action.busy||videoSources.length>0||photos.length>=10}
             onClick={() => input.current?.click()}
           >

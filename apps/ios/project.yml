@@ -173,23 +173,6 @@ schemes:
     build:
       targets:
         PorchdayMac: all
-        PorchdayShare:
-    type: app-extension
-    platform: macOS
-    deploymentTarget: '14.0'
-    sources:
-      - path: PorchdayShare
-        excludes: [Info.plist, PorchdayShare.entitlements]
-      - path: SharedMedia
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: org.porchday.app.share
-        INFOPLIST_FILE: PorchdayShare/Info.plist
-        CODE_SIGN_ENTITLEMENTS: PorchdayShare/PorchdayShare.entitlements
-        APPLICATION_EXTENSION_API_ONLY: YES
-        SKIP_INSTALL: YES
-        ENABLE_APP_SANDBOX: YES
-        ASSETCATALOG_COMPILER_APPICON_NAME: ''
-  PorchdayMacTests: [test]
+        PorchdayMacTests: [test]
     test:
       targets: [PorchdayMacTests]
