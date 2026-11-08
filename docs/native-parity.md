@@ -139,3 +139,8 @@ Unified media release delivered November 8: [release evidence](evidence/unified-
 ## Pending encryption setup
 
 November 8, #185: the default iOS and macOS web shells use the same post composer and author-side encrypted catch-up as web/PWA. Social posts and attachments include every ready eligible device; pending direct connections retain publication eligibility tied to the existing connection. This is not a plaintext queue or a read grant. Current eligibility, exact device fingerprints, epoch, expiry, and history checks remain. Catch-up needs the author’s unlocked app after recipient setup. The legacy Swift vault and history preparer use the same scoped pending-member policy; other album/photo snapshots still require their previous checks. Exact-source automated native CI and deployment evidence are required; physical checks are not claimed.
+
+
+## Share draft autosave
+
+November 8, #187: default iOS and macOS shells use the same persistent Share composer and encrypted IndexedDB draft store as web/PWA. Text, media and sharing choices survive app-tab navigation and reload after unlocking. Storage failures keep the in-memory draft and show an explicit retry; publication/discard clear saved state. The status is inline and does not disable navigation. The app-update action allows a fully saved draft to reload. No new native bridge or binary is required. [Design and automated verification scope](../design/post-draft-autosave.md). Exact-source iOS/macOS CI remains required; physical-device storage eviction and app termination timing are not claimed verified. The optional previous Swift UI remains a migration fallback.

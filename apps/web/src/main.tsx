@@ -279,7 +279,7 @@ function App() {
               const dirty =
                 !!document.querySelector('[data-unsaved-draft="true"]') ||
                 Array.from(document.querySelectorAll("textarea")).some((el) =>
-                  el.value.trim(),
+                  el.value.trim()&&!el.closest('[data-draft-saved="true"]'),
                 );
               if (dirty) {
                 setUpdateNotice(
@@ -363,6 +363,8 @@ function AppShell({
   onAccountDeleted: () => Promise<void>;
 }) {
   const vault = useVault();
+  const shareVisited=useRef(path==="/share");
+  if(path==="/share")shareVisited.current=true;
   const navigationDisabled = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getSnapshot, () => 0) > 0;
   const [count, setCount] = useState<number | null>(vault.member.connection_count ?? null);
   const countedPath = useRef(path);
@@ -406,7 +408,7 @@ function AppShell({
   else if (path === "/albums") content = <Albums />;
   else if (path.startsWith("/albums/")) content = <AlbumDetail key={path.split("/")[2]} id={path.split("/")[2]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
   else if (path === "/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
-  else if (path === "/share") content = <><div className="page-heading mobile-tab-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={() => window.dispatchEvent(new Event("porchday:posts-shared"))} /></>;
+  else if (path === "/share") content = null;
   else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features"><Icon name="code"/>Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button disabled={navigationDisabled} onClick={logout}><Icon name="logout"/>Log out</Button></section>;
   else if (path.startsWith("/post/"))
     content = <Feed singleId={path.split("/")[2]} />;
@@ -502,6 +504,7 @@ function AppShell({
             <a href="/appeals">Request an independent review.</a>
           </Alert>
         )}
+        {shareVisited.current&&vault.member.status!=="suspended"&&<div hidden={path!=="/share"} key={"persistent-share-"+vault.member.id}><div className="page-heading mobile-tab-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={()=>window.dispatchEvent(new Event("porchday:posts-shared"))}/></div>}
         <React.Fragment key={routeKey}>{content}</React.Fragment>
         <footer className="member-appearance-footer">
           <ColorSchemeControls />
