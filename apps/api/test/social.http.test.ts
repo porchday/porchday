@@ -279,6 +279,7 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(full.id,'/posts/'+postId)).status).toBe(404);
         const snap=(await request(owner.id,'/posts/'+postId+'/audience-refresh/audience')).data;
         expect(snap.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,oldFriend.id,full.id].sort());
+        expect(snap.existing_peer_grants_complete).toBe(false);
         const encrypt=async(context:ContentContext,value:unknown)=>encryptObject({context:{...context,epoch:snap.epoch},payload:value,signingKey:owner.key,recipients:snap.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
         const replacementId=randomUUID(),replacement=await encrypt({...photo.context,id:replacementId,createdAt:new Date().toISOString()},photoPayload);
         // Ordinary upload cannot bypass the history-specific consent snapshot.
@@ -291,6 +292,10 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         expect((await request(owner.id,'/posts/'+postId+'/audience-refresh','POST',{...refresh,lifecycle:await signStatement({purpose:'porchday-lifecycle',id:postId,revision:2,expiresAt:deadline},outsider.key)})).data.error.code).toBe('INVALID_PROOF');
         expect((await request(owner.id,'/posts/'+postId+'/audience-refresh','POST',refresh)).status).toBe(200);
         expect((await request(owner.id,'/posts/'+postId+'/audience-refresh','POST',refresh)).status).toBe(200);
+        expect((await request(owner.id,'/posts/'+postId+'/audience-refresh/audience')).data.existing_peer_grants_complete).toBe(true);
+        await sql`delete from app.post_recipients where post_id=${postId} and member_id=${full.id}`;
+        expect((await request(owner.id,'/posts/'+postId+'/audience-refresh/audience')).data.existing_peer_grants_complete).toBe(false);
+        await sql`insert into app.post_recipients(post_id,device_id,member_id) values(${postId},${full.deviceId},${full.id})`;
         const detail=await request(full.id,'/posts/'+postId);
         expect(detail.status).toBe(200);expect(detail.data.post.envelope.context.createdAt).toBe(original.context.createdAt);expect(detail.data.post.edited_at).toBeNull();
         expect(detail.data.comments).toEqual([]);expect(detail.data.reactions).toEqual([]);

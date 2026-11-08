@@ -348,7 +348,11 @@ export function createSocialRoutes() {
     app.get('/posts/:id/audience-refresh/audience',async c=>c.json(await tx(c,async db=>{
         const source=await requirePost(db,id(c.req.param('id')),true);
         if(source.author_id!==c.get('memberId'))fail('FORBIDDEN',403);
-        return snapshot(db,source.audience,source.group_id,null,source.id);
+        const audience=await snapshot(db,source.audience,source.group_id,null,source.id);
+        const [coverage]=await db`select not exists(select from app.history_audience_devices(${source.id}) d
+          where d.member_id<>app.actor() and not exists(select from app.post_recipients r
+            where r.post_id=${source.id} and r.member_id=d.member_id and r.device_id=d.id)) as complete`;
+        return {...audience,existing_peer_grants_complete:coverage.complete};
     })));
     app.post('/posts/:id/audience-refresh',async c=>{
         const b=await body(c,envelopeBody.extend({lifecycle:z.any(),source_revision:z.number().int().positive(),source_expires_at:date.nullable(),source_media_ids:mediaIds,media_ids:mediaIds}).strict());
