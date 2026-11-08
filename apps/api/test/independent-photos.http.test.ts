@@ -325,6 +325,7 @@ suite("Encrypted independent photo API",()=>{
       expect(pending.data.items.map((x:any)=>x.id)).toContain(p.id);
       const snapshot=await call(owner.id,path+"/refresh-audience");expect(snapshot.status,JSON.stringify(snapshot.data)).toBe(200);
       expect(snapshot.data.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,reader.id,...(circle?[bridge.id]:[])].sort());
+      expect(snapshot.data.existing_peer_grants_complete).toBe(false);
       const encrypt=(payload:unknown,context:ContentContext)=>encryptObject({payload,context:{...context,epoch:snapshot.data.epoch},signingKey:owner.key,recipients:snapshot.data.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
       const media=randomUUID(),{photoDate:_,...base}=p.grant.envelope.context;
       const encrypted=await encrypt({bytes:"aGVsbG8=",mime:"image/jpeg"},{...base,id:media,kind:"media"}),bytes=new TextEncoder().encode(JSON.stringify(encrypted));
@@ -337,6 +338,11 @@ suite("Encrypted independent photo API",()=>{
       expect((await call(future.id,`/photos/${p.id}`)).status).toBe(404);
       expect((await call(reader.id,path+"/refresh-audience")).status).toBe(403);
       expect((await call(owner.id,"/photos/history-refresh")).data.items).toEqual([]);
+      expect((await call(owner.id,path+"/refresh-audience")).data.existing_peer_grants_complete).toBe(true);
+      await db`delete from app.photo_grant_recipients where grant_id=${gid} and member_id=${reader.id}`;
+      expect((await call(owner.id,path+"/refresh-audience")).data.existing_peer_grants_complete).toBe(false);
+      await db`insert into app.photo_grant_recipients(grant_id,member_id) values(${gid},${reader.id})`;
+
     }
   },90000);
   it("lets an existing admin share album history without replacing direct access or the owner identity",async()=>{
