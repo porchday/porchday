@@ -546,25 +546,45 @@ suite("Native push HTTP authorization, durable delivery and revocation", () => {
     const store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,
       put:async(key:string,text:string)=>{if(records.has(key))return null;records.set(key,text);return {etag:'record'};}};
     await persistSessionDenial(store,a.session);
-    const send=vi.fn(async()=>new Response(null,{status:200}));
-    expect(await processNativePush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:store as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:1});
+    const writeDataPoint=vi.fn(),send=vi.fn(async()=>new Response(null,{status:200}));
+    expect(await processNativePush({...env,ENVIRONMENT:'production',METRICS:{writeDataPoint},RECOVERY_JOURNAL:store as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:1});
     expect(send).toHaveBeenCalledTimes(1);
+    const deniedPoints=writeDataPoint.mock.calls.map(c=>c[0]).filter(p=>p.blobs?.[5]==='native_push_denied');
+    expect(deniedPoints).toEqual([{indexes:['job:none'],blobs:['porchday_metrics_v1','production','job','none','none','native_push_denied','none'],doubles:[0,-1,1]}]);
+    const evidence=JSON.stringify(deniedPoints);for(const value of [a.id,b.id,a.session,b.session,first])expect(evidence).not.toContain(value);
+
     expect(JSON.stringify(send.mock.calls)).not.toContain(a.session);expect(JSON.stringify(send.mock.calls)).not.toContain(b.session);
     expect(await sql`select id from public.auth_session where id=${a.session}`).toHaveLength(1);
     expect((await sql`select outcome from app.native_push_outbox where notification_id=${first}`)[0].outcome).toBe('failed');
   });
   it('never sends on unknown denial state and can retry after storage recovers',async()=>{
     const a=await seed(),b=await seed();await request(a,'/native-push/subscriptions','POST',device());
-    const n=await notification(a.id,b.id),send=vi.fn(async()=>new Response(null,{status:200}));
+    const writeDataPoint=vi.fn(),n=await notification(a.id,b.id),send=vi.fn(async()=>new Response(null,{status:200}));
     for(const mode of ['missing','failure','malformed']){
       const binding=mode==='missing'?undefined:{get:async()=>{if(mode==='failure')throw Error('private storage error');return {etag:'record',text:async()=>'{}'};}} as unknown as R2Bucket;
-      expect(await processNativePush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:binding},send as typeof fetch)).toEqual({sent:0,retried:1,skipped:0});
+      expect(await processNativePush({...env,ENVIRONMENT:'production',METRICS:{writeDataPoint},RECOVERY_JOURNAL:binding},send as typeof fetch)).toEqual({sent:0,retried:1,skipped:0});
       expect(send).not.toHaveBeenCalled();
       expect((await sql`select completed_at from app.native_push_outbox where notification_id=${n}`)[0].completed_at).toBeNull();
       await sql`update app.native_push_outbox set next_retry=now() where notification_id=${n}`;
     }
-    expect(await processNativePush({...env,ENVIRONMENT:'production',RECOVERY_JOURNAL:{get:async()=>null} as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:0});
+    expect(await processNativePush({...env,ENVIRONMENT:'production',METRICS:{writeDataPoint},RECOVERY_JOURNAL:{get:async()=>null} as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:1,retried:0,skipped:0});
     expect(send).toHaveBeenCalledTimes(1);
+    expect(writeDataPoint.mock.calls.filter(c=>c[0].blobs?.[5]==='native_push_denied')).toEqual([]);
+  });
+  it('does not attribute a provider rejection to a session denial',async()=>{
+    const a=await seed(),b=await seed();await request(a,'/native-push/subscriptions','POST',device());
+    const n=await notification(a.id,b.id),writeDataPoint=vi.fn(),send=vi.fn(async()=>Response.json({reason:'Forbidden'},{status:400}));
+    expect(await processNativePush({...env,ENVIRONMENT:'production',METRICS:{writeDataPoint},RECOVERY_JOURNAL:{get:async()=>null} as unknown as R2Bucket},send as typeof fetch)).toEqual({sent:0,retried:0,skipped:1});
+    expect(send).toHaveBeenCalledOnce();
+    expect((await sql`select outcome from app.native_push_outbox where notification_id=${n}`)[0].outcome).toBe('failed');
+    expect(writeDataPoint.mock.calls.filter(c=>c[0].blobs?.[5]==='native_push_denied')).toEqual([]);
+  });
+  it('still suppresses denied sessions when metrics fail',async()=>{
+    const a=await seed(),b=await seed();await request(a,'/native-push/subscriptions','POST',device());await notification(a.id,b.id);
+    const records=new Map<string,string>(),store={get:async(key:string)=>records.has(key)?{etag:'record',text:async()=>records.get(key)!}:null,put:async(key:string,text:string)=>{records.set(key,text);return {etag:'record'};}};
+    await persistSessionDenial(store,a.session);const send=vi.fn();
+    expect(await processNativePush({...env,ENVIRONMENT:'production',METRICS:{writeDataPoint(){throw Error('private metrics failure');}},RECOVERY_JOURNAL:store as unknown as R2Bucket},send)).toEqual({sent:0,retried:0,skipped:1});
+    expect(send).not.toHaveBeenCalled();expect(await sql`select id from public.auth_session where id=${a.session}`).toHaveLength(1);
   });
   it('keeps old preparation JSON compatible and restricts the session-bound projection to jobs',async()=>{
     const a=await seed(),b=await seed(),subscription=device();await request(a,'/native-push/subscriptions','POST',subscription);await notification(a.id,b.id);
