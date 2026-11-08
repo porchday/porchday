@@ -139,3 +139,7 @@ Unified media release delivered November 8: [release evidence](evidence/unified-
 ## Pending encryption setup
 
 November 8, #185: the default iOS and macOS web shells use the same post composer and author-side encrypted catch-up as web/PWA. Social posts and attachments include every ready eligible device; pending direct connections retain publication eligibility tied to the existing connection. This is not a plaintext queue or a read grant. Current eligibility, exact device fingerprints, epoch, expiry, and history checks remain. Catch-up needs the author’s unlocked app after recipient setup. The legacy Swift vault and history preparer use the same scoped pending-member policy; other album/photo snapshots still require their previous checks. Exact-source automated native CI and deployment evidence are required; physical checks are not claimed.
+
+## Recovered-device grant coverage API
+
+November 8, #22: add read-only existing_peer_grants_complete hints to authenticated post/photo refresh snapshots. This lets the new shared web shell conservatively avoid redundant author-only re-encryption after key recovery, without skipping peer grant repairs. Older clients ignore the additive field. No writes, authorization, schema, native bridge or preserved runtime behavior change. Default iOS/macOS shells use the hosted web client; exact-source native CI remains required. Rounded Mac icon distribution is built from the frontend source separately; physical checks stay #49/#114.
