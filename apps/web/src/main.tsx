@@ -1,3 +1,4 @@
+import {startAutomaticUpdates} from "./automatic-updates";
 import {FeedUnreadProvider,FeedBadge} from "./FeedUnread";
 import { isMemberPath } from "./routes";
 import { PhotoCollection } from "./PhotoCollection";
@@ -93,10 +94,6 @@ function App() {
   const [error, setError] = useState("");
   const [restricted, setRestricted] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
-  const [registration, setRegistration] =
-    useState<ServiceWorkerRegistration | null>(null);
-  const [update, setUpdate] = useState(false);
-  const [updateNotice, setUpdateNotice] = useState("");
   const [deletionReceipt, setDeletionReceipt] = useState<DeletionReceipt | null>(null);
   const [deletionCleanupBusy, setDeletionCleanupBusy] = useState(false);
   const authenticationGeneration = useRef(0);
@@ -134,25 +131,9 @@ function App() {
       down = () => setOnline(false);
     window.addEventListener("online", up);
     window.addEventListener("offline", down);
-    if ("serviceWorker" in navigator)
-      navigator.serviceWorker
-        .register("/sw.js", { scope: "/" })
-        .then((reg) => {
-          setRegistration(reg);
-          if (reg.waiting) setUpdate(true);
-          reg.addEventListener("updatefound", () => {
-            const next = reg.installing;
-            next?.addEventListener("statechange", () => {
-              if (
-                next.state === "installed" &&
-                navigator.serviceWorker.controller
-              )
-                setUpdate(true);
-            });
-          });
-        })
-        .catch(() => {});
+    const stopUpdates = startAutomaticUpdates();
     return () => {
+      stopUpdates();
       window.removeEventListener("online", up);
       window.removeEventListener("offline", down);
     };
@@ -270,35 +251,6 @@ function App() {
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      {update && (
-        <div className="update-banner" role="status">
-          <span>An update is available. {updateNotice}</span>
-          <Button
-            variant="outline compact"
-            onClick={() => {
-              const dirty =
-                !!document.querySelector('[data-unsaved-draft="true"]') ||
-                Array.from(document.querySelectorAll("textarea")).some((el) =>
-                  el.value.trim()&&!el.closest('[data-draft-saved="true"]'),
-                );
-              if (dirty) {
-                setUpdateNotice(
-                  "Finish or clear your draft before updating; it stays here until then.",
-                );
-                return;
-              }
-              registration?.waiting?.postMessage("ACTIVATE_UPDATE");
-              navigator.serviceWorker.addEventListener(
-                "controllerchange",
-                () => location.reload(),
-                { once: true },
-              );
-            }}
-          >
-            Update now
-          </Button>
-        </div>
-      )}
       {path === "/login" && error && (
         <div className="fixed-alert">
           <Alert>{error}</Alert>

@@ -70,6 +70,6 @@ export function PhotoAudienceSharing(){
    document.removeEventListener("visibilitychange",recheck);
   };
  },[context]);
- if(state==="idle")return null;
- return <div className="panel" role="status"><p>{state==="sharing"?"Updating encrypted photo access for eligible devices… You can keep using Porchday.":"Some encrypted photo access updates are pending. Your photos have not been reposted. You can keep using Porchday."}</p>{state==="unfinished"&&<button type="button" onClick={()=>retry.current()}>Retry access updates</button>}</div>;
+ if(state!=="unfinished")return null;
+ return <div className="panel" role="status"><p>Some eligible people or devices may not be able to view earlier photos yet. Retry sharing access.</p>{state==="unfinished"&&<button type="button" onClick={()=>retry.current()}>Retry access updates</button>}</div>;
 }

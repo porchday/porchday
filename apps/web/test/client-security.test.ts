@@ -194,6 +194,24 @@ describe("PWA privacy boundaries", () => {
       ]);
     }
   });
+  it("activates automatic worker updates only when every open window is ready", async () => {
+    for (const readiness of [[true, true], [true, false], [null]]) {
+      const handlers: Record<string, (event: any) => void> = {};
+      const skipWaiting = vi.fn();
+      runInNewContext(readFileSync("apps/web/public/sw.js", "utf8"), {
+        MessageChannel, setTimeout, clearTimeout,
+        self: {
+          addEventListener: (name: string, handler: (event: any) => void) => { handlers[name] = handler; },
+          clients: {matchAll: async () => readiness.map(safe => ({postMessage: (_: string, ports: MessagePort[]) => { if(safe !== null) { ports[0].postMessage({safe}); ports[0].close(); } }}))},
+          skipWaiting,
+        },
+      });
+      let completion!: Promise<void>;
+      handlers.message({data: "ACTIVATE_UPDATE_WHEN_SAFE", waitUntil: (promise: Promise<void>) => { completion = promise; }});
+      await completion;
+      expect(skipWaiting).toHaveBeenCalledTimes(readiness.every(Boolean) ? 1 : 0);
+    }
+  });
   it("never intercepts private API fetches and keeps push generic", async () => {
     const handlers: Record<string, (event: any) => void> = {};
     const notify = vi.fn().mockResolvedValue(undefined);

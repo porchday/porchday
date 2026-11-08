@@ -11,7 +11,8 @@
         "docs/native-parity.md#shared-web-shell",
         "docs/native-parity.md#saving-navigation-feedback",
         "docs/native-parity.md#share-draft-autosave",
-        "docs/native-parity.md#recovered-device-access-updates"
+        "docs/native-parity.md#recovered-device-access-updates",
+        "docs/native-parity.md#quiet-automatic-updates"
       ],
       "implementation": {
         "ios": "implemented",
@@ -99,7 +100,8 @@
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
         "docs/native-parity.md#pending-encryption-setup",
         "docs/native-parity.md#share-draft-autosave",
-        "docs/native-parity.md#recovered-device-access-updates"
+        "docs/native-parity.md#recovered-device-access-updates",
+        "docs/native-parity.md#quiet-automatic-updates"
       ],
       "implementation": {
         "ios": "implemented",

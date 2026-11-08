@@ -885,9 +885,9 @@ function PostAudienceSharing() {
       document.removeEventListener("visibilitychange", recheck);
     };
   }, [context]);
-  if (state === "idle") return null;
+  if (state !== "unconfirmed") return null;
   return <div className="panel" role="status">
-    <p>{state === "sharing" ? "Updating encrypted access for eligible devices… You can keep using Porchday." : "Some encrypted access updates are pending. Your posts have not been reposted. You can keep using Porchday."}</p>
+    <p>Some eligible people or devices may not be able to read earlier posts yet. Retry sharing access.</p>
     {state === "unconfirmed" && <Button variant="outline" onClick={() => { void task.current?.retry(); }}>Retry access updates</Button>}
   </div>;
 }

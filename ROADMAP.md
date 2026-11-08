@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner follow-up:** #190 applies shared UI updates automatically at a safe point and suppresses routine operational notices. [Design](design/automatic-updates.md). Implementation/release verification in progress.
+
 **Delivered November 8:** #22 skips redundant own-device history updates after key recovery and keeps necessary persistent catch-up from blocking member navigation; #124 removes mobile link icons and desktop More; #15 rounds the native Mac Dock/switcher icon. Web/API changes are live and Mac build 255 is available in the existing TestFlight group. [Release evidence](docs/evidence/recovered-device-release-2026-11-08.md) records remaining physical-device/member-specific verification.
 
 **Delivered November 8:** [#187](https://github.com/porchday/porchday/issues/187) preserves Share drafts across navigation and adds encrypted device-local autosave, reload recovery, saved/error feedback and explicit discard. Verified on staging and production, with passing Chromium/WebKit and exact-source iOS/macOS checks. [Release evidence](docs/evidence/post-draft-release-2026-11-08.md).
