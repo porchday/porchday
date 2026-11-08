@@ -1,6 +1,13 @@
 import React,{useEffect,useRef,useState} from 'react';
 import {isNativeShell,nativeCall} from './native-shell';
 import {Alert,Button} from './ui';
+async function cleanAbandonedImports(){
+ if(typeof navigator.storage?.getDirectory!=="function")return;
+ const root=await navigator.storage.getDirectory();
+ for await(const[name,entry]of (root as any).entries())if(name.startsWith('porchday-shared-')&&entry.kind==='file'){
+  const file=await entry.getFile();if(file.lastModified<Date.now()-24*60*60*1000)await root.removeEntry(name).catch(()=>{});
+ }
+}
 type Batch = {id:string;items:{id:string;name:string;type:string;size:number}[]};
 
 /** Native handoffs stay local until the ordinary encrypted composer publishes them. */
@@ -8,7 +15,7 @@ export function SharedMediaInbox({disabled,remaining,onImport,onBusy}:{disabled:
  const [batches,setBatches]=useState<Batch[]>([]),[busy,setBusy]=useState(false),[error,setError]=useState(''),[progress,setProgress]=useState('');
  const retained=useRef<string[]>([]),live=useRef(true);
  async function refresh(){if(!isNativeShell())return;try{const found=await nativeCall('sharedMediaList');if(live.current&&Array.isArray(found))setBatches(found);}catch{/* Older shells and iOS have no shared inbox. */}}
- useEffect(()=>{live.current=true;void refresh();window.addEventListener('porchday:native-active',refresh);return()=>{live.current=false;window.removeEventListener('porchday:native-active',refresh);};},[]);
+ useEffect(()=>{live.current=true;void cleanAbandonedImports().catch(()=>{});void refresh();window.addEventListener('porchday:native-active',refresh);return()=>{live.current=false;window.removeEventListener('porchday:native-active',refresh);};},[]);
  // File snapshots can be read later by video preparation, so retain backing files until unmount.
  useEffect(()=>()=>{if(typeof navigator.storage?.getDirectory==="function")void navigator.storage.getDirectory().then(root=>Promise.all(retained.current.map(name=>root.removeEntry(name).catch(()=>{})))).catch(()=>{});},[]);
  async function importBatch(batch:Batch){
