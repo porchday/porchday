@@ -56,15 +56,7 @@ import UniformTypeIdentifiers
             provider.loadFileRepresentation(forTypeIdentifier: type) { url, error in
                 do {
                     guard let url else { throw error ?? CocoaError(.fileNoSuchFile) }
-                    let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-                    let image = UTType(type)?.conforms(to: .image) == true
-                    guard size > 0, size <= (image ? 50_000_000 : SharedMediaInbox.maximumFileBytes) else { throw CocoaError(.fileReadTooLarge) }
-                    let id = UUID().uuidString.lowercased(), destination = folder.appendingPathComponent(id)
-                    try FileManager.default.copyItem(at: url, to: destination)
-                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
-                    var filename = (name ?? url.lastPathComponent) as NSString
-                    if filename.pathExtension.isEmpty { filename = (filename.lastPathComponent + "." + (UTType(type)?.preferredFilenameExtension ?? (image ? "jpg" : "mov"))) as NSString }
-                    continuation.resume(returning: SharedMediaInbox.Item(id: id, name: filename.lastPathComponent, type: UTType(type)?.preferredMIMEType ?? "application/octet-stream", size: size))
+                    continuation.resume(returning: try SharedMediaInbox.copyMedia(url, type: type, suggestedName: name, into: folder))
                 } catch { continuation.resume(throwing: error) }
             }
         }

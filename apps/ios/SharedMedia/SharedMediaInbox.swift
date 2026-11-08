@@ -1,5 +1,6 @@
 import Foundation
 import UniformTypeIdentifiers
+import ImageIO
 
 /// A local-only handoff. No account keys, network access or publishing in the extension.
 enum SharedMediaInbox {
@@ -53,6 +54,40 @@ enum SharedMediaInbox {
     static func remove(_ id: String) throws {
         guard validID(id) else { throw CocoaError(.fileNoSuchFile) }
         try FileManager.default.removeItem(at: root().appendingPathComponent(id))
+    }
+    /// Photos can provide HEIC/TIFF; convert those locally to a browser-compatible JPEG,
+    /// retaining the original date while removing location and other metadata.
+    static func copyMedia(_ source: URL, type: String, suggestedName: String?, into folder: URL) throws -> Item {
+        let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        let image = UTType(type)?.conforms(to: .image) == true
+        guard size > 0, size <= (image ? 50 * 1024 * 1024 : maximumFileBytes) else { throw CocoaError(.fileReadTooLarge) }
+        let id = UUID().uuidString.lowercased(), destination = folder.appendingPathComponent(id)
+        var filename = (suggestedName ?? source.lastPathComponent) as NSString
+        var mime = UTType(type)?.preferredMIMEType ?? "application/octet-stream"
+        if image, let input = CGImageSourceCreateWithURL(source as CFURL, nil),
+           let actual = CGImageSourceGetType(input) as String?, ![UTType.jpeg.identifier, UTType.png.identifier, UTType.webP.identifier].contains(actual) {
+            let properties = CGImageSourceCopyPropertiesAtIndex(input, 0, nil) as? [String: Any] ?? [:]
+            guard let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
+                  let height = properties[kCGImagePropertyPixelHeight as String] as? Int,
+                  width > 0, height > 0, width <= 20000, height <= 20000, width * height <= 100_000_000,
+                  let pixels = CGImageSourceCreateThumbnailAtIndex(input, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 2400] as CFDictionary),
+                  let output = CGImageDestinationCreateWithURL(destination as CFURL, UTType.jpeg.identifier as CFString, 1, nil) else { throw CocoaError(.fileReadCorruptFile) }
+            let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any] ?? [:]
+            var dates: [String: Any] = [:]
+            for key in [kCGImagePropertyExifDateTimeOriginal, kCGImagePropertyExifDateTimeDigitized] {
+                if let value = exif[key as String] as? String { dates[key as String] = value }
+            }
+            CGImageDestinationAddImage(output, pixels, [kCGImageDestinationLossyCompressionQuality: 0.9, kCGImagePropertyExifDictionary: dates] as CFDictionary)
+            guard CGImageDestinationFinalize(output) else { throw CocoaError(.fileWriteUnknown) }
+            mime = "image/jpeg"; filename = (filename.deletingPathExtension + ".jpg") as NSString
+        } else {
+            try FileManager.default.copyItem(at: source, to: destination)
+            if filename.pathExtension.isEmpty { filename = (filename.lastPathComponent + "." + (UTType(type)?.preferredFilenameExtension ?? (image ? "jpg" : "mov"))) as NSString }
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: destination.path)
+        let written = try destination.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
+        guard written > 0, written <= maximumFileBytes else { throw CocoaError(.fileReadTooLarge) }
+        return Item(id: id, name: filename.lastPathComponent, type: mime, size: written)
     }
     static func chunk(batch: String, item: String, offset: Int, count: Int) throws -> String {
         let (url, record) = try file(batch: batch, item: item)
