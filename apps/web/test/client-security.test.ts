@@ -212,6 +212,25 @@ describe("PWA privacy boundaries", () => {
       expect(skipWaiting).toHaveBeenCalledTimes(readiness.every(Boolean) ? 1 : 0);
     }
   });
+  it("renders only validated feed preview metadata", async () => {
+    const handlers: Record<string, (event: any) => void> = {};
+    const notify = vi.fn().mockResolvedValue(undefined);
+    runInNewContext(readFileSync("apps/web/public/sw.js", "utf8"), {
+      self: { addEventListener: (name: string, handler: any) => { handlers[name] = handler; },
+        registration: { showNotification: notify }, navigator: {} },
+    });
+    for (const [metadata, body] of [
+      [{author:"andy",content:"post"}, "@andy shared a post"],
+      [{author:"andy",content:"media"}, "@andy shared photos/videos"],
+      [{author:"andy\nForged",content:"post"}, "New activity in your feed"],
+      [{author:"andy",content:"secret text"}, "New activity in your feed"],
+    ] as const) {
+      let completed!: Promise<void>;
+      handlers.push({data:{json:()=>({url:"/",...metadata,body:"PRIVATE CONTENT"})},waitUntil:(p:Promise<void>)=>{completed=p;}});
+      await completed;
+      expect(notify).toHaveBeenLastCalledWith("Porchday",expect.objectContaining({body}));
+    }
+  });
   it("never intercepts private API fetches and keeps push generic", async () => {
     const handlers: Record<string, (event: any) => void> = {};
     const notify = vi.fn().mockResolvedValue(undefined);

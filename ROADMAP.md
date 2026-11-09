@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**In progress November 8:** #7 adds author/activity notification previews and investigates a reported native iOS crash on notification tap. Callback hardening is under test; no crash log or confirmed root cause yet.
+
 **Delivered November 8:** #124 makes every Settings tab visible with wrapping rows, separates Notifications and moves Time zone to My profile. Live and verified in staging/production. [Release evidence](docs/evidence/settings-tabs-release-2026-11-08.md).
 
 **Delivered November 8:** [#190](https://github.com/porchday/porchday/issues/190) applies shared UI updates automatically at a safe idle/background point and suppresses routine operational notices. Live in staging/production; encrypted draft preservation and actual automatic reloads verified. [Release evidence](docs/evidence/quiet-updates-release-2026-11-08.md). Native binary installation remains controlled by OS/store settings.
