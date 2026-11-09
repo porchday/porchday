@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**In implementation:** [#196](https://github.com/porchday/porchday/issues/196), P1: explicitly consented device diagnostics and optional content recordings, durable uploads and audited operator timeline. This follows the access-update observability gap in #22; deferred Datadog #12 remains deferred. Local implementation is not production deployment evidence.
+
 **Released November 8:** #22 post/photo access updates now recover automatically with per-item backoff and read-back reconciliation, replacing manual Retry buttons. Staging and production synthetic recipient checks pass. [Release evidence](docs/evidence/automatic-access-recovery-release-2026-11-08.md).
 
 **Released November 8:** #7 author/activity notification previews are live; tested notification-tap hardening is available in TestFlight iOS 304 / macOS 267. The reported iOS crash remains P1, `needs verification`: no diagnostic or confirmed root cause yet. [Release evidence](docs/evidence/notification-previews-release-2026-11-08.md).

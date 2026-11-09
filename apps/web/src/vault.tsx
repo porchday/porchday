@@ -1,3 +1,5 @@
+import {attachDiagnostics} from './diagnostics';
+import {DiagnosticsIndicator} from './DiagnosticPanels';
 import {onlyRecoveredOwnDevicesMissing,hasRecoveredAccess} from './recovered-history-access';
 import {validateVideoManifest} from "@porchday/crypto/video";
 import {PhotoAudienceSharing} from "./PhotoAudienceSharing";
@@ -142,6 +144,10 @@ export function VaultProvider({
     key: UnlockedPrivateKey;
     history: UnlockedPrivateKey[];
   } | null>(null);
+  useEffect(() => {
+    if (!active || active.device.revoked_at) return;
+    return attachDiagnostics(member.id, active.device.id);
+  }, [member.id, active?.device.id, active?.device.revoked_at]);
   useEffect(() => {
     if (active) markOnce("vault-ready");
   }, [active]);
@@ -758,6 +764,7 @@ export function VaultProvider({
         },
       }}
     >
+      <DiagnosticsIndicator />
       <PostAudienceSharing />
       <PhotoAudienceSharing />
       {profileSetup?.key===profileContext && profileSetup.state==='unconfirmed' && dismissedProfileSetup!==profileContext && (

@@ -617,3 +617,12 @@ Google and GitHub OAuth may be added after the email/password MVP, with provider
 Design and select a technical solution for proof of human participation after the initial release. No verification provider, live verification interview, biometric collection, verification database table, or verification-based authorization gate is required for launch. Existing authentication, adult eligibility, rate limits, bot-abuse controls, and moderation remain in scope; they must not be advertised as proof of humanity.
 
 Future evaluation should compare spoof resistance, privacy, accessibility, inclusion, cost, false rejections, and operational effort. Define enrollment, rechecks, appeals, retention, and enforcement only after choosing an approach. Avoid mandatory government ID or retained biometrics by default. Login credentials and bot challenges alone do not prove a unique human; any eventual marketing claim must match what the selected system actually establishes.
+
+### Explicit content diagnostics exception (owner-approved November 8, #196)
+
+The owner approved optional first-party detailed recordings and separately
+consented content capture. This supersedes the blanket DOM-capture prohibition
+only for the bounded, per-device, expiring recording described in
+[performance tracing](../docs/performance-tracing.md#detailed-diagnostic-recordings-issue-196).
+Ordinary telemetry, legacy performance traces, third-party replay and credential
+capture retain their existing restrictions. No recording begins automatically.

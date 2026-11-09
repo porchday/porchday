@@ -101,3 +101,6 @@ export function tracingMiddleware():MiddlewareHandler<{Bindings:Env;Variables:Va
 }
 /** Called from app.onError so a traced 503 still explains itself. */
 export function traceError(error:unknown):void {try{const trace=store.getStore();if(trace&&!trace.error)trace.error=describeError(error);}catch{}}
+
+/** Bounded server phases for an explicitly consented diagnostic request. */
+export function diagnosticServerPhases(){const trace=store.getStore();return trace?{trace:trace.traceId,phases:trace.spans.map(s=>({name:s.name,start:s.start,duration:s.duration})),error:trace.error?.split(' msg=')[0]}:null;}

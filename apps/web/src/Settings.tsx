@@ -1,3 +1,4 @@
+import {DiagnosticsSettings} from './DiagnosticPanels';
 import { ChildrenSettings } from "./ChildrenSettings";
 import { MemberAvatar } from "./MemberAvatar";
 import React, { useEffect, useRef, useState } from "react";
@@ -857,6 +858,7 @@ function DataSettings({ onAccountDeleted }: { onAccountDeleted: () => Promise<vo
           {vault.member.status !== "restricted" && <RegisterIntegration />}
         </section>
       )}
+      <DiagnosticsSettings />
       <PerformanceTracing />
       <section className="panel danger-panel">
         <h2>Delete account</h2>

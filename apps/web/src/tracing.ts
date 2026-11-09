@@ -103,7 +103,7 @@ export function installTracing(): void {
     const url = state ? sameOriginApi(input) : null;
     if (!url || !state) return original(input, init);
     const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
-    headers.set("traceparent", `00-${state.traceId}-${hex(8)}-01`);
+    if (!headers.has("traceparent")) headers.set("traceparent", `00-${state.traceId}-${hex(8)}-01`);
     const record: FetchRecord = {
       method: (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase(),
       url: url.href, start: performance.now(), end: 0,

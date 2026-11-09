@@ -1,3 +1,4 @@
+import {diagnosticStep} from './diagnostics';
 import {startAccessUpdates} from './access-updates';
 import {validateVideoManifest} from "@porchday/crypto/video";
 import type { ContentContext, EncryptedEnvelope } from "@porchday/crypto";
@@ -72,13 +73,13 @@ export async function preparePostAudienceRefresh(
   if (!Array.isArray(row.media) || row.media.length > 10 ||
       new Set(row.media.map(item => item.id)).size !== row.media.length)
     throw Error("This post's photo list is unavailable.");
-  const content = await io.open(row); check();
+  const content = await diagnosticStep('post.decrypt',()=>io.open(row)); check();
   const originalMedia = content.media || [];
   if (!Array.isArray(originalMedia) || originalMedia.length > 10 ||
       new Set(originalMedia.map(item => item.id)).size !== originalMedia.length ||
       row.media.some(item => !originalMedia.some(photo => photo.id === item.id)))
     throw Error("This post's photo references changed.");
-  const seal = await io.prepareAudience(row, signal); check();
+  const seal = await diagnosticStep('post.audience',()=>io.prepareAudience(row, signal)); check();
   const media: MediaPayload[] = [];
   const sourceMediaIds: string[] = [];
   try {
@@ -86,12 +87,12 @@ export async function preparePostAudienceRefresh(
     // Drop their old payload references; never recreate them from saved content.
     for (const photo of originalMedia.filter(item => row.media.some(m => m.id === item.id))) {
       check();
-      const original = await io.readMedia(photo.id, signal); check();
+      const original = await diagnosticStep('post.read_media',()=>io.readMedia(photo.id, signal)); check();
       if (original.context.id !== photo.id || original.context.authorId !== io.memberId ||
           original.context.kind !== "media" || original.context.parentId !== id ||
           original.context.audience !== context.audience || original.context.groupId !== null)
         throw Error("A photo does not belong to this post.");
-      const payload = await io.open({ envelope: original, id: photo.id, author_id: io.memberId }); check();
+      const payload = await diagnosticStep('post.decrypt_media',()=>io.open({ envelope: original, id: photo.id, author_id: io.memberId })); check();
       await io.validatePhoto(payload); check();
       const replacement = { ...photo, id: newId() };
       const envelope = await seal({ ...payload, ...replacement }, {

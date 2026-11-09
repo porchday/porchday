@@ -50,7 +50,7 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
   {expanded&&<section className="comments" aria-label="Comments">
    {comments.map(row=><article key={row.id} className="comment"><strong>@{row.author_handle||"member"}</strong><p style={{whiteSpace:"pre-wrap"}}>{row.error||String(row.content?.text||"")}</p>{write&&(row.author_id===vault.member.id||photo.owner_id===vault.member.id)&&<Button variant="quiet" disabled={action.busy} onClick={()=>action.runSave(async()=>{await del(`/photos/${photo.id}/interactions/${row.id}`);await load();})}>Delete comment</Button>}</article>)}
    {next&&<Button busy={action.busy} onClick={()=>action.run(()=>load(next))}>Load more comments and reactions</Button>}
-   {write&&<form className="form-stack comment-composer" onSubmit={e=>{e.preventDefault();if(text.trim())void send("comment",text.trim());}}><label>Comment<textarea maxLength={5000} value={text} disabled={action.busy} onChange={e=>setText(e.target.value)} placeholder="Write a comment…"/></label><Button variant="primary" type="submit" disabled={!text.trim()} busy={action.busy}>Comment</Button></form>}
+   {write&&<form className="form-stack comment-composer" onSubmit={e=>{e.preventDefault();if(text.trim())void send("comment",text.trim());}}><label>Comment<textarea data-diagnostic-input="photo-comment" maxLength={5000} value={text} disabled={action.busy} onChange={e=>setText(e.target.value)} placeholder="Write a comment…"/></label><Button variant="primary" type="submit" disabled={!text.trim()} busy={action.busy}>Comment</Button></form>}
   </section>}
  </section>;
 }

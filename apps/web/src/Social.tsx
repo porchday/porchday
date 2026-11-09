@@ -454,7 +454,7 @@ export function Composer({
         <label className="sr-only" htmlFor="post-text">
           Write a post
         </label>
-        <textarea
+        <textarea data-diagnostic-input="social-text"
           id="post-text"
           rows={3}
           maxLength={5000}
@@ -493,6 +493,7 @@ export function Composer({
                   )
                 }
                 maxLength={1000}
+                data-diagnostic-input="media-caption"
                 placeholder="Describe this photo or video for everyone"
               />
               <TagPicker label="People in this photo or video" value={photo.tags||[]} disabled={action.busy} onChange={tags=>setPhotos(photos.map(p=>p.id===photo.id?{...p,tags}:p))}/>
@@ -1005,7 +1006,7 @@ export function PostCard({
         <div className="form-stack">
           <label className="field">
             <span>Edit your post</span>
-            <textarea
+            <textarea data-diagnostic-input="social-text"
               value={editText}
               onChange={(e) => setEditText(e.target.value)}
               maxLength={5000}
@@ -1632,7 +1633,7 @@ function Comment({
           <form className="form-stack" onSubmit={save}>
             <label className="field">
               <span>Edit your comment</span>
-              <textarea
+              <textarea data-diagnostic-input="social-text"
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 rows={3}
@@ -1823,7 +1824,7 @@ function CommentComposer({
         <label className="sr-only" htmlFor={`comment-${parent.id}`}>
           {reply ? "Write a reply" : "Write a comment"}
         </label>
-        <textarea
+        <textarea data-diagnostic-input="social-text"
           id={`comment-${parent.id}`}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -1926,7 +1927,7 @@ export function ReportDialog({
           </label>
           <label className="field">
             <span>Anything else?</span>
-            <textarea
+            <textarea data-diagnostic-input="social-text"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               maxLength={1000}
@@ -2106,7 +2107,7 @@ function ReshareDialog({
         </p>
         <label className="field">
           <span>Your text</span>
-          <textarea
+          <textarea data-diagnostic-input="social-text"
             rows={4}
             maxLength={5000}
             value={text}

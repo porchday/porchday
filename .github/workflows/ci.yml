@@ -53,12 +53,12 @@ jobs:
       - run: node --input-type=module -e "await import('./scripts/availability-report.ts')"
       - run: node --input-type=module -e "await import('./scripts/external-monitor-backup.ts'); await import('./scripts/external-monitor-relay.ts'); await import('./scripts/external-monitor-delivery.ts')"
       - run: node scripts/prepare-test-databases.ts
+      - run: npx playwright install --with-deps chromium webkit
       - run: npm test
       - name: Verify photo migrations with the preserved release schema
         run: npx vitest run apps/api/test/independent-photos.database.test.ts apps/api/test/independent-photos.http.test.ts apps/api/test/segmented-video.http.test.ts
         env:
           PHOTO_TEST_SCHEMA: without-052-057
-      - run: npx playwright install --with-deps chromium webkit
       - run: node scripts/check-video-playback.mjs
       - run: node scripts/check-video-outbox.mjs
       - run: node scripts/check-video-picker.mjs

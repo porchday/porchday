@@ -31,6 +31,7 @@ import {connectionScope,reportConnectionRefusal} from './connection-metrics';
 import {recordConnectionSnapshot} from './connection-snapshot';
 import {routePath} from 'hono/route';
 import {createTraceRoutes,cleanupTraces,deleteMemberTraces} from './traces';
+import {createDiagnosticRoutes,createStaffDiagnosticRoutes,deleteDiagnostics,diagnosticServerMiddleware} from './diagnostics';
 
 const app=new Hono<{Bindings:Env;Variables:Variables}>();
 // Connection accounting covers every request; points carry the matched route pattern.
@@ -89,6 +90,8 @@ app.route('/api/staff/moderation',createModerationRoutes());
 app.use('/api/staff/builder-chat',requireStaff('builder_chat'));
 app.use('/api/staff/builder-chat/*',requireStaff('builder_chat'));
 app.route('/api/staff/builder-chat',createStaffBuilderChatRoutes());
+app.use('/api/staff/diagnostics/*',requireStaff('builder_chat'));
+app.route('/api/staff/diagnostics',createStaffDiagnosticRoutes());
 app.route('/api/builder-bridge',createBuilderBridgeRoutes());
 app.use('/api/member-appeals/*',requireAppealMember);
 app.route('/api/member-appeals',createAppealRoutes());
@@ -96,6 +99,7 @@ app.route('/api/member-appeals',createAppealRoutes());
 app.route('/api/integration/v1',createIntegrationTokenRoutes());
 app.route('/api/integration',createIntegrationTokenRoutes());
 app.use('/api/v1/*',requireMember);
+app.use('/api/v1/*',diagnosticServerMiddleware);
 app.use('/api/v1/*',incidentControls);
 app.use('/api/v1/*',privacyMutationMiddleware);
 app.delete('/api/v1/account',async c=>{
@@ -108,6 +112,7 @@ app.delete('/api/v1/account',async c=>{
  finally{c.executionCtx.waitUntil(pool.end());}
  // Performance traces otherwise age out within the 14-day retention window.
  c.executionCtx.waitUntil(deleteMemberTraces(c.env,c.get('memberId')).catch(()=>{}));
+ c.executionCtx.waitUntil(deleteDiagnostics(c.env,c.get('memberId')).catch(()=>{}));
  return c.json({ok:true});
 });
 app.route('/api/v1',createPlatformInvitationRoutes());
@@ -115,6 +120,7 @@ app.route('/api/v1',createSocialRoutes());
 app.route('/api/v1',createIntegrationConsentRoutes());
 app.route('/api/v1',createBuilderChatRoutes());
 app.route('/api/v1',createTraceRoutes());
+app.route('/api/v1',createDiagnosticRoutes());
 app.all('/api/*',c=>c.json({error:{code:'NOT_FOUND'}},404));
 app.get('*',c=>c.env.ASSETS.fetch(c.req.raw));
 app.onError((_error,c)=>{traceError(_error);reportConnectionRefusal(c.env,_error);event('error',{code:'request_failed'},c.env);return c.json({error:{code:'SERVICE_UNAVAILABLE',message:'Please try again shortly.'}},503);});
@@ -127,6 +133,7 @@ export default {
   if(controller.cron==='17 3 * * *'){
    if(env.MEDIA_BACKUP_ENABLED==='true')ctx.waitUntil(env.JOBS.send({kind:'media_backup_start'}));
    ctx.waitUntil(cleanupTraces(env).catch(()=>{}));
+   ctx.waitUntil(deleteDiagnostics(env).catch(()=>{}));
   }else {
    ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
    if(env.SESSION_DENIAL_CLEANUP_V1==='true')ctx.waitUntil(env.JOBS.send({kind:'session_denial_cleanup'}));
