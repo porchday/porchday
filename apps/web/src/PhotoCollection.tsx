@@ -59,5 +59,5 @@ export function PhotoNotificationDetail({id}:{id:string}){
  async function load(){await action.run(async()=>{if(!/^[a-f0-9-]{36}$/i.test(id))throw Error("This photo link is unavailable.");const result=await get("/photos/"+id);setPhoto(result.photo);});}
  useEffect(()=>{setClosed(false);setPhoto(null);void load();},[id,vault.member.id]);
  if(closed)return null;
- return <Modal title="Photo" onClose={()=>{setClosed(true);history.replaceState(null,"",location.pathname);}}><Alert>{action.error}</Alert>{photo?<PhotoCard photo={photo} onChanged={load}/>:!action.error&&<Loading/>}</Modal>;
+ return <Modal title="Photo" onClose={()=>{setClosed(true);history.replaceState(null,"",location.pathname);window.dispatchEvent(new PopStateEvent("popstate"));}}><Alert>{action.error}</Alert>{photo?<PhotoCard photo={photo} onChanged={load}/>:!action.error&&<Loading/>}</Modal>;
 }

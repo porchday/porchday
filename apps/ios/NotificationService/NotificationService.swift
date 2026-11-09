@@ -15,7 +15,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
             let token = ref["token"], token.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
             let id = ref["keyId"], let key = try? NotificationPreviewKey.read(), key.keyId == id else { finish(); return }
         let source = ImmutableNotification(content: request.content)
-        task = Task { @Sendable [weak self] in
+        let work = Task { @Sendable [weak self] in
             guard let self else { return }
             do {
                 // Fixed HTTPS origin, no cookies/session or redirects, bounded response.
@@ -42,8 +42,10 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 finish(content)
             } catch { finish() }
         }
+        lock.lock(); task = work; let expired = handler == nil; lock.unlock()
+        if expired { work.cancel() }
     }
-    override func serviceExtensionTimeWillExpire() { task?.cancel(); finish() }
+    override func serviceExtensionTimeWillExpire() { lock.lock(); let work = task; lock.unlock(); work?.cancel(); finish() }
     private func finish(_ content: UNNotificationContent? = nil) {
         lock.lock(); let callback = handler; handler = nil; let fallback = original; original = nil; lock.unlock()
         if let callback, let result = content ?? fallback { callback(result) }
