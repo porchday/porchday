@@ -58,6 +58,6 @@ export function PhotoAudienceSharing(){
    window.removeEventListener('porchday:connections-changed',recheck);document.removeEventListener('visibilitychange',recheck);
   };
  },[context]);
- if(state!=='unconfirmed')return null;
- return <div className="panel" role="status"><p>Access to some earlier photos is still updating. Porchday will retry automatically while you’re online.</p></div>;
+ // Background retries require no member action; failures remain in diagnostics.
+ return null;
 }

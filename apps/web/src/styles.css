@@ -4922,3 +4922,13 @@ button.trace-row:focus-visible {
   align-items: center;
   justify-content: center;
 }
+
+/* Reaction attribution remains available without a touch gesture. */
+.reaction-chip { -webkit-touch-callout: none; user-select: none; }
+.reaction-view { font-size: .8rem; padding: .4rem; }
+.reaction-detail-tabs { display: flex; flex-wrap: wrap; gap: .5rem; }
+.reaction-detail-tabs button { display: flex; align-items: center; gap: .4rem; padding: .5rem .75rem; }
+.reaction-detail-tabs button[aria-pressed="true"] { outline: 2px solid currentColor; outline-offset: -2px; }
+.reaction-detail-tabs img { width: 1.5rem; height: 1.5rem; object-fit: contain; }
+.reaction-people { list-style: none; margin: 0; padding: 0; }
+.reaction-people li { display: flex; align-items: center; gap: .75rem; padding: .6rem 0; overflow-wrap: anywhere; }

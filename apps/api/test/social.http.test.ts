@@ -457,6 +457,8 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         const detail = await request(friend.id, '/posts/' + postId);
         expect(detail.status).toBe(200); expect(detail.data.comments).toHaveLength(2);
         expect(detail.data.reactions).toHaveLength(1); expect(detail.data.comment_reactions).toHaveLength(1);
+        expect(detail.data.reactions[0].author_handle).toEqual(expect.any(String));
+        expect(detail.data.comment_reactions[0].author_handle).toBe(detail.data.reactions[0].author_handle);
         expect(await decryptObject({envelope: reply, expectedContext: reply.context, privateKey: friend.key, authorPublicKey: peer.publicKey})).toEqual({text: 'A fellow friend replied'});
         await expect(decryptObject({envelope: post, expectedContext: post.context, privateKey: relative.key, authorPublicKey: owner.publicKey})).rejects.toThrow('not a recipient');
         expect((await request(relative.id, '/posts/' + postId)).status).toBe(404);

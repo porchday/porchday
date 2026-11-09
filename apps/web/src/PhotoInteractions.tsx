@@ -1,5 +1,6 @@
-import {EmojiGlyph,EmojiPicker} from "./EmojiPicker";
-import {validateReactionPayload,reactionDisplay,type ReactionPayload} from "@porchday/crypto/reactions";
+import {ReactionChips} from "./ReactionChips";
+import {EmojiPicker} from "./EmojiPicker";
+import {validateReactionPayload,type ReactionPayload} from "@porchday/crypto/reactions";
 import React,{useEffect,useRef,useState} from "react";
 import {get,request,del,items,message,type EncryptedEnvelope,type Device,type Content} from "./api";
 import {useVault} from "./vault";
@@ -36,11 +37,10 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
  });}
  if(expired)return <p>This photo has expired.</p>;
  const reactions=[...rows.filter(r=>r.kind==="reaction"&&!r.error),...(ownReaction&&!ownReaction.error&&!rows.some(r=>r.id===ownReaction.id)?[ownReaction]:[])];
- const choices=[...new Map(reactions.map(r=>[String(r.content!.emoji),r.content as ReactionPayload])).values()];
  const comments=rows.filter(r=>r.kind==="comment");
  return <section className="photo-conversation" aria-label="Photo comments and reactions">
   <div className="post-actions"><div className="reaction-area"><div className="reaction-chips">
-   {choices.map(value=>{const count=reactions.filter(r=>r.content?.emoji===value.emoji).length;return <button type="button" className={"reaction-chip"+(own?.content?.emoji===value.emoji?" selected":"")} key={value.emoji} aria-label={`${reactionDisplay(value).name}, ${count} ${count===1?"person":"people"}`} aria-pressed={own?.content?.emoji===value.emoji} disabled={!write||action.busy} onClick={()=>send("reaction",value)}><EmojiGlyph value={value}/>{count}</button>;})}
+   <ReactionChips key={photo.id+':'+vault.member.id+':'+vault.device.id} viewerId={vault.member.id} entries={reactions.map(row=>({memberId:row.author_id,handle:row.author_id===vault.member.id?vault.member.handle:row.author_handle,payload:row.content as ReactionPayload}))} more={next?()=>void action.run(()=>load(next)):undefined} busy={action.busy} disabled={!write||action.busy} onToggle={value=>void send("reaction",value)}/>
    <button type="button" ref={addButton} className="reaction-add" aria-label="Add a reaction" aria-expanded={picker} disabled={!write||action.busy} onClick={()=>setPicker(true)}><Icon name="smile" size={18}/><Icon name="plus" size={10}/></button>
   </div></div><button type="button" className="text-button comment-toggle" aria-label="Comment" aria-expanded={expanded} onClick={()=>setExpanded(!expanded)}><Icon name="comment" size={18}/>{comments.length||""} <span>Comment</span></button></div>
   {picker&&<EmojiPicker onSelect={value=>send("reaction",value)} onClose={()=>setPicker(false)} busy={action.busy} error={action.error} returnFocusRef={addButton}/>}
