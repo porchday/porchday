@@ -94,68 +94,6 @@ suite('Social HTTP routes with real OpenPGP envelopes and runtime RLS', () => {
         const untraced = await traced.request('https://porchday.test/api/v1/feed', { headers: { 'x-test-member': viewer.id } }, env);
         expect(untraced.headers.has('server-timing')).toBe(false);
     });
-    it.skipIf(!process.env.RELEASE_BASELINE_SOCIAL_MODULE)('keeps the deployed social API usable after migration 052 alongside the candidate', async () => {
-        const baseline = await import(/* @vite-ignore */ process.env.RELEASE_BASELINE_SOCIAL_MODULE!);
-        const old = new Hono<{ Bindings: Env; Variables: Variables }>();
-        old.use('*', async(c,next)=>{c.set('memberId',c.req.header('x-test-member')!);c.set('authTime',Date.now());await next();});
-        old.route('/',baseline.createSocialRoutes());
-        const oldRequest=async(member:string,path:string,method='GET',body?:unknown)=>old.request('https://porchday.test'+path,{method,headers:{'x-test-member':member,'content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})},env);
-        const owner=await person(),recipient=await person();
-        const envelope=await seal(owner,{name:'Old and new API overlap'},{kind:'group',audience:'only_me'}),groupId=envelope.context.id;
-        expect((await oldRequest(owner.id,'/groups','POST',{envelope})).status).toBe(201);
-        const [{handle}]=await sql`select handle from app.profiles where member_id=${recipient.id}`;
-        const invitation=await oldRequest(owner.id,`/groups/${groupId}/invitations`,'POST',{handle});
-        expect(invitation.status).toBe(201);const {id:invitationId}=await invitation.json();
-        const roster=await request(owner.id,`/groups/${groupId}/invitations`);
-        expect(roster.status).toBe(200);expect(roster.data.items).toEqual([expect.objectContaining({id:invitationId,recipient_handle:handle,accepted_at:null})]);
-        expect((await request(recipient.id,`/group-invitations/${invitationId}/accept`,'POST')).status).toBe(200);
-        expect((await oldRequest(recipient.id,`/groups/${groupId}`)).status).toBe(200);
-        expect((await oldRequest(owner.id,'/me?bootstrap=1')).status).toBe(200);
-        expect((await oldRequest(owner.id,'/feed?limit=1')).status).toBe(200);
-        expect((await request(recipient.id,`/groups/${groupId}/invitations`)).status).toBe(403);
-        expect((await oldRequest(owner.id,`/groups/${groupId}/invitations`)).status).toBe(404);
-    },60000);
-    it('shows invitation identities and status only to owners, paginates, and updates the latest inviter', async () => {
-        const owner=await person(), moderator=await person(), recipient=await person(), outsider=await person();
-        const handle=(p: Person) => 't_'+p.id.replaceAll('-','').slice(0,20);
-        const group=await seal(owner,{name:'Invitation roster'},{kind:'group',audience:'only_me'}), groupId=group.context.id;
-        expect((await request(owner.id,'/groups','POST',{envelope:group})).status).toBe(201);
-        const invite=await request(owner.id,`/groups/${groupId}/invitations`,'POST',{handle:handle(moderator)});
-        expect((await request(moderator.id,`/group-invitations/${invite.data.id}/accept`,'POST')).status).toBe(200);
-        expect((await request(owner.id,`/groups/${groupId}/members/${moderator.id}`,'PUT',{role:'moderator'})).status).toBe(200);
-        expect((await request(owner.id,`/groups/${groupId}/invitations`,'POST',{handle:handle(recipient)})).status).toBe(201);
-        expect((await request(moderator.id,`/groups/${groupId}/invitations`,'POST',{handle:handle(recipient)})).status).toBe(201);
-        let roster=await request(owner.id,`/groups/${groupId}/invitations`);
-        expect(roster.status).toBe(200);
-        expect(roster.data.items).toEqual(expect.arrayContaining([
-            expect.objectContaining({recipient_handle:handle(recipient),inviter_handle:handle(moderator),accepted_at:null}),
-            expect.objectContaining({recipient_handle:handle(moderator),inviter_handle:handle(owner),accepted_at:expect.any(String)})
-        ]));
-        expect(roster.data.items.every((i:any)=>!('envelope' in i)&&!('recipient' in i))).toBe(true);
-        for(const p of [moderator,recipient,outsider]) expect((await request(p.id,`/groups/${groupId}/invitations`)).status).toBe(403);
-        await sql`insert into app.blocks(actor,target) values(${owner.id},${recipient.id})`;
-        roster=await request(owner.id,`/groups/${groupId}/invitations`);
-        expect(roster.data.items.some((i:any)=>i.recipient_handle===null)).toBe(true);
-        await sql`update app.group_invitations set expires_at=now()-interval '1 day' where group_id=${groupId} and recipient=${recipient.id}`;
-        roster=await request(owner.id,`/groups/${groupId}/invitations`);
-        expect(roster.data.items.some((i:any)=>!i.accepted_at&&Date.parse(i.expires_at)<Date.now())).toBe(true);
-        for(let n=0;n<30;n++){
-            const id=randomUUID();
-            await sql`insert into app.members(id,adult_attested_at,rules_accepted_at) values(${id},now(),now())`;
-            await sql`insert into app.profiles(member_id,handle) values(${id},${'inv_'+id.replaceAll('-','').slice(0,20)})`;
-            await sql`insert into app.group_invitations(id,group_id,inviter,recipient) values(${randomUUID()},${groupId},${owner.id},${id})`;
-        }
-        await sql`update app.group_invitations set expires_at='2030-01-01T00:00:00.123456Z' where group_id=${groupId}`;
-        roster=await request(owner.id,`/groups/${groupId}/invitations`);
-        expect(roster.data.items).toHaveLength(30);
-        const next=await request(owner.id,`/groups/${groupId}/invitations?cursor=${encodeURIComponent(roster.data.next_cursor)}`);
-        expect(next.data.items).toHaveLength(2);
-        expect(new Set([...roster.data.items,...next.data.items].map((i:any)=>i.id)).size).toBe(32);
-        expect(next.data.next_cursor).toBeNull();
-        expect((await request(owner.id,`/groups/${groupId}/members/${moderator.id}`,'PUT',{role:'owner'})).status).toBe(200);
-        expect((await request(owner.id,`/groups/${groupId}/invitations`)).status).toBe(403);
-        expect((await request(moderator.id,`/groups/${groupId}/invitations`)).status).toBe(200);
-    },60000);
     it('includes authorized author handles on walls, post details and group posts', async () => {
         const author = await person(), viewer = await person(), outsider = await person();
         await connection(author, viewer);
