@@ -46,7 +46,7 @@ import { Alert, Button, Field, Icon, Loading, useAction } from "./ui";
 import { LockedAccount } from "./LockedAccount";
 import { startInitialProfileSetup,type InitialProfileState } from "./initial-profile-lifecycle";
 import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
-import { preparePostAudienceRefresh, startPostAudienceRefresh, type AudienceRefreshState, type RefreshPost } from "./post-audience-refresh";
+import { preparePostAudienceRefresh, startPostAudienceRefresh, type RefreshPost } from "./post-audience-refresh";
 import { markOnce, traced } from "./tracing";
 type BackupDevice = {
   id: string;
@@ -777,12 +777,10 @@ export function VaultProvider({
  */
 function PostAudienceSharing() {
   const vault = useVault();
-  const [state, setState] = useState<AudienceRefreshState>("idle");
   const task = useRef<ReturnType<typeof startPostAudienceRefresh> | null>(null);
   const context = `${vault.member.id}:${vault.member.status || "active"}:${vault.device.id}:${vault.device.revoked_at || ""}`;
   const latestContext = useRef(context); latestContext.current = context;
   useEffect(() => {
-    setState("idle");
     if ((vault.member.status || "active") !== "active" || vault.device.revoked_at) return;
     let mounted = true;
     const current = () => mounted && latestContext.current === context;
@@ -859,7 +857,7 @@ function PostAudienceSharing() {
         await request(`/posts/${prepared.id}/audience-refresh`, { method: "POST", backgroundSave: true, keepNavigation: true, body: JSON.stringify(prepared.body) });
       },
       cleanup,
-      state: next => { if (current()) setState(next); },
+      state: () => {},
       changed: () => { if (current()) window.dispatchEvent(new Event("porchday:posts-shared")); },
     });
     task.current = sharing;
@@ -880,10 +878,8 @@ function PostAudienceSharing() {
       document.removeEventListener("visibilitychange", recheck);
     };
   }, [context]);
-  if (state !== "unconfirmed") return null;
-  return <div className="panel" role="status">
-    <p>Access to some earlier posts is still updating. Porchday will retry automatically while you’re online.</p>
-  </div>;
+  // Background retries require no user action; keep them out of the page UI.
+  return null;
 }
 export function Fingerprint({ device }: { device: Device }) {
   return (

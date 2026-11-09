@@ -1,17 +1,17 @@
 import {onlyRecoveredOwnDevicesMissing,hasRecoveredAccess} from './recovered-history-access';
 import {request,type Device,type EncryptedEnvelope} from './api';
-import {useEffect,useRef,useState} from "react";
+import {useEffect,useRef} from "react";
 import {useVault} from "./vault";
 import {preparePhotoRefresh,submitPhotoRefresh,photoRefreshOutcome,type PreparedPhotoRefresh} from "./photo-album";
 import type {PhotoRow} from "./photo-record";
-import {startAccessUpdates,type AccessUpdateState} from './access-updates';
+import {startAccessUpdates} from './access-updates';
 
 export function PhotoAudienceSharing(){
- const vault=useVault(),[state,setState]=useState<AccessUpdateState>('idle');
+ const vault=useVault();
  const context=`${vault.member.id}:${vault.member.status||"active"}:${vault.device.id}:${vault.device.revoked_at||""}`;
  const latest=useRef(context);latest.current=context;
  useEffect(()=>{
-  setState('idle');if((vault.member.status||'active')!=='active'||vault.device.revoked_at)return;
+  if((vault.member.status||'active')!=='active'||vault.device.revoked_at)return;
   let mounted=true,after:string|null=null;
   const covered=new Set<string>();
   const fingerprints=new Set((vault.keys||[vault.privateKey]).filter(Boolean).map(key=>key.getFingerprint()));
@@ -46,7 +46,7 @@ export function PhotoAudienceSharing(){
    },
    reconcile:async(candidate,signal)=>photoRefreshOutcome(candidate,(await request<{photo:PhotoRow}>(`/photos/${candidate.photoId}`,{signal})).photo),
    cleanup:async candidate=>{if(current())await request(`/media/${candidate.body.media_id}`,{method:'DELETE',backgroundSave:true,keepNavigation:true});},
-   state:next=>{if(current())setState(next);},
+   state:()=>{},
    changed:()=>{if(current())window.dispatchEvent(new Event('porchday:posts-shared'));},
   });
   const recheck=()=>{if(enabled())void sharing.recheck();else sharing.suspend();};
@@ -58,6 +58,6 @@ export function PhotoAudienceSharing(){
    window.removeEventListener('porchday:connections-changed',recheck);document.removeEventListener('visibilitychange',recheck);
   };
  },[context]);
- if(state!=='unconfirmed')return null;
- return <div className="panel" role="status"><p>Access to some earlier photos is still updating. Porchday will retry automatically while you’re online.</p></div>;
+ // Background retries require no user action; keep them out of the page UI.
+ return null;
 }
