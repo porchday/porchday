@@ -38,7 +38,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 let author = actor.flatMap { $0.range(of: "^[a-zA-Z0-9_]{1,40}$", options: .regularExpression) != nil ? "@" + $0 : nil }
                 if !preview.text.isEmpty { content.body = (author.map { $0 + ": " } ?? "") + preview.text }
                 content.userInfo["previewPath"] = preview.path
-                if let image = preview.image, let attachment = try? Self.attachment(image) { content.attachments = [attachment] }
+                if let image = preview.image, let attachment = try? NotificationPreviewAttachment.create(image) { content.attachments = [attachment] }
                 finish(content)
             } catch { finish() }
         }
@@ -50,21 +50,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         lock.lock(); let callback = handler; handler = nil; let fallback = original; original = nil; lock.unlock()
         if let callback, let result = content ?? fallback { callback(result) }
     }
-    private static func attachment(_ image: Data) throws -> UNNotificationAttachment {
-        guard image.count <= 18000, let source = CGImageSourceCreateWithData(image as CFData, nil),
-            CGImageSourceGetType(source) as String? == "public.jpeg",
-            let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any],
-            let width = properties[kCGImagePropertyPixelWidth as String] as? Int,
-            let height = properties[kCGImagePropertyPixelHeight as String] as? Int,
-            width > 0, height > 0, width <= 320, height <= 320 else { throw NotificationPreviewCrypto.Failure.invalid }
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let url = directory.appendingPathComponent("preview.jpg")
-        try image.write(to: url, options: .atomic)
-        // The notification system moves the attachment into its own storage.
-        defer { try? FileManager.default.removeItem(at: directory) }
-        return try UNNotificationAttachment(identifier: "photo", url: url)
-    }
+
 }
 private final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
