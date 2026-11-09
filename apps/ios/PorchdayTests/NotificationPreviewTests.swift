@@ -1,5 +1,7 @@
 import XCTest
 import Porchcrypto
+import ImageIO
+import CoreGraphics
 @testable import Porchday
 
 final class NotificationPreviewTests: XCTestCase {
@@ -27,6 +29,19 @@ final class NotificationPreviewTests: XCTestCase {
         var statement = signed["statement"] as! [String: Any]
         statement["ciphertext"] = "AAAA"; signed["statement"] = statement; altered["signed"] = signed
         XCTAssertThrowsError(try NotificationPreviewCrypto.decrypt(JSONSerialization.data(withJSONObject: altered), key: key))
+    }
+    func testAttachmentFileSurvivesUntilNotificationHandoff() throws {
+        let pixels = Data([255, 0, 0, 255])
+        let provider = try XCTUnwrap(CGDataProvider(data: pixels as CFData))
+        let image = try XCTUnwrap(CGImage(width: 1, height: 1, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.last.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent))
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil))
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        let attachment = try NotificationPreviewAttachment.create(data as Data)
+        defer { try? FileManager.default.removeItem(at: attachment.url.deletingLastPathComponent()) }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: attachment.url.path))
+        XCTAssertEqual(try Data(contentsOf: attachment.url), data as Data)
     }
     func testOnlyAllowlistedNotificationRoutesOpen() {
         let id = UUID().uuidString.lowercased()
