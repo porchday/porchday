@@ -12,4 +12,5 @@ async function contentPreview(reference:unknown){
  return {...content,url:data.context.kind==='post'?'/post/'+data.context.id:'/?photo='+data.context.id};
  }catch{return null;}
 }
-Object.assign(self,{porchdayNotificationPreview:contentPreview});
+async function boundedPreview(reference:unknown){let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([contentPreview(reference),new Promise<null>(resolve=>{timer=setTimeout(()=>resolve(null),9000);})]);}finally{clearTimeout(timer);}}
+Object.assign(self,{porchdayNotificationPreview:boundedPreview});

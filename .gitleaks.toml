@@ -130,4 +130,4 @@ targetRules = ["generic-api-key"]
 condition = "AND"
 regexTarget = "secret"
 paths = ["(?:^|/)docs/evidence/diagnostics\\-release\\-2026\\-11\\-08\\.md$"]
-regexes = ["^(?:050335abf80b40575ffe3b61e588a259ec425a33|f1a4854a9b6dea7cf46aee7a5eccb09c513fcc24)$"]
+regexes = ["^(?:050335abf80b40575ffe3b61e588a259ec425a33|f1a4854a9b6dea7cf46aee7a5eccb09c513fcc24|465e9930-2a94-4b71-aa07-b9c30b897b99|88ff5027-0438-484a-8dc8-1139942d2019)$"]
