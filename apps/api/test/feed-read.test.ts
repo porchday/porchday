@@ -4,12 +4,25 @@ import {readdir,readFile} from 'node:fs/promises';
 import postgres,{type Sql} from 'postgres';
 import {feedReadBatch} from '../src/social-feed-read';
 import {nativePushRequest} from '../src/social-native-push';
-import {feedPushMetadata} from '../src/feed-push-payload';
+import {feedPushMetadata,feedPushBody} from '../src/feed-push-payload';
 
 describe('feed read contract',()=>{
  it('bounds and types acknowledgment batches',()=>{
   expect(feedReadBatch.safeParse({items:[{kind:'photo',id:randomUUID()}]}).success).toBe(true);
   for(const items of [[{kind:'comment',id:randomUUID()}],[{kind:'post',id:'invalid'}],Array.from({length:101},()=>({kind:'post',id:randomUUID()}))])expect(feedReadBatch.safeParse({items}).success).toBe(false);
+ });
+ it('limits previews to validated handles and activity type',()=>{
+  const id=randomUUID(),base={kind:'feed_activity',count:1,id};
+  expect(feedPushBody(feedPushMetadata({...base,author:'alice_123',content:'post'})!)).toBe('@alice_123 shared a post');
+  expect(feedPushBody(feedPushMetadata({...base,author:'alice_123',content:'media'})!)).toBe('@alice_123 shared photos/videos');
+  for(const extra of [{author:'alice\nFake alert',content:'post'},{author:'alice',content:'secret text'},{author:'alice',content:null}]){
+   expect(feedPushBody(feedPushMetadata({...base,...extra})!)).toBe('New activity in your feed');
+  }
+  expect(feedPushMetadata({...base,kind:'feed_badge',author:'alice',content:'post'})).not.toHaveProperty('author');
+  const config={APNS_TEAM_ID:'TEAM123456',APNS_KEY_ID:'KEY1234567',APNS_BUNDLE_ID:'org.porchday.app',APNS_PRIVATE_KEY:'-----BEGIN PRIVATE KEY-----'};
+  const req=nativePushRequest({token:'ab'.repeat(32),environment:'production'},config,'test',{...base,author:'alice',content:'post',body:'private text'});
+  expect(JSON.parse(req.init.body).aps.alert.body).toBe('@alice shared a post');
+  expect(req.init.body).not.toContain('private text');
  });
  it('rejects untrusted badge fields and uses opaque per-publication identity',()=>{
   const id=randomUUID();expect(feedPushMetadata({kind:'feed_activity',count:3,id})).toEqual({count:3,feed:true,badgeOnly:false,tag:id.replaceAll('-','')});
@@ -69,11 +82,12 @@ async function read(member:string,items:unknown[],all=false){return sql.begin(as
  });
  it('queues one feed alert, rechecks reads before delivery, and queues a native badge clear',async()=>{
   const {a,b}=await pair(),session=randomUUID();
+  await sql`insert into app.profiles(member_id,handle) values(${a.id},'preview_author')`;
   await sql`insert into public.auth_user(id,name,email,"emailVerified") values(${b.id},'Synthetic feed test',${b.id+'@example.test'},true)`;
   await sql`insert into public.auth_session(id,"userId",token,"expiresAt") values(${session},${b.id},${randomUUID()},now()+interval '1 day')`;
   await sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${b.id},true)`;await db`select app.register_native_push(${session},${'cd'.repeat(32)},'sandbox')`;});
   const post=await publish(a,b);
-  const claimed=await sql.begin(async db=>{await db`set local role porchday_jobs`;const jobs=await db`select * from app.claim_native_push(20)`;expect(jobs).toHaveLength(1);const j=jobs[0];const [r]=await db`select app.prepare_native_push_delivery(${j.id},${j.lease}) as delivery`;expect(r.delivery.feed).toMatchObject({kind:'feed_activity',count:1});return j;});
+  const claimed=await sql.begin(async db=>{await db`set local role porchday_jobs`;const jobs=await db`select * from app.claim_native_push(20)`;expect(jobs).toHaveLength(1);const j=jobs[0];const [r]=await db`select app.prepare_native_push_delivery(${j.id},${j.lease}) as delivery`;expect(r.delivery.feed).toMatchObject({kind:'feed_activity',count:1,author:'preview_author',content:'post'});return j;});
   await read(b.id,[{kind:'post',id:post}]);
   await sql.begin(async db=>{await db`set local role porchday_jobs`;expect((await db`select app.prepare_native_push_delivery(${claimed.id},${claimed.lease}) as delivery`)[0].delivery).toBeNull();const jobs=await db`select * from app.claim_native_push(20)`;expect(jobs).toHaveLength(1);const j=jobs[0];const [r]=await db`select app.prepare_native_push_delivery(${j.id},${j.lease}) as delivery`;expect(r.delivery.feed).toMatchObject({kind:'feed_badge',count:0});await db`select app.finish_native_push(${j.id},${j.lease},'sent',60)`;});
   expect(await read(b.id,[{kind:'post',id:post}])).toBe(0);

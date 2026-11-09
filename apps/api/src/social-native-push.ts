@@ -1,4 +1,4 @@
-import {feedPushMetadata} from './feed-push-payload';
+import {feedPushMetadata,feedPushBody} from './feed-push-payload';
 import {runtimeSessionDenied} from './session-denial';
 import { Hono, type Context } from "hono";
 import { z } from "zod";
@@ -143,7 +143,7 @@ export function nativePushRequest(
         "apns-expiration": "0",
         "apns-collapse-id": feed?.badgeOnly ? "porchday-feed-badge" : feed?.tag || "porchday-update",
       },
-      body: feed ? JSON.stringify({aps:{...(feed.badgeOnly?{}:{alert:{title:"Porchday",body:feed.feed?"New activity in your feed":"You have a new update"}}),badge:feed.count},destination:feed.feed||feed.badgeOnly?"feed":"notifications"}) : GENERIC_NATIVE_PAYLOAD,
+      body: feed ? JSON.stringify({aps:{...(feed.badgeOnly?{}:{alert:{title:"Porchday",body:feedPushBody(feed)}}),badge:feed.count},destination:feed.feed||feed.badgeOnly?"feed":"notifications"}) : GENERIC_NATIVE_PAYLOAD,
     } satisfies RequestInit,
   };
 }

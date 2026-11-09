@@ -85,7 +85,9 @@ self.addEventListener("push", (event) => {
   const tag = typeof payload.tag === "string" && /^[a-f0-9]{32}$/.test(payload.tag) ? payload.tag : "porchday-update";
   event.waitUntil(Promise.all([
     self.registration.showNotification("Porchday", {
-      body: feed ? "New activity in your feed" : "You have a new update.",
+      body: feed && typeof payload.author === "string" && /^[a-z0-9_]{3,24}$/.test(payload.author) && ["post", "media"].includes(payload.content)
+        ? `@${payload.author} shared ${payload.content === "post" ? "a post" : "photos/videos"}`
+        : feed ? "New activity in your feed" : "You have a new update.",
       icon: "/icon-192.png", badge: "/icon-192.png", tag,
       data: { url: feed ? "/" : "/notifications" },
     }),

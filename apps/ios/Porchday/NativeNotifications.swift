@@ -37,7 +37,7 @@ import AppKit
         if enabled {
             registeringMember = member.id
             ApplePlatform.registerPush()
-        } else { message = "Notify this device about every new feed post and photo. Notification previews never include private posts or names." }
+        } else { message = "Notify this device about every new feed post and photo. Feed previews show the author’s handle and activity type, never post text or photos." }
     }
     private nonisolated static func permissionGranted() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -111,14 +111,16 @@ import AppKit
     func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
         WebShellPush.shared.failed(); NativeNotifications.shared.registrationFailed()
     }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        let feed = response.notification.request.content.userInfo["destination"] as? String == "feed"
-        await MainActor.run { WebShellPush.shared.destination = feed ? "/" : "/notifications"; NotificationCenter.default.post(name: Notification.Name("PorchdayPushDestination"), object: feed ? "feed" : "notifications"); if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+        // Decode on the callback queue; only Sendable values cross to the UI actor.
+        NativePushRouting.receive(destination: response.notification.request.content.userInfo["destination"] as? String,
+            action: response.actionIdentifier, completion: completionHandler)
     }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        // Avoid another banner while the member is already using the app.
-        await MainActor.run { NotificationCenter.default.post(name: Notification.Name("PorchdayPushReceived"), object: nil) }
-        return []
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void) {
+        Task { @MainActor in
+            NotificationCenter.default.post(name: Notification.Name("PorchdayPushReceived"), object: nil)
+            completionHandler([])
+        }
     }
 }
 #else
@@ -126,9 +128,17 @@ import AppKit
     func applicationDidFinishLaunching(_ notification: Notification) { UNUserNotificationCenter.current().delegate = self }
     func application(_ application: NSApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) { WebShellPush.shared.received(deviceToken); Task { await NativeNotifications.shared.received(token: deviceToken) } }
     func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) { WebShellPush.shared.failed(); NativeNotifications.shared.registrationFailed() }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async { let feed = response.notification.request.content.userInfo["destination"] as? String == "feed"
-        await MainActor.run { WebShellPush.shared.destination = feed ? "/" : "/notifications"; NotificationCenter.default.post(name: Notification.Name("PorchdayPushDestination"), object: feed ? "feed" : "notifications"); if feed { NativeNotifications.shared.showFeed = true } else { NativeNotifications.shared.showInbox = true } } }
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions { await MainActor.run { NotificationCenter.default.post(name: Notification.Name("PorchdayPushReceived"), object: nil) }; return [] }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
+        // Decode on the callback queue; only Sendable values cross to the UI actor.
+        NativePushRouting.receive(destination: response.notification.request.content.userInfo["destination"] as? String,
+            action: response.actionIdentifier, completion: completionHandler)
+    }
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void) {
+        Task { @MainActor in
+            NotificationCenter.default.post(name: Notification.Name("PorchdayPushReceived"), object: nil)
+            completionHandler([])
+        }
+    }
 }
 #endif
 

@@ -488,7 +488,7 @@ function NotificationSettings() {
           </Button>}
         </div>
         <p className="small-copy">
-          Push says only “You have a new update.” We never put post text,
+          Feed notifications show the author’s handle and activity type. We never put post text,
           photos, or reaction choices in a notification.
         </p>
       </section>
