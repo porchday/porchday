@@ -804,6 +804,9 @@ export function PostCard({
   const initialDetailsId = useRef("");
   const [unavailable, setUnavailable] = useState(false);
   const action = useAction();
+  const deletingId = useRef<string | null>(null);
+  const [deletion, setDeletion] = useState<{ id: string; status: "deleting" | "deleted" | "failed"; error?: string } | null>(null);
+  const currentDeletion = deletion?.id === row.id ? deletion : null;
   useEffect(() => {
     let alive = true;
     vault
@@ -873,14 +876,25 @@ export function PostCard({
   }, [content, error, unavailable, edit, expiry]);
   const own = row.author_id === vault.member.id;
   async function remove() {
-    if (
-      !confirm("Delete this post and its comments, reactions, and attachments? Photos added to albums remain available separately. Use Delete photo in Feed → Photos to remove those everywhere.")
-    )
+    if (action.busy || deletingId.current === row.id || currentDeletion?.status === "deleted") return;
+    if (!confirm("Delete this post and its comments, reactions, and attachments? Photos added to albums remain available separately. Use Delete photo in Feed → Photos to remove those everywhere.")) return;
+    const id = row.id;
+    deletingId.current = id;
+    setMenu(false);
+    setDeletion({ id, status: "deleting" });
+    try {
+      await del(`/posts/${id}`);
+    } catch (error) {
+      setDeletion({ id, status: "failed", error: "Deletion was not confirmed. You can try again. " + message(error) });
       return;
-    await action.run(async () => {
-      await del(`/posts/${row.id}`);
-      onChange();
-    });
+    } finally {
+      if (deletingId.current === id) deletingId.current = null;
+    }
+    // Hide the content immediately on confirmation, independently of a slow or
+    // failed parent refresh. Never report a refresh failure as a failed delete.
+    setDeletion({ id, status: "deleted" });
+    try { await onChange(); }
+    catch (error) { setDeletion({ id, status: "deleted", error: "Post deleted, but this view could not refresh. " + message(error) }); }
   }
   async function saveEdit() {
     await action.runSave(async () => {
@@ -919,6 +933,11 @@ export function PostCard({
       onChange();
     });
   }
+  if (currentDeletion?.status === "deleting" || currentDeletion?.status === "deleted")
+    return <article className="post-card panel" data-deletion-state={currentDeletion.status}>
+      {currentDeletion.status === "deleting" ? <Loading text="Deleting post…" /> : <div role="status">Post deleted.</div>}
+      <Alert>{currentDeletion.error}</Alert>
+    </article>;
   if (content && !matchesContent(content, contentFilter)) return null;
   if (unavailable)
     return (
@@ -928,6 +947,7 @@ export function PostCard({
     );
   return (
     <article ref={cardRef} data-feed-readable={content ? "true" : "false"} className="post-card panel">
+      <Alert>{currentDeletion?.error}</Alert>
       <header className="post-heading">
         <ActivityAuthor memberId={row.author_id} handle={row.author_handle} date={row.created_at} sharing={postAudienceLabel(row.audience,row.group_id)}/>
         <div className="post-menu">

@@ -50,7 +50,8 @@
         "docs/native-parity.md#pending-encryption-setup",
         "docs/native-parity.md#share-draft-autosave",
         "docs/native-parity.md#reaction-attribution",
-        "docs/native-parity.md#clickable-post-links"
+        "docs/native-parity.md#clickable-post-links",
+        "docs/native-parity.md#post-deletion-feedback"
       ],
       "implementation": {
         "ios": "implemented",

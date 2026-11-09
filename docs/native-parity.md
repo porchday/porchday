@@ -209,3 +209,8 @@ Original social-photo access refresh now permits pending-key members while requi
 ## Clickable post links
 
 Shared post text renders HTTP/HTTPS and www links as safe React anchors while preserving plain text and punctuation. Browser links use a separate tab with noopener/noreferrer. Existing WebShell navigation delegates open external URLs using UIApplication/NSWorkspace on iOS/macOS and keep the Porchday web view in place. No bridge or native binary change is needed. Chromium/WebKit link activation tests and tokenizer tests pass, as do exact-source iOS/macOS CI and hosted staging/production link activation. See [release evidence](evidence/clickable-post-links-release-2026-11-09.md). Physical external-browser handoff remains a follow-up in #203.
+
+
+## Post deletion feedback
+
+The shared PostCard used by web, PWA, iOS and macOS now shows Deleting post immediately after confirmation, suppresses duplicate submissions, and replaces the post with Post deleted on server confirmation independently of parent refresh. A failed request restores content with an actionable error above the post. The state is scoped to the post identity. Mobile Chromium/WebKit browser tests cover cancellation, delayed response, failure/retry, success with stale parent data and identity reuse. No native bridge change is required. Hosted and physical-device acceptance remain pending in #205; this change is not yet deployed.
