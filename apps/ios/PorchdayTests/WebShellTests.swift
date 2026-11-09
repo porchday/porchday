@@ -7,6 +7,24 @@ import UniformTypeIdentifiers
 @testable import Porchday
 
 final class WebShellTests: XCTestCase {
+    @MainActor func testSwitcherAppearanceValidatesAndRestoresOnlyOpaqueColors() throws {
+        let suite = "switcher-tests-" + UUID().uuidString
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let appearance = ShellAppearance(defaults: defaults)
+        XCTAssertEqual(appearance.hex, "#281b13")
+        XCTAssertTrue(appearance.update("#F4F0E8"))
+        XCTAssertEqual(ShellAppearance(defaults: defaults).hex, "#f4f0e8")
+        for invalid: Any in ["transparent", "url(https://example.com)", "#fff", "#00000000", "#gggggg", "#000000\n", 123, true] {
+            XCTAssertFalse(appearance.update(invalid))
+            XCTAssertEqual(appearance.hex, "#f4f0e8")
+        }
+        defaults.set("not a color", forKey: ShellAppearance.storageKey)
+        XCTAssertEqual(ShellAppearance(defaults: defaults).hex, ShellAppearance.fallback)
+        XCTAssertTrue(appearance.update("#653919"))
+        XCTAssertEqual(ShellAppearance(defaults: defaults).hex, "#653919")
+    }
+
     #if os(macOS)
     func testSharedTIFFBecomesJPEGWithOriginalDate() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
