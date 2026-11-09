@@ -4906,3 +4906,19 @@ button.trace-row:focus-visible {
 /* Keep the single mixed-media action named on narrow screens too. */
 .composer-tools .composer-add-media > span { display: inline; }
 .composer-tools:has(.composer-add-media) { flex-wrap: wrap; }
+
+/* Show every Settings destination instead of hiding links in a horizontal scroller. */
+.settings-tabs.settings-navigation {
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
+}
+.settings-tabs.settings-navigation > a {
+  flex: 1 0 auto;
+  text-align: center;
+  white-space: nowrap;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}

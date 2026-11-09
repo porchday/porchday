@@ -156,3 +156,7 @@ The rounded native Mac icon (#15) changes AppIcon PNGs generated from the existi
 ## Quiet automatic updates
 
 The default iOS/macOS WKWebView shells use the same public-shell build checks and safe reload policy as the PWA, including when service workers are unavailable. Routine update and successful background-access notices are removed. Saved encrypted Share drafts restore; unsaved forms, saves/uploads, dialogs and media playback defer reloading. Failed/limited-functionality notices remain actionable. See [design](../design/automatic-updates.md) and #190. Signed binary installation still follows TestFlight/App Store settings. Exact-source native simulator/macOS checks are required; physical foreground/resume behavior remains unverified under #49/#114.
+
+## Settings organization
+
+The default iOS/macOS shared web shells show wrapping Settings navigation, a distinct Notifications settings tab, and Time zone under My profile. Existing notification preferences, push bridges and timezone storage are unchanged. The same web layout is used on mobile and desktop; exact-source native builds/tests remain required. Physical-device layout follow-up stays in #49/#114; owner navigation follow-up is tracked in #124.

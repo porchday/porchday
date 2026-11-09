@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner follow-up:** #124 makes every Settings tab visible with wrapping rows, separates Notifications and moves Time zone to My profile. Release verification in progress.
+
 **Delivered November 8:** [#190](https://github.com/porchday/porchday/issues/190) applies shared UI updates automatically at a safe idle/background point and suppresses routine operational notices. Live in staging/production; encrypted draft preservation and actual automatic reloads verified. [Release evidence](docs/evidence/quiet-updates-release-2026-11-08.md). Native binary installation remains controlled by OS/store settings.
 
 **Delivered November 8:** #22 skips redundant own-device history updates after key recovery and keeps necessary persistent catch-up from blocking member navigation; #124 removes mobile link icons and desktop More; #15 rounds the native Mac Dock/switcher icon. Web/API changes are live and Mac build 255 is available in the existing TestFlight group. [Release evidence](docs/evidence/recovered-device-release-2026-11-08.md) records remaining physical-device/member-specific verification.
