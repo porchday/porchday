@@ -50,8 +50,8 @@ async function call(path:string,init:RequestInit={}){
  if(!r.ok)throw Error(`Diagnostics request failed (${r.status}).`);return r.json();
 }
 export async function startDiagnostics(mode:DiagnosticMode,contentConsent:boolean){
- if(!owner)throw Error('Unlock your account first.');
- await stopDiagnostics();const account=owner;if(!account)return;
+ const account=owner;if(!account)throw Error('Unlock your account first.');
+ await stopDiagnostics();if(owner!==account)return;
  const created=await call('sessions',{method:'POST',body:JSON.stringify({device_id:account.device,mode,consent_version:1,content_consent:contentConsent})});
  if(owner!==account)return;
  session=created;stopped=false;retryAt=0;failures=0;localStorage.setItem(sessionKey(),JSON.stringify(created));lastSnapshot='';notify();
@@ -65,8 +65,10 @@ export async function stopDiagnostics(){
  if(current)await call(`sessions/${current.id}/stop`,{method:'POST'}).catch(()=>{});
 }
 export async function deleteDiagnosticRecordings(){
- const member=owner?.member;await stopDiagnostics();
+ const account=owner,member=account?.member;await stopDiagnostics();
+ if(owner!==account)return;
  const rows=await queued();await changeQueue(undefined,rows.filter(r=>r.member===member).map(r=>r.id));
+ if(owner!==account)return;
  await call('sessions',{method:'DELETE'});
 }
 export async function flushDiagnostics(){
