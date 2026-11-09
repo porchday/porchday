@@ -5,11 +5,13 @@ DECLARE name text; definition text; needle text;
 BEGIN
  FOREACH name IN ARRAY ARRAY['prepare_push_delivery','prepare_native_push_delivery'] LOOP
   SELECT pg_get_functiondef(('app.'||name||'(uuid,uuid)')::regprocedure) INTO definition;
-  needle:='''kind'',n.kind,''id'',n.id';
+  needle:='jsonb_build_object(''count'',feed_state->''count'',''kind'',n.kind,''id'',n.id)';
   IF strpos(definition,needle)=0 THEN RAISE EXCEPTION 'UNRECOGNIZED_PUSH_PREVIEW_READER'; END IF;
-  definition:=replace(definition,needle,$new$'kind',n.kind,'id',n.id,
-   'author',CASE WHEN n.kind='feed_activity' THEN (SELECT p.handle FROM app.profiles p WHERE p.member_id=n.actor) END,
-   'content',CASE WHEN n.kind='feed_activity' THEN CASE WHEN n.post_id IS NOT NULL THEN 'post' ELSE 'media' END END$new$);
+  definition:=replace(definition,needle,$new$(jsonb_build_object('count',feed_state->'count','kind',n.kind,'id',n.id) ||
+   CASE WHEN n.kind='feed_activity' THEN jsonb_build_object(
+    'author',(SELECT p.handle FROM app.profiles p WHERE p.member_id=n.actor),
+    'content',CASE WHEN n.post_id IS NOT NULL THEN 'post' ELSE 'media' END)
+   ELSE '{}'::jsonb END)$new$);
   EXECUTE definition;
  END LOOP;
 END $migration$;
