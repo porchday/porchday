@@ -118,6 +118,7 @@ targets:
       - PorchdayTests/NativeReadCacheTests.swift
       - PorchdayTests/FeedReadTests.swift
       - PorchdayTests/WebShellTests.swift
+      - PorchdayTests/NativePushRoutingTests.swift
       - PorchdayTests/NativePhotoContractTests.swift
       - PorchdayTests/PorchdayTests.swift
       - PorchdayTests/CryptoVaultAccessTests.swift
