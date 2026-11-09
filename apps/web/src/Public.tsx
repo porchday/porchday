@@ -590,7 +590,7 @@ const policyContent: Record<
   privacy: {
     title: "Privacy",
     intro:
-      "Private social content is encrypted on your device. Porchday cannot read it.",
+      "Private social content is encrypted on your device. Deliberate disclosures, such as reports or opt-in diagnostic content recordings, are exceptions.",
     sections: [
       [
         "What is encrypted",
@@ -611,6 +611,10 @@ const policyContent: Record<
       [
         "Reports are a deliberate disclosure",
         "When reporting content, you choose what evidence to disclose to authorized moderators. A report preview identifies exactly what will be sent. Moderators cannot browse private walls merely because of their role.",
+      ],
+      [
+        "Optional diagnostic recordings",
+        "Detailed diagnostics is off by default and enabled separately on each device for up to 24 hours. An additional content option deliberately sends visible application text, selected draft fields and photo thumbnails to Porchday for authorized builders to read. These copies are outside normal end-to-end encryption. Passwords, recovery secrets, encryption keys and session tokens are excluded. Recordings expire after three days; operator access is audited for 30 days. You can stop recording or delete your recordings in Settings → My data. No third-party replay service receives them.",
       ],
       [
         "Your choices",

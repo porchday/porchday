@@ -174,3 +174,14 @@ The owner reported an iOS TestFlight crash after tapping a notification. App Sto
 The default iOS/macOS shared web shells use the same bounded, automatic access-update worker as the PWA. No new native binary or bridge is needed. Foreground/online checks resume interrupted work; per-item capped backoff replaces manual retry. Unknown writes are reconciled before identical-byte resubmission, and current server audience checks remain unchanged. Exact-source native CI is required; physical suspend/resume acceptance remains #49/#114 and member-specific history confirmation remains #22.
 
 [Automatic access recovery release evidence](evidence/automatic-access-recovery-release-2026-11-08.md): the shared client is live in staging and production, exact-source iOS/macOS CI passes, and hosted synthetic failures recover without manual retry. No new signed binary is required.
+
+## Detailed diagnostic recordings
+
+Issue #196 uses the shared web UI and IndexedDB collector inside the iOS and
+macOS thin shells. Both receive identical consent controls, capture exclusions,
+recording indicator, retries and timeline without a native bridge change. Native
+OS crash reports and background execution while the app is suspended are not
+provided by this collector. Browser tests cover consent, account isolation and
+offline outbox recovery; installed-device verification remains pending. This
+entry is an implementation audit, not evidence of a new binary or production
+deployment.

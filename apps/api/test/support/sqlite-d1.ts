@@ -18,9 +18,9 @@ export function sqliteD1(migration='apps/api/d1/traces/0001_create_traces.sql') 
   return {success:true,results:[],meta:{duration:performance.now()-started,rows_read:0,rows_written:Number(info.changes),changes:Number(info.changes)}};
  };
  const prepare=(sql:string)=>{
-  const make=(args:unknown[]):Bound&{bind:(...next:unknown[])=>unknown;all:()=>Promise<unknown>;run:()=>Promise<unknown>}=>({
+  const make=(args:unknown[]):Bound&{bind:(...next:unknown[])=>unknown;all:()=>Promise<unknown>;run:()=>Promise<unknown>;first:()=>Promise<unknown>}=>({
    sql,args,bind:(...next:unknown[])=>make(next),
-   all:async()=>execute({sql,args}),run:async()=>execute({sql,args}),
+   all:async()=>execute({sql,args}),run:async()=>execute({sql,args}),first:async()=>execute({sql,args}).results[0]??null,
   });
   return make([]);
  };

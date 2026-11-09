@@ -1,3 +1,4 @@
+import {diagnosticOperation} from './diagnostics';
 import {ApiError} from './api';
 export type AccessUpdateState = 'idle' | 'sharing' | 'unconfirmed';
 type Outcome = 'committed' | 'unchanged' | 'changed';
@@ -38,8 +39,13 @@ export function startAccessUpdates<P extends {id:string}>(io:IO<P>){
   });}finally{clearTimeout(timer);controllers.delete(controller);}
  }
  async function reconcile(candidate:P){
-  try{return await bounded(signal=>io.reconcile(candidate,signal));}
+  try{return await observed('reconcile',()=>bounded(signal=>io.reconcile(candidate,signal)));}
   catch(error){if(error instanceof ApiError&&[404,410].includes(error.status))return 'changed' as const;throw error;}
+ }
+ async function observed<T>(stage:string,action:()=>Promise<T>):Promise<T>{
+  diagnosticOperation(stage,'started');
+  try{const result=await action();diagnosticOperation(stage,'succeeded');return result;}
+  catch(error){if(current())diagnosticOperation(stage,'failed',error);throw error;}
  }
  const complete=(id:string)=>{pending.delete(id);failures.delete(id);};
  async function process(id:string){
@@ -48,12 +54,12 @@ export function startAccessUpdates<P extends {id:string}>(io:IO<P>){
    const outcome=await reconcile(candidate);
    if(outcome!=='unchanged'){complete(id);if(outcome==='committed'&&!disposed)io.changed();return true;}
   }else{
-   const prepared=await bounded(signal=>io.prepare(id,signal),10*60_000);
+   const prepared=await observed('prepare',()=>bounded(signal=>io.prepare(id,signal),10*60_000));
    if(!prepared){complete(id);return false;}
    candidate=prepared;pending.set(id,candidate);
   }
   if(!current())throw canceled();
-  try{await io.save(candidate);complete(id);if(!disposed)io.changed();}
+  try{await observed('save',()=>io.save(candidate!));complete(id);if(!disposed)io.changed();}
   catch(error){
    // A server commit with a lost response is success. Failed reconciliation
    // retains the prepared bytes. Never clean up media that may be attached.
@@ -73,7 +79,7 @@ export function startAccessUpdates<P extends {id:string}>(io:IO<P>){
    let queue=[...pending.keys()].filter(ready),listed:string[]|null=null;
    try{
     if(now()>=listDue){
-     try{const page=await bounded(io.list);listed=page.items.map(row=>row.id);queue=[...new Set([...queue,...listed.filter(ready)])];listFailures=0;listDue=0;}
+     try{const page=await observed('list',()=>bounded(io.list));listed=page.items.map(row=>row.id);queue=[...new Set([...queue,...listed.filter(ready)])];listFailures=0;listDue=0;}
      catch(error){if(!current())throw error;listFailures++;listDue=now()+delay(listFailures);}
     }
     // At most three writes/preparations per pass. Cursor-based callers advance

@@ -237,3 +237,58 @@ requires a complete, nonempty image whose current source matches the successful
 decode, checked again at both animation frames. The replacement test first failed
 on the old helper and then passed with the fix; all 13 local Chromium checks pass.
 This validates milestone eligibility, not physical-phone timing.
+
+## Detailed diagnostic recordings (issue #196)
+
+The legacy performance tracer remains opt-in and excludes content. The separate
+Detailed diagnostics controls in Settings → My data support two modes:
+
+- **Details:** navigation, fixed interaction categories, API route/status/timing,
+  server phases, code/error category, application stack-frame coordinates, and
+  caught access-update stages. No request/response bodies or arbitrary errors.
+- **Content:** the above plus visible paragraph/headline/caption text, explicitly
+  marked draft/caption fields, and small visible photo thumbnails on Feed, Share,
+  Albums and My wall. This is a bounded timeline, not pixel-perfect replay or
+  native OS crash collection. Settings, authentication, recovery, hidden DOM,
+  unmarked form inputs, and password fields are excluded.
+
+Content consent explicitly discloses that copied decrypted content (including
+other members' content visible to the recorder) becomes readable to authorized
+builders. A session is created server-side only after Start; consent is tied to
+member and device, off by default, expires after 24 hours, and is versioned.
+There is no operator endpoint to remotely start collection. A persistent page
+indicator provides Stop. Stop clears unsent events immediately; if offline, the
+server session still expires at its existing deadline. Delete removes all of the
+member's recordings and unsent events on this device. Other devices stop when
+the next upload is rejected. Already exported evidence cannot be recalled.
+
+Events use a member/session-scoped IndexedDB outbox (500 events / approximately
+2 MiB; oldest entries evicted when full). Uploads retry with capped exponential
+backoff, and only acknowledged event IDs are removed. The server acknowledges
+D1 completion rather than queued work, deduplicates by session/event ID, rejects
+expired/stopped/foreign sessions and content in details mode, and caps each
+recording at 2,000 events / 5 MiB. Recording stops if the server reports full.
+These limits mean this is not a guarantee that every event survives every
+crash, storage failure, eviction or long offline period.
+
+Server outcomes are stored separately for authenticated, consented requests,
+with the same trace ID as the client request. They survive a lost client response
+when the server storage write succeeds; write failures enter the existing
+aggregate trace-store error metric. Authentication failures before member
+resolution cannot be linked this way. The existing performance tracer preserves
+an already supplied traceparent so both tracers can coexist.
+
+Member timeline: `/diagnostics?recording=<id>`. Operator mode uses the same
+viewer but calls `/api/staff/diagnostics/<id>`, protected by Cloudflare Access
+and an active `builder_chat` staff role. Every successful operator read must
+first persist an audit row; audit failure prevents content disclosure. Operators
+need the recording ID; there is no unrestricted member-content browsing route.
+
+D1 migration `0002_diagnostics.sql` is additive. Deploy it before the API, then
+the shared frontend. No native bridge capability is required: iOS/macOS thin
+shells run this same UI and collector. Without the migration, leave the old API
+and frontend active. Recordings become unreadable after three days, with daily
+physical cleanup; operator audit metadata is retained for 30 days. Account
+removal queues deletion, with retention as the backstop. Production validation
+must use synthetic consenting accounts and verify staff authorization, durable
+retry, deletion and no content in details mode before enabling on a real device.
