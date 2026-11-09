@@ -661,7 +661,9 @@ export function VaultProvider({
   async function sealPhotoRefresh(payload:unknown,context:ContentContext,grantId:string) {
     requireSealingAuthor(member.status,context.kind,active!.device);
     const snapshot=await get(`/photos/${context.parentId}/grants/${grantId}/refresh-audience`);
-    if(snapshot.pending_members?.length)throw Error("Someone who can see this photo has not set up encryption yet. Set up their keys and retry sharing album history.");
+    // Original social-photo history can reach ready recipients now. The server
+    // retains eligibility and queues catch-up when missing keys become available.
+    if(snapshot.pending_members?.length && (context.groupId || !["connections","friends","family","community","extended_family"].includes(context.audience)))throw Error("Someone who can see this photo has not set up encryption yet. Set up their keys and retry sharing album history.");
     const devices=snapshot.devices as Device[];for(const device of devices)await checkDevice(device);
     return encryptObject({payload,context:{...context,authorId:member.id,authorDeviceId:active!.device.id,epoch:snapshot.epoch},signingKey:active!.key,recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
   }
@@ -889,10 +891,8 @@ function PostAudienceSharing() {
       document.removeEventListener("visibilitychange", recheck);
     };
   }, [context]);
-  if (state !== "unconfirmed") return null;
-  return <div className="panel" role="status">
-    <p>Access to some earlier posts is still updating. Porchday will retry automatically while you’re online.</p>
-  </div>;
+  // Background retries require no member action; failures remain in diagnostics.
+  return null;
 }
 export function Fingerprint({ device }: { device: Device }) {
   return (

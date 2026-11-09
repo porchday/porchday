@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current reliability fix November 9:** #22: production diagnostics recorded `RECIPIENT_KEYS_PENDING` during photo-history preparation. Let original social-photo history update every ready recipient while pending eligible members catch up after key setup; retain strict album behavior. Preserve unprocessed queue items across paginated scans and remove non-actionable retry banners. Implementation is under validation, not deployed.
+
 **Current owner follow-up November 9:** [#201](https://github.com/porchday/porchday/issues/201), P2: reaction attribution on posts, comments and photos. Mobile long-press, desktop right-click and a keyboard-accessible View reactions control open the people list. Implementation and browser checks are underway; not yet deployed.
 
 **Released November 8:** [#7](https://github.com/porchday/porchday/issues/7) encrypted post/caption/thumbnail notification previews are live in production, with per-device controls. iOS 337 and macOS 320 are available in internal TestFlight. Hosted delivery, access checks and production monitoring passed; physical-device receipt and the earlier crash report remain `needs verification`. [Release evidence](docs/evidence/encrypted-notification-content-release-2026-11-08.md).

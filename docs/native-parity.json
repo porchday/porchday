@@ -187,7 +187,8 @@
         "design/larger-videos.md",
         "docs/native-parity.md#shared-web-shell",
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
-        "docs/native-parity.md#recovered-device-access-updates"
+        "docs/native-parity.md#recovered-device-access-updates",
+        "docs/native-parity.md#photo-history-pending-keys"
       ],
       "implementation": {
         "ios": "implemented",

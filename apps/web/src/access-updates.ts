@@ -20,6 +20,7 @@ const canceled=()=>new DOMException('Sharing stopped.','AbortError');
  * The caller polls and wakes on foreground/online; no work runs while locked. */
 export function startAccessUpdates<P extends {id:string}>(io:IO<P>){
  let disposed=false,operation:Promise<void>|null=null,listFailures=0,listDue=0;
+ const deferred=new Set<string>();
  const pending=new Map<string,P>(),failures=new Map<string,{attempts:number;due:number}>();
  const controllers=new Set<AbortController>(),now=io.now||Date.now;
  const current=()=>!disposed&&io.enabled();
@@ -76,17 +77,18 @@ export function startAccessUpdates<P extends {id:string}>(io:IO<P>){
  function run(){
   if(!current())return Promise.resolve();if(operation)return operation;
   const running=(async()=>{
-   let queue=[...pending.keys()].filter(ready),listed:string[]|null=null;
+   let queue=[...new Set([...deferred,...pending.keys()])].filter(ready),listed:string[]|null=null;
    try{
-    if(now()>=listDue){
+    if(!deferred.size&&now()>=listDue){
      try{const page=await observed('list',()=>bounded(io.list));listed=page.items.map(row=>row.id);queue=[...new Set([...queue,...listed.filter(ready)])];listFailures=0;listDue=0;}
      catch(error){if(!current())throw error;listFailures++;listDue=now()+delay(listFailures);}
     }
     // At most three writes/preparations per pass. Cursor-based callers advance
-    // on every page; failures reappear on the next scan, without starving pages.
+    // only after its unprocessed items drain; failures reappear on later scans.
     let work=0;
     for(const id of queue){
-     if(work>=3)break;
+     if(work>=3){deferred.add(id);continue;}
+     deferred.delete(id);
      if(!current())throw canceled();publish('sharing');
      try{if(await process(id))work++;}catch(error){
       work++;

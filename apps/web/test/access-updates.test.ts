@@ -11,6 +11,17 @@ function fixture(){
  return {io,completed,advance:(ms:number)=>{clock+=ms;},online:(value:boolean)=>{online=value;}};
 }
 describe('automatic access updates',()=>{
+ it('drains every listed photo before advancing the cursor despite repeated earlier failures',async()=>{
+  const f=fixture();
+  f.io.list.mockResolvedValueOnce({items:['a','b','c','d','e'].map(id=>({id}))}).mockResolvedValue({items:[{id:'f'}]});
+  f.io.prepare.mockImplementation(async id=>{if(['a','b','c'].includes(id))throw Error('missing old key');return {id,bytes:'encrypted'};});
+  const task=startAccessUpdates(f.io);await flush();
+  expect(f.completed.size).toBe(0);
+  f.advance(300001);await task.recheck();
+  expect([...f.completed]).toEqual(['d','e']);
+  expect(f.io.list).toHaveBeenCalledTimes(1);
+  await task.recheck();expect(f.completed.has('f')).toBe(true);task.dispose();
+ });
  it('retries temporary preparation failures without blocking other items',async()=>{
   const f=fixture();f.io.prepare.mockRejectedValueOnce(Error('temporary read failure'));
   const task=startAccessUpdates(f.io);await flush();

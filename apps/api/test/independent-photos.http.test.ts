@@ -323,7 +323,11 @@ suite("Encrypted independent photo API",()=>{
       expect((await call(reader.id,`/photos/${p.id}`)).status).toBe(404);
       const pending=await call(owner.id,"/photos/history-refresh");expect(pending.status,JSON.stringify(pending.data)).toBe(200);
       expect(pending.data.items.map((x:any)=>x.id)).toContain(p.id);
+      const unready=await person();await connect(circle?bridge:owner,unready);
+      if(circle)await db`update app.connections set kind_a='family',kind_b='family' where member_a=${[bridge.id,unready.id].sort()[0]} and member_b=${[bridge.id,unready.id].sort()[1]}`;
+      await db`update app.device_keys set revoked_at=now() where member_id=${unready.id}`;
       const snapshot=await call(owner.id,path+"/refresh-audience");expect(snapshot.status,JSON.stringify(snapshot.data)).toBe(200);
+      expect(snapshot.data.pending_members).toContain(unready.id);
       expect(snapshot.data.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,reader.id,...(circle?[bridge.id]:[])].sort());
       expect(snapshot.data.existing_peer_grants_complete).toBe(false);
       const encrypt=(payload:unknown,context:ContentContext)=>encryptObject({payload,context:{...context,epoch:snapshot.data.epoch},signingKey:owner.key,recipients:snapshot.data.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
@@ -339,6 +343,10 @@ suite("Encrypted independent photo API",()=>{
       expect((await call(reader.id,path+"/refresh-audience")).status).toBe(403);
       expect((await call(owner.id,"/photos/history-refresh")).data.items).toEqual([]);
       expect((await call(owner.id,path+"/refresh-audience")).data.existing_peer_grants_complete).toBe(true);
+      // Once that eligible person has a key, the original photo re-enters catch-up.
+      await db`update app.device_keys set revoked_at=null where member_id=${unready.id}`;
+      expect((await call(owner.id,"/photos/history-refresh")).data.items.map((x:any)=>x.id)).toContain(p.id);
+      await db`update app.device_keys set revoked_at=now() where member_id=${unready.id}`;
       await db`delete from app.photo_grant_recipients where grant_id=${gid} and member_id=${reader.id}`;
       expect((await call(owner.id,path+"/refresh-audience")).data.existing_peer_grants_complete).toBe(false);
       await db`insert into app.photo_grant_recipients(grant_id,member_id) values(${gid},${reader.id})`;
