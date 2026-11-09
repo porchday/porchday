@@ -1,3 +1,5 @@
+import {navigateAfterSaves} from "./ui";
+import type {PublishedPost} from "./Social";
 import {startAutomaticUpdates} from "./automatic-updates";
 import {FeedUnreadProvider,FeedBadge} from "./FeedUnread";
 import { isMemberPath } from "./routes";
@@ -316,6 +318,7 @@ function AppShell({
   onAccountDeleted: () => Promise<void>;
 }) {
   const vault = useVault();
+  const [publishedPost,setPublishedPost]=useState<PublishedPost|null>(null);
   const shareVisited=useRef(path==="/share");
   if(path==="/share")shareVisited.current=true;
   const navigationDisabled = React.useSyncExternalStore(pendingSaves.subscribe, pendingSaves.getNavigationSnapshot, () => 0) > 0;
@@ -335,6 +338,7 @@ function AppShell({
   const sidebarLinks = vault.member.status === "suspended" ? [settingsLink] : [...primaryLinks.filter(([href])=>href!=="/menu"), ...secondaryLinks, ...(builderChat ? [featureLink,["/builder-chat","chat","Builder chat"]] : []), settingsLink];
   async function logout() {
     if (hasPendingSaves()) return;
+    setPublishedPost(null);
     await vault.clear();
     await onLogout();
   }
@@ -356,7 +360,7 @@ function AppShell({
   else if (path === "/")
     content = (
       <>
-        <FeedExperience />
+        <FeedExperience publishedPost={publishedPost?.row.author_id===vault.member.id?publishedPost:null} onReconciled={()=>setPublishedPost(null)}/>
       </>
     );
   else if (path === "/albums") content = <Albums />;
@@ -460,7 +464,7 @@ function AppShell({
             <a href="/appeals">Request an independent review.</a>
           </Alert>
         )}
-        {shareVisited.current&&vault.member.status!=="suspended"&&<div hidden={path!=="/share"} key={"persistent-share-"+vault.member.id}><div className="page-heading mobile-tab-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={()=>window.dispatchEvent(new Event("porchday:posts-shared"))}/></div>}
+        {shareVisited.current&&vault.member.status!=="suspended"&&<div hidden={path!=="/share"} key={"persistent-share-"+vault.member.id}><div className="page-heading mobile-tab-heading"><h1>Share</h1></div><Composer shareTabs initialAlbum={new URLSearchParams(location.search).get("album")||undefined} onPosted={published=>{if(published){setPublishedPost(published);navigateAfterSaves("/");}window.dispatchEvent(new Event("porchday:posts-shared"));}}/></div>}
         <React.Fragment key={routeKey}>{content}</React.Fragment>
         <footer className="member-appearance-footer">
           <ColorSchemeControls />

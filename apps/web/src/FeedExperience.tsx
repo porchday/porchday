@@ -1,3 +1,4 @@
+import type {PublishedPost} from "./Social";
 import {PhotoNotificationDetail} from "./PhotoCollection";
 import {FeedReadControls} from "./FeedUnread";
 import {PhotoFeed,PhotoFeedCalendar} from "./PhotoFeed";
@@ -8,7 +9,7 @@ import {Alert,Button,useAction} from "./ui";
 import {PhotosCalendar} from "./PhotosCalendar";
 import {audienceOptions,audienceLabels,audienceCategories,type FeedAudience,type AuthorCategory,type FeedContent} from "./feed-filters";
 
-export function FeedExperience({initialContent="everything",initialView="scroll"}:{initialContent?:FeedContent;initialView?:"scroll"|"calendar"}){
+export function FeedExperience({initialContent="everything",initialView="scroll",publishedPost,onReconciled}:{initialContent?:FeedContent;initialView?:"scroll"|"calendar";publishedPost?:PublishedPost|null;onReconciled?:()=>void}){
  const vault=useVault(),action=useAction();
  const [content,setContent]=useState<FeedContent>(initialContent),[view,setView]=useState(initialView),[audience,setAudience]=useState<FeedAudience>("connections");
  const [relations,setRelations]=useState<Map<string,AuthorCategory>>(new Map());
@@ -25,6 +26,6 @@ export function FeedExperience({initialContent="everything",initialView="scroll"
    <label>From<select value={audience} onChange={e=>setAudience(e.target.value as FeedAudience)}>{audienceOptions.map(value=><option key={value} value={value}>{audienceLabels[value]}</option>)}</select></label>
   </div></details>
   <Alert>{action.error}</Alert>
-  {view==="scroll"?<PhotoFeed authorFilter={filter} content={content}/>:content==="posts"?<PhotosCalendar embedded authorFilter={filter} contentFilter="posts"/>:<PhotoFeedCalendar authorFilter={filter} content={content}/>}
+  {view==="scroll"?<PhotoFeed authorFilter={filter} content={content} publishedPost={publishedPost} onReconciled={onReconciled}/>:content==="posts"?<PhotosCalendar embedded authorFilter={filter} contentFilter="posts"/>:<PhotoFeedCalendar authorFilter={filter} content={content}/>}
  </>;
 }

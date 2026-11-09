@@ -9,7 +9,7 @@ import React,{useEffect,useRef,useState} from "react";
 import {get,items,message,accessLost,type Content,type MediaPayload,type SocialObject} from "./api";
 import {useVault} from "./vault";
 import {Alert,Button,Empty,Field,Loading,Modal,Icon,useAction} from "./ui";
-import {EncryptedPhoto,PostCard} from "./Social";
+import {EncryptedPhoto,PostCard,type PublishedPost} from "./Social";
 import {PhotoCard,openPhoto,type PhotoRow} from "./PhotoCollection";
 import {matchesAuthor,type AuthorFilter,type FeedContent} from "./feed-filters";
 import {localDay,monthCells,calendarDate} from "./photo-calendar";
@@ -46,7 +46,7 @@ export function usePhotos(month?:string,enabled=true,owned=false,content:FeedCon
 }
 function EntryCardContent({entry,refresh}:{entry:Entry;refresh:()=>void}){
  const vault=useVault(),action=useAction(),[editing,setEditing]=useState(false),[date,setDate]=useState(entry.day),[adding,setAdding]=useState(false);
- if(entry.kind==="post"&&entry.post)return <PostCard row={{...entry.post,author_handle:entry.author_handle}} onChange={refresh}/>;
+ if(entry.kind==="post"&&entry.post)return <PostCard row={{...entry.post,author_handle:entry.author_handle}} onChange={refresh} initialContent={entry.decoded}/>;
  return <div>{entry.photo?<PhotoCard photo={entry.photo} onChanged={refresh} header={<ActivityAuthor memberId={entry.author_id} handle={entry.author_handle} date={entry.day} photoDate sharing="Shared photo"/>}/>:<article className="panel independent-photo feed-photo-card"><header className="post-heading"><ActivityAuthor memberId={entry.author_id} handle={entry.author_handle} date={entry.day} photoDate sharing={postAudienceLabel(entry.post!.audience,entry.post!.group_id)}/></header><Alert>{entry.error||action.error}</Alert>{entry.media&&<EncryptedPhoto media={entry.media}/>}<p><a href={"/post/"+entry.post!.id}>View post</a></p>{entry.author_id===vault.member.id&&vault.member.status==="active"&&<><Button variant="quiet" onClick={()=>setEditing(true)}>Edit photo date</Button>{entry.media&&!entry.error&&<Button variant="quiet" onClick={()=>setAdding(true)}>Add to album</Button>}</>}</article>}
  {adding&&<AttachmentAlbumPicker mediaId={entry.id} postId={entry.post!.id} day={entry.day} onClose={()=>setAdding(false)} onSaved={refresh}/>}
  {editing&&<Modal title="Edit photo date" onClose={()=>setEditing(false)}><form className="form-stack" onSubmit={e=>{e.preventDefault();void action.runSave(async()=>{await updateAttachmentDate(vault,entry.id,entry.post!.id,date);setEditing(false);refresh();});}}><Field label="Photo date" type="date" min="0001-01-01" max="9999-12-31" required value={date} disabled={action.busy} onChange={e=>setDate(e.target.value)}/><p>This changes where the photo appears in the photo calendar. The post date and audience stay the same.</p><Alert>{action.error}</Alert><Button type="submit" busy={action.busy}>Save date</Button></form></Modal>}
@@ -56,14 +56,18 @@ function EntryCard({entry,refresh}:{entry:Entry;refresh:()=>void}){
  const kind=entry.kind==='photo'?'photo':'post',id=kind==='photo'?entry.id:entry.post?.id;
  return id?<ReadableFeedItem item={{kind,id}} ready={!entry.error} photo={kind==='photo'}><EntryCardContent entry={entry} refresh={refresh}/></ReadableFeedItem>:<EntryCardContent entry={entry} refresh={refresh}/>;
 }
-export function PhotoFeed({authorFilter,content="photos"}:{authorFilter:AuthorFilter;content?:FeedContent}){
+export function PhotoFeed({authorFilter,content="photos",publishedPost,onReconciled}:{authorFilter:AuthorFilter;content?:FeedContent;publishedPost?:PublishedPost|null;onReconciled?:()=>void}){
  const data=usePhotos(undefined,true,false,content,"shared"),sentinel=useRef<HTMLDivElement>(null);
  useEffect(()=>{
   if(!data.next||data.busy||data.error||!sentinel.current)return;
   const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))void data.load(data.next!);},{rootMargin:"600px"});observer.observe(sentinel.current);return()=>observer.disconnect();
  },[data.next,data.busy,data.error]);
- const visible=data.entries.filter(e=>matchesAuthor(e,authorFilter));
- return <><Alert>{data.error}</Alert><div className="activity-feed">{visible.map(entry=><EntryCard key={entry.kind+entry.id} entry={entry} refresh={()=>data.load()}/>)}</div>{data.busy&&<Loading/>}{data.loaded&&!data.error&&!data.next&&!visible.length&&<Empty icon="photo" title="Nothing in this view"><a href="/share">Share something</a>, or change your filters.</Empty>}<div ref={sentinel}/>{data.next&&<Button busy={data.busy} onClick={()=>data.load(data.next!)}>Load more activity</Button>}</>;
+ const recent=publishedPost&&publishedPost.row.author_id===authorFilter.memberId&&(!publishedPost.row.expires_at||Date.parse(publishedPost.row.expires_at)>Date.now())?publishedPost:null;
+ useEffect(()=>{if(recent&&data.entries.some(e=>e.kind==="post"&&e.id===recent.row.id))onReconciled?.();},[recent,data.entries,onReconciled]);
+ const recentEntry:Entry|null=recent?{id:recent.row.id,kind:"post",author_id:recent.row.author_id,author_handle:recent.row.author_handle,day:localDay(new Date(recent.row.created_at)),post:recent.row,photo:null,decoded:recent.content}:null;
+ const merged=recentEntry?[recentEntry,...data.entries.filter(e=>!(e.kind==="post"&&e.id===recentEntry.id))]:data.entries;
+ const visible=merged.filter(e=>matchesAuthor(e,authorFilter)&&(content!=="photos"||e.kind!=="post"));
+ return <><Alert>{data.error}</Alert><div className="activity-feed">{visible.map(entry=><EntryCard key={entry.kind+entry.id} entry={entry} refresh={()=>{if(recent?.row.id===entry.id)onReconciled?.();void data.load();}}/>)}</div>{data.busy&&<Loading/>}{data.loaded&&!data.error&&!data.next&&!visible.length&&<Empty icon="photo" title="Nothing in this view"><a href="/share">Share something</a>, or change your filters.</Empty>}<div ref={sentinel}/>{data.next&&<Button busy={data.busy} onClick={()=>data.load(data.next!)}>Load more activity</Button>}</>;
 }
 function PhotoMonth({month,authorFilter,content}:{month:Date;authorFilter:AuthorFilter;content:FeedContent}){
  const {ref,near}=useNearViewport<HTMLElement>();

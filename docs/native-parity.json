@@ -51,7 +51,8 @@
         "docs/native-parity.md#share-draft-autosave",
         "docs/native-parity.md#reaction-attribution",
         "docs/native-parity.md#clickable-post-links",
-        "docs/native-parity.md#post-deletion-feedback"
+        "docs/native-parity.md#post-deletion-feedback",
+        "docs/native-parity.md#composer-footer-and-confirmed-post-handoff"
       ],
       "implementation": {
         "ios": "implemented",

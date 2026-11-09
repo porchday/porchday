@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current composer follow-up:** [#207](https://github.com/porchday/porchday/issues/207), P2: bottom actions, expandable media limits and immediate confirmed-post handoff to Feed. Releasing together with #205; validation pending.
+
 **Current deletion feedback fix:** [#205](https://github.com/porchday/porchday/issues/205), P2: show deletion progress immediately, confirmed completion without waiting for a feed refresh, and a retryable failure state. Implementation under validation; not deployed.
 
 **Current owner follow-up November 9:** [#203](https://github.com/porchday/porchday/issues/203), P2: clickable web links in posted text, preserving punctuation and safe external navigation. Deployed and hosted link activation verified; physical iPhone/macOS external-browser handoff remains follow-up. See [release evidence](docs/evidence/clickable-post-links-release-2026-11-09.md).
