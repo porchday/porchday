@@ -522,7 +522,6 @@ export function Composer({
       {mode==="photos"&&photosShared>0&&<p role="status">{photosShared} item{photosShared===1?"":"s"} shared.{photos.length>0?" Remaining photos and videos are still selected.":""}</p>}
       <Alert>{action.error}</Alert>
       <Alert success>{action.notice}</Alert>
-      {mode === "post" && !groupId && ["connections", "friends", "family", "community", "extended_family"].includes(audience) && <p className="small-copy">People still setting up private sharing won’t hold up your post. After they finish, open Porchday to share it with them securely.</p>}
       {shareTabs&&<SharedMediaInbox disabled={action.busy||videoSources.length>0} remaining={10-photos.length} onImport={selectPhotos} onBusy={setImportingMedia}/>}
       <div className={"composer-controls"+(mode==="post"?" composer-post-controls":"")}>
         <div className="composer-tools">
@@ -547,7 +546,6 @@ export function Composer({
             <span>Add photos/videos</span>
           </button>
           {videoSources[0]&&<VideoPicker key={videoSources[0].name+videoSources.length} file={videoSources[0]} onDone={()=>setVideoSources(current=>current.slice(1))} onPrepared={(video,name,captureDate)=>{const id=crypto.randomUUID();preparedVideos.current.set(id,video);setPhotos(current=>[...current,{id,name,alt:"",photoDate:captureDate,blob:video.blob,width:video.width,height:video.height,mime:video.mime,poster:video.poster,preview:video.preview,largeVideo:video}]);}}/>}
-          <TimerSelect value={timer} onChange={setTimer} />
         </div>
 
       </div>
@@ -584,6 +582,9 @@ export function Composer({
       <footer className="composer-footer">
         {shareTabs&&<><Alert>{draft.error}</Alert>{draft.error&&!draft.ready&&<Button type="button" onClick={draft.retryRestore}>Try restoring draft again</Button>}{draft.error&&draft.ready&&<Button type="button" onClick={draft.retry}>Retry saving draft</Button>}</>}
         <div className="composer-actions">
+          <fieldset className="composer-fields" disabled={action.busy||importingMedia||!draft.ready}>
+            <TimerSelect value={timer} onChange={setTimer} />
+          </fieldset>
         <Button
           variant="primary"
           type="submit"

@@ -225,3 +225,7 @@ After a post is confirmed, the Share tab opens Feed with that post immediately r
 ## App-switcher background (#208)
 
 The shared native iOS/macOS privacy cover follows the web UI's selected opaque background color (Autumn, Clean or generated pattern palette). A main-frame-only script observes appearance application; the existing exact-origin bridge accepts only six-digit hex colors. Only that color is cached locally for relaunch, with Autumn as the default. The cover remains opaque and its label chooses a contrasting foreground; no page screenshot or member content crosses the bridge. This is native-only and requires an updated signed app. Exact-source iOS/macOS tests and signing passed; iOS 362 and macOS 345 are available in internal TestFlight. Physical-device app-switcher verification remains pending in #208. See [release evidence](evidence/app-switcher-appearance-2026-11-09.md).
+
+## Composer timer placement (#207)
+
+The shared web/PWA/iOS/macOS composer places the expiration selector in the bottom action area with Share, below media and audience controls. Its preset and custom inputs remain disabled while publishing, importing or restoring a draft. The informational paragraph about people still setting up sharing is removed; sharing behavior is unchanged. No native bridge or signed binary change is needed. Production rollout is pending.
