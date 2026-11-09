@@ -79,5 +79,15 @@ assert info.get('PorchdayPushEnabled')=='YES', 'Signed app must expose enabled n
 assert info.get('PorchdayAPNsEnvironment')=='production', 'Signed app must select the production APNs provider'
 assert (app/'PrivacyInfo.xcprivacy').is_file()
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
+preview_extension=app/'PlugIns/PorchdayNotificationService.appex'
+assert preview_extension.is_dir(), 'Notification service extension must be embedded'
+for bundle in [app,preview_extension]:
+ metadata=plistlib.loads((bundle/'Info.plist').read_bytes())
+ group=metadata.get('PorchdayNotificationKeychainGroup')
+ assert group and group.endswith('.org.porchday.notification-preview') and '$(' not in group, 'Notification shared keychain setting must be expanded in the shipped plist'
+ signed=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(bundle)],stderr=subprocess.DEVNULL))
+ assert group in signed.get('keychain-access-groups',[]), 'Notification keychain group must be signed'
+ assert group==info.get('PorchdayNotificationKeychainGroup'), 'App and extension must share the same notification keychain'
+
 (p/'evidence.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'bundleId':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'ipaSha256':hashlib.sha256(ipa[0].read_bytes()).hexdigest(),'uploaded':False},indent=2))
 PY

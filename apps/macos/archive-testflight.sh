@@ -92,6 +92,16 @@ assert info.get('PorchdayPushEnabled')=='YES', 'Signed app must expose enabled n
 assert info.get('PorchdayAPNsEnvironment')=='production', 'Signed app must select the production APNs provider'
 assert (app/'Contents/Resources/PrivacyInfo.xcprivacy').is_file()
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
+preview_extension=app/'Contents'/'PlugIns/PorchdayMacNotificationService.appex'
+assert preview_extension.is_dir(), 'Notification service extension must be embedded'
+for bundle in [app,preview_extension]:
+ metadata=plistlib.loads((bundle/'Contents/Info.plist').read_bytes())
+ group=metadata.get('PorchdayNotificationKeychainGroup')
+ assert group and group.endswith('.org.porchday.notification-preview') and '$(' not in group, 'Notification shared keychain setting must be expanded in the shipped plist'
+ signed=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(bundle)],stderr=subprocess.DEVNULL))
+ assert group in signed.get('keychain-access-groups',[]), 'Notification keychain group must be signed'
+ assert group==info.get('PorchdayNotificationKeychainGroup'), 'App and extension must share the same notification keychain'
+
 entitlements=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(app)],stderr=subprocess.DEVNULL))
 assert entitlements.get('com.apple.security.app-sandbox') is True
 assert not entitlements.get('com.apple.security.get-task-allow',False)

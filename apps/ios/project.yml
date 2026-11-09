@@ -20,7 +20,7 @@ settings:
     PORCHDAY_APNS_ENVIRONMENT: development
     INFOPLIST_KEY_PorchdayPushEnabled: '$(PORCHDAY_PUSH_ENABLED)'
     INFOPLIST_KEY_PorchdayAPNsEnvironment: '$(PORCHDAY_APNS_ENVIRONMENT)'
-    INFOPLIST_KEY_PorchdayNotificationKeychainGroup: '$(AppIdentifierPrefix)org.porchday.notification-preview'
+    PORCHDAY_NOTIFICATION_KEYCHAIN_GROUP: '$(AppIdentifierPrefix)org.porchday.notification-preview'
     MARKETING_VERSION: '0.1.0'
     CURRENT_PROJECT_VERSION: '1'
     GENERATE_INFOPLIST_FILE: 'YES'
@@ -89,7 +89,7 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.social-networking
       configs:
         Debug:
-          INFOPLIST_KEY_PorchdayNotificationKeychainGroup: ''
+          PORCHDAY_NOTIFICATION_KEYCHAIN_GROUP: ''
         Release:
           CODE_SIGN_ENTITLEMENTS: Porchday/Porchday-Mac-Push.entitlements
     dependencies:
@@ -159,7 +159,7 @@ targets:
       configs:
         Debug:
           CODE_SIGN_ENTITLEMENTS: NotificationService/macOS-Debug.entitlements
-          INFOPLIST_KEY_PorchdayNotificationKeychainGroup: ''
+          PORCHDAY_NOTIFICATION_KEYCHAIN_GROUP: ''
     dependencies:
       - framework: ../../packages/crypto/native/build/Porchcrypto.xcframework
         embed: false
