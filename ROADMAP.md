@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner follow-up November 9:** [#203](https://github.com/porchday/porchday/issues/203), P2: clickable web links in posted text, preserving punctuation and safe external navigation. Implementation under validation; deployment pending.
+**Current owner follow-up November 9:** [#203](https://github.com/porchday/porchday/issues/203), P2: clickable web links in posted text, preserving punctuation and safe external navigation. Deployed and hosted link activation verified; physical iPhone/macOS external-browser handoff remains follow-up. See [release evidence](docs/evidence/clickable-post-links-release-2026-11-09.md).
 
 **Released November 9:** [#201](https://github.com/porchday/porchday/issues/201) reaction attribution and [#22](https://github.com/porchday/porchday/issues/22) photo-history pending-key/queue fixes are live in production through PR #202. Hosted encrypted sharing and long-press attribution checks passed; non-actionable access banners removed. Physical-device/member-specific acceptance remains `needs verification`. [Release evidence](docs/evidence/reaction-access-release-2026-11-09.md).
 
