@@ -149,21 +149,21 @@ describe("bounded history-sharing lifecycle", () => {
     expect(f.states.at(-1)).toBe("idle"); expect(f.io.cleanup).not.toHaveBeenCalled();
     f.task.dispose();
   });
-  it("automatic checks only read after an uncertain write; explicit retry reuses identical bytes", async () => {
+  it("automatically retries reconciled uncertain writes with identical bytes after backoff", async () => {
     const save = vi.fn().mockRejectedValueOnce(Error("network lost")).mockResolvedValue(undefined);
-    const f = runner({ save }); await flush();
+    let clock=0;const f = runner({ save, now:()=>clock }); await flush();
     await f.task.recheck(); await f.task.recheck();
     expect(save).toHaveBeenCalledTimes(1); expect(f.io.cleanup).not.toHaveBeenCalled();
     f.io.list.mockResolvedValue({ items: [] });
-    await f.task.retry();
+    clock=5_001;await f.task.recheck();
     expect(save).toHaveBeenCalledTimes(2); expect(save.mock.calls[1][0]).toBe(save.mock.calls[0][0]);
     expect(f.io.prepare).toHaveBeenCalledTimes(1); f.task.dispose();
   });
   it("after an audience rejection, requires a fresh snapshot before any later write", async () => {
     const save = vi.fn().mockRejectedValueOnce(new ApiError(409, { error: { code: "AUDIENCE_CHANGED" } })).mockResolvedValue(undefined);
-    const f = runner({ save }); await flush(); await f.task.recheck();
+    let clock=0;const f = runner({ save,now:()=>clock }); await flush(); await f.task.recheck();
     expect(save).toHaveBeenCalledTimes(1); expect(f.states.at(-1)).toBe("unconfirmed");
-    await f.task.retry(); expect(f.io.prepare).toHaveBeenCalledTimes(2); f.task.dispose();
+    clock=5_001;await f.task.recheck(); expect(f.io.prepare).toHaveBeenCalledTimes(2); f.task.dispose();
   });
   it("does not attach a prepared revision after disposal", async () => {
     const gate = deferred<PreparedAudienceRefresh>(); const f = runner({ prepare: () => gate.promise });

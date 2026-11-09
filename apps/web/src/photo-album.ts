@@ -1,6 +1,6 @@
 import {verifyPhotoVideo,uploadPhotoMedia} from './photo-video';
 import {verifyPhotoBytes,type PhotoProof} from "@porchday/crypto/photos";
-import {base64ToBytes,type EncryptedEnvelope} from "@porchday/crypto";
+import {canonicalJson,base64ToBytes,type EncryptedEnvelope} from "@porchday/crypto";
 import {get,post,request} from "./api";
 import type {useVault} from "./vault";
 import {validatedMedia} from "./video";
@@ -51,26 +51,41 @@ export async function refreshAlbumPhoto(vault:ReturnType<typeof useVault>,photo:
  const grant=photo.grants.find(g=>g.album_id===albumId);if(!grant)throw Error("This album photo is no longer available.");
  return refreshPhotoGrant(vault,photo,grant);
 }
-export async function refreshPhotoGrant(vault:ReturnType<typeof useVault>,photo:PhotoRow,grant:PhotoGrant,checkCurrent:()=>void=()=>{},keepNavigation=false){
+export type PreparedPhotoRefresh={id:string;photoId:string;source:EncryptedEnvelope;body:{envelope:EncryptedEnvelope;media_id:string;expected_media_id:string;expected_revision:number}};
+export async function preparePhotoRefresh(vault:ReturnType<typeof useVault>,photo:PhotoRow,grant:PhotoGrant,checkCurrent:()=>void=()=>{},keepNavigation=false):Promise<PreparedPhotoRefresh>{
  checkCurrent();
- const {content,payload}=await readPhoto(vault,photo,[grant]);
+ const {content,payload}=await readPhoto(vault,photo,[grant]);checkCurrent();
  const media={...content.media![0],id:crypto.randomUUID()},context={...grant.envelope.context,createdAt:new Date().toISOString()};
  const {photoDate:_,...mediaContext}=context;
- const encrypted=await vault.sealPhotoRefresh({...payload,...media},{...mediaContext,id:media.id,kind:"media"},grant.id);
+ const encrypted=await vault.sealPhotoRefresh({...payload,...media},{...mediaContext,id:media.id,kind:"media"},grant.id);checkCurrent();
  const bytes=new TextEncoder().encode(JSON.stringify(encrypted));
  if(bytes.length>22_020_096)throw Error("This encrypted photo is too large for this album's audience.");
- checkCurrent();
- await uploadPhotoMedia(encrypted,media.videoVersion===3?payload.video:undefined,grant.id,keepNavigation);
- checkCurrent();
- const envelope=await vault.sealPhotoRefresh({...content,media:[media]},context,grant.id);
- checkCurrent();
- try{const path=`/photos/${photo.id}/grants/${grant.id}/refresh`,body={envelope,media_id:media.id,expected_media_id:grant.media_id,expected_revision:photo.revision};
-  if(keepNavigation)await request(path,{method:"POST",backgroundSave:true,keepNavigation:true,body:JSON.stringify(body)});else await post(path,body);
+ try{
+  await uploadPhotoMedia(encrypted,media.videoVersion===3?payload.video:undefined,grant.id,keepNavigation);checkCurrent();
+  const envelope=await vault.sealPhotoRefresh({...content,media:[media]},context,grant.id);checkCurrent();
+  return {id:photo.id,photoId:photo.id,source:grant.envelope,body:{envelope,media_id:media.id,expected_media_id:grant.media_id,expected_revision:photo.revision}};
+ }catch(error){
+  // No grant submission yet. Only this preparer's unattached ID is disposable.
+  try{checkCurrent();await request(`/media/${media.id}`,{method:"DELETE",backgroundSave:keepNavigation,keepNavigation});}catch{}
+  throw error;
  }
+}
+export async function submitPhotoRefresh(candidate:PreparedPhotoRefresh,keepNavigation=false){
+ const path=`/photos/${candidate.photoId}/grants/${candidate.body.envelope.context.id}/refresh`;
+ if(keepNavigation)await request(path,{method:"POST",backgroundSave:true,keepNavigation:true,body:JSON.stringify(candidate.body)});else await post(path,candidate.body);
+}
+export function photoRefreshOutcome(candidate:PreparedPhotoRefresh,latest:PhotoRow):"committed"|"unchanged"|"changed"{
+ const grant=latest.grants.find(g=>g.id===candidate.body.envelope.context.id);
+ if(grant?.media_id===candidate.body.media_id&&canonicalJson(grant.envelope)===canonicalJson(candidate.body.envelope))return "committed";
+ if(latest.revision===candidate.body.expected_revision&&grant?.media_id===candidate.body.expected_media_id&&canonicalJson(grant.envelope)===canonicalJson(candidate.source))return "unchanged";
+ return "changed";
+}
+export async function refreshPhotoGrant(vault:ReturnType<typeof useVault>,photo:PhotoRow,grant:PhotoGrant,checkCurrent:()=>void=()=>{},keepNavigation=false){
+ const candidate=await preparePhotoRefresh(vault,photo,grant,checkCurrent,keepNavigation);checkCurrent();
+ try{await submitPhotoRefresh(candidate,keepNavigation);}
  catch(error){
-  checkCurrent();
-  const latest=(await get("/photos/"+photo.id)).photo as PhotoRow;
-  if(latest.grants.some(g=>g.id===grant.id&&g.media_id===media.id))return;
+  checkCurrent();const latest=(await get("/photos/"+photo.id)).photo as PhotoRow;
+  if(photoRefreshOutcome(candidate,latest)==="committed")return;
   throw error;
  }
 }

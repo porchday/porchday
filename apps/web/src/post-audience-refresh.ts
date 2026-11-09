@@ -1,7 +1,8 @@
+import {startAccessUpdates} from './access-updates';
 import {validateVideoManifest} from "@porchday/crypto/video";
 import type { ContentContext, EncryptedEnvelope } from "@porchday/crypto";
 import { canonicalJson } from "@porchday/crypto";
-import { ApiError, type Content, type MediaPayload, type SocialObject } from "./api";
+import { type Content, type MediaPayload, type SocialObject } from "./api";
 import { preservedPhotoDeadline } from "./archive";
 
 export type RefreshPost = SocialObject & {
@@ -127,7 +128,7 @@ export async function preparePostAudienceRefresh(
 export type AudienceRefreshState = "idle" | "sharing" | "unconfirmed";
 type RefreshIO = {
   list: (signal: AbortSignal) => Promise<{ items: { id: string }[] }>;
-  prepare: (id: string, signal: AbortSignal) => Promise<PreparedAudienceRefresh>;
+  prepare: (id: string, signal: AbortSignal) => Promise<PreparedAudienceRefresh | null>;
   save: (prepared: PreparedAudienceRefresh) => Promise<void>;
   read: (id: string, signal: AbortSignal) => Promise<RefreshPost>;
   cleanup: (ids: string[]) => Promise<void>;
@@ -136,111 +137,18 @@ type RefreshIO = {
   enabled: () => boolean;
 };
 
-/** One bounded batch at a time. Submitted writes are never aborted or blindly
- * retried by focus/reconnect. An uncertain write is reconciled by reading first;
- * only an explicit retry may resubmit its identical bytes.
- */
-export function startPostAudienceRefresh(io: RefreshIO) {
-  let disposed = false, operation: Promise<void> | null = null;
-  let pending: PreparedAudienceRefresh | null = null, paused = false;
-  const controllers = new Set<AbortController>();
-  const current = () => !disposed && io.enabled();
-  const publish = (state: AudienceRefreshState) => { if (!disposed) io.state(state); };
-  async function bounded<T>(action: (signal: AbortSignal) => Promise<T>, ms = 30000): Promise<T> {
-    const controller = new AbortController(); controllers.add(controller);
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await new Promise<T>((resolve, reject) => {
-        const onAbort = () => reject(canceled());
-        controller.signal.addEventListener("abort", onAbort, { once: true });
-        timeout = setTimeout(() => controller.abort(), ms);
-        Promise.resolve().then(() => {
-          if (!current() || controller.signal.aborted) throw canceled();
-          return action(controller.signal);
-        }).then(value => {
-          if (!current() || controller.signal.aborted) throw canceled();
-          resolve(value);
-        }, reject).catch(reject).finally(() => controller.signal.removeEventListener("abort", onAbort));
-      });
-    } finally { clearTimeout(timeout); controllers.delete(controller); }
-  }
-  async function reconcile(): Promise<"committed" | "unchanged" | "changed"> {
-    if (!pending) return "changed";
-    const latest = await bounded(signal => io.read(pending!.id, signal));
-    if (canonicalJson(latest.envelope) === canonicalJson(pending.body.envelope) &&
-        sameIds(latest.media.map(m => m.id), pending.body.media_ids)) {
-      pending = null; paused = false; if (!disposed) io.changed(); return "committed";
-    }
-    if (canonicalJson(latest.envelope) === canonicalJson(pending.source) &&
-        sameIds(latest.media.map(m => m.id), pending.body.source_media_ids)) return "unchanged";
-    // Another edit/refresh won. Avoid deleting replacements that might have
-    // been committed and carried into that later edit; server cleanup owns them.
-    pending = null; paused = false; return "changed";
-  }
-  async function submit() {
-    if (!pending || !current()) throw canceled();
-    const candidate = pending;
-    try {
-      await io.save(candidate);
-      pending = null; paused = false;
-      if (!disposed) io.changed();
-    } catch (error) {
-      paused = true;
-      // Even a failed response is followed by a read before deciding anything.
-      // Known rejection can discard candidate bytes only after an unchanged read.
-      const outcome = await reconcile().catch(() => "unconfirmed" as const);
-      if (outcome === "committed") return;
-      if (outcome === "unchanged" && error instanceof ApiError && error.status >= 400 && error.status < 500) {
-        pending = null;
-        if (current()) await io.cleanup(candidate.body.media_ids).catch(() => {});
-      }
-      throw error;
-    }
-  }
-  function run(manual = false) {
-    if (!current()) return Promise.resolve();
-    if (operation) return operation;
-    const running = (async () => {
-      try {
-        if (pending) {
-          const outcome = await reconcile();
-          if (outcome === "unchanged") {
-            if (!manual) { publish("unconfirmed"); return; }
-            publish("sharing"); await submit();
-          }
-        }
-        if (paused && !manual) { publish("unconfirmed"); return; }
-        paused = false;
-        const batch = await bounded(io.list);
-        if (!batch.items.length) { publish("idle"); return; }
-        publish("sharing");
-        for (const candidate of batch.items.slice(0, 3)) {
-          if (!current()) throw canceled();
-          // Preparation includes sequential photo encryption/uploads. Those
-          // writes finish normally; the signal only stops reads and later work.
-          pending = await bounded(signal => io.prepare(candidate.id, signal), 10 * 60_000);
-          await submit();
-        }
-        publish("idle");
-      } catch (error) {
-        if (!disposed) {
-          // Hiding the app stops unfinished preparation. It can resume when
-          // visible again; uncertainty after a submitted write stays explicit.
-          const stoppedBeforeWrite = !pending && error instanceof DOMException && error.name === "AbortError";
-          paused = !stoppedBeforeWrite;
-          publish(stoppedBeforeWrite ? "idle" : "unconfirmed");
-        }
-      }
-    })();
-    operation = running;
-    void running.finally(() => { if (operation === running) operation = null; });
-    return running;
-  }
-  void run();
-  return {
-    recheck: () => run(),
-    retry: () => run(true),
-    suspend() { for (const controller of controllers) controller.abort(); },
-    dispose() { disposed = true; for (const controller of controllers) controller.abort(); },
-  };
+/** Share through the common retry/reconciliation loop. */
+export function startPostAudienceRefresh(io: RefreshIO & {now?:()=>number}) {
+  return startAccessUpdates({
+    ...io,
+    cleanup: candidate => io.cleanup(candidate.body.media_ids),
+    reconcile: async (candidate, signal) => {
+      const latest = await io.read(candidate.id, signal);
+      if (canonicalJson(latest.envelope) === canonicalJson(candidate.body.envelope) &&
+          sameIds(latest.media.map(m => m.id), candidate.body.media_ids)) return "committed";
+      if (canonicalJson(latest.envelope) === canonicalJson(candidate.source) &&
+          sameIds(latest.media.map(m => m.id), candidate.body.source_media_ids)) return "unchanged";
+      return "changed";
+    },
+  });
 }
