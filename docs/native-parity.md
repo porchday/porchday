@@ -140,6 +140,29 @@ Unified media release delivered November 8: [release evidence](evidence/unified-
 
 November 8, #185: the default iOS and macOS web shells use the same post composer and author-side encrypted catch-up as web/PWA. Social posts and attachments include every ready eligible device; pending direct connections retain publication eligibility tied to the existing connection. This is not a plaintext queue or a read grant. Current eligibility, exact device fingerprints, epoch, expiry, and history checks remain. Catch-up needs the author’s unlocked app after recipient setup. The legacy Swift vault and history preparer use the same scoped pending-member policy; other album/photo snapshots still require their previous checks. Exact-source automated native CI and deployment evidence are required; physical checks are not claimed.
 
-## Recovered-device grant coverage API
 
-November 8, #22: add read-only existing_peer_grants_complete hints to authenticated post/photo refresh snapshots. This lets the new shared web shell conservatively avoid redundant author-only re-encryption after key recovery, without skipping peer grant repairs. Older clients ignore the additive field. No writes, authorization, schema, native bridge or preserved runtime behavior change. Default iOS/macOS shells use the hosted web client; exact-source native CI remains required. Rounded Mac icon distribution is built from the frontend source separately; physical checks stay #49/#114.
+## Share draft autosave
+
+November 8, #187: default iOS and macOS shells use the same persistent Share composer and encrypted IndexedDB draft store as web/PWA. Text, media and sharing choices survive app-tab navigation and reload after unlocking. Storage failures keep the in-memory draft and show an explicit retry; publication/discard clear saved state. The status is inline and does not disable navigation. The app-update action allows a fully saved draft to reload. No new native bridge or binary is required. [Design and automated verification scope](../design/post-draft-autosave.md). Exact-source iOS/macOS CI remains required; physical-device storage eviction and app termination timing are not claimed verified. The optional previous Swift UI remains a migration fallback.
+
+Draft autosave released November 8: [release evidence](evidence/post-draft-release-2026-11-08.md) records deployed UI recovery/publishing checks and passing exact-source iOS/macOS CI. Existing default shells receive the update; physical storage/termination acceptance remains #49/#114.
+
+## Recovered-device access updates
+
+November 8 follow-up, #22/#124: default iOS/macOS shells skip redundant own-device history copies when recovered keys cover the original post/photo and attachments. Genuine peer access updates continue with unchanged server policy. Persistent background catch-up permits member-tab navigation while unload/signout and foreground saves remain protected. Status text describes encrypted access updates rather than reposting. Desktop sidebar omits More; mobile More keeps plain destination links. [Design](../design/recovered-device-history.md). The optional previous Swift UI remains unchanged. Exact-source native automated checks are required; physical new-install verification remains #49/#114.
+
+The rounded native Mac icon (#15) changes AppIcon PNGs generated from the existing corn SVG. It requires a new signed Mac build; web deployment alone does not change installed native icons. Distribution evidence must identify the actual available build.
+
+## Quiet automatic updates
+
+The default iOS/macOS WKWebView shells use the same public-shell build checks and safe reload policy as the PWA, including when service workers are unavailable. Routine update and successful background-access notices are removed. Saved encrypted Share drafts restore; unsaved forms, saves/uploads, dialogs and media playback defer reloading. Failed/limited-functionality notices remain actionable. See [design](../design/automatic-updates.md) and #190. Signed binary installation still follows TestFlight/App Store settings. Exact-source native simulator/macOS checks are required; physical foreground/resume behavior remains unverified under #49/#114.
+
+## Settings organization
+
+The default iOS/macOS shared web shells show wrapping Settings navigation, a distinct Notifications settings tab, and Time zone under My profile. Existing notification preferences, push bridges and timezone storage are unchanged. The same web layout is used on mobile and desktop; exact-source native builds/tests remain required. Physical-device layout follow-up stays in #49/#114; owner navigation follow-up is tracked in #124.
+
+## Notification previews and tap handling
+
+November 8 follow-up (#7): Web Push and APNs show a validated author handle and post/media activity type after the existing delivery-time access check. Encrypted text, captions and media remain absent. Shared Settings copy reflects this disclosure. Native iOS/macOS callbacks use an explicit nonisolated completion-handler boundary, queue navigation on MainActor, ignore dismissal/custom actions, and retain destinations before the web shell mounts. Production taps no longer initialize the legacy native notification model. Payload-free OSLog breadcrumbs support crash investigation.
+
+The owner reported an iOS TestFlight crash after tapping a notification. App Store Connect returned no submitted crash diagnostics at investigation time; root cause remains unconfirmed. Automated background-callback/cold-shell and malformed-payload checks are included; real-device crash reproduction and signed-build acceptance remain pending in #7. Do not equate callback hardening with a verified crash fix.

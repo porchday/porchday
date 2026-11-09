@@ -1,4 +1,4 @@
-import {feedPushMetadata} from './feed-push-payload';
+import {feedPushMetadata,feedPushBody} from './feed-push-payload';
 import {runtimeSessionDenied} from './session-denial';
 import {Hono, type Context} from 'hono';
 import {z} from 'zod';
@@ -80,7 +80,7 @@ export const GENERIC_PUSH_PAYLOAD = JSON.stringify({title: 'Porchday', body: 'Yo
 export function generatePushRequest(subscription: PushSubscription, env: PushEnv, metadata?: unknown) {
   if (!configured(env) || !validPushEndpoint(subscription.endpoint)) throw new Error('PUSH_UNAVAILABLE');
   const feed=feedPushMetadata(metadata);
-  const payload=feed?JSON.stringify({title:"Porchday",body:feed.feed?"New activity in your feed":"You have a new update",url:feed.feed?"/":"/notifications",count:feed.count,tag:feed.tag}):GENERIC_PUSH_PAYLOAD;
+  const payload=feed?JSON.stringify({title:"Porchday",body:feedPushBody(feed),url:feed.feed?"/":"/notifications",count:feed.count,tag:feed.tag,author:feed.author,content:feed.content}):GENERIC_PUSH_PAYLOAD;
   return webPush.generateRequestDetails(subscription, payload, {
     vapidDetails: {subject: env.VAPID_SUBJECT!, publicKey: env.VAPID_PUBLIC_KEY!, privateKey: env.VAPID_PRIVATE_KEY!},
     contentEncoding: 'aes128gcm', TTL: 60, urgency: 'normal', topic: feed?.tag || 'porchday-update',
