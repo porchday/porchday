@@ -1,4 +1,4 @@
-import {afterEach,describe,expect,it} from 'vitest';
+import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {createHash} from 'node:crypto';
 import {chmodSync,existsSync,mkdtempSync,readFileSync,readdirSync,rmSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -9,6 +9,9 @@ import {FileRecoveryJournal} from './deployment-recovery-journal.ts';
 import {FileDeploymentLease,leasedDeploymentPorts} from './deployment-recovery-lease.ts';
 import {publicAssetManifestHash} from './release-assets-verify.ts';
 import type {ProbeConfig} from './external-monitor-probe.ts';
+const waits=vi.hoisted(()=>vi.fn(async (_ms:number,_value:unknown,options?:{signal?:AbortSignal})=>{options?.signal?.throwIfAborted();}));
+vi.mock('node:timers/promises',()=>({setTimeout:waits}));
+beforeEach(()=>waits.mockClear());
 const uuid=(n:number)=>n.toString(16).padStart(8,'0')+'-0000-4000-8000-000000000000',sha=(s:string)=>createHash('sha256').update(s).digest('hex');
 const plan:DeploymentPlan={operationId:uuid(1),worker:'porchday-staging',candidateVersion:uuid(2),baselineVersion:uuid(3),baselineDeploymentId:uuid(4),candidateSource:'a'.repeat(40),compatibleRollbackVersions:[uuid(3)],evidenceDigest:'b'.repeat(64)};
 const config:ProbeConfig={environment:'staging',healthToken:'h'.repeat(32),synthetic:{id:uuid(99),email:uuid(99)+'@example.test',password:'p'.repeat(32)}};
@@ -86,14 +89,14 @@ describe('shared release journey and asset gate',()=>{
  it('retries only asset reads during convergence, never the completed journey',async()=>{
   const f=fixture();let attempts=0;const fetcher:typeof fetch=async(input,init)=>String(input).includes('/assets/')&&++attempts===1?new Response('<html>',{headers:{'content-type':'text/html'}}):f.transport(input,init);
   expect(await createReleaseVerifier({...f.options,fetch:fetcher})(plan.candidateVersion,new AbortController().signal)).toBe('healthy');
-  expect(attempts).toBe(2);expect(f.calls.filter(url=>url.endsWith('/sign-out'))).toHaveLength(1);
+  expect(waits.mock.calls.map(call=>call[0]).filter(ms=>ms>=10000)).toEqual([10000]);expect(attempts).toBe(2);expect(f.calls.filter(url=>url.endsWith('/sign-out'))).toHaveLength(1);
   expect(f.records().filter(r=>r.kind==='assets').map(r=>r.detail.report.healthy).sort()).toEqual([false,true]);
  });
  it('feeds persistent HTTP-200 wrong assets into the actual rollback controller',async()=>{
   const f=fixture();let current:DeploymentObservation={version:plan.baselineVersion,deploymentId:plan.baselineDeploymentId,operationId:null};const writes:string[]=[],authorizations:string[]=[];
   const fetcher:typeof fetch=async(input,init)=>String(input).includes('/assets/')&&current.version===plan.candidateVersion?new Response('<html>',{headers:{'content-type':'text/html'}}):f.transport(input,init);
   const result=await recoverDeployment(plan,new FileRecoveryJournal(join(f.root,'journal')),{authorize:async(_plan,direction)=>{authorizations.push(direction);},observe:async()=>({...current}),deploy:async(version,operationId)=>{writes.push(version);current={version,operationId,deploymentId:uuid(10+writes.length)};},verify:createReleaseVerifier({...f.options,fetch:fetcher})});
-  expect(result).toBe('rolled-back');expect(writes).toEqual([plan.candidateVersion,plan.baselineVersion]);expect(authorizations).toEqual(['activate','rollback']);
+  expect(waits.mock.calls.map(call=>call[0]).filter(ms=>ms>=10000)).toEqual([10000,20000]);expect(result).toBe('rolled-back');expect(writes).toEqual([plan.candidateVersion,plan.baselineVersion]);expect(authorizations).toEqual(['activate','rollback']);
   expect(f.records().filter(r=>r.kind==='assets')).toHaveLength(4);expect(f.calls.filter(url=>url.endsWith('/sign-out'))).toHaveLength(2);
  });
  it('treats a completed failed journey as unhealthy without retrying an ambiguous logout',async()=>{

@@ -53,7 +53,9 @@ export function createReleaseVerifier(options:{plan:DeploymentPlan;config:ProbeC
      const proof=plan.assetManifests?record('asset-proof',{manifest,report}):undefined;
      const outcome=finish('healthy');if(proof)proofs.set(version,proof);return outcome;
     }
-    if(round<3)try{await sleep(round===1?250:750,undefined,{signal});}catch{return finish('unknown');}
+    // Asset delivery can lag the active-version API. Keep every failed report and
+    // allow bounded propagation without replaying writes or relaxing hash checks.
+    if(round<3)try{await sleep(round===1?10000:20000,undefined,{signal});}catch{return finish('unknown');}
    }
    return finish('unhealthy');
   }finally{active=false;}
