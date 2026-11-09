@@ -70,6 +70,7 @@ jobs:
           VIDEO_PREPARATION_REQUIRE_SUCCESS: '1'
       - run: node scripts/check-feed-read.mjs
       - run: node scripts/check-native-shell.mjs
+      - run: node scripts/check-automatic-updates.mjs
       - run: node scripts/check-photo-calendar.mjs
       - name: Verify encrypted draft recovery in WebKit
         run: DRAFTS_ONLY=1 DRAFTS_BROWSER=webkit node scripts/check-photo-calendar.mjs

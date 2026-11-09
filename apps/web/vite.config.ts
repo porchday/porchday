@@ -83,6 +83,10 @@ export default defineConfig({
       },
       closeBundle() {
         const dist = resolve(import.meta.dirname, "dist");
+        const htmlPath = resolve(dist, "index.html");
+        const html = readFileSync(htmlPath, "utf8");
+        const buildId = createHash("sha256").update(html).digest("hex").slice(0, 24);
+        writeFileSync(htmlPath, html.replace("</head>", `<meta name="porchday-build" content="${buildId}"></head>`));
         // A same-origin public shell still works when the old homepage redirects.
         copyFileSync(resolve(dist, "index.html"), resolve(dist, "app-shell.html"));
         const installIcons = versionPwaIcons(dist);

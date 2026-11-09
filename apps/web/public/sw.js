@@ -25,6 +25,16 @@ self.addEventListener("activate", (event) =>
 );
 self.addEventListener("message", (event) => {
   if (event.data === "ACTIVATE_UPDATE") self.skipWaiting();
+  if (event.data === "ACTIVATE_UPDATE_WHEN_SAFE") event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({type: "window", includeUncontrolled: true});
+    const readiness = await Promise.all(clients.map(client => new Promise(resolve => {
+      const channel = new MessageChannel();
+      const timer = setTimeout(() => { channel.port1.close(); resolve(false); }, 2000);
+      channel.port1.onmessage = reply => { clearTimeout(timer); channel.port1.close(); resolve(reply.data?.safe === true); };
+      client.postMessage("PORCHDAY_UPDATE_SAFE", [channel.port2]);
+    })));
+    if (readiness.every(Boolean)) await self.skipWaiting();
+  })());
 });
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
