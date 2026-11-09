@@ -499,7 +499,7 @@ try {
   await page.locator('.post-text').filter({hasText:'Retained draft'}).waitFor();
   assert.equal(await page.locator('.post-text').filter({hasText:'Retained draft'}).count(),1,'confirmed post renders before feed response');
   assert.equal(await page.locator('form.composer').isVisible(),false);
-  releaseFeed();await page.waitForTimeout(300);
+  releaseFeed();await page.waitForLoadState('networkidle');
   assert.equal(await page.locator('.post-text').filter({hasText:'Retained draft'}).count(),1,'feed reconciliation does not duplicate own post');
   await page.unroute('**/api/v1/photo-feed?**');
   await page.goto(origin+'/share');await page.locator('textarea#post-text').waitFor();
@@ -515,7 +515,7 @@ try {
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Discard draft',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#post-text').value==='');
-  await page.reload();await page.locator('textarea#post-text').waitFor();
+  await page.waitForLoadState('networkidle');await page.reload();await page.locator('textarea#post-text').waitFor();
   assert.equal(await page.locator('textarea#post-text').inputValue(),'');
   assert.equal(await page.locator('.photo-draft').count(),0);
   assert.deepEqual(errors, []);
