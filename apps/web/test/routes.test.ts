@@ -17,6 +17,6 @@ it("returns to permitted deep links after login without permitting open redirect
   for (const value of ["https://evil.test", "//evil.test", "/\\evil.test", "/app//evil.test", "/api/auth/sign-out", "/unknown", "/%2f%2fevil.test"]) expect(loginDestination(value),value).toBe("/");
 });
 
-test("diagnostic recording links retain the member destination after login", () => {
+it("diagnostic recording links retain the member destination after login", () => {
   expect(loginDestination("/diagnostics?recording=synthetic")).toBe("/diagnostics?recording=synthetic");
 });
