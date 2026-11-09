@@ -58,7 +58,7 @@ describe("add existing photo to an album",()=>{
   const p=photo(),grant=p.grants[0];
   vi.mocked(post).mockImplementation(async(path,body:any)=>{
    if(path.endsWith("/refresh")){
-    const latest=photo();latest.grants[0].media_id=body.media_id;
+    const latest=photo();latest.grants[0].media_id=body.media_id;latest.grants[0].envelope=body.envelope;
     vi.mocked(get).mockResolvedValueOnce({photo:latest});throw Error("Response lost");
    }
    return {upload_url:"/media/upload"};

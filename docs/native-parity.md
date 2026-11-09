@@ -168,3 +168,7 @@ November 8 follow-up (#7): Web Push and APNs show a validated author handle and 
 The owner reported an iOS TestFlight crash after tapping a notification. App Store Connect returned no submitted crash diagnostics at investigation time; root cause remains unconfirmed. Automated background-callback ordering, dismissal and malformed-payload checks are included in both native test targets; real-device crash reproduction and device acceptance remain pending in #7. Do not equate callback hardening with a verified crash fix.
 
 [Release evidence](evidence/notification-previews-release-2026-11-08.md): staging and production checks pass; iOS 304 and macOS 267 are processed and available in the existing TestFlight group. This verifies distribution, not physical-device notification delivery or crash resolution.
+
+## Automatic access-update retries
+
+The default iOS/macOS shared web shells use the same bounded, automatic access-update worker as the PWA. No new native binary or bridge is needed. Foreground/online checks resume interrupted work; per-item capped backoff replaces manual retry. Unknown writes are reconciled before identical-byte resubmission, and current server audience checks remain unchanged. Exact-source native CI is required; physical suspend/resume acceptance remains #49/#114 and member-specific history confirmation remains #22.

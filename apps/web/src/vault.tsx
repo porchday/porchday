@@ -805,22 +805,16 @@ function PostAudienceSharing() {
       enabled,
       list: async signal => {
         const page=await request<{items:RefreshPost[];next_cursor:string|null}>("/posts/audience-refresh"+(cursor?"?cursor="+encodeURIComponent(cursor):""),{signal});
-        const needed:RefreshPost[]=[];
-        for(const row of page.items){
-          const snapshot=await request(`/posts/${row.id}/audience-refresh/audience`,{signal});
-          if(onlyRecoveredOwnDevicesMissing(row.envelope,items<Device>(snapshot),vault.member.id,fingerprints,snapshot.existing_peer_grants_complete===true)){
-            const detail=await readPost(row.id,signal);
-            if(hasRecoveredAccess(detail.envelope,vault.member.id,fingerprints)&&detail.media.every(media=>hasRecoveredAccess(media.envelope,vault.member.id,fingerprints)))continue;
-          }
-          needed.push(row);
-        }
-        // Revisit this page after a bounded write batch; move forward only when
-        // all its outstanding work is unnecessary on this recovered device.
-        cursor=needed.length?cursor:page.next_cursor;
-        return {items:needed};
+        cursor=page.next_cursor;
+        return {items:page.items};
       },
       read: readPost,
-      prepare: (id, signal) => preparePostAudienceRefresh(id, {
+      prepare: async (id, signal) => {
+        const row=await readPost(id,signal);
+        const snapshot=await request(`/posts/${id}/audience-refresh/audience`,{signal});
+        if(onlyRecoveredOwnDevicesMissing(row.envelope,items<Device>(snapshot),vault.member.id,fingerprints,snapshot.existing_peer_grants_complete===true)&&
+          hasRecoveredAccess(row.envelope,vault.member.id,fingerprints)&&row.media.every(media=>hasRecoveredAccess(media.envelope,vault.member.id,fingerprints)))return null;
+        return preparePostAudienceRefresh(id, {
         memberId: vault.member.id, deviceId: vault.device.id, current,
         readPost, open: vault.open,
         prepareAudience: async (post, signal) => {
@@ -858,7 +852,8 @@ function PostAudienceSharing() {
           await request(reservation.upload_url, { method: "PUT", backgroundSave: true, keepNavigation: true, headers: { "Content-Type": "application/octet-stream" }, body: new Blob([bytes]) });
         },
         cleanup, sign: statement => signStatement(statement, vault.privateKey),
-      }, signal),
+      }, signal);
+      },
       save: async prepared => {
         if (!current()) throw new DOMException("Sharing stopped.", "AbortError");
         await request(`/posts/${prepared.id}/audience-refresh`, { method: "POST", backgroundSave: true, keepNavigation: true, body: JSON.stringify(prepared.body) });
@@ -887,8 +882,7 @@ function PostAudienceSharing() {
   }, [context]);
   if (state !== "unconfirmed") return null;
   return <div className="panel" role="status">
-    <p>Some eligible people or devices may not be able to read earlier posts yet. Retry sharing access.</p>
-    {state === "unconfirmed" && <Button variant="outline" onClick={() => { void task.current?.retry(); }}>Retry access updates</Button>}
+    <p>Access to some earlier posts is still updating. Porchday will retry automatically while you’re online.</p>
   </div>;
 }
 export function Fingerprint({ device }: { device: Device }) {
