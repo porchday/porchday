@@ -1,0 +1,5 @@
+import {useEffect} from 'react';
+import {useVault} from './vault';
+import {enrollContentPreviews} from './notification-previews';
+import {recordDiagnostic,safeDiagnosticError} from './diagnostics';
+export function NotificationPreviewEnrollment(){const vault=useVault();useEffect(()=>{let active=true,busy=false;const refresh=async()=>{if(!active||busy||document.hidden)return;busy=true;try{await enrollContentPreviews(vault,()=>active);}catch(error){recordDiagnostic('operation',{operation:'notification_preview',stage:'enroll',outcome:'generic_fallback',error:safeDiagnosticError(error).error,code:safeDiagnosticError(error).code||"unknown"});}finally{busy=false;}};void refresh();const timer=setInterval(refresh,60000);window.addEventListener('porchday:push-changed',refresh);window.addEventListener('online',refresh);document.addEventListener('visibilitychange',refresh);return()=>{active=false;clearInterval(timer);window.removeEventListener('porchday:push-changed',refresh);window.removeEventListener('online',refresh);document.removeEventListener('visibilitychange',refresh);};},[vault.member.id,vault.device.id,vault.privateKey]);return null;}

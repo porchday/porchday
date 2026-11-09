@@ -59,6 +59,7 @@ jobs:
           APPLE_MAC_INSTALLER_P12: ${{ secrets.PORCHDAY_APPLE_MAC_INSTALLER_P12 }}
           APPLE_MAC_PASSWORD: ${{ secrets.PORCHDAY_APPLE_MAC_PASSWORD }}
           APPLE_MAC_PROFILE: ${{ secrets.PORCHDAY_APPLE_MAC_PROFILE }}
+          APPLE_MAC_NOTIFICATION_PROFILE: ${{ secrets.PORCHDAY_APPLE_MAC_NOTIFICATION_PROFILE }}
           PORCHDAY_BUILD_NUMBER: ${{ github.run_number }}
         run: apps/macos/archive-testflight.sh
       - uses: actions/upload-artifact@v4

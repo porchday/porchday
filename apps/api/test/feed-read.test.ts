@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {readdir,readFile} from 'node:fs/promises';
 import postgres,{type Sql} from 'postgres';
 import {feedReadBatch} from '../src/social-feed-read';
+import {notificationPreviewRecipients} from '../src/notification-previews';
 import {nativePushRequest} from '../src/social-native-push';
 import {feedPushMetadata,feedPushBody} from '../src/feed-push-payload';
 
@@ -100,4 +101,56 @@ async function read(member:string,items:unknown[],all=false){return sql.begin(as
   await sql`delete from app.connections where member_a in(${a.id},${b.id}) and member_b in(${a.id},${b.id})`;expect(await count(b.id)).toBe(0);
   await sql`delete from app.posts where id=${post}`;expect(await sql`select id from app.feed_activity where post_id=${post}`).toHaveLength(0);
  });
+ it('redeems encrypted previews only while the session, audience, revision and unread state remain valid',async()=>{
+  const {a,b}=await pair(),session=randomUUID(),keyId=randomUUID();
+  await sql`insert into public.auth_user(id,name,email,"emailVerified") values(${b.id},'Synthetic preview test',${b.id+'@example.test'},true)`;
+  await sql`insert into public.auth_session(id,"userId",token,"expiresAt") values(${session},${b.id},${randomUUID()},now()+interval '1 day')`;
+  await sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${b.id},true)`;await db`select app.register_native_push(${session},${'ef'.repeat(32)},'sandbox')`;});
+  const [subscription]=await sql`select id from app.native_push_subscriptions where member_id=${b.id}`;
+  const identity={v:1,purpose:'porchday-notification-key',keyId,memberId:b.id,deviceId:b.device,publicKey:'test'};
+  await sql`insert into app.notification_preview_keys(id,member_id,device_id,session_id,native_subscription,certificate) values(${keyId},${b.id},${b.device},${session},${subscription.id},${sql.json({statement:identity})})`;
+  const pooled=postgres(url!,{max:1,prepare:true,fetch_types:false,onnotice:()=>{}});
+  try { await pooled.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${a.id},true)`;expect(await notificationPreviewRecipients(db,[])).toEqual([]);const keys=await notificationPreviewRecipients(db,[b.device]);expect(keys.map(k=>k.id)).toContain(keyId);}); } finally {await pooled.end();}
+  const post=await publish(a,b);
+  const context={v:1,purpose:'porchday-notification-preview',kind:'post',id:post,authorId:a.id,authorDeviceId:a.device,revision:1,expiresAt:null};
+  await sql`update app.posts set envelope=${sql.json({context})} where id=${post}`;
+  await sql`insert into app.notification_previews(id,owner_id,post_id,revision,signed_preview) values(${post},${a.id},${post},1,${sql.json({statement:{context,recipients:[identity]},signature:'test'})})`;
+  const [notice]=await sql`select id from app.notifications where recipient=${b.id} and post_id=${post} and kind='feed_activity'`;
+  const [{ref}]=await sql`select app.issue_notification_preview(${notice.id},${subscription.id},true) as ref`;
+  expect(ref.keyId).toBe(keyId);expect(ref.token).toMatch(/^[a-f0-9]{64}$/);
+  async function redeem(token=ref.token){return sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id','00000000-0000-0000-0000-000000000000',true)`;const [r]=await db`select app.redeem_notification_preview(encode(sha256(convert_to(${token},'UTF8')),'hex')) as value`;expect((await db`select current_setting('app.member_id') as actor`)[0].actor).toBe('00000000-0000-0000-0000-000000000000');return r.value;});}
+  expect((await redeem()).identity.keyId).toBe(keyId);
+  expect(await redeem('ab'.repeat(32))).toBeNull();
+  await sql`insert into app.mutes(actor,target) values(${b.id},${a.id})`;expect(await redeem()).toBeNull();await sql`delete from app.mutes where actor=${b.id}`;
+  await sql`update public.auth_session set "expiresAt"=now()-interval '1 minute' where id=${session}`;expect(await redeem()).toBeNull();await sql`update public.auth_session set "expiresAt"=now()+interval '1 day' where id=${session}`;
+  await sql`update app.device_keys set revoked_at=now() where id=${b.device}`;expect(await redeem()).toBeNull();await sql`update app.device_keys set revoked_at=null where id=${b.device}`;
+  await sql`update app.posts set envelope=${sql.json({context:{...context,revision:2}})} where id=${post}`;expect(await redeem()).toBeNull();
+  await sql`delete from app.notification_preview_keys where id=${keyId}`;expect(await redeem()).toBeNull();
+ });
+
+ it('checks standalone photo grant device membership before returning a preview',async()=>{
+  const {a,b}=await pair(),session=randomUUID(),keyId=randomUUID(),photo=randomUUID(),media=randomUUID(),grant=randomUUID();
+  await sql`insert into public.auth_user(id,name,email,"emailVerified") values(${b.id},'Synthetic photo preview',${b.id+'@example.test'},true)`;
+  await sql`insert into public.auth_session(id,"userId",token,"expiresAt") values(${session},${b.id},${randomUUID()},now()+interval '1 day')`;
+  await sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${b.id},true)`;await db`select app.register_native_push(${session},${'fa'.repeat(32)},'sandbox')`;});
+  const [subscription]=await sql`select id from app.native_push_subscriptions where member_id=${b.id}`;
+  const identity={keyId,memberId:b.id,deviceId:b.device};
+  await sql`insert into app.notification_preview_keys(id,member_id,device_id,session_id,native_subscription,certificate) values(${keyId},${b.id},${b.device},${session},${subscription.id},${sql.json({statement:identity})})`;
+  const context={v:1,purpose:'porchday-notification-preview',kind:'photo',id:photo,authorId:a.id,authorDeviceId:a.device,revision:1,expiresAt:null};
+  const envelope={context:{authorId:a.id,authorDeviceId:a.device},recipients:[{memberId:b.id,deviceId:b.device}]};
+  await sql.begin(async db=>{
+   await db`insert into app.photos(id,owner_id,photo_date) values(${photo},${a.id},'2001-01-01')`;
+   await db`insert into app.media_assets(id,owner_id,object_key,envelope,byte_size,state) values(${media},${a.id},${'fixture/'+media},'{}',100,'attached')`;
+   await db`insert into app.photo_grants(id,photo_id,audience,envelope,media_id) values(${grant},${photo},'connections',${db.json(envelope)},${media})`;
+   await db`insert into app.photo_grant_recipients(grant_id,member_id) values(${grant},${b.id})`;
+   await db`insert into app.notification_previews(id,owner_id,photo_id,revision,signed_preview) values(${photo},${a.id},${photo},1,${db.json({statement:{context,recipients:[identity]},signature:'test'})})`;
+  });
+  const [notice]=await sql`select n.id from app.notifications n join app.feed_activity f on f.id=n.feed_activity_id where n.recipient=${b.id} and f.photo_id=${photo}`;
+  const [{ref}]=await sql`select app.issue_notification_preview(${notice.id},${subscription.id},true) as ref`;
+  async function redeem(){return sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id','00000000-0000-0000-0000-000000000000',true)`;return (await db`select app.redeem_notification_preview(encode(sha256(convert_to(${ref.token},'UTF8')),'hex')) as value`)[0].value;});}
+  expect((await redeem()).context.id).toBe(photo);
+  await sql`update app.photo_grants set envelope=${sql.json({...envelope,recipients:[]})} where id=${grant}`;
+  expect(await redeem()).toBeNull();
+ });
+
 });

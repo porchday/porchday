@@ -1,3 +1,4 @@
+import {notificationPreviewSchema,storeNotificationPreview} from './notification-previews';
 import {attachmentDateProof,setAttachmentDate} from "./attachment-photo-dates";
 import type { Hono } from "hono";
 import { z } from "zod";
@@ -113,7 +114,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
   })));
   app.get("/photos/:id",async c=>c.json(await tx(c,async db=>{const photo=await requirePhoto(db,id(c.req.param("id")));return {photo:{...photo,grants:await grants(db,photo.id)}};})));
   app.post("/photos",async c=>{
-    const b=await body(c,z.object({id:z.string().uuid(),photo_date:day,expires_at:z.string().datetime({offset:true}).nullable(),source_media_id:z.string().uuid().optional(),source_date:attachmentDateProof.optional(),grants:z.array(grantSchema).min(1).max(20)}).strict(),12*1024*1024);
+    const b=await body(c,z.object({id:z.string().uuid(),photo_date:day,expires_at:z.string().datetime({offset:true}).nullable(),source_media_id:z.string().uuid().optional(),source_date:attachmentDateProof.optional(),notification_preview:notificationPreviewSchema.optional(),grants:z.array(grantSchema).min(1).max(20)}).strict(),12*1024*1024);
     return c.json(await tx(c,async db=>{
       await writeAllowed(db);await db`select app.lock_epoch()`;
       if(b.grants.filter(g=>g.envelope.context.groupId===null).length!==1)fail("PHOTO_ORIGINAL_REQUIRED");
@@ -125,6 +126,7 @@ export function registerPhotoRoutes(app:Hono<{Bindings:Env;Variables:Variables}>
         await setAttachmentDate(db,c.get("memberId"),b.source_date!,fail);
         await db`select app.link_photo_source(${b.id},${b.source_media_id})`;
       }else if(b.source_date)fail("ENVELOPE_CONTEXT");
+      await storeNotificationPreview(db,c.get("memberId"),b.notification_preview,b.grants.map(g=>g.envelope),"photo",b.id);
       return {id:b.id,revision:1};
     }),201);
   });

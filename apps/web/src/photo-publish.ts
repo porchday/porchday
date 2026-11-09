@@ -1,3 +1,4 @@
+import {prepareNotificationPreview} from './notification-previews';
 import {signAttachmentDate} from "./attachment-photo-date";
 import {openPhoto} from "./photo-record";
 import {createPhotoProof,photoBytesHash,photoMetadata} from "@porchday/crypto/photos";
@@ -44,7 +45,8 @@ export async function publishPhoto(vault:ReturnType<typeof useVault>,photo:Photo
     grants.push({envelope,media_id:media.id});
   }
   const source_date=photo.source?await signAttachmentDate(vault,photo.id,photo.source.postId,photoDate,photo.source.revision):undefined;
-  try{await post("/photos",{id:photo.id,photo_date:photoDate,expires_at:expiresAt,grants,...(photo.source?{source_media_id:photo.id,source_date}:{})});}
+  const notification_preview=photo.source?undefined:await prepareNotificationPreview(vault,grants.map(g=>g.envelope),"photo",photo.id,photo.alt,photo);
+  try{await post("/photos",{...(notification_preview?{notification_preview}:{}),id:photo.id,photo_date:photoDate,expires_at:expiresAt,grants,...(photo.source?{source_media_id:photo.id,source_date}:{})});}
   catch(error){
     // A committed publication must not be repeated after a lost response.
     // If reconciliation itself is unavailable, retain the draft and its ID.

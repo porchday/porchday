@@ -1,3 +1,4 @@
+import {notificationPreviewDelivery} from './notification-previews';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions,enqueueCandidateContinuation} from './session-denial-candidates';
 import { Hono } from 'hono';
 import {requestTimingMiddleware} from './request-timing';
@@ -80,6 +81,7 @@ app.use('/api/v1/*',prepareMemberAuth);
 app.use('/api/*',privacyReadGuard);
 app.route('/api/auth',authRoutes);
 app.route('/api/account-recovery',recoveryRoutes);
+app.route('/api/notification-preview',notificationPreviewDelivery);
 app.get('/api/staff/identity',requireStaffIdentity,c=>c.json({subject:c.get('staffSubject'),email:c.get('staffEmail'),roles:c.get('staffRoles')}));
 app.use('/api/staff/recovery/*',requireStaff('recovery'));
 app.use('/api/staff/recovery/*',privacyMutationMiddleware);

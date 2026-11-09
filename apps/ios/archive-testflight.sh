@@ -8,6 +8,7 @@ cd "$(dirname "$0")/../.."
 : "${APPLE_DISTRIBUTION_P12:?Missing distribution certificate}"
 : "${APPLE_DISTRIBUTION_PASSWORD:?Missing certificate password}"
 : "${APPLE_IOS_PROFILE:?Missing provisioning profile}"
+: "${APPLE_IOS_NOTIFICATION_PROFILE:?Missing notification extension profile}"
 : "${PORCHDAY_BUILD_NUMBER:?Missing unique build number}"
 [[ "$PORCHDAY_BUILD_NUMBER" =~ ^[0-9]+$ ]] || exit 1
 private="$(mktemp -d)"
@@ -20,6 +21,7 @@ import base64,os,pathlib,secrets
 p=pathlib.Path(os.environ['PORCHDAY_SIGNING_DIR'])
 for env,name in [('APPLE_DISTRIBUTION_P12','distribution.p12'),('APPLE_IOS_PROFILE','profile.mobileprovision')]:
  (p/name).write_bytes(base64.b64decode(os.environ[env],validate=True))
+(p/'notification.mobileprovision').write_bytes(base64.b64decode(os.environ['APPLE_IOS_NOTIFICATION_PROFILE'],validate=True))
 (p/'keychain-password').write_text(secrets.token_hex(32))
 PY
 password="$(cat "$private/keychain-password")"
@@ -29,6 +31,7 @@ security unlock-keychain -p "$password" "$keychain"
 security import "$private/distribution.p12" -P "$APPLE_DISTRIBUTION_PASSWORD" -k "$keychain" -T /usr/bin/codesign -T /usr/bin/security >/dev/null
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$password" "$keychain" >/dev/null
 security cms -D -i "$private/profile.mobileprovision" > "$private/profile.plist"
+security cms -D -i "$private/notification.mobileprovision" > "$private/notification.plist"
 python3 - <<'PY'
 import os,plistlib,pathlib,datetime
 p=pathlib.Path(os.environ['PORCHDAY_SIGNING_DIR']); profile=plistlib.loads((p/'profile.plist').read_bytes())
@@ -38,19 +41,31 @@ assert profile['Entitlements']['aps-environment']=='production'
 assert not profile['Entitlements'].get('get-task-allow',False)
 assert profile['ExpirationDate']>datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 (p/'team').write_text(team);(p/'uuid').write_text(profile['UUID'])
-(p/'export.plist').write_bytes(plistlib.dumps({'method':'app-store-connect','destination':'export','teamID':team,'signingStyle':'manual','signingCertificate':'Apple Distribution','provisioningProfiles':{'org.porchday.app':profile['UUID']},'manageAppVersionAndBuildNumber':False,'uploadSymbols':True}))
+notification=plistlib.loads((p/'notification.plist').read_bytes())
+assert notification['TeamIdentifier'][0]==team
+ent=notification['Entitlements']
+assert (ent.get('application-identifier') or ent.get('com.apple.application-identifier'))==team+'.org.porchday.app.notifications'
+assert not ent.get('get-task-allow',False) and not ent.get('com.apple.security.get-task-allow',False)
+assert notification['ExpirationDate']>datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+for candidate in [profile,notification]:
+ assert team+'.*' in candidate['Entitlements'].get('keychain-access-groups',[]) or team+'.org.porchday.notification-preview' in candidate['Entitlements'].get('keychain-access-groups',[])
+(p/'notification-uuid').write_text(notification['UUID'])
+(p/'export.plist').write_bytes(plistlib.dumps({'method':'app-store-connect','destination':'export','teamID':team,'signingStyle':'manual','signingCertificate':'Apple Distribution','provisioningProfiles':{'org.porchday.app':profile['UUID'],'org.porchday.app.notifications':notification['UUID']},'manageAppVersionAndBuildNumber':False,'uploadSymbols':True}))
 PY
 team="$(cat "$private/team")"
 uuid="$(cat "$private/uuid")"
 profiles="$HOME/Library/MobileDevice/Provisioning Profiles"
 mkdir -p "$profiles"
+notification_uuid="$(cat "$private/notification-uuid")"
+cp "$private/notification.mobileprovision" "$profiles/$notification_uuid.mobileprovision"
+chmod 644 "$profiles/$notification_uuid.mobileprovision"
 cp "$private/profile.mobileprovision" "$profiles/$uuid.mobileprovision"
 # This runner is ephemeral; keys remain confined to its temporary keychain.
 security list-keychains -d user -s "$keychain" "$HOME/Library/Keychains/login.keychain-db"
 xcodebuild -project apps/ios/Porchday.xcodeproj -scheme Porchday -configuration Release \
   -destination 'generic/platform=iOS' -archivePath apps/ios/build/Porchday.xcarchive \
   archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='Apple Distribution' \
-  DEVELOPMENT_TEAM="$team" PORCHDAY_PROFILE="$uuid" \
+  DEVELOPMENT_TEAM="$team" PORCHDAY_NOTIFICATION_PROFILE="$notification_uuid" PORCHDAY_PROFILE="$uuid" \
   OTHER_CODE_SIGN_FLAGS="--keychain $keychain" \
   CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_APNS_ENVIRONMENT=production PORCHDAY_PUSH_ENABLED=YES
 xcodebuild -exportArchive -archivePath apps/ios/build/Porchday.xcarchive \
@@ -64,5 +79,15 @@ assert info.get('PorchdayPushEnabled')=='YES', 'Signed app must expose enabled n
 assert info.get('PorchdayAPNsEnvironment')=='production', 'Signed app must select the production APNs provider'
 assert (app/'PrivacyInfo.xcprivacy').is_file()
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
+preview_extension=app/'PlugIns/PorchdayNotificationService.appex'
+assert preview_extension.is_dir(), 'Notification service extension must be embedded'
+for bundle in [app,preview_extension]:
+ metadata=plistlib.loads((bundle/'Info.plist').read_bytes())
+ group=metadata.get('PorchdayNotificationKeychainGroup')
+ assert group and group.endswith('.org.porchday.notification-preview') and '$(' not in group, 'Notification shared keychain setting must be expanded in the shipped plist'
+ signed=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(bundle)],stderr=subprocess.DEVNULL))
+ assert group in signed.get('keychain-access-groups',[]), 'Notification keychain group must be signed'
+ assert group==info.get('PorchdayNotificationKeychainGroup'), 'App and extension must share the same notification keychain'
+
 (p/'evidence.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'bundleId':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'ipaSha256':hashlib.sha256(ipa[0].read_bytes()).hexdigest(),'uploaded':False},indent=2))
 PY

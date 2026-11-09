@@ -84,6 +84,7 @@ jobs:
           APPLE_DISTRIBUTION_P12: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_P12 }}
           APPLE_DISTRIBUTION_PASSWORD: ${{ secrets.PORCHDAY_APPLE_DISTRIBUTION_PASSWORD }}
           APPLE_IOS_PROFILE: ${{ secrets.PORCHDAY_APPLE_IOS_PROFILE }}
+          APPLE_IOS_NOTIFICATION_PROFILE: ${{ secrets.PORCHDAY_APPLE_IOS_NOTIFICATION_PROFILE }}
           PORCHDAY_BUILD_NUMBER: ${{ github.run_number }}
         run: apps/ios/archive-testflight.sh
       - uses: actions/upload-artifact@v4

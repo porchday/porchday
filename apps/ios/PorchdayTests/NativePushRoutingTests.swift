@@ -9,7 +9,7 @@ final class NativePushRoutingTests: XCTestCase {
         routed.assertForOverFulfill = true; done.assertForOverFulfill = true
         let observer = NotificationCenter.default.addObserver(forName: Notification.Name("PorchdayPushDestination"), object: nil, queue: .main) { notice in
             XCTAssertTrue(Thread.isMainThread)
-            XCTAssertEqual(notice.object as? String, "feed")
+            XCTAssertEqual(notice.object as? String, "/")
             routed.fulfill()
         }
         defer { NotificationCenter.default.removeObserver(observer) }
@@ -22,7 +22,7 @@ final class NativePushRoutingTests: XCTestCase {
         let routed = expectation(description: "Unknown payload opens inbox")
         routed.assertForOverFulfill = true
         let observer = NotificationCenter.default.addObserver(forName: Notification.Name("PorchdayPushDestination"), object: nil, queue: .main) { notice in
-            XCTAssertEqual(notice.object as? String, "notifications")
+            XCTAssertEqual(notice.object as? String, "/notifications")
             routed.fulfill()
         }
         defer { NotificationCenter.default.removeObserver(observer) }

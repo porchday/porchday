@@ -72,6 +72,7 @@ enum WebShellPolicy {
     func failed() { finish(nil, "Apple push registration failed. Please try again.") }
     func clear() {
         finish(nil, "Notification registration was cancelled.")
+        try? NotificationPreviewKey.clear()
         ApplePlatform.unregisterPush()
         UNUserNotificationCenter.current().removeAllDeliveredNotifications()
         FeedReadState.badge(0)
@@ -125,7 +126,7 @@ private final class ShellObservers: @unchecked Sendable {
             Task { @MainActor in self?.event("porchday:native-push") }
         })
         observers.values.append(NotificationCenter.default.addObserver(forName: Notification.Name("PorchdayPushDestination"), object: nil, queue: .main) { [weak self] notice in
-            let path = notice.object as? String == "feed" ? "/" : "/notifications"
+            let path = NativePushRouting.path(destination: notice.object as? String)
             Task { @MainActor in self?.navigate(path) }
         })
         webView.load(URLRequest(url: ServerConfiguration.origin))
@@ -172,6 +173,13 @@ private final class ShellObservers: @unchecked Sendable {
             do { try SharedMediaInbox.remove(batch); replyHandler(true, nil) }
             catch { replyHandler(nil, "Shared files could not be cleared.") }
         #endif
+        case "notificationPreviewKey":
+            guard let member = body["memberId"] as? String, let device = body["deviceId"] as? String else { replyHandler(nil, "Invalid notification identity."); return }
+            do { let key = try NotificationPreviewKey.current(member: member, device: device, pins: body["pins"] as? [String: String] ?? [:]); replyHandler(["keyId": key.keyId, "publicKey": try key.publicKey], nil) }
+            catch { replyHandler(nil, "Notification previews are unavailable on this device.") }
+        case "clearPreviewKeys":
+            do { try NotificationPreviewKey.clear(); replyHandler(true, nil) }
+            catch { replyHandler(nil, "Notification preview keys could not be cleared.") }
         case "badge":
             guard let count = WebShellPolicy.badge(body["count"]) else { replyHandler(nil, "Invalid badge count."); return }
             FeedReadState.badge(count); replyHandler(true, nil)

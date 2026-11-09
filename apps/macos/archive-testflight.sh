@@ -7,6 +7,7 @@ cd "$(dirname "$0")/../.."
 : "${APPLE_MAC_INSTALLER_P12:?Missing installer certificate}"
 : "${APPLE_MAC_PASSWORD:?Missing certificate password}"
 : "${APPLE_MAC_PROFILE:?Missing native profile}"
+: "${APPLE_MAC_NOTIFICATION_PROFILE:?Missing notification extension profile}"
 : "${PORCHDAY_BUILD_NUMBER:?Missing unique build number}"
 [[ "$PORCHDAY_BUILD_NUMBER" =~ ^[0-9]+$ ]] || exit 1
 private="$(mktemp -d)"
@@ -19,6 +20,7 @@ import base64,os,pathlib,secrets
 p=pathlib.Path(os.environ['PORCHDAY_SIGNING_DIR'])
 for env,name in [('APPLE_MAC_APP_P12','app.p12'),('APPLE_MAC_INSTALLER_P12','installer.p12'),('APPLE_MAC_PROFILE','profile.provisionprofile')]:
  (p/name).write_bytes(base64.b64decode(os.environ[env],validate=True))
+(p/'notification.provisionprofile').write_bytes(base64.b64decode(os.environ['APPLE_MAC_NOTIFICATION_PROFILE'],validate=True))
 (p/'password').write_text(secrets.token_hex(32))
 PY
 password="$(cat "$private/password")"
@@ -35,6 +37,7 @@ for identity in app installer; do
   openssl x509 -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':\r\n' > "$private/$identity-sha1"
 done
 security cms -D -i "$private/profile.provisionprofile" > "$private/profile.plist"
+security cms -D -i "$private/notification.provisionprofile" > "$private/notification.plist"
 python3 - <<'PY'
 import os,pathlib,plistlib,datetime,re
 p=pathlib.Path(os.environ['PORCHDAY_SIGNING_DIR']);profile=plistlib.loads((p/'profile.plist').read_bytes());team=profile['TeamIdentifier'][0]
@@ -45,13 +48,25 @@ assert not profile['Entitlements'].get('get-task-allow',False)
 assert not profile['Entitlements'].get('com.apple.security.get-task-allow',False)
 assert profile['ExpirationDate']>datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 (p/'team').write_text(team);(p/'uuid').write_text(profile['UUID'])
+notification=plistlib.loads((p/'notification.plist').read_bytes())
+assert notification['TeamIdentifier'][0]==team
+ent=notification['Entitlements']
+assert (ent.get('application-identifier') or ent.get('com.apple.application-identifier'))==team+'.org.porchday.app.notifications'
+assert not ent.get('get-task-allow',False) and not ent.get('com.apple.security.get-task-allow',False)
+assert notification['ExpirationDate']>datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+for candidate in [profile,notification]:
+ assert team+'.*' in candidate['Entitlements'].get('keychain-access-groups',[]) or team+'.org.porchday.notification-preview' in candidate['Entitlements'].get('keychain-access-groups',[])
+(p/'notification-uuid').write_text(notification['UUID'])
 app_cert=(p/'app-sha1').read_text();installer_cert=(p/'installer-sha1').read_text()
 assert re.fullmatch(r'[0-9A-F]{40}',app_cert) and re.fullmatch(r'[0-9A-F]{40}',installer_cert)
-(p/'export.plist').write_bytes(plistlib.dumps({'method':'app-store-connect','destination':'export','teamID':team,'signingStyle':'manual','signingCertificate':app_cert,'installerSigningCertificate':installer_cert,'provisioningProfiles':{'org.porchday.app':profile['UUID']},'manageAppVersionAndBuildNumber':False,'uploadSymbols':True}))
+(p/'export.plist').write_bytes(plistlib.dumps({'method':'app-store-connect','destination':'export','teamID':team,'signingStyle':'manual','signingCertificate':app_cert,'installerSigningCertificate':installer_cert,'provisioningProfiles':{'org.porchday.app':profile['UUID'],'org.porchday.app.notifications':notification['UUID']},'manageAppVersionAndBuildNumber':False,'uploadSymbols':True}))
 PY
 team="$(cat "$private/team")"; uuid="$(cat "$private/uuid")"
 profiles="$HOME/Library/MobileDevice/Provisioning Profiles"
 mkdir -p "$profiles"
+notification_uuid="$(cat "$private/notification-uuid")"
+cp "$private/notification.provisionprofile" "$profiles/$notification_uuid.provisionprofile"
+chmod 644 "$profiles/$notification_uuid.provisionprofile"
 cp "$private/profile.provisionprofile" "$profiles/$uuid.provisionprofile"
 # Provisioning profiles contain public signing metadata, not private keys.
 # Installed app resources must be readable by an ordinary Mac user.
@@ -64,7 +79,7 @@ umask 022
 xcodebuild -project apps/ios/Porchday.xcodeproj -scheme PorchdayMac -configuration Release \
  -destination 'generic/platform=macOS' -archivePath apps/ios/build/PorchdayMac.xcarchive \
  archive CODE_SIGNING_ALLOWED=YES CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY='3rd Party Mac Developer Application' \
- DEVELOPMENT_TEAM="$team" PORCHDAY_MAC_PROFILE="$uuid" \
+ DEVELOPMENT_TEAM="$team" PORCHDAY_MAC_NOTIFICATION_PROFILE="$notification_uuid" PORCHDAY_MAC_PROFILE="$uuid" \
  OTHER_CODE_SIGN_FLAGS="--keychain $keychain" CURRENT_PROJECT_VERSION="$PORCHDAY_BUILD_NUMBER" PORCHDAY_PUSH_ENABLED=YES PORCHDAY_APNS_ENVIRONMENT=production
 xcodebuild -exportArchive -archivePath apps/ios/build/PorchdayMac.xcarchive \
  -exportPath apps/ios/build/MacTestFlight -exportOptionsPlist "$private/export.plist"
@@ -77,6 +92,16 @@ assert info.get('PorchdayPushEnabled')=='YES', 'Signed app must expose enabled n
 assert info.get('PorchdayAPNsEnvironment')=='production', 'Signed app must select the production APNs provider'
 assert (app/'Contents/Resources/PrivacyInfo.xcprivacy').is_file()
 subprocess.run(['codesign','--verify','--deep','--strict',str(app)],check=True)
+preview_extension=app/'Contents'/'PlugIns/PorchdayMacNotificationService.appex'
+assert preview_extension.is_dir(), 'Notification service extension must be embedded'
+for bundle in [app,preview_extension]:
+ metadata=plistlib.loads((bundle/'Contents/Info.plist').read_bytes())
+ group=metadata.get('PorchdayNotificationKeychainGroup')
+ assert group and group.endswith('.org.porchday.notification-preview') and '$(' not in group, 'Notification shared keychain setting must be expanded in the shipped plist'
+ signed=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(bundle)],stderr=subprocess.DEVNULL))
+ assert group in signed.get('keychain-access-groups',[]), 'Notification keychain group must be signed'
+ assert group==info.get('PorchdayNotificationKeychainGroup'), 'App and extension must share the same notification keychain'
+
 entitlements=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(app)],stderr=subprocess.DEVNULL))
 assert entitlements.get('com.apple.security.app-sandbox') is True
 assert not entitlements.get('com.apple.security.get-task-allow',False)
