@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Released November 8:** #22 post/photo access updates now recover automatically with per-item backoff and read-back reconciliation, replacing manual Retry buttons. Staging and production synthetic recipient checks pass. [Release evidence](docs/evidence/automatic-access-recovery-release-2026-11-08.md).
+
 **Released November 8:** #7 author/activity notification previews are live; tested notification-tap hardening is available in TestFlight iOS 304 / macOS 267. The reported iOS crash remains P1, `needs verification`: no diagnostic or confirmed root cause yet. [Release evidence](docs/evidence/notification-previews-release-2026-11-08.md).
 
 **Delivered November 8:** #124 makes every Settings tab visible with wrapping rows, separates Notifications and moves Time zone to My profile. Live and verified in staging/production. [Release evidence](docs/evidence/settings-tabs-release-2026-11-08.md).
