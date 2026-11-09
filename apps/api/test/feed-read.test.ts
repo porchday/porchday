@@ -3,6 +3,7 @@ import {randomUUID} from 'node:crypto';
 import {readdir,readFile} from 'node:fs/promises';
 import postgres,{type Sql} from 'postgres';
 import {feedReadBatch} from '../src/social-feed-read';
+import {notificationPreviewRecipients} from '../src/notification-previews';
 import {nativePushRequest} from '../src/social-native-push';
 import {feedPushMetadata,feedPushBody} from '../src/feed-push-payload';
 
@@ -108,6 +109,8 @@ async function read(member:string,items:unknown[],all=false){return sql.begin(as
   const [subscription]=await sql`select id from app.native_push_subscriptions where member_id=${b.id}`;
   const identity={v:1,purpose:'porchday-notification-key',keyId,memberId:b.id,deviceId:b.device,publicKey:'test'};
   await sql`insert into app.notification_preview_keys(id,member_id,device_id,session_id,native_subscription,certificate) values(${keyId},${b.id},${b.device},${session},${subscription.id},${sql.json({statement:identity})})`;
+  const pooled=postgres(url!,{max:1,prepare:true,fetch_types:false,onnotice:()=>{}});
+  try { await pooled.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${a.id},true)`;expect(await notificationPreviewRecipients(db,[])).toEqual([]);const keys=await notificationPreviewRecipients(db,[b.device]);expect(keys.map(k=>k.id)).toContain(keyId);}); } finally {await pooled.end();}
   const post=await publish(a,b);
   const context={v:1,purpose:'porchday-notification-preview',kind:'post',id:post,authorId:a.id,authorDeviceId:a.device,revision:1,expiresAt:null};
   await sql`update app.posts set envelope=${sql.json({context})} where id=${post}`;

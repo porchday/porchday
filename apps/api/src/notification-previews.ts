@@ -20,7 +20,7 @@ export function registerNotificationPreviewRoutes(app:Hono<{Bindings:Env;Variabl
  if(existing){if(canonicalJson(existing.certificate.statement)!==canonicalJson(i))fail('CONFLICT',409);if(existing.session_id===c.get('sessionId')&&(b.native?existing.native_subscription:existing.web_subscription)===b.subscription_id)return{ok:true};await db`delete from app.notification_preview_keys where id=${i.keyId}`;}
  if(b.native)await db`delete from app.notification_preview_keys where native_subscription=${b.subscription_id}`;else await db`delete from app.notification_preview_keys where web_subscription=${b.subscription_id}`;
  await db`insert into app.notification_preview_keys(id,member_id,device_id,session_id,web_subscription,native_subscription,certificate) values(${i.keyId},${i.memberId},${i.deviceId},${c.get('sessionId')},${b.native?null:b.subscription_id},${b.native?b.subscription_id:null},${db.json(b.certificate)})`;return{ok:true};}));});
- app.post('/notification-previews/recipients',async c=>{const b=await body(c,z.object({devices:z.array(uuid).max(4000)}).strict(),200000);return c.json({items:await tx(c,db=>db`select k.id,k.member_id,k.device_id,k.certificate,to_jsonb(d) as author_key from app.preview_recipient_keys(${b.devices}::uuid[]) k join lateral app.author_key(k.device_id) d on true limit 1000`)});});
+ app.post('/notification-previews/recipients',async c=>{const b=await body(c,z.object({devices:z.array(uuid).max(4000)}).strict(),200000);return c.json({items:await tx(c,db=>notificationPreviewRecipients(db,b.devices))});});
  app.delete('/notification-previews/keys',async c=>c.json(await tx(c,async db=>{await db`delete from app.notification_preview_keys where member_id=${c.get('memberId')} and session_id=${c.get('sessionId')}`;return{ok:true};})));
 }
 export async function storeNotificationPreview(db:Db,owner:string,value:unknown,envelopes:EncryptedEnvelope[],kind:'post'|'photo',id:string){
@@ -39,3 +39,5 @@ notificationPreviewDelivery.post('/',async c=>{c.header('Cache-Control','no-stor
  const result=await withMember(c.env,'00000000-0000-0000-0000-000000000000',async db=>{const[row]=await db`select app.redeem_notification_preview(${digest}) as result`;return row?.result;});
  if(!result||await runtimeSessionDenied(c.env,result.sessionId))return c.json({error:{code:'NOT_FOUND'}},404);delete result.sessionId;return c.json(result);
 });
+
+export function notificationPreviewRecipients(db:Db,devices:string[]){return db`select k.id,k.member_id,k.device_id,k.certificate,to_jsonb(d) as author_key from app.preview_recipient_keys(array(select jsonb_array_elements_text(${db.json(devices)}))::uuid[]) k join lateral app.author_key(k.device_id) d on true limit 1000`;}
