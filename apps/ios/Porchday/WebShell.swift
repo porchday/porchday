@@ -116,6 +116,7 @@ private final class ShellObservers: @unchecked Sendable {
         webView = WKWebView(frame: .zero, configuration: configuration)
         super.init()
         configuration.userContentController.addScriptMessageHandler(WeakShellBridge(self), contentWorld: .page, name: "porchday")
+        configuration.userContentController.addUserScript(WKUserScript(source: ShellAppearance.observerScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
         webView.navigationDelegate = self; webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.customUserAgent = nil
@@ -156,6 +157,9 @@ private final class ShellObservers: @unchecked Sendable {
         guard message.frameInfo.isMainFrame, WebShellPolicy.trusted(message.frameInfo.request.url), WebShellPolicy.trusted(webView.url), frame.protocol == "https", frame.host == ServerConfiguration.origin.host,
               let body = message.body as? [String: Any], body["version"] as? Int == 1, let command = body["command"] as? String else { replyHandler(nil, "Untrusted native request."); return }
         switch command {
+        case "appearance":
+            guard ShellAppearance.shared.update(body["color"]) else { replyHandler(nil, "Invalid background color."); return }
+            replyHandler(true, nil)
         #if os(macOS)
         case "sharedMediaList":
             do {

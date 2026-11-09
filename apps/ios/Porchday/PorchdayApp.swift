@@ -21,7 +21,7 @@ import SwiftUI
             #if os(macOS)
             .frame(minWidth: 800, minHeight: 650)
             #endif
-            .overlay { if scenePhase != .active { Color(red: 0.97, green: 0.96, blue: 0.92).ignoresSafeArea().overlay(Text("Porchday").font(.largeTitle)) } }
+            .overlay { if scenePhase != .active { AppSwitcherCover() } }
         }
     }
 }
