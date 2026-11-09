@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**In implementation:** [#196](https://github.com/porchday/porchday/issues/196), P1: explicitly consented device diagnostics and optional content recordings, durable uploads and audited operator timeline. This follows the access-update observability gap in #22; deferred Datadog #12 remains deferred. Local implementation is not production deployment evidence.
+**Released November 8:** [#196](https://github.com/porchday/porchday/issues/196), P1, `needs verification`: opt-in device diagnostics and separately consented content recordings are live, including the #198 timeline routing fix. Hosted staging/production checks pass; physical-device and real operator acceptance remain follow-ups. [Release evidence](docs/evidence/diagnostics-release-2026-11-08.md). Deferred Datadog #12 remains deferred.
 
 **Released November 8:** #22 post/photo access updates now recover automatically with per-item backoff and read-back reconciliation, replacing manual Retry buttons. Staging and production synthetic recipient checks pass. [Release evidence](docs/evidence/automatic-access-recovery-release-2026-11-08.md).
 
