@@ -48,7 +48,8 @@
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
         "docs/native-parity.md#unified-media-selection-and-capture-dates",
         "docs/native-parity.md#pending-encryption-setup",
-        "docs/native-parity.md#share-draft-autosave"
+        "docs/native-parity.md#share-draft-autosave",
+        "docs/native-parity.md#reaction-attribution"
       ],
       "implementation": {
         "ios": "implemented",

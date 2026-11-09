@@ -1,3 +1,4 @@
+import {ReactionChips} from "./ReactionChips";
 import {prepareNotificationPreview} from './notification-previews';
 import {usePostDraft,type PendingPhoto} from './use-post-draft';
 import {SharedMediaInbox} from './SharedMediaInbox';
@@ -1396,54 +1397,14 @@ export function Reactions({
     });
     changing.current = false;
   }
-  const choices = [
-    ...new Map(
-      decoded.map((entry) => [entry.payload.emoji, entry.payload]),
-    ).values(),
-  ];
   return (
     <div className="reaction-area">
       <div className="reaction-chips">
-        {choices.map((value) => {
-          const values = decoded.filter(
-              (entry) => entry.payload.emoji === value.emoji,
-            ),
-            count = new Set(values.map((entry) => entry.memberId)).size;
-          const selected = values.some(
-              (entry) => entry.memberId === vault.member.id,
-            ),
-            label = reactionDisplay(value).name;
-          return (
-            <span className="reaction-choice" key={value.emoji}>
-              <button
-                type="button"
-                className={`reaction-chip ${selected ? "selected" : ""}`}
-                aria-label={`${label}, ${count} ${count === 1 ? "person" : "people"}`}
-                aria-pressed={selected}
-                disabled={action.busy || !!activePending || vault.member.status === "restricted"}
-                onClick={() => toggle(value)}
-              >
-                <EmojiGlyph value={value} />
-                {count}
-              </button>
-              {"custom" in value && (
-                <button
-                  type="button"
-                  className="reaction-save-image"
-                  disabled={action.busy || !!activePending || vault.member.status === "restricted"}
-                  aria-label={`Save ${value.custom.name} to my images`}
-                  title="Save to my images"
-                  onClick={() => {
-                    setSuggested(value);
-                    setPicker(true);
-                  }}
-                >
-                  ＋
-                </button>
-              )}
-            </span>
-          );
-        })}
+        <ReactionChips key={identity} viewerId={vault.member.id}
+          entries={decoded.map(entry=>({...entry,handle:entry.memberId===vault.member.id?vault.member.handle:reactions.find(row=>row.member_id===entry.memberId)?.author_handle}))}
+          confirmed={(typeof payload?.reactionSecret==='string'?confirmed:[]).map(entry=>({...entry,handle:entry.memberId===vault.member.id?vault.member.handle:reactions.find(row=>row.member_id===entry.memberId)?.author_handle}))}
+          disabled={action.busy||!!activePending||vault.member.status==='restricted'} onToggle={toggle}
+          onSave={value=>{if('custom' in value){setSuggested(value);setPicker(true);}}}/>
         <button
           type="button"
           ref={addButton}

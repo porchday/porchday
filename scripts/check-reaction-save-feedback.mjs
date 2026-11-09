@@ -20,12 +20,12 @@ const secret = createReactionSecret(), payload = location.search==='?custom' ? a
 const tag = await reactionTag({secret,targetId:'post',memberId:'other',emoji:payload.emoji});
 const myTag = await reactionTag({secret,targetId:'post',memberId:'me',emoji:payload.emoji});
 const mine={comment_id:'post',member_id:'me',reaction_tag:myTag,envelope:{context:{id:myTag,authorId:'me',kind:'reaction',parentId:'post'}}};
-const rows = [{member_id:'other',reaction_tag:tag,envelope:{context:{id:tag,authorId:'other',kind:'reaction',parentId:'post'}}}];
+const rows = [{author_handle:'friend',member_id:'other',reaction_tag:tag,envelope:{context:{id:tag,authorId:'other',kind:'reaction',parentId:'post'}}}];
 if(location.search==='?mine') rows.push(mine);
 const state = window.fixture = { seal:gate(), write:gate(), read:gate(), reads:0, methods:[], reload:gate(), seals:0,writes:0,reloads:0,feedbackMs:null,started:0,status:()=>pendingSaves.getStatus() };
 state.confirm = () => state.read.resolve(Response.json({reactions:[...rows,mine],comment_reactions:[mine]}));
 state.absent = () => state.read.resolve(Response.json({reactions:rows}));
-window.testVault = {member:{id:'me',status:'active'},device:{id:'device'},open:async()=>payload,
+window.testVault = {member:{id:'me',handle:'me',status:'active'},device:{id:'device'},open:async()=>payload,
  seal:()=>{state.seals++;return state.seal.promise;}};
 window.fetch = async (url,options) => {
  if (String(url)==='/api/v1/posts/post' || String(url)==='/api/v1/posts/parent') { state.reads++; return (await state.read.promise).clone(); }
@@ -68,6 +68,30 @@ try {
   await page.locator('.reaction-chip').click();
   await page.waitForFunction(()=>window.fixture.seals===1);
  }
+ // Inspection must never mutate a reaction, including the click after a long press.
+ await page.goto(origin);
+ const chip=page.locator('.reaction-chip');
+ await chip.waitFor();
+ await chip.dispatchEvent('pointerdown',{pointerType:'touch',pointerId:1,isPrimary:true,button:0,clientX:20,clientY:20});
+ await page.getByRole('dialog').waitFor();
+ await chip.dispatchEvent('pointerup',{pointerType:'touch',pointerId:1});
+ await chip.dispatchEvent('click');
+ await page.getByText('@friend',{exact:true}).waitFor();
+ if(process.env.REACTION_SCREENSHOT) await page.screenshot({path:process.env.REACTION_SCREENSHOT});
+ assert.equal(await page.evaluate(()=>window.fixture.seals),0);
+ await page.keyboard.press('Escape');
+ await page.getByRole('button',{name:'View reactions',exact:true}).focus();
+ await page.keyboard.press('Enter');
+ await page.getByRole('dialog').waitFor();
+ await page.keyboard.press('Escape');
+ await chip.dispatchEvent('pointerdown',{pointerType:'touch',pointerId:1,isPrimary:true,button:0,clientX:20,clientY:20});
+ await chip.dispatchEvent('pointermove',{pointerType:'touch',pointerId:1,clientX:20,clientY:60});
+ await page.waitForTimeout(550);
+ assert.equal(await page.getByRole('dialog').count(),0,'scroll cancels long press');
+ await chip.dispatchEvent('contextmenu');
+ await page.getByRole('dialog').waitFor();
+ await page.keyboard.press('Escape');
+ assert.equal(await page.evaluate(()=>window.fixture.seals),0);
  await begin();
  assert.equal(await page.evaluate(()=>window.fixture.status()),'saving','encryption must already be covered by save feedback and guard');
  await page.waitForFunction(()=>window.fixture.feedbackMs!==null);

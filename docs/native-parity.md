@@ -194,3 +194,8 @@ The shared composer prepares a signed, encrypted 240-character excerpt/caption a
 Shared Settings provides a per-device preview toggle; system notification settings control lock-screen visibility. Sign-out and opt-out clear local preview keys. Notification taps use allowlisted post/photo destinations. Native signing must include the new extension bundle and shared notification Keychain group. A web deployment cannot add this extension to an installed old binary.
 
 Automated validation: `NotificationPreviewTests` consumes a synthetic WebCrypto/OpenPGP fixture on both Apple platforms; API feed-read tests exercise capability expiry, mute, revoked devices/session and revision checks. Exact-source native CI and production evidence are recorded during release, not assumed here. Physical lock-screen, attachment and tap acceptance remains pending under #7/#49/#114.
+
+
+## Reaction attribution
+
+The shared web shell uses the same ReactionChips component for post, comment and photo reaction details on iOS and macOS. Long-press opens the list on touch; right-click and View reactions provide desktop and keyboard access. Normal clicks still toggle reactions. Photo lists retain pagination. No native bridge or binary change is required. Chromium/WebKit gesture regression covers inspection without mutation and scroll cancellation; physical iOS/macOS acceptance remains tracked in #201. Production deployment and exact-source native CI have not yet been verified for this change.
