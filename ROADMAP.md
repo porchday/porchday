@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current native appearance fix:** [#208](https://github.com/porchday/porchday/issues/208), P2: use the selected background color for the app-switcher privacy cover. Native implementation under validation; signed distribution and device acceptance pending.
+**Current native appearance fix:** [#208](https://github.com/porchday/porchday/issues/208), P2: use the selected background color for the app-switcher privacy cover. Available in internal TestFlight: iOS 362, macOS 345. Automated checks passed; physical app-switcher verification remains pending. [Evidence](docs/evidence/app-switcher-appearance-2026-11-09.md).
 
 **Current composer follow-up:** [#207](https://github.com/porchday/porchday/issues/207), P2: bottom actions, expandable media limits and immediate confirmed-post handoff to Feed. Deployed together with #205; hosted checks passed. See [release evidence](docs/evidence/share-feedback-release-2026-11-09.md). Independent monitoring retained two logout/revocation journey deadlines under existing [#55](https://github.com/porchday/porchday/issues/55); feature checks passed, but the monitor window was not wholly healthy.
 
