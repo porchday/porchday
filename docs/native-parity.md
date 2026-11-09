@@ -198,9 +198,9 @@ Automated validation: `NotificationPreviewTests` consumes a synthetic WebCrypto/
 
 ## Reaction attribution
 
-The shared web shell uses the same ReactionChips component for post, comment and photo reaction details on iOS and macOS. Long-press opens the list on touch; right-click and View reactions provide desktop and keyboard access. Normal clicks still toggle reactions. Photo lists retain pagination. No native bridge or binary change is required. Chromium/WebKit gesture regression covers inspection without mutation and scroll cancellation; physical iOS/macOS acceptance remains tracked in #201. Production deployment and exact-source native CI have not yet been verified for this change.
+The shared web shell uses the same ReactionChips component for post, comment and photo reaction details on iOS and macOS. Long-press opens the list on touch; right-click and View reactions provide desktop and keyboard access. Normal clicks still toggle reactions. Photo lists retain pagination. No native bridge or binary change is required. Chromium/WebKit gesture regression covers inspection without mutation and scroll cancellation; physical iOS/macOS acceptance remains tracked in #201. Production deployment and exact-source iOS/macOS CI passed; see [release evidence](evidence/reaction-access-release-2026-11-09.md).
 
 
 ## Photo history pending keys
 
-Original social-photo access refresh now permits pending-key members while requiring every currently eligible ready device; server history policy continues to control later catch-up. Album refresh behavior is unchanged. Shared iOS/macOS shells use the same worker, including page draining and silent automatic retries. No native bridge change is needed. Exact-source native CI and production deployment remain pending; member-specific acceptance remains #22.
+Original social-photo access refresh now permits pending-key members while requiring every currently eligible ready device; server history policy continues to control later catch-up. Album refresh behavior is unchanged. Shared iOS/macOS shells use the same worker, including page draining and silent automatic retries. No native bridge change is needed. Exact-source iOS/macOS CI and production deployment passed; [release evidence](evidence/reaction-access-release-2026-11-09.md). Member-specific acceptance remains #22.
