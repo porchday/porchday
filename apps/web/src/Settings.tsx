@@ -55,10 +55,11 @@ export function Settings({
       <div className="page-heading">
         <h1>Settings</h1>
       </div>
-      <nav className="settings-tabs" aria-label="Settings">
+      <nav className="settings-tabs settings-navigation" aria-label="Settings">
         {[
           ["profile", "My profile"],
           ["children", "Children"],
+          ["notifications", "Notifications"],
           ["privacy", "Privacy & safety"],
           ["security", "Account & keys"],
           ["data", "My data"],
@@ -74,9 +75,11 @@ export function Settings({
         ))}
       </nav>
       {tab === "profile" ? (
-        <ProfileSettings />
+        <><ProfileSettings /><TimeSettings /></>
       ) : tab === "children" ? (
         <ChildrenSettings />
+      ) : tab === "notifications" ? (
+        <NotificationSettings />
       ) : tab === "privacy" ? (
         <PrivacySettings />
       ) : tab === "security" ? (
@@ -403,11 +406,8 @@ function ProfileSettings() {
     </form>
   );
 }
-function PrivacySettings() {
+function NotificationSettings() {
   const vault = useVault();
-  const [blocks, setBlocks] = useState<Json[]>([]);
-  const [mutes, setMutes] = useState<Json[]>([]);
-  const [reports, setReports] = useState<Json[]>([]);
   const [prefs, setPrefs] = useState({ in_app: true, push: false });
   const action = useAction();
   const pushAction = useAction();
@@ -419,15 +419,7 @@ function PrivacySettings() {
     return () => { active = false; };
   }, [vault.member.id]);
   async function refresh() {
-    const [b, m, r, me] = await Promise.all([
-      get("/blocks"),
-      get("/mutes"),
-      get("/reports"),
-      get("/me"),
-    ]);
-    setBlocks(items(b));
-    setMutes(items(m));
-    setReports(items(r));
+    const me = await get("/me");
     setPrefs({ ...prefs, ...me.notification_preferences });
   }
   useEffect(() => {
@@ -460,11 +452,7 @@ function PrivacySettings() {
   return (
     <>
       <section className="panel form-stack">
-        <h2>Privacy and notifications</h2>
-        <p>
-          Share posts with friends and family, friends only, family only, or
-          only yourself. Your email and connection list are private.
-        </p>
+        <h2>Notifications</h2>
         <label className="check-field">
           <input
             type="checkbox"
@@ -504,7 +492,26 @@ function PrivacySettings() {
           photos, or reaction choices in a notification.
         </p>
       </section>
-      <TimeSettings />
+      <Alert>{action.error}</Alert>
+    </>
+  );
+}
+function PrivacySettings() {
+  const [blocks, setBlocks] = useState<Json[]>([]);
+  const [mutes, setMutes] = useState<Json[]>([]);
+  const [reports, setReports] = useState<Json[]>([]);
+  const action = useAction();
+  async function refresh() {
+    const [b, m, r] = await Promise.all([get("/blocks"), get("/mutes"), get("/reports")]);
+    setBlocks(items(b)); setMutes(items(m)); setReports(items(r));
+  }
+  useEffect(() => { action.run(refresh); }, []);
+  return (
+    <>
+      <section className="panel form-stack">
+        <h2>Privacy &amp; safety</h2>
+        <p>Your email and connection list are private. Choose an audience when sharing posts, photos or videos.</p>
+      </section>
       <section className="panel">
         <h2>Muted in Home</h2>
         {mutes.length ? (

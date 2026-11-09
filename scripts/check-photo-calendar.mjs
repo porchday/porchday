@@ -416,6 +416,31 @@ try {
     false,
   );
   }
+  await page.goto(origin + '/settings/profile');
+  await page.addStyleTag({content:await readFile('apps/web/src/retro.css','utf8')});
+  await page.getByRole('heading',{name:'Time zone',exact:true}).waitFor();
+  const settingsNav=page.getByRole('navigation',{name:'Settings',exact:true});
+  assert.deepEqual(await settingsNav.getByRole('link').allTextContents(),['My profile','Children','Notifications','Privacy & safety','Account & keys','My data']);
+  for(const width of [320,390,588,1280]){
+    await page.setViewportSize({width,height:900});
+    assert(await settingsNav.evaluate(nav=>nav.scrollWidth<=nav.clientWidth),'Settings tabs do not scroll horizontally');
+    const boxes=await settingsNav.getByRole('link').evaluateAll(links=>links.map(a=>{const r=a.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,height:r.height};}));
+    assert(boxes.every(r=>r.left>=0&&r.right<=width&&r.height>=44));
+    if(width===320)assert(new Set(boxes.map(r=>r.top)).size>1,'Settings tabs wrap visibly on phones');
+  }
+  await page.setViewportSize({width:390,height:844});
+  if(process.env.SETTINGS_SCREENSHOT)await page.screenshot({path:process.env.SETTINGS_SCREENSHOT});
+  await page.getByLabel('Display timezone').selectOption('UTC');
+  await settingsNav.getByRole('link',{name:'Notifications',exact:true}).click();
+  await page.getByRole('heading',{name:'Notifications',exact:true}).waitFor();
+  await page.getByText('In-app social notifications',{exact:true}).waitFor();
+  assert.equal(await page.getByRole('heading',{name:'Time zone',exact:true}).count(),0);
+  await page.getByRole('navigation',{name:'Settings',exact:true}).getByRole('link',{name:'Privacy & safety',exact:true}).click();
+  await page.getByRole('heading',{name:'Blocked people',exact:true}).waitFor();
+  assert.equal(await page.getByText('In-app social notifications',{exact:true}).count(),0);
+  assert.equal(await page.getByRole('heading',{name:'Time zone',exact:true}).count(),0);
+  await page.getByRole('navigation',{name:'Settings',exact:true}).getByRole('link',{name:'My profile',exact:true}).click();
+  assert.equal(await page.getByLabel('Display timezone').inputValue(),'UTC');
   await page.goto(`http://127.0.0.1:${server.address().port}/share`);
   await page.getByRole('heading',{name:'Add Photos/Videos to this Post',exact:true}).waitFor();
   await page.addStyleTag({content:await readFile('apps/web/src/retro.css','utf8')});
