@@ -1,3 +1,4 @@
+import {NotificationPreviewEnrollment} from './NotificationPreviewEnrollment';
 import {attachDiagnostics} from './diagnostics';
 import {DiagnosticsIndicator} from './DiagnosticPanels';
 import {onlyRecoveredOwnDevicesMissing,hasRecoveredAccess} from './recovered-history-access';
@@ -765,6 +766,7 @@ export function VaultProvider({
       }}
     >
       <DiagnosticsIndicator />
+      <NotificationPreviewEnrollment />
       <PostAudienceSharing />
       <PhotoAudienceSharing />
       {profileSetup?.key===profileContext && profileSetup.state==='unconfirmed' && dismissedProfileSetup!==profileContext && (

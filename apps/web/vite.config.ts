@@ -90,6 +90,9 @@ export default defineConfig({
         // A same-origin public shell still works when the old homepage redirects.
         copyFileSync(resolve(dist, "index.html"), resolve(dist, "app-shell.html"));
         const installIcons = versionPwaIcons(dist);
+        const previewWorker=buildSync({entryPoints:[resolve(sourceDirectory,"notification-preview-sw.ts")],bundle:true,format:"iife",platform:"browser",minify:true,write:false}).outputFiles[0].contents;
+        const previewWorkerName=`assets/notification-preview-${createHash("sha256").update(previewWorker).digest("hex").slice(0,16)}.js`;
+        writeFileSync(resolve(dist,previewWorkerName),previewWorker);
         const videoWorker=buildSync({entryPoints:[resolve(sourceDirectory,"video-sw.ts")],bundle:true,format:"iife",platform:"browser",minify:true,write:false}).outputFiles[0].contents;
         const videoWorkerName=`assets/video-playback-${createHash("sha256").update(videoWorker).digest("hex").slice(0,16)}.js`;
         writeFileSync(resolve(dist,videoWorkerName),videoWorker);
@@ -115,7 +118,7 @@ export default defineConfig({
           `/${openpgpFile}`,
           ...assets,
         ];
-        let sw = `importScripts("/${videoWorkerName}");\n` + readFileSync(resolve(dist, "sw.js"), "utf8");
+        let sw = `importScripts("/${videoWorkerName}","/${previewWorkerName}");\n` + readFileSync(resolve(dist, "sw.js"), "utf8");
         const hash = createHash("sha256").update(sw);
         for (const path of [...shell].sort()) {
           hash.update(path);

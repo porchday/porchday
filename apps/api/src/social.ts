@@ -1,3 +1,4 @@
+import {registerNotificationPreviewRoutes,notificationPreviewSchema,storeNotificationPreview} from './notification-previews';
 import {registerFeedReadRoutes} from './social-feed-read';
 import {photoInteractionSnapshot,registerPhotoInteractionRoutes} from "./photo-interactions";
 import {attachmentDateProof,setAttachmentDate} from "./attachment-photo-dates";
@@ -304,7 +305,7 @@ export function createSocialRoutes() {
     });
     app.get('/walls/:id', async (c) => { const after = cursor(c.req.query('cursor')); return c.json(await tx(c, async (db) => page(await db `select p.*,h.handle as author_handle from app.posts p left join lateral app.member_handles(array[p.author_id]) h on true where p.author_id=${id(c.req.param('id'))} and p.group_id is null ${after ? db `and(p.created_at,p.id)<(${after.at}::timestamptz,${after.id}::uuid)` : db ``} order by p.created_at desc,p.id desc limit 31`))); });
     app.post('/posts', async (c) => {
-        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]), photo_dates:z.array(attachmentDateProof).max(10).default([]), on_behalf_of: uuid.nullable().default(null) }));
+        const b = await body(c, envelopeBody.extend({ media_ids: z.array(uuid).max(10).default([]), photo_dates:z.array(attachmentDateProof).max(10).default([]), on_behalf_of: uuid.nullable().default(null), notification_preview:notificationPreviewSchema.optional() }));
         return c.json(await tx(c, async (db) => {
             const e = b.envelope.context;
             id(e.id);
@@ -326,6 +327,7 @@ export function createSocialRoutes() {
             await attachMedia(db, c.get('memberId'), e.id, b.media_ids);
             if(new Set(b.photo_dates.map(p=>p.statement.mediaId)).size!==b.photo_dates.length)fail('ENVELOPE_CONTEXT');
             for(const proof of b.photo_dates){if(proof.statement.postId!==e.id||!b.media_ids.includes(proof.statement.mediaId))fail('ENVELOPE_CONTEXT');await setAttachmentDate(db,c.get('memberId'),proof,fail);}
+            await storeNotificationPreview(db,c.get('memberId'),b.notification_preview,[b.envelope],'post',e.id);
             return { id: e.id };
         }), 201);
     });
@@ -551,6 +553,7 @@ export function createSocialRoutes() {
     app.put('/notifications/:id/read', async (c) => c.json(await tx(c, async (db) => { await db `update app.notifications set read_at=now() where id=${id(c.req.param('id'))}`; return { ok: true }; })));
     registerPushRoutes(app, {tx, body, fail, id});
     registerNativePushRoutes(app, {tx, body, fail, id});
+    registerNotificationPreviewRoutes(app,{tx,body,fail});
     registerMediaRoutes(app, { tx, body, checkEnvelope, writeAllowed, fail, id });
     registerVideoRoutes(app, { tx, body, checkEnvelope, writeAllowed, fail, id });
     app.get('/reports', async (c) => c.json({ items: await tx(c, db => db `select id,target_id,reason,status,created_at from app.reports order by created_at desc`) }));

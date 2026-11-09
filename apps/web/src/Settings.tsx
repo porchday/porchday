@@ -1,3 +1,4 @@
+import {contentPreviewsEnabled,setContentPreviews,enrollContentPreviews} from './notification-previews';
 import {DiagnosticsSettings} from './DiagnosticPanels';
 import { ChildrenSettings } from "./ChildrenSettings";
 import { MemberAvatar } from "./MemberAvatar";
@@ -413,6 +414,7 @@ function NotificationSettings() {
   const action = useAction();
   const pushAction = useAction();
   const [devicePush, setDevicePush] = useState<CurrentPushStatus | "checking" | "unknown">("checking");
+  const [previews,setPreviews]=useState(()=>contentPreviewsEnabled(vault.member.id));
   const [pushOperation, setPushOperation] = useState<"enable" | "disable" | null>(null);
   useEffect(() => {
     let active = true;
@@ -435,6 +437,7 @@ function NotificationSettings() {
       });
       setPrefs((p) => ({ ...p, push: true }));
       setDevicePush("enabled");
+      window.dispatchEvent(new Event("porchday:push-changed"));
     }, "This device is registered for notifications about new feed posts and photos.");
     setPushOperation(null);
   }
@@ -488,9 +491,9 @@ function NotificationSettings() {
             {pushOperation === "disable" ? <><span className="spinner" />Turning off notifications…</> : "Turn off push on all devices"}
           </Button>}
         </div>
+        <label className="check-field"><input type="checkbox" checked={previews} disabled={pushAction.busy} onChange={e=>{const enabled=e.target.checked;void pushAction.run(async()=>{await setContentPreviews(vault.member.id,enabled);setPreviews(enabled);if(enabled)await enrollContentPreviews(vault,()=>true);});}}/><span>Show post text and photo previews on this device</span></label>
         <p className="small-copy">
-          Feed notifications show the author’s handle and activity type. We never put post text,
-          photos, or reaction choices in a notification.
+          Content previews are decrypted on this device. Lock-screen visibility is controlled by your system settings. Already displayed previews cannot reliably be recalled. Older apps and unavailable previews show an activity notice instead.
         </p>
       </section>
       <Alert>{action.error}</Alert>

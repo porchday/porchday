@@ -185,3 +185,12 @@ provided by this collector. Browser tests cover consent, account isolation and
 offline outbox recovery; installed-device verification remains pending. This
 entry is an implementation audit, not evidence of a new binary or production
 deployment.
+
+
+## Encrypted notification content previews
+
+The shared composer prepares a signed, encrypted 240-character excerpt/caption and optional bounded JPEG. Each enrolled push device has a separate notification-only key. iOS and macOS embed a notification service extension which retrieves authorized ciphertext, verifies the pinned author key/signature, decrypts using CryptoKit and attaches the thumbnail. Main account/recovery keys never enter the extension. The PWA service worker uses its own nonextractable IndexedDB key. Unknown/unpinned authors, old binaries, unavailable keys, stale access, deadlines and invalid payloads fall back to generic alerts.
+
+Shared Settings provides a per-device preview toggle; system notification settings control lock-screen visibility. Sign-out and opt-out clear local preview keys. Notification taps use allowlisted post/photo destinations. Native signing must include the new extension bundle and shared notification Keychain group. A web deployment cannot add this extension to an installed old binary.
+
+Automated validation: `NotificationPreviewTests` consumes a synthetic WebCrypto/OpenPGP fixture on both Apple platforms; API feed-read tests exercise capability expiry, mute, revoked devices/session and revision checks. Exact-source native CI and production evidence are recorded during release, not assumed here. Physical lock-screen, attachment and tap acceptance remains pending under #7/#49/#114.

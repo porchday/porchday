@@ -52,3 +52,12 @@ export function PhotoCollection({album}:{album:AlbumRow}){
   useEffect(()=>{void load();return()=>{generation.current++;};},[album.id]);
   return <section><Alert>{action.error}</Alert>{!loaded&&<Loading/>}{loaded&&!photos.length&&<Empty icon="album" title="No photos yet">{album.role==="read"?"Photos added by album contributors will appear here.":<a href={"/share?album="+album.id}>Add photos from Share</a>}</Empty>}<div className="album-photo-grid">{photos.map(photo=><PhotoCard key={photo.id} photo={photo} album={album} onChanged={()=>load()}/>)}</div>{next&&<Button busy={action.busy} onClick={()=>load(next)}>Load more photos</Button>}</section>;
 }
+
+export function PhotoNotificationDetail({id}:{id:string}){
+ const [photo,setPhoto]=useState<PhotoRow|null>(null),[closed,setClosed]=useState(false),action=useAction();
+ const vault=useVault();
+ async function load(){await action.run(async()=>{if(!/^[a-f0-9-]{36}$/i.test(id))throw Error("This photo link is unavailable.");const result=await get("/photos/"+id);setPhoto(result.photo);});}
+ useEffect(()=>{setClosed(false);setPhoto(null);void load();},[id,vault.member.id]);
+ if(closed)return null;
+ return <Modal title="Photo" onClose={()=>{setClosed(true);history.replaceState(null,"",location.pathname);}}><Alert>{action.error}</Alert>{photo?<PhotoCard photo={photo} onChanged={load}/>:!action.error&&<Loading/>}</Modal>;
+}

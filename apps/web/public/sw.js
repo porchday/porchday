@@ -83,21 +83,25 @@ self.addEventListener("push", (event) => {
   let payload = {}; try { payload = event.data?.json() || {}; } catch {}
   const feed = payload.url === "/";
   const tag = typeof payload.tag === "string" && /^[a-f0-9]{32}$/.test(payload.tag) ? payload.tag : "porchday-update";
-  event.waitUntil(Promise.all([
+  event.waitUntil((async()=>{
+  const preview=feed&&self.porchdayNotificationPreview?await self.porchdayNotificationPreview(payload.preview):null;
+  await Promise.all([
     self.registration.showNotification("Porchday", {
-      body: feed && typeof payload.author === "string" && /^[a-z0-9_]{3,24}$/.test(payload.author) && ["post", "media"].includes(payload.content)
+      body: preview?.text ? `${typeof payload.author==="string"&&/^[a-z0-9_]{3,24}$/.test(payload.author)?"@"+payload.author+": ":""}${preview.text}` : feed && typeof payload.author === "string" && /^[a-z0-9_]{3,24}$/.test(payload.author) && ["post", "media"].includes(payload.content)
         ? `@${payload.author} shared ${payload.content === "post" ? "a post" : "photos/videos"}`
         : feed ? "New activity in your feed" : "You have a new update.",
+      ...(preview?.image?{image:preview.image}:{}),
       icon: "/icon-192.png", badge: "/icon-192.png", tag,
-      data: { url: feed ? "/" : "/notifications" },
+      data: { url: preview?.url || (feed ? "/" : "/notifications") },
     }),
     Number.isSafeInteger(payload.count) && payload.count >= 0 ?
       (payload.count ? self.navigator.setAppBadge?.(payload.count) : self.navigator.clearAppBadge?.())?.catch(() => {}) : Promise.resolve(),
-  ]));
+  ]);})());
 });
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const destination = event.notification.data?.url === "/notifications" ? "/notifications" : "/";
+  const target=event.notification.data?.url;
+  const destination = typeof target==="string"&&(/^(?:\/post\/|\/\?photo=)[0-9a-f-]{36}$/.test(target)||target==="/notifications")?target:"/";
   event.waitUntil(
     self.clients.matchAll({ type: "window" }).then((clients) => {
       for (const client of clients) {

@@ -100,4 +100,29 @@ async function read(member:string,items:unknown[],all=false){return sql.begin(as
   await sql`delete from app.connections where member_a in(${a.id},${b.id}) and member_b in(${a.id},${b.id})`;expect(await count(b.id)).toBe(0);
   await sql`delete from app.posts where id=${post}`;expect(await sql`select id from app.feed_activity where post_id=${post}`).toHaveLength(0);
  });
+ it('redeems encrypted previews only while the session, audience, revision and unread state remain valid',async()=>{
+  const {a,b}=await pair(),session=randomUUID(),keyId=randomUUID();
+  await sql`insert into public.auth_user(id,name,email,"emailVerified") values(${b.id},'Synthetic preview test',${b.id+'@example.test'},true)`;
+  await sql`insert into public.auth_session(id,"userId",token,"expiresAt") values(${session},${b.id},${randomUUID()},now()+interval '1 day')`;
+  await sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id',${b.id},true)`;await db`select app.register_native_push(${session},${'ef'.repeat(32)},'sandbox')`;});
+  const [subscription]=await sql`select id from app.native_push_subscriptions where member_id=${b.id}`;
+  const identity={v:1,purpose:'porchday-notification-key',keyId,memberId:b.id,deviceId:b.device,publicKey:'test'};
+  await sql`insert into app.notification_preview_keys(id,member_id,device_id,session_id,native_subscription,certificate) values(${keyId},${b.id},${b.device},${session},${subscription.id},${sql.json({statement:identity})})`;
+  const post=await publish(a,b);
+  const context={v:1,purpose:'porchday-notification-preview',kind:'post',id:post,authorId:a.id,authorDeviceId:a.device,revision:1,expiresAt:null};
+  await sql`update app.posts set envelope=${sql.json({context})} where id=${post}`;
+  await sql`insert into app.notification_previews(id,owner_id,post_id,revision,signed_preview) values(${post},${a.id},${post},1,${sql.json({statement:{context,recipients:[identity]},signature:'test'})})`;
+  const [notice]=await sql`select id from app.notifications where recipient=${b.id} and post_id=${post} and kind='feed_activity'`;
+  const [{ref}]=await sql`select app.issue_notification_preview(${notice.id},${subscription.id},true) as ref`;
+  expect(ref.keyId).toBe(keyId);expect(ref.token).toMatch(/^[a-f0-9]{64}$/);
+  async function redeem(token=ref.token){return sql.begin(async db=>{await db`set local role porchday_social`;await db`select set_config('app.member_id','00000000-0000-0000-0000-000000000000',true)`;const [r]=await db`select app.redeem_notification_preview(encode(sha256(convert_to(${token},'UTF8')),'hex')) as value`;expect((await db`select current_setting('app.member_id') as actor`)[0].actor).toBe('00000000-0000-0000-0000-000000000000');return r.value;});}
+  expect((await redeem()).identity.keyId).toBe(keyId);
+  expect(await redeem('ab'.repeat(32))).toBeNull();
+  await sql`insert into app.mutes(actor,target) values(${b.id},${a.id})`;expect(await redeem()).toBeNull();await sql`delete from app.mutes where actor=${b.id}`;
+  await sql`update public.auth_session set "expiresAt"=now()-interval '1 minute' where id=${session}`;expect(await redeem()).toBeNull();await sql`update public.auth_session set "expiresAt"=now()+interval '1 day' where id=${session}`;
+  await sql`update app.device_keys set revoked_at=now() where id=${b.device}`;expect(await redeem()).toBeNull();await sql`update app.device_keys set revoked_at=null where id=${b.device}`;
+  await sql`update app.posts set envelope=${sql.json({context:{...context,revision:2}})} where id=${post}`;expect(await redeem()).toBeNull();
+  await sql`delete from app.notification_preview_keys where id=${keyId}`;expect(await redeem()).toBeNull();
+ });
+
 });

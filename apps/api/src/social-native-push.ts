@@ -143,7 +143,7 @@ export function nativePushRequest(
         "apns-expiration": "0",
         "apns-collapse-id": feed?.badgeOnly ? "porchday-feed-badge" : feed?.tag || "porchday-update",
       },
-      body: feed ? JSON.stringify({aps:{...(feed.badgeOnly?{}:{alert:{title:"Porchday",body:feedPushBody(feed)}}),badge:feed.count},destination:feed.feed||feed.badgeOnly?"feed":"notifications"}) : GENERIC_NATIVE_PAYLOAD,
+      body: feed ? JSON.stringify({aps:{...(feed.badgeOnly?{}:{alert:{title:"Porchday",body:feedPushBody(feed)}}),badge:feed.count,...(feed.preview?{"mutable-content":1}:{})},...(feed.preview?{preview:feed.preview,actor:feed.author}:{}),destination:feed.feed||feed.badgeOnly?"feed":"notifications"}) : GENERIC_NATIVE_PAYLOAD,
     } satisfies RequestInit,
   };
 }

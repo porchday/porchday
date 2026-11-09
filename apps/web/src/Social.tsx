@@ -1,3 +1,4 @@
+import {prepareNotificationPreview} from './notification-previews';
 import {usePostDraft,type PendingPhoto} from './use-post-draft';
 import {SharedMediaInbox} from './SharedMediaInbox';
 import {photoCaptureDate} from './media-date';
@@ -417,7 +418,8 @@ export function Composer({
           expiresAt,
         },
       );
-      const publication={envelope,photo_dates:photoDates,media_ids:media.map(p=>p.id),on_behalf_of:onBehalf||null};
+      const notification_preview=await prepareNotificationPreview(vault,[envelope],"post",id,text.trim()||photos[0]?.alt||"",photos[0]);
+      const publication={envelope,photo_dates:photoDates,media_ids:media.map(p=>p.id),on_behalf_of:onBehalf||null,...(notification_preview?{notification_preview}:{})};
       await draft.beforePublish(id,durable);
       if(durable){await savePublication(vault.member.id,id,staged,publication);saved=true;
         // The durable encrypted post now owns this intent. Remove the live draft

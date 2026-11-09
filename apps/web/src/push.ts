@@ -1,3 +1,4 @@
+import {clearPreviewKeys} from './notification-preview-store';
 import { isNativeShell, nativeCall } from "./native-shell";
 import { del, get, post } from "./api";
 
@@ -36,6 +37,7 @@ export async function enableNativePush(memberId: string, requestPermission = tru
   const result = await post("/native-push/subscriptions", registration);
   if (generation !== nativeGeneration) return;
   localStorage.setItem(nativeStorageKey, JSON.stringify({ id: result.id, memberId }));
+  window.dispatchEvent(new Event("porchday:push-changed"));
 }
 export async function refreshNativePush(memberId: string) {
   if (!isNativeShell()) return;
@@ -104,6 +106,7 @@ export async function enableCurrentPush(memberId: string) {
 }
 
 export async function unsubscribeCurrentPush() {
+  await clearPreviewKeys().catch(()=>{});
   if (isNativeShell()) {
     nativeGeneration++;
     let stored; try { stored = JSON.parse(localStorage.getItem(nativeStorageKey) || "null"); } catch {}

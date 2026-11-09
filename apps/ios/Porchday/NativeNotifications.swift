@@ -113,7 +113,7 @@ import AppKit
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         // Decode on the callback queue; only Sendable values cross to the UI actor.
-        NativePushRouting.receive(destination: response.notification.request.content.userInfo["destination"] as? String,
+        NativePushRouting.receive(destination: response.notification.request.content.userInfo["previewPath"] as? String ?? response.notification.request.content.userInfo["destination"] as? String,
             action: response.actionIdentifier, completion: completionHandler)
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void) {
@@ -130,7 +130,7 @@ import AppKit
     func application(_ application: NSApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) { WebShellPush.shared.failed(); NativeNotifications.shared.registrationFailed() }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping @Sendable () -> Void) {
         // Decode on the callback queue; only Sendable values cross to the UI actor.
-        NativePushRouting.receive(destination: response.notification.request.content.userInfo["destination"] as? String,
+        NativePushRouting.receive(destination: response.notification.request.content.userInfo["previewPath"] as? String ?? response.notification.request.content.userInfo["destination"] as? String,
             action: response.actionIdentifier, completion: completionHandler)
     }
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping @Sendable (UNNotificationPresentationOptions) -> Void) {

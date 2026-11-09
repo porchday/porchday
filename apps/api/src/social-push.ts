@@ -80,7 +80,7 @@ export const GENERIC_PUSH_PAYLOAD = JSON.stringify({title: 'Porchday', body: 'Yo
 export function generatePushRequest(subscription: PushSubscription, env: PushEnv, metadata?: unknown) {
   if (!configured(env) || !validPushEndpoint(subscription.endpoint)) throw new Error('PUSH_UNAVAILABLE');
   const feed=feedPushMetadata(metadata);
-  const payload=feed?JSON.stringify({title:"Porchday",body:feedPushBody(feed),url:feed.feed?"/":"/notifications",count:feed.count,tag:feed.tag,author:feed.author,content:feed.content}):GENERIC_PUSH_PAYLOAD;
+  const payload=feed?JSON.stringify({title:"Porchday",body:feedPushBody(feed),url:feed.feed?"/":"/notifications",count:feed.count,tag:feed.tag,author:feed.author,content:feed.content,preview:feed.preview}):GENERIC_PUSH_PAYLOAD;
   return webPush.generateRequestDetails(subscription, payload, {
     vapidDetails: {subject: env.VAPID_SUBJECT!, publicKey: env.VAPID_PUBLIC_KEY!, privateKey: env.VAPID_PRIVATE_KEY!},
     contentEncoding: 'aes128gcm', TTL: 60, urgency: 'normal', topic: feed?.tag || 'porchday-update',

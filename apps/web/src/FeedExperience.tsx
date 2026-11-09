@@ -1,3 +1,4 @@
+import {PhotoNotificationDetail} from "./PhotoCollection";
 import {FeedReadControls} from "./FeedUnread";
 import {PhotoFeed,PhotoFeedCalendar} from "./PhotoFeed";
 import React,{useEffect,useMemo,useState} from "react";
@@ -15,6 +16,7 @@ export function FeedExperience({initialContent="everything",initialView="scroll"
  const filter=useMemo(()=>({memberId:vault.member.id,audience,selected:audienceCategories[audience],relations}),[vault.member.id,audience,relations]);
  const labels={everything:"Everything",posts:"Posts",photos:"Photos"};
  return <>
+  {new URLSearchParams(location.search).get("photo")&&<PhotoNotificationDetail id={new URLSearchParams(location.search).get("photo")!}/>}
   <div className="page-heading mobile-tab-heading"><h1>Feed</h1></div>
   <div className="feed-view-controls" aria-label="Feed view"><Button aria-pressed={view==="scroll"} onClick={()=>setView("scroll")}>Feed</Button><Button aria-pressed={view==="calendar"} onClick={()=>setView("calendar")}>Calendar</Button></div>
   <FeedReadControls/>
