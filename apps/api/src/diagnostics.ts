@@ -50,7 +50,7 @@ export function createDiagnosticRoutes(){
   await db.batch(parsed.data.events.map(e=>db.prepare(`INSERT OR IGNORE INTO diagnostic_events(session_id,id,at,kind,payload)
    SELECT ?1,?2,?3,?4,?5 WHERE EXISTS(SELECT 1 FROM diagnostic_sessions WHERE id=?1 AND member_id=?6 AND stopped_at IS NULL AND expires_at>?7)
    AND (SELECT count(*) FROM diagnostic_events WHERE session_id=?1)<2000
-   AND (SELECT coalesce(sum(length(payload)),0) FROM diagnostic_events WHERE session_id=?1)+length(?5)<=5242880`).bind(s.id,e.id,e.at,e.kind,JSON.stringify(e.payload),c.get('memberId'),now)));
+   AND (SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) FROM diagnostic_events WHERE session_id=?1)+length(CAST(?5 AS BLOB))<=5242880`).bind(s.id,e.id,e.at,e.kind,JSON.stringify(e.payload),c.get('memberId'),now)));
   const ids=parsed.data.events.map(e=>e.id);
   const saved=await db.prepare('SELECT id FROM diagnostic_events WHERE session_id=?1 AND id IN (SELECT value FROM json_each(?2))').bind(s.id,JSON.stringify(ids)).all<{id:string}>();
   return c.json({accepted:saved.results.map(r=>r.id),full:saved.results.length!==ids.length});
@@ -92,6 +92,6 @@ export const diagnosticServerMiddleware=createMiddleware<{Bindings:Env;Variables
  const write=c.env.TRACES.prepare(`INSERT OR IGNORE INTO diagnostic_events(session_id,id,at,kind,payload)
  SELECT ?1,?2,?3,'server',?4 WHERE EXISTS(SELECT 1 FROM diagnostic_sessions WHERE id=?1 AND member_id=?5 AND stopped_at IS NULL AND expires_at>?3 AND delete_at>?3)
  AND (SELECT count(*) FROM diagnostic_events WHERE session_id=?1)<2000
- AND (SELECT coalesce(sum(length(payload)),0) FROM diagnostic_events WHERE session_id=?1)+length(?4)<=5242880`).bind(id,crypto.randomUUID(),began,payload,c.get('memberId')).run().catch(()=>{metric('trace_store',{code:'trace_write_failed'},c.env);});
+ AND (SELECT coalesce(sum(length(CAST(payload AS BLOB))),0) FROM diagnostic_events WHERE session_id=?1)+length(CAST(?4 AS BLOB))<=5242880`).bind(id,crypto.randomUUID(),began,payload,c.get('memberId')).run().catch(()=>{metric('trace_store',{code:'trace_write_failed'},c.env);});
  try{c.executionCtx.waitUntil(write);}catch{await write;}
 });

@@ -1,12 +1,12 @@
-import {expect,test,afterAll} from 'vitest';
+import {expect,test,afterEach} from 'vitest';
 import {build} from 'esbuild';
-import {chromium,type Browser} from 'playwright';
+import {chromium,webkit,type Browser} from 'playwright';
 import {safeDiagnosticError,contentRoute} from '../src/diagnostics';
 let browser:Browser|undefined;
-afterAll(async()=>{await browser?.close();});
+afterEach(async()=>{await browser?.close();});
 test('error diagnostics omit arbitrary messages, credentials and non-app stack frames',()=>{const e=Object.assign(new Error('password=very-secret; token=abcdef'),{code:'SECRET token'});e.stack='Error: very-secret\n at https://porchday.org/assets/main-a.js:4:12\n at https://private.invalid/path?token=abc:3:1';const result=safeDiagnosticError(e);expect(JSON.stringify(result)).not.toContain('secret');expect(result.stack).toBe('/assets/main-a.js:4:12');expect(contentRoute('/settings/account')).toBe(false);expect(contentRoute('/recovery')).toBe(false);expect(contentRoute('/share')).toBe(true);});
-test('browser consent, content exclusions, offline durability, account isolation and stop',async()=>{
- browser=await chromium.launch({headless:true});const page=await browser.newPage();
+test.each(['chromium','webkit'] as const)('%s consent, content exclusions, offline durability, account isolation and stop',async(engine)=>{
+ browser=await (engine==='chromium'?chromium:webkit).launch({headless:true});const page=await browser.newPage();
  const bundle=await build({entryPoints:['apps/web/src/diagnostics.ts'],bundle:true,format:'esm',write:false});
  let uploads:any[]=[],fail=false,session=crypto.randomUUID();
  await page.route('http://127.0.0.1:43199/**',async route=>{
