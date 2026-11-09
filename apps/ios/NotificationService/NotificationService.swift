@@ -14,8 +14,8 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
         guard let ref = request.content.userInfo["preview"] as? [String: String],
             let token = ref["token"], token.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
             let id = ref["keyId"], let key = try? NotificationPreviewKey.read(), key.keyId == id else { finish(); return }
-        let source = request.content
-        task = Task { [weak self] in
+        let source = ImmutableNotification(content: request.content)
+        task = Task { @Sendable [weak self] in
             guard let self else { return }
             do {
                 // Fixed HTTPS origin, no cookies/session or redirects, bounded response.
@@ -25,7 +25,7 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 let session = URLSession(configuration: configuration, delegate: NoRedirects(), delegateQueue: nil)
                 defer { session.invalidateAndCancel() }
                 var request = URLRequest(url: URL(string: "https://porchday.org/api/notification-preview")!)
-                request.httpMethod = "POST"; request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                request.httpMethod = "POST"; request.setValue("https://porchday.org", forHTTPHeaderField: "Origin"); request.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 request.httpBody = try JSONSerialization.data(withJSONObject: ["token": token])
                 let (stream, response) = try await session.bytes(for: request)
                 guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw NotificationPreviewCrypto.Failure.invalid }
@@ -33,8 +33,8 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
                 for try await byte in stream { if data.count >= 1_000_000 { throw NotificationPreviewCrypto.Failure.invalid }; data.append(byte) }
                 let preview = try NotificationPreviewCrypto.decrypt(data, key: key)
                 guard !Task.isCancelled, (try NotificationPreviewKey.read())?.keyId == id,
-                    let content = source.mutableCopy() as? UNMutableNotificationContent else { throw NotificationPreviewCrypto.Failure.invalid }
-                let actor = source.userInfo["actor"] as? String
+                    let content = source.content.mutableCopy() as? UNMutableNotificationContent else { throw NotificationPreviewCrypto.Failure.invalid }
+                let actor = source.content.userInfo["actor"] as? String
                 let author = actor.flatMap { $0.range(of: "^[a-zA-Z0-9_]{1,40}$", options: .regularExpression) != nil ? "@" + $0 : nil }
                 if !preview.text.isEmpty { content.body = (author.map { $0 + ": " } ?? "") + preview.text }
                 content.userInfo["previewPath"] = preview.path
@@ -67,3 +67,6 @@ final class NotificationService: UNNotificationServiceExtension, @unchecked Send
 private final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void) { completionHandler(nil) }
 }
+
+// UNNotificationContent is immutable; only the task-local mutable copy is edited.
+private struct ImmutableNotification: @unchecked Sendable { let content: UNNotificationContent }

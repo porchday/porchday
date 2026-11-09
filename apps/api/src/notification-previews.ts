@@ -1,4 +1,5 @@
 import {Hono,type Context} from 'hono';
+import {bodyLimit} from 'hono/body-limit';
 import {z} from 'zod';
 import {canonicalJson,verifyStatement,type EncryptedEnvelope} from '@porchday/crypto';
 import {withMember,type Db} from './db';
@@ -32,6 +33,7 @@ export async function storeNotificationPreview(db:Db,owner:string,value:unknown,
 }
 /** Notification-scoped capability, never an account session credential. POST keeps it out of URLs/logs. */
 export const notificationPreviewDelivery=new Hono<{Bindings:Env;Variables:Variables}>();
+notificationPreviewDelivery.use('*',bodyLimit({maxSize:256}));
 notificationPreviewDelivery.post('/',async c=>{c.header('Cache-Control','no-store');const input=z.object({token:z.string().regex(/^[a-f0-9]{64}$/)}).strict().safeParse(await c.req.json().catch(()=>null));if(!input.success)return c.json({error:{code:'NOT_FOUND'}},404);
  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(input.data.token))),x=>x.toString(16).padStart(2,'0')).join('');
  const result=await withMember(c.env,'00000000-0000-0000-0000-000000000000',async db=>{const[row]=await db`select app.redeem_notification_preview(${digest}) as result`;return row?.result;});

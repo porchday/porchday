@@ -8,7 +8,7 @@ let storage: Map<string, string>;
 beforeEach(() => {
   vi.clearAllMocks(); storage = new Map();
   handler = vi.fn().mockResolvedValue({ token: 'a'.repeat(64), environment: 'production' });
-  vi.stubGlobal('window', { webkit: { messageHandlers: { porchday: { postMessage: handler } } } });
+  vi.stubGlobal('window', { dispatchEvent: vi.fn(), webkit: { messageHandlers: { porchday: { postMessage: handler } } } });
   vi.stubGlobal('localStorage', { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k,v), removeItem: (k: string) => storage.delete(k) });
   api.get.mockResolvedValue({ enabled: true }); api.post.mockResolvedValue({ id: 'subscription' }); api.del.mockResolvedValue({ ok: true });
 });

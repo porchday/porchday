@@ -618,7 +618,7 @@ const policyContent: Record<
       ],
       [
         "Your choices",
-        "Settings provides local export, reviewed import, integrations, blocks, mutes, notifications, and deletion. The service uses necessary session cookies and protected device-key storage, with no advertising trackers. No decrypted social content is cached by the service worker.",
+        "Settings provides local export, reviewed import, integrations, blocks, mutes, notifications, and deletion. The service uses necessary session cookies and protected device-key storage, with no advertising trackers. No decrypted social content is cached by the service worker. If device notification previews are enabled, a separate device key decrypts short excerpts and optional thumbnails for system notifications. The server and push provider receive encrypted preview material only. System settings control lock-screen visibility; copies already shown by the system may remain until dismissed.",
       ],
       [
         "Builder chat",
