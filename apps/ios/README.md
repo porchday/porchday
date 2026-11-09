@@ -1,6 +1,8 @@
 # Porchday native Apple app
 
-The native client uses SwiftUI and URLSession with the same authorized social API and signed encrypted envelope format as the web client. It is not a web-view wrapper. Photo processing, encryption, recovery, multipart export/import and Keychain storage run on the device.
+The release app is a thin native shell with a retained WKWebView loading the same Porchday web UI as the PWA. Native bridges provide Photos selection, notifications, badges and file operations. Shared web UI updates arrive from production; changing a native bridge requires a new signed app build. See the [shared-shell design](../../design/shared-web-native-shell.md) and [latest notification release evidence](../../docs/evidence/notification-previews-release-2026-11-08.md).
+
+The older SwiftUI/URLSession screens remain available only for DEBUG testing with `--legacy-native-ui-testing`. Their implementation notes below do not describe the default release interface.
 
 ## Build and test
 
@@ -69,7 +71,7 @@ Simulator verification does not establish physical-device, APNs or Universal Lin
 
 The checked-in entitlements declare both `applinks:porchday.org` and `applinks:porchday.com`, plus an APNs environment variable. Simulator CI uses its own app-local Keychain entitlement and `PORCHDAY_PUSH_ENABLED=NO`. For a physical build, configure the real development team, Push Notifications and Associated Domains for `org.porchday.app`, enable signing, set `PORCHDAY_PUSH_ENABLED=YES`, and select the matching `PORCHDAY_APNS_ENVIRONMENT`. An APNs provider private key belongs only in the operator's backend secret storage, never the app or repository.
 
-The permission button appears only when the build flag and `/api/v1/native-push/config` both enable delivery. Only pressing **Enable** requests authorization. Opted-in launches register the current token through the authenticated API; token bytes are not cached on disk. Opt-out and sign-out remove the subscription and unregister locally. Notifications contain generic text and open the authorized inbox; no extension decrypts private content.
+The permission button appears only when the build flag and `/api/v1/native-push/config` both enable delivery. Only pressing **Enable** requests authorization. Opted-in launches register the current token through the authenticated API; token bytes are not cached on disk. Opt-out and sign-out remove the subscription and unregister locally. Feed notifications show the authorized author handle and activity type and open the authenticated Feed. Other alerts keep generic copy and open Notifications. No extension decrypts private content. OS notification settings control lock-screen previews.
 
 For Universal Links, publish the correct Apple application identifier and both `/post/*` and legacy `/app/post/*` components in `/.well-known/apple-app-site-association`, without a redirect. The client validates `/post/{UUID}` and legacy `/app/post/{UUID}` links on both exact production hosts, but the presence of client code does not prove deployed domain association. Record real-device push and link tests after signing is configured. See Apple's [APNs registration](https://developer.apple.com/documentation/usernotifications/registering-your-app-with-apns), [notification permission](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications) and [Associated Domains](https://developer.apple.com/documentation/xcode/supporting-associated-domains) documentation.
 
@@ -149,7 +151,7 @@ Push stays disabled until actual provider/device verification. The app manifest
 declares app-local UserDefaults access (CA92.1); archive/dependency privacy report,
 export compliance and Apple validation remain separate distribution checks.
 
-## Current web compatibility work
+## Legacy SwiftUI implementation reference
 
 Both targets now include native calendar browsing, personal daily highlights,
 author/tag filters, earlier-month loading and adjacent-day navigation; member and

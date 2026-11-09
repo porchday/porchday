@@ -74,7 +74,7 @@ notification preferences. A processed receipt is marked even when notification
 was intentionally suppressed, so later unfriending or changing preferences does
 not replay signup. A connection accepted before delivery removes the obsolete
 notice and its push jobs. Visibility and both push transports also recheck current
-eligibility. Push previews remain generic; no address or handle is sent in them.
+eligibility. Invitation push previews remain generic; no address or handle is sent in them. Feed activity previews separately include an authorized author handle and activity type.
 
 In-app notifications identify the invited member by their current handle and open
 Connections with it filled in. The inviter still chooses Friend/Family and history

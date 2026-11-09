@@ -6,7 +6,7 @@ APNs provider configuration is enabled in staging and production. Signed iOS 239
 
 The API Worker accepts `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_BUNDLE_ID`, and `APNS_PRIVATE_KEY` (the complete PKCS#8 `.p8` key) as private environment configuration. Never commit these values or put them in browser assets. All four are required. The native app must also be signed with the matching push entitlement and environment before exposing its opt-in control. No Apple account is purchased by this implementation.
 
-Production release checks cover provider configuration, deployed transport, session authorization and revocation, automated native parity, and signed app entitlements. Track real-device permission denial, token rotation, foreground handling, generic lock-screen preview, tap navigation, logout, and badge behavior under #7. These physical checks are follow-up verification, not production blockers, and remain pending until observed. The configured key supports production; sandbox testing needs a separate sandbox-capable credential.
+Production release checks cover provider configuration, deployed transport, session authorization and revocation, automated native parity, and signed app entitlements. Track real-device permission denial, token rotation, foreground handling, author/activity lock-screen preview, tap navigation, logout, and badge behavior under #7. These physical checks are follow-up verification, not production blockers, and remain pending until observed. The configured key supports production; sandbox testing needs a separate sandbox-capable credential.
 
 ## API contract
 
