@@ -209,3 +209,15 @@ Original social-photo access refresh now permits pending-key members while requi
 ## Clickable post links
 
 Shared post text renders HTTP/HTTPS and www links as safe React anchors while preserving plain text and punctuation. Browser links use a separate tab with noopener/noreferrer. Existing WebShell navigation delegates open external URLs using UIApplication/NSWorkspace on iOS/macOS and keep the Porchday web view in place. No bridge or native binary change is needed. Chromium/WebKit link activation tests and tokenizer tests pass, as do exact-source iOS/macOS CI and hosted staging/production link activation. See [release evidence](evidence/clickable-post-links-release-2026-11-09.md). Physical external-browser handoff remains a follow-up in #203.
+
+
+## Post deletion feedback
+
+The shared PostCard used by web, PWA, iOS and macOS now shows Deleting post immediately after confirmation, suppresses duplicate submissions, and replaces the post with Post deleted on server confirmation independently of parent refresh. A failed request restores content with an actionable error above the post. The state is scoped to the post identity. Mobile Chromium/WebKit browser tests cover cancellation, delayed response, failure/retry, success with stale parent data and identity reuse. No native bridge change is required. Hosted and physical-device acceptance remain pending in #205; this change is not yet deployed.
+
+
+## Composer footer and confirmed post handoff
+
+Share, smaller Discard draft and local draft status are grouped in the bottom footer after media guidance and audience controls. Video/storage guidance is collapsed by default and the attachment subsection heading is smaller. Restore/save retry controls remain outside the disabled draft fieldset. Shared iOS/macOS shells use the same UI without a bridge change.
+
+After a post is confirmed, the Share tab opens Feed with that post immediately rendered from the author's in-memory confirmed row/content. It does not wait for the feed read or decryption round trip. Matching server rows reconcile without duplication; the temporary row is account-scoped, cleared on logout and respects expiry. Failed publication stays in Share with the draft intact. Tests exercise a deliberately held feed response, reconciliation, failed publication and encrypted draft recovery in Chromium and WebKit. Hosted and physical verification are pending in #207.

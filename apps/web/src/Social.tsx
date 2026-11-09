@@ -247,6 +247,8 @@ export async function preparePhoto(file: File, maxDimension = 2400) {
     preview: await readObjectURL(blob),
   };
 }
+export type PublishedPost = { row: SocialObject; content: Content };
+
 export function Composer({
   onPosted,
   groupId,
@@ -255,7 +257,7 @@ export function Composer({
 }: {
   shareTabs?: boolean;
   initialAlbum?: string;
-  onPosted: () => void;
+  onPosted: (published?: PublishedPost) => void;
   groupId?: string;
 }) {
   const vault = useVault();
@@ -409,8 +411,9 @@ export function Composer({
         media.push(meta);
         photoDates.push(await signAttachmentDate(vault,meta.id,id,photo.photoDate||localPhotoDate(),1));
       }
+      const publishedContent = { text: text.trim(), tags:postTags, media, reactionSecret: createReactionSecret() };
       const envelope = await vault.seal(
-        { text: text.trim(), tags:postTags, media, reactionSecret: createReactionSecret() },
+        publishedContent,
         {
           id,
           kind: "post",
@@ -435,9 +438,9 @@ export function Composer({
       setTags([]);setOnBehalf("");
       setPhotos([]);
       setTimer("");
-      onPosted();
+      onPosted({row:{id,author_id:vault.member.id,author_device_id:vault.device.id,author_handle:vault.member.handle,envelope,created_at:createdAt,expires_at:expiresAt,audience,group_id:groupId||null,on_behalf_of:onBehalf||null,media_ids:media.map(p=>p.id)},content:publishedContent});
       }finally{if(durable&&!saved)await discardLocalPublication(vault.member.id,id);uploadAbort.current=null;setVideoProgress("");if(durable)await refreshPendingVideos();}
-    }, "Post shared.");
+    }, shareTabs ? undefined : "Post shared.");
   }
   if (vault.member.status === "restricted") return null;
   return (
@@ -447,7 +450,7 @@ export function Composer({
       data-draft-saved={shareTabs&&draft.ready&&!draft.unsaved&&!importingMedia?"true":undefined}
       onSubmit={submit}
     >
-      {shareTabs&&<div className="draft-status"><p className="small-copy" role="status">{!draft.ready&&!draft.error?"Restoring draft…":draft.status}</p><Alert>{draft.error}</Alert>{draft.error&&!draft.ready&&<Button type="button" onClick={draft.retryRestore}>Try restoring draft again</Button>}{draft.error&&draft.ready&&<Button type="button" onClick={draft.retry}>Retry saving draft</Button>}{(text||photos.length||videoSources.length||draft.error)&&<Button type="button" variant="outline compact" disabled={action.busy||importingMedia} onClick={()=>{if(window.confirm("Discard this draft and its selected photos/videos?"))void action.run(()=>draft.discard());}}>Discard draft</Button>}</div>}
+
       {pendingVideos.map(p=><div className="panel" key={p.id}><p>An encrypted upload is saved on this device ({localDate(p.createdAt)}).</p><Button type="button" disabled={action.busy} onClick={()=>void action.runSave(async()=>{const abort=new AbortController();uploadAbort.current=abort;try{await sendPublication(vault.member.id,p.id,abort.signal,setVideoProgress);onPosted();}finally{uploadAbort.current=null;setVideoProgress("");await refreshPendingVideos();}},"Upload shared.")}>Resume upload</Button><Button type="button" disabled={action.busy} onClick={()=>void action.run(async()=>{await cancelPublication(vault.member.id,p.id);await refreshPendingVideos();})}>Cancel upload</Button></div>)}
       {videoProgress&&<div role="status"><p>{videoProgress}</p><Button type="button" onClick={()=>uploadAbort.current?.abort()}>Pause upload</Button></div>}
       <fieldset disabled={action.busy||importingMedia||!draft.ready} className="composer-fields">
@@ -546,16 +549,11 @@ export function Composer({
           {videoSources[0]&&<VideoPicker key={videoSources[0].name+videoSources.length} file={videoSources[0]} onDone={()=>setVideoSources(current=>current.slice(1))} onPrepared={(video,name,captureDate)=>{const id=crypto.randomUUID();preparedVideos.current.set(id,video);setPhotos(current=>[...current,{id,name,alt:"",photoDate:captureDate,blob:video.blob,width:video.width,height:video.height,mime:video.mime,poster:video.poster,preview:video.preview,largeVideo:video}]);}}/>}
           <TimerSelect value={timer} onChange={setTimer} />
         </div>
-        <Button
-          variant="primary compact"
-          type="submit"
-          busy={action.busy}
-          disabled={videoSources.length>0||(mode==="photos"?!photos.length:!text.trim()&&!photos.length)}
-        >
-          {mode==="photos"?(album?"Add to album":"Share photos & videos"):"Share post"} <Icon name="arrow" size={16} />
-        </Button>
+
       </div>
+      <details className="composer-media-info"><summary>Video limits & storage</summary>
       <p className="muted">{largeVideosEnabled?"Videos: choose a full recording up to 10 minutes and a 1 GiB source. Prepare at 1080p or 720p, up to 250 MiB. Photos and videos share your 10 GB media allowance.":"Videos: MP4, MOV or WebM, up to 10 MiB and 4K. Playback depends on the viewer’s browser. Original video metadata is shared with your selected audience."}</p>
+      </details>
       <div className="composer-privacy">
         <Icon name="lock" size={13} />
         {groupId ? (
@@ -583,6 +581,21 @@ export function Composer({
         {mode==="post"&&<span className="character-count">{text.length}/5,000</span>}
       </div>
       </fieldset>
+      <footer className="composer-footer">
+        {shareTabs&&<><Alert>{draft.error}</Alert>{draft.error&&!draft.ready&&<Button type="button" onClick={draft.retryRestore}>Try restoring draft again</Button>}{draft.error&&draft.ready&&<Button type="button" onClick={draft.retry}>Retry saving draft</Button>}</>}
+        <div className="composer-actions">
+        <Button
+          variant="primary"
+          type="submit"
+          busy={action.busy}
+          disabled={importingMedia||!draft.ready||videoSources.length>0||(mode==="photos"?!photos.length:!text.trim()&&!photos.length)}
+        >
+          {mode==="photos"?(album?"Add to album":"Share photos & videos"):"Share post"} <Icon name="arrow" size={16} />
+        </Button>
+          {shareTabs&&(text||photos.length||videoSources.length||draft.error)&&<Button type="button" variant="outline compact composer-discard" disabled={action.busy||importingMedia} onClick={()=>{if(window.confirm("Discard this draft and its selected photos/videos?"))void action.run(()=>draft.discard());}}>Discard draft</Button>}
+          {shareTabs&&<span className="draft-status small-copy" role="status">{!draft.ready&&!draft.error?"Restoring draft…":draft.status}</span>}
+        </div>
+      </footer>
     </form>
   );
 }
@@ -765,6 +778,7 @@ export function Feed({
 export function PostCard({
   row,
   initialDetails,
+  initialContent,
   onChange,
   expanded = false,
   canModerate = false,
@@ -773,12 +787,13 @@ export function PostCard({
   contentFilter?: FeedContent;
   row: SocialObject;
   initialDetails?: Json | null;
+  initialContent?: Content;
   onChange: () => void;
   expanded?: boolean;
   canModerate?: boolean;
 }) {
   const vault = useVault();
-  const [content, setContent] = useState<Content | null>(null);
+  const [content, setContent] = useState<Content | null>(initialContent ?? null);
   const readableRef = useRef<HTMLParagraphElement>(null);
   const [error, setError] = useState("");
   const [showComments, setShowComments] = useState(expanded);
@@ -804,6 +819,9 @@ export function PostCard({
   const initialDetailsId = useRef("");
   const [unavailable, setUnavailable] = useState(false);
   const action = useAction();
+  const deletingId = useRef<string | null>(null);
+  const [deletion, setDeletion] = useState<{ id: string; status: "deleting" | "deleted" | "failed"; error?: string } | null>(null);
+  const currentDeletion = deletion?.id === row.id ? deletion : null;
   useEffect(() => {
     let alive = true;
     vault
@@ -873,14 +891,25 @@ export function PostCard({
   }, [content, error, unavailable, edit, expiry]);
   const own = row.author_id === vault.member.id;
   async function remove() {
-    if (
-      !confirm("Delete this post and its comments, reactions, and attachments? Photos added to albums remain available separately. Use Delete photo in Feed → Photos to remove those everywhere.")
-    )
+    if (action.busy || deletingId.current === row.id || currentDeletion?.status === "deleted") return;
+    if (!confirm("Delete this post and its comments, reactions, and attachments? Photos added to albums remain available separately. Use Delete photo in Feed → Photos to remove those everywhere.")) return;
+    const id = row.id;
+    deletingId.current = id;
+    setMenu(false);
+    setDeletion({ id, status: "deleting" });
+    try {
+      await del(`/posts/${id}`);
+    } catch (error) {
+      setDeletion({ id, status: "failed", error: "Deletion was not confirmed. You can try again. " + message(error) });
       return;
-    await action.run(async () => {
-      await del(`/posts/${row.id}`);
-      onChange();
-    });
+    } finally {
+      if (deletingId.current === id) deletingId.current = null;
+    }
+    // Hide the content immediately on confirmation, independently of a slow or
+    // failed parent refresh. Never report a refresh failure as a failed delete.
+    setDeletion({ id, status: "deleted" });
+    try { await onChange(); }
+    catch (error) { setDeletion({ id, status: "deleted", error: "Post deleted, but this view could not refresh. " + message(error) }); }
   }
   async function saveEdit() {
     await action.runSave(async () => {
@@ -919,6 +948,11 @@ export function PostCard({
       onChange();
     });
   }
+  if (currentDeletion?.status === "deleting" || currentDeletion?.status === "deleted")
+    return <article className="post-card panel" data-deletion-state={currentDeletion.status}>
+      {currentDeletion.status === "deleting" ? <Loading text="Deleting post…" /> : <div role="status">Post deleted.</div>}
+      <Alert>{currentDeletion.error}</Alert>
+    </article>;
   if (content && !matchesContent(content, contentFilter)) return null;
   if (unavailable)
     return (
@@ -928,6 +962,7 @@ export function PostCard({
     );
   return (
     <article ref={cardRef} data-feed-readable={content ? "true" : "false"} className="post-card panel">
+      <Alert>{currentDeletion?.error}</Alert>
       <header className="post-heading">
         <ActivityAuthor memberId={row.author_id} handle={row.author_handle} date={row.created_at} sharing={postAudienceLabel(row.audience,row.group_id)}/>
         <div className="post-menu">

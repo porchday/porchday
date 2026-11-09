@@ -12,7 +12,7 @@ const self = "00000000-0000-4000-8000-000000000001",
 const fixtureKeys=await generateDeviceKeys(self,"00000000-0000-4000-8000-000000000099");
 const bundle = await build({
   stdin: {
-    contents: `import {PostDraftStore} from './apps/web/src/post-draft-store';window.PostDraftStore=PostDraftStore;import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';import {isMemberPath} from './apps/web/src/routes';const root=createRoot(document.getElementById('root'));window.showRoute=path=>root.render(<PeopleDirectory><AppShell path={path} routeKey={path} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/></PeopleDirectory>);window.fixtureReady.then(()=>root.render(<PeopleDirectory>{location.pathname!=='/'&&isMemberPath(location.pathname)?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>));`,
+    contents: `import {PostDraftStore} from './apps/web/src/post-draft-store';window.PostDraftStore=PostDraftStore;import React from 'react';import {createRoot} from 'react-dom/client';import {PhotosCalendar} from './apps/web/src/PhotosCalendar';import {ChildrenSettings} from './apps/web/src/ChildrenSettings';import {Composer,EncryptedPhoto} from './apps/web/src/Social';import {validatedVideo} from './apps/web/src/video';window.validateVideo=validatedVideo;window.showMedia=media=>root.render(<EncryptedPhoto media={media}/>);import {PeopleDirectory} from './apps/web/src/PeopleTags';import {AppShell} from './apps/web/src/main';import {isMemberPath} from './apps/web/src/routes';const root=createRoot(document.getElementById('root'));window.showRoute=path=>root.render(<PeopleDirectory><AppShell path={path} routeKey={path} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/></PeopleDirectory>);window.addEventListener('popstate',()=>window.showRoute(location.pathname));window.fixtureReady.then(()=>root.render(<PeopleDirectory>{location.pathname!=='/'&&isMemberPath(location.pathname)?<AppShell path={location.pathname} routeKey={location.pathname} onLogout={async()=>{}} onAccountDeleted={async()=>{}}/>:location.pathname==='/children'?<ChildrenSettings/>:location.pathname==='/compose'?<Composer onPosted={()=>{}}/>:<PhotosCalendar/>}</PeopleDirectory>));`,
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -492,9 +492,17 @@ try {
   assert.equal(await page.locator('textarea#post-text').inputValue(),'Retained draft');
   assert.equal(await page.locator('.photo-draft').count(),2);
   await page.unroute('**/api/v1/posts');
+  let releaseFeed;const heldFeed=new Promise(resolve=>{releaseFeed=resolve;});
+  await page.route('**/api/v1/photo-feed?**',async route=>{await heldFeed;const published=calls.filter(c=>c.path==='/api/v1/posts').at(-1).body.envelope;const row={id:published.context.id,author_id:self,author_handle:'parent',created_at:published.context.createdAt,expires_at:null,audience:published.context.audience,envelope:published};await route.fulfill({contentType:'application/json',body:JSON.stringify({items:[{id:row.id,kind:'post',day:row.created_at.slice(0,10),author_id:self,author_handle:'parent',photo:null,post:row}],next:null})});});
   await page.getByRole('button',{name:'Share post',exact:true}).click();
-  await page.getByText('Post shared.',{exact:true}).waitFor().catch(async error=>{console.error(await page.locator('form.composer').innerText());throw error;});
-  await page.reload();await page.locator('textarea#post-text').waitFor();
+  await page.waitForURL(origin+'/');
+  await page.locator('.post-text').filter({hasText:'Retained draft'}).waitFor();
+  assert.equal(await page.locator('.post-text').filter({hasText:'Retained draft'}).count(),1,'confirmed post renders before feed response');
+  assert.equal(await page.locator('form.composer').isVisible(),false);
+  releaseFeed();await page.waitForLoadState('networkidle');
+  assert.equal(await page.locator('.post-text').filter({hasText:'Retained draft'}).count(),1,'feed reconciliation does not duplicate own post');
+  await page.unroute('**/api/v1/photo-feed?**');
+  await page.goto(origin+'/share');await page.locator('textarea#post-text').waitFor();
   assert.equal(await page.locator('textarea#post-text').inputValue(),'');assert.equal(await page.locator('.photo-draft').count(),0);
   // Failed persistent writes must retain the current editable draft and show a retry.
   await page.evaluate(()=>{window.originalDraftPut=IDBObjectStore.prototype.put;IDBObjectStore.prototype.put=function(){throw new DOMException('Synthetic quota exhaustion','QuotaExceededError');};});
@@ -507,7 +515,7 @@ try {
   page.once('dialog',dialog=>dialog.accept());
   await page.getByRole('button',{name:'Discard draft',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#post-text').value==='');
-  await page.reload();await page.locator('textarea#post-text').waitFor();
+  await page.waitForLoadState('networkidle');await page.reload();await page.locator('textarea#post-text').waitFor();
   assert.equal(await page.locator('textarea#post-text').inputValue(),'');
   assert.equal(await page.locator('.photo-draft').count(),0);
   assert.deepEqual(errors, []);

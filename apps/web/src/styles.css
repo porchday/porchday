@@ -4934,3 +4934,14 @@ button.trace-row:focus-visible {
 .reaction-people li { display: flex; align-items: center; gap: .75rem; padding: .6rem 0; overflow-wrap: anywhere; }
 
 .post-link { overflow-wrap: anywhere; text-decoration: underline; }
+
+/* Composer actions follow all media and audience choices on every viewport. */
+.composer .composer-photo-heading { font-size: .875rem; font-weight: 600; line-height: 1.4; margin: .75rem 0 .35rem; }
+.composer-media-info { margin-top: .75rem; font-size: .875rem; }
+.composer-media-info summary { cursor: pointer; width: fit-content; }
+.composer-media-info p { margin: .5rem 0; }
+.composer-footer { border-top: 1px solid var(--line, #e9ede1); padding-top: 1rem; margin-top: 1rem; }
+.composer-actions { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.composer-actions .draft-status { font-size: .75rem; flex: 1 1 12rem; }
+.composer .composer-actions .button.primary { min-height: 52px; padding: .65rem 1rem; font-size: 1rem; }
+.composer .composer-actions .composer-discard { min-height: 44px; padding: .35rem .6rem; font-size: .8125rem; }
