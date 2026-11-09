@@ -1,4 +1,4 @@
-import {cleanupDeniedSessionCandidates as cleanupDeniedSessions,enqueueCandidateContinuation} from './session-denial-candidates';
+import {cleanupDeniedSessions} from './session-denial-cleanup';
 import { Hono } from 'hono';
 import {requestTimingMiddleware} from './request-timing';
 import { bodyLimit } from 'hono/body-limit';
@@ -73,7 +73,7 @@ app.get('/.well-known/apple-app-site-association',c=>{
  return c.json({applinks:{details:[{appIDs:[team+'.'+bundle],components:[{'/':'/post/*',comment:'Open a Porchday post in the signed native app.'},{'/':'/app/post/*',comment:'Open a Porchday post in the signed native app.'}]}]}});
 });
 app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
- const result=await readOperationalHealth(c.env,c.get('requestTiming'));
+ const result=await readOperationalHealth(c.env);
  return c.json(result,result.status==='ok'?200:503);
 });
 app.use('/api/v1/*',prepareMemberAuth);
@@ -139,7 +139,7 @@ export default {
    if(env.SESSION_DENIAL_CLEANUP_V1==='true')ctx.waitUntil(env.JOBS.send({kind:'session_denial_cleanup'}));
   }
  },
- async queue(batch:MessageBatch<{kind:string;id?:string;denialProgressEtag?:string}>,env:Env){
+ async queue(batch:MessageBatch<{kind:string;id?:string}>,env:Env){
   await connectionScope('job:queue',async()=>{
   const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup'].includes(m.body.kind));
   if(cleanup.length){
@@ -169,9 +169,7 @@ export default {
    }catch(error){reportConnectionRefusal(env,error);event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
   }
   for(const message of batch.messages.filter(m=>m.body.kind==='session_denial_cleanup')){
-   try{const result=await cleanupDeniedSessions(env,message.body.denialProgressEtag);
-    if(result.continuation)await enqueueCandidateContinuation(env,result.continuation);
-    event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
+   try{const result=await cleanupDeniedSessions(env);event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
    catch{event('error',{code:'session_denial_cleanup_retry'},env);message.retry({delaySeconds:60});}
   }
   for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
@@ -180,4 +178,4 @@ export default {
   }
   });
  }
-} satisfies ExportedHandler<Env,{kind:string;id?:string;denialProgressEtag?:string}>;
+} satisfies ExportedHandler<Env,{kind:string;id?:string}>;
