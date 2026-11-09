@@ -204,3 +204,8 @@ The shared web shell uses the same ReactionChips component for post, comment and
 ## Photo history pending keys
 
 Original social-photo access refresh now permits pending-key members while requiring every currently eligible ready device; server history policy continues to control later catch-up. Album refresh behavior is unchanged. Shared iOS/macOS shells use the same worker, including page draining and silent automatic retries. No native bridge change is needed. Exact-source iOS/macOS CI and production deployment passed; [release evidence](evidence/reaction-access-release-2026-11-09.md). Member-specific acceptance remains #22.
+
+
+## Clickable post links
+
+Shared post text renders HTTP/HTTPS and www links as safe React anchors while preserving plain text and punctuation. Browser links use a separate tab with noopener/noreferrer. Existing WebShell navigation delegates open external URLs using UIApplication/NSWorkspace on iOS/macOS and keep the Porchday web view in place. No bridge or native binary change is needed. Chromium/WebKit link activation tests and tokenizer tests cover the change; exact-source native CI and deployment are pending. Physical external-browser handoff remains a follow-up in #203.

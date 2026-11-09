@@ -1,3 +1,4 @@
+import {PostText} from "./PostText";
 import {ReactionChips} from "./ReactionChips";
 import {prepareNotificationPreview} from './notification-previews';
 import {usePostDraft,type PendingPhoto} from './use-post-draft';
@@ -1048,7 +1049,7 @@ export function PostCard({
       ) : (
         <>
           <ReshareProvenance content={content} />
-          <p ref={readableRef} className="post-text">{content.text}</p>
+          <p ref={readableRef} className="post-text"><PostText text={String(content.text || "")}/></p>
           <Tags value={content.tags}/>
           {row.on_behalf_of && <p className="muted">Posted on behalf of {validTags(content.tags).find(t=>t.kind==="child"&&t.id===row.on_behalf_of)?.label||"a child"} by @{row.author_handle||"the author"}.</p>}
           {content.media && (

@@ -77,6 +77,7 @@ jobs:
         run: DRAFTS_ONLY=1 DRAFTS_BROWSER=webkit node scripts/check-photo-calendar.mjs
       - run: node scripts/check-existing-album-photos.mjs
       - run: node scripts/check-photo-interactions.mjs
+      - run: node scripts/check-post-links.mjs
       - run: node scripts/check-photo-viewer.mjs
       - run: node scripts/check-unified-feed.mjs
       - run: npm run build

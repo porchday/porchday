@@ -4932,3 +4932,5 @@ button.trace-row:focus-visible {
 .reaction-detail-tabs img { width: 1.5rem; height: 1.5rem; object-fit: contain; }
 .reaction-people { list-style: none; margin: 0; padding: 0; }
 .reaction-people li { display: flex; align-items: center; gap: .75rem; padding: .6rem 0; overflow-wrap: anywhere; }
+
+.post-link { overflow-wrap: anywhere; text-decoration: underline; }
