@@ -245,3 +245,10 @@ November 9, #168: the default iOS/macOS persistent WKWebView shells use the same
 Chromium/WebKit mobile and desktop regression exercises delayed decoding without moving the reading anchor, stable DOM identity, warm scroll without byte downloads, denial, account changes and expiry. Cache tests cover concurrent coalescing, budgets, eviction and late invalidation. Exact-source iOS simulator and macOS checks are required before production. Physical iPhone/Mac scrolling and memory-pressure acceptance remain under #168/#49/#114; no device performance measurement or new native binary is claimed. The optional previous Swift interface retains its existing native cache implementation.
 
 Stable-photo release follow-up: exact-source iOS simulator and macOS gates passed, and the shared UI is live in staging and production. Hosted encrypted-photo warm-scroll/access checks passed in both environments. [Release evidence](evidence/photo-scroll-cache-release-2026-11-09.md) records the deployed source and versions; physical-device scrolling remains unverified under #168/#49/#114.
+
+
+## Log-driven performance reductions
+
+The shared iOS/macOS WKWebView receives the same viewport-deferred photo conversation reads and session-memory notification enrollment receipts as web/PWA. Notification trust pins still refresh each minute; acknowledged unchanged server registrations refresh every 15 minutes, with immediate registration for subscription/generation changes and push configuration events. No delivery authorization is cached. Backend fenced journal preparation overlaps two immutable writes, drains both outcomes and admits SQL work only after both succeed. Native bridge contracts and signatures are unchanged. Exact-source simulator/macOS checks are required before release; physical-device latency remains unverified under #9/#168/#49/#114.
+
+Performance release follow-up: exact-source iOS simulator/macOS checks and hosted staging/production acceptance passed. [Release evidence](evidence/performance-top-three-release-2026-11-09.md) records sources, versions and timing results. Physical-device latency remains unverified.

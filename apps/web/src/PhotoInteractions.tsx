@@ -1,3 +1,4 @@
+import {useNearViewport} from "./near-viewport";
 import {ReactionChips} from "./ReactionChips";
 import {EmojiPicker} from "./EmojiPicker";
 import {validateReactionPayload,type ReactionPayload} from "@porchday/crypto/reactions";
@@ -14,6 +15,7 @@ export function validatePhotoInteraction(row:Row,photo:PhotoRow){
  (c.expiresAt?Date.parse(c.expiresAt):null)!==(photo.expires_at?Date.parse(photo.expires_at):null))throw Error("Photo conversation identity did not match its signed content.");
 }
 export function PhotoInteractions({photo}:{photo:PhotoRow}){
+ const {ref,near}=useNearViewport<HTMLElement>();
  const vault=useVault(),action=useAction();const [expired,setExpired]=useState(false),[expanded,setExpanded]=useState(false),[rows,setRows]=useState<Row[]>([]),[ownReaction,setOwnReaction]=useState<Row|null>(null),[next,setNext]=useState<string|null>(null),[text,setText]=useState("");
  const [picker,setPicker]=useState(false);const addButton=useRef<HTMLButtonElement>(null);
  const generation=useRef(0),pending=useRef<{envelope:EncryptedEnvelope;text:string}|null>(null);
@@ -25,7 +27,7 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
  useEffect(()=>{const deadline=photo.expires_at?Date.parse(photo.expires_at):null;const check=()=>setExpired(deadline!==null&&Date.now()>=deadline);check();if(deadline===null)return;const timer=setInterval(check,1000);return()=>clearInterval(timer);},[photo.id,photo.expires_at]);
  useEffect(()=>{if(expired){generation.current++;pending.current=null;setRows([]);setOwnReaction(null);setText("");}},[expired]);
  useEffect(()=>{pending.current=null;setText("");setRows([]);setOwnReaction(null);setNext(null);},[photo.id,vault.member.id]);
- useEffect(()=>{if(!expired)void action.run(()=>load());return()=>{generation.current++;};},[expired,photo.id,vault.member.id]);
+ useEffect(()=>{if(near&&!expired)void action.run(()=>load());return()=>{generation.current++;};},[near,expired,photo.id,vault.member.id,vault.device.id]);
  const own=ownReaction||rows.find(r=>r.kind==="reaction"&&r.author_id===vault.member.id),write=vault.member.status==="active";
  async function send(kind:"comment"|"reaction",value:string|ReactionPayload){await action.runSave(async()=>{
   if(kind==="reaction"&&own?.content?.emoji===(typeof value==="string"?value:value.emoji)){await del(`/photos/${photo.id}/interactions/${own.id}`);await load();return;}
@@ -38,7 +40,7 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
  if(expired)return <p>This photo has expired.</p>;
  const reactions=[...rows.filter(r=>r.kind==="reaction"&&!r.error),...(ownReaction&&!ownReaction.error&&!rows.some(r=>r.id===ownReaction.id)?[ownReaction]:[])];
  const comments=rows.filter(r=>r.kind==="comment");
- return <section className="photo-conversation" aria-label="Photo comments and reactions">
+ return <section ref={ref} className="photo-conversation" aria-label="Photo comments and reactions">
   <div className="post-actions"><div className="reaction-area"><div className="reaction-chips">
    <ReactionChips key={photo.id+':'+vault.member.id+':'+vault.device.id} viewerId={vault.member.id} entries={reactions.map(row=>({memberId:row.author_id,handle:row.author_id===vault.member.id?vault.member.handle:row.author_handle,payload:row.content as ReactionPayload}))} more={next?()=>void action.run(()=>load(next)):undefined} busy={action.busy} disabled={!write||action.busy} onToggle={value=>void send("reaction",value)}/>
    <button type="button" ref={addButton} className="reaction-add" aria-label="Add a reaction" aria-expanded={picker} disabled={!write||action.busy} onClick={()=>setPicker(true)}><Icon name="smile" size={18}/><Icon name="plus" size={10}/></button>
