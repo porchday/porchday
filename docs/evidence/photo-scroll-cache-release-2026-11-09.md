@@ -20,7 +20,7 @@ Production activated at 07:00 UTC November 10 (November 9 Pacific). API versions
 - Verified decrypted photo blobs use a memory-only LRU cache with a 48 MiB estimated budget and 96-entry cap. Accounting includes blob bytes, identity strings and estimated decoded pixels; this is not a total browser-process RAM limit. Entries expire after two minutes or the signed content deadline, whichever comes first, with proactive cleanup.
 - Photos within 400px above/below the viewport preload with at most three concurrent jobs and visible work prioritized. Far-offscreen object URLs are released. The observer fallback also remains bounded instead of downloading the whole feed.
 - A warm cache consumer reauthorizes through authenticated HEAD on the existing media route before using cached bytes. A miss uses authenticated GET and verifies/decrypts/validates the photo. Cached bytes are never an authorization decision.
-- Expiry, relevant access/content writes, account/device/key scope changes, logout and backgrounding invalidate or remove photos. Late invalidated results are rejected. Comments and reactions do not unnecessarily clear unchanged photos. Video playback/access behavior is unchanged.
+- Expiry, relevant access/content writes, account/device/key scope changes, logout and backgrounding invalidate or remove photos. Late invalidated results are rejected. Post comments/reactions were exempted. A later inspection found that actual photo-interaction endpoints still invalidated the cache; this is corrected and regression-tested in the [performance follow-up](performance-top-three-release-2026-11-09.md). Video playback/access behavior is unchanged.
 
 ## Validation
 

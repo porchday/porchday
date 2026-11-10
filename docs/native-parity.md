@@ -250,3 +250,5 @@ Stable-photo release follow-up: exact-source iOS simulator and macOS gates passe
 ## Log-driven performance reductions
 
 The shared iOS/macOS WKWebView receives the same viewport-deferred photo conversation reads and session-memory notification enrollment receipts as web/PWA. Notification trust pins still refresh each minute; acknowledged unchanged server registrations refresh every 15 minutes, with immediate registration for subscription/generation changes and push configuration events. No delivery authorization is cached. Backend fenced journal preparation overlaps two immutable writes, drains both outcomes and admits SQL work only after both succeed. Native bridge contracts and signatures are unchanged. Exact-source simulator/macOS checks are required before release; physical-device latency remains unverified under #9/#168/#49/#114.
+
+Performance release follow-up: exact-source iOS simulator/macOS checks and hosted staging/production acceptance passed. [Release evidence](evidence/performance-top-three-release-2026-11-09.md) records sources, versions and timing results. Physical-device latency remains unverified.
