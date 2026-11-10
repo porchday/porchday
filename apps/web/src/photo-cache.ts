@@ -1,13 +1,14 @@
 /** Memory only: cached pixels never authorize a read. Every new consumer checks
  * the existing authenticated bytes route with HEAD before reusing a blob. */
 export type CachedPhoto = {blob:Blob;width:number;height:number;expiresAt:number|null};
-type Entry = {value:CachedPhoto;until:number;cost:number};
+type Entry = {value:CachedPhoto;until:number;cost:number;timer:ReturnType<typeof setTimeout>};
 export class PhotoCache {
   private entries=new Map<string,Entry>();
   private pending=new Map<string,Promise<CachedPhoto>>();
   private generation=0;
   constructor(private budget=48*1024*1024,private ttl=120_000,private now=()=>Date.now()){}
-  clear(){this.generation++;this.entries.clear();this.pending.clear();}
+  private remove(key:string){const entry=this.entries.get(key);if(entry)clearTimeout(entry.timer);this.entries.delete(key);}
+  clear(){this.generation++;for(const key of this.entries.keys())this.remove(key);this.pending.clear();}
   async read(key:string,authorize:()=>Promise<void>,load:()=>Promise<CachedPhoto>){
     const existing=this.pending.get(key);if(existing)return existing;
     const generation=this.generation;
@@ -18,20 +19,23 @@ export class PhotoCache {
         if(generation!==this.generation)throw Error('Photo access changed.');
         if(old.until>this.now()){this.entries.delete(key);this.entries.set(key,old);return old.value;}
       }
-      this.entries.delete(key);
+      this.remove(key);
       if(generation!==this.generation)throw Error('Photo access changed.');
       const value=await load();
       if(generation!==this.generation)throw Error('Photo access changed.');
       const until=Math.min(this.now()+this.ttl,value.expiresAt??Infinity);
       if(!Number.isFinite(until)||until<=this.now())throw Error('This attachment expired.');
-      const cost=value.blob.size+value.width*value.height*4;
+      const cost=value.blob.size+value.width*value.height*4+key.length*2+256;
       if(Number.isSafeInteger(cost)&&cost>0&&cost<=this.budget){
-        this.entries.set(key,{value,until,cost});
+        const entry:Entry={value,until,cost,timer:setTimeout(()=>{if(this.entries.get(key)===entry)this.remove(key);},Math.max(0,until-this.now()))};
+        // Node-only tests should not keep a process alive for a cache expiry.
+        if(typeof entry.timer==='object'&&'unref' in entry.timer)entry.timer.unref();
+        this.entries.set(key,entry);
         let used=0;for(const entry of this.entries.values())used+=entry.cost;
-        while(used>this.budget){const first=this.entries.keys().next().value!;used-=this.entries.get(first)!.cost;this.entries.delete(first);}
+        while(used>this.budget||this.entries.size>96){const first=this.entries.keys().next().value!;used-=this.entries.get(first)!.cost;this.remove(first);}
       }
       return value;
-    })().catch(error=>{if(generation===this.generation)this.entries.delete(key);throw error;}).finally(()=>{if(this.pending.get(key)===work)this.pending.delete(key);});
+    })().catch(error=>{if(generation===this.generation)this.remove(key);throw error;}).finally(()=>{if(this.pending.get(key)===work)this.pending.delete(key);});
     this.pending.set(key,work);return work;
   }
 }

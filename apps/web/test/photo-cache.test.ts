@@ -17,13 +17,21 @@ describe('verified photo memory cache',()=>{
   await cache.read('account:key:media:proof',authorize,load);
   expect(load).toHaveBeenCalledTimes(1);expect(authorize).toHaveBeenCalledTimes(1);
  });
+ it('expires idle entries proactively and caps tiny-photo entry count',async()=>{
+  vi.useFakeTimers();try{const cache=new PhotoCache(),load=vi.fn(async()=>photo(Date.now()+50)),authorize=vi.fn(async()=>{});
+   await cache.read('a',authorize,load);await vi.advanceTimersByTimeAsync(60);
+   await cache.read('a',authorize,async()=>photo());expect(authorize).not.toHaveBeenCalled();cache.clear();
+   const tiny=new PhotoCache();for(let i=0;i<97;i++)await tiny.read(String(i),async()=>{},async()=>photo());
+   const again=vi.fn(async()=>photo());await tiny.read('0',async()=>{},again);expect(again).toHaveBeenCalledTimes(1);tiny.clear();
+  }finally{vi.useRealTimers();}
+ });
  it('denied access evicts cached bytes and cannot display a warm result',async()=>{
   const cache=new PhotoCache(),load=vi.fn(async()=>photo());await cache.read('a',async()=>{},load);
   await expect(cache.read('a',async()=>{throw Error('denied');},load)).rejects.toThrow('denied');
   await cache.read('a',async()=>{},load);expect(load).toHaveBeenCalledTimes(2);
  });
  it('enforces expiry and LRU byte plus decoded-pixel budgets',async()=>{
-  let now=0;const cache=new PhotoCache(810,100,()=>now),load=vi.fn(async()=>photo());
+  let now=0;const cache=new PhotoCache(1326,100,()=>now),load=vi.fn(async()=>photo());
   for(const key of ['a','b','a','c','a','b'])await cache.read(key,async()=>{},load);
   expect(load).toHaveBeenCalledTimes(4);now=101;await cache.read('b',async()=>{},load);expect(load).toHaveBeenCalledTimes(5);
   await expect(cache.read('expired',async()=>{},async()=>photo(100))).rejects.toThrow('expired');
