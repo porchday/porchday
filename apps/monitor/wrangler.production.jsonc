@@ -25,7 +25,8 @@
     "ENVIRONMENT": "production",
     "EMAIL_FROM": "Porchday <accounts@porchday.com>",
     "METRICS_ENABLED": "true",
-    "ANALYTICS_ACCOUNT_ID": "8e992aa185989f80520215b6489bfacb"
+    "ANALYTICS_ACCOUNT_ID": "8e992aa185989f80520215b6489bfacb",
+    "CAUSAL_METRICS_ENABLED": "true"
   },
   "observability": {
     "enabled": true,

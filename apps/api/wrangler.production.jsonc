@@ -31,7 +31,8 @@
     "PRIVACY_COMMIT_RECOVERY_V1": "true",
     "PRIVACY_COMMIT_WRITER_V1": "true",
     "JOURNAL_LATENCY_RECOVERY_V1": "true",
-    "JOURNAL_LATENCY_WRITER_V1": "true"
+    "JOURNAL_LATENCY_WRITER_V1": "true",
+    "OPERATIONAL_TRACING": "true"
   },
   "hyperdrive": [
     {
