@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Delivered November 10:** [#29](https://github.com/porchday/porchday/issues/29) and [#44](https://github.com/porchday/porchday/issues/44), P2, `needs verification`: Builder chat and Feature additions are hidden from production navigation; underlying routes/functionality/data remain intact. [Release evidence](docs/evidence/hidden-builder-navigation-2026-11-10.md). Physical-device confirmation and the reported loading failure remain open.
+
 **Delivered November 10:** [#168](https://github.com/porchday/porchday/issues/168), P1, `needs verification`: idle photo flashing from unrelated background sharing is fixed in staging and production. Scoped invalidation preserves visible photos with diagnostics off/on; full access/expiry/logout invalidation remains. Exact-source CI/native and hosted checks passed. [Release evidence](docs/evidence/idle-photo-flash-release-2026-11-10.md); physical-device confirmation remains open.
 
 **Delivered November 9:** [#9](https://github.com/porchday/porchday/issues/9), #55 and #168: parallel safe journal preparation, viewport-deferred photo conversations with actual interaction cache preservation, and bounded notification enrollment receipts are live in staging and production. Full exact-source CI/native and hosted checks passed. [Release evidence](docs/evidence/performance-top-three-release-2026-11-09.md) includes measured timings; physical-device performance remains `needs verification`.

@@ -45,7 +45,6 @@ struct MainTabs: View {
     @ObservedObject private var notifications = NativeNotifications.shared
     let member: Member
     @EnvironmentObject var model: AppModel
-    @State private var builderAvailable = false
     @State private var destination: String? = "feed"
     @State private var shareAlbum: String?
     @StateObject private var activity = NativeActivityStore()
@@ -64,7 +63,6 @@ struct MainTabs: View {
                     Label("Groups", systemImage: "person.3").tag("groups")
                     Label("Notifications", systemImage: "bell").tag("notifications")
                     Label("My wall", systemImage: "person.crop.rectangle").tag("wall")
-                    if builderAvailable { Label("Feature additions", systemImage: "chevron.left.forwardslash.chevron.right").tag("features") }
                     Label("Settings", systemImage: "gearshape").tag("settings")
                 }.navigationTitle("Porchday").navigationSplitViewColumnWidth(min: 180, ideal: 220)
             } detail: { NavigationStack { screen(destination ?? "feed") } }
@@ -86,7 +84,7 @@ struct MainTabs: View {
         .onAppear { if notifications.showFeed { destination = "feed"; notifications.showFeed = false } }
         .onReceive(NotificationCenter.default.publisher(for: Notification.Name("PorchdayPushReceived"))) { _ in Task { await feedReads.refresh() } }
         .onChange(of: notifications.showFeed) { _, value in if value { destination = "feed"; notifications.showFeed = false; NotificationCenter.default.post(name: Notification.Name("PorchdayFeedOpened"), object: nil); Task { await feedReads.refresh() } } }
-        .task(id: member.id) { builderAvailable = (try? await model.api.social("/builder-chat")) != nil; await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
+        .task(id: member.id) { await model.initializeProfileWallpaper(); await model.refreshHistoricalPosts() }
         .sheet(isPresented: $notifications.showInbox) { NavigationStack { NotificationsView().toolbar { Button("Done") { notifications.showInbox = false } } } }
         .sheet(isPresented: Binding(get: { model.deepLinkPost != nil }, set: { if !$0 { model.deepLinkPost = nil } })) { if let id = model.deepLinkPost { NavigationStack { PostDetailView(id: id).toolbar { Button("Done") { model.deepLinkPost = nil } } } } }
     }
@@ -95,10 +93,7 @@ struct MainTabs: View {
             NavigationLink("Groups") { screen("groups") }
             NavigationLink("Notifications") { screen("notifications") }
             NavigationLink("My wall") { screen("wall") }
-            if builderAvailable {
-                NavigationLink { screen("features") } label: { Label("Feature additions", systemImage: "chevron.left.forwardslash.chevron.right") }
-                NavigationLink("Builder chat") { screen("builder") }
-            }
+            // Builder tools remain implemented but are temporarily hidden from navigation.
             NavigationLink { screen("settings") } label: { Label("Settings", systemImage: "gearshape") }
             Button("Log out") { Task { await model.signOut() } }
         }.navigationTitle("More")
