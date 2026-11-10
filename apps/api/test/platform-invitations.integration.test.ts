@@ -281,6 +281,28 @@ suite('member platform invitations through real auth sessions and restricted SQL
   expect((await owner.query('SELECT claimed_user FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows[0].claimed_user).toBeNull();
   await owner.query('DELETE FROM public.auth_user WHERE id=$1',[a.id]);expect((await owner.query('SELECT count(*)::int AS n FROM public.platform_invitation_history WHERE sender_id=$1',[a.id])).rows[0].n).toBe(0);
  });
+ it('allows rejoining after verified recipient deletion while keeping replacement dedup and audit rows',async()=>{
+  const sender=await person(),other=await person(),email=randomUUID()+'@example.test';
+  await invite(sender.cookie,email);const original=await row(email),claim=randomUUID();
+  await owner.query('UPDATE public.pilot_invitations SET consumed_user=$1,claimed_at=now() WHERE token_hash=$2',[claim,original.token_hash]);
+  await owner.query('INSERT INTO public.auth_user(id,name,email,"emailVerified") VALUES($1,$2,$3,true)',[claim,'Synthetic rejoining member',email]);
+  // A verified account still blocks re-invitation, even after token cleanup.
+  await owner.query('DELETE FROM public.pilot_invitations WHERE consumed_user=$1',[claim]);
+  await invite(sender.cookie,email);expect(await row(email)).toBeUndefined();
+  // Identity cleanup's deletion trigger removes the receipt's claimant, while
+  // retaining the completed-join evidence and original invitation audit row.
+  await owner.query('DELETE FROM public.auth_user WHERE id=$1',[claim]);
+  const responses=await Promise.all([invite(sender.cookie,email),invite(other.cookie,email)]);
+  expect(responses.map(r=>r.status)).toEqual([202,202]);
+  const replacement=await row(email);expect(replacement.token_hash).not.toBe(original.token_hash);
+  expect(replacement.consumed_user).toBeNull();
+  const key=await invitationRecipientKey(env.BETTER_AUTH_SECRET,email);
+  expect((await owner.query('SELECT count(*)::int AS n FROM public.platform_invitation_requests WHERE recipient_key=$1 AND issued',[key])).rows[0].n).toBe(2);
+  expect((await owner.query('SELECT count(*)::int AS n FROM public.pilot_invitations WHERE email=$1',[email])).rows[0].n).toBe(1);
+  // Losing the new token does not exempt its newer issuance using the old join.
+  await owner.query('DELETE FROM public.pilot_invitations WHERE email=$1',[email]);
+  await invite(other.cookie,email);expect(await row(email)).toBeUndefined();
+ });
  it('preserves available legacy invitations and expires receipts independently of credential cleanup',async()=>{
   const a=await person(),token=await hashToken(randomUUID()),email=randomUUID()+'@example.test';
   await owner.query("INSERT INTO public.pilot_invitations(token_hash,email,sender_id,created_at,expires_at) VALUES($1,$2,$3,now()-interval '8 days',now()-interval '1 day')",[token,email,a.id]);

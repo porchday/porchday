@@ -60,9 +60,17 @@ export function createPlatformInvitationRoutes() {
     FROM public.platform_invitation_requests WHERE sender_id=$1 AND created_at>now()-interval '1 day'`,[c.get('memberId')]);
    if(quota.rows[0].count>=10){await db.query('ROLLBACK');c.header('Retry-After',String(quota.rows[0].retry));return c.json({error:{code:'INVITATION_LIMIT',message:'You can request up to 10 invitations in 24 hours. Please try later.'}},429);}
    await db.query("SELECT pg_advisory_xact_lock(hashtextextended('porchday-platform-recipient:'||$1,0))",[key]);
+   // A verified recipient who subsequently deleted their identity may rejoin.
+   // Only issuance predating that completed join is exempt: the replacement
+   // starts its own cooldown. Keep the original audit/quota rows, sender-deletion
+   // suppression, and the serialized live-account/live-invitation checks.
    const eligible=await db.query(`SELECT NOT EXISTS(SELECT FROM public.auth_user WHERE lower(email)=$1)
     AND NOT EXISTS(SELECT FROM public.pilot_invitations WHERE email=$1 AND expires_at>now() AND consumed_user IS NULL)
-    AND NOT EXISTS(SELECT FROM public.platform_invitation_requests WHERE recipient_key=$2 AND issued AND created_at>now()-interval '7 days') AS value`,[email,key]);
+    AND NOT EXISTS(SELECT FROM public.platform_invitation_requests r
+     WHERE r.recipient_key=$2 AND r.issued AND r.created_at>now()-interval '7 days'
+     AND NOT EXISTS(SELECT FROM public.platform_invitation_history h
+      WHERE h.recipient_key=r.recipient_key AND h.joined_at>=r.created_at
+       AND h.claimed_user IS NULL AND h.invitation_token_hash IS NULL AND h.revoked_at IS NULL)) AS value`,[email,key]);
    const issue=eligible.rows[0].value===true;
    const receipt=await db.query('INSERT INTO public.platform_invitation_requests(sender_id,recipient_key,issued) VALUES($1,$2,$3) RETURNING created_at',[c.get('memberId'),key,issue]);
    if(issue){
