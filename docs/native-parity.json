@@ -16,7 +16,10 @@
         "docs/native-parity.md#settings-organization",
         "docs/native-parity.md#notification-previews-and-tap-handling",
         "docs/native-parity.md#detailed-diagnostic-recordings",
-        "docs/native-parity.md#causal-observability"
+        "docs/evidence/app-switcher-appearance-2026-11-09.md",
+        "docs/native-parity.md#causal-observability",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
+        "docs/native-parity.md#log-driven-performance-reductions"
       ],
       "implementation": {
         "ios": "implemented",
@@ -26,7 +29,8 @@
         "https://github.com/porchday/porchday/issues/49",
         "https://github.com/porchday/porchday/issues/114",
         "https://github.com/porchday/porchday/issues/168",
-        "https://github.com/porchday/porchday/issues/177"
+        "https://github.com/porchday/porchday/issues/177",
+        "https://github.com/porchday/porchday/issues/208"
       ]
     },
     {
@@ -50,7 +54,14 @@
         "docs/native-parity.md#unified-media-selection-and-capture-dates",
         "docs/native-parity.md#pending-encryption-setup",
         "docs/native-parity.md#share-draft-autosave",
-        "docs/native-parity.md#reaction-attribution"
+        "docs/native-parity.md#reaction-attribution",
+        "docs/native-parity.md#clickable-post-links",
+        "docs/native-parity.md#post-deletion-feedback",
+        "docs/native-parity.md#composer-footer-and-confirmed-post-handoff",
+        "docs/native-parity.md#composer-timer-placement-207",
+        "docs/native-parity.md#causal-observability",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
+        "docs/native-parity.md#log-driven-performance-reductions"
       ],
       "implementation": {
         "ios": "implemented",
@@ -76,7 +87,9 @@
         "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
         "docs/native-parity.md#shared-web-shell",
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
-        "docs/native-parity.md#unified-media-selection-and-capture-dates"
+        "docs/native-parity.md#unified-media-selection-and-capture-dates",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
+        "docs/native-parity.md#log-driven-performance-reductions"
       ],
       "implementation": {
         "ios": "implemented",
@@ -106,7 +119,9 @@
         "docs/native-parity.md#pending-encryption-setup",
         "docs/native-parity.md#share-draft-autosave",
         "docs/native-parity.md#recovered-device-access-updates",
-        "docs/native-parity.md#quiet-automatic-updates"
+        "docs/native-parity.md#quiet-automatic-updates",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
+        "docs/native-parity.md#log-driven-performance-reductions"
       ],
       "implementation": {
         "ios": "implemented",
@@ -239,7 +254,8 @@
         "docs/native-parity.md#push-settings-feedback",
         "docs/native-parity.md#notification-previews-and-tap-handling",
         "docs/native-parity.md#encrypted-notification-content-previews",
-        "design/notification-content-previews.md"
+        "design/notification-content-previews.md",
+        "docs/native-parity.md#log-driven-performance-reductions"
       ],
       "implementation": {
         "ios": "implemented",

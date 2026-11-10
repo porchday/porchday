@@ -3,7 +3,7 @@ import {readdir,readFile} from 'node:fs/promises';
 import postgres,{type Sql} from 'postgres';
 import {randomUUID} from 'node:crypto';
 import {Hono} from 'hono';
-import {initializePrivacyJournal,readJournalControl,assertJournalReadable,beginPrivacyIntent,publishAuthPrivacyCommitScope,completePrivacyIntent,checkpointJournal,quarantineJournal,verifyJournalChain,detectStalePrivacyIntents,isPrivacyMutation,privacyMutationMiddleware,type JournalStore,type JournalDatabase,type JournalEvent} from '../src/privacy-journal';
+import {prepareFencedPrivacyIntent,initializePrivacyJournal,readJournalControl,assertJournalReadable,beginPrivacyIntent,publishAuthPrivacyCommitScope,completePrivacyIntent,checkpointJournal,quarantineJournal,verifyJournalChain,detectStalePrivacyIntents,isPrivacyMutation,privacyMutationMiddleware,type JournalStore,type JournalDatabase,type JournalEvent} from '../src/privacy-journal';
 import {replayPrivacyJournal,releasePrivacyQuarantine,reconcileDurableReceipts} from '../src/restore-journal';
 import type {Env,Variables} from '../src/types';
 
@@ -25,6 +25,25 @@ class MemoryDb implements JournalDatabase {
 }
 async function activate(store:MemoryStore){const r=await readJournalControl(store);await store.put('control.json',JSON.stringify({...r.value,mode:'active',reason:null}),{onlyIf:{etagMatches:r.etag}});}
 describe('Independent privacy checkpoint protocol',()=>{
+  it.each([null,'intents/','commit-scopes/'])('drains parallel immutable preparation before admission (failure: %s)',async failure=>{
+    const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);
+    const put=store.put.bind(store),started:string[]=[],releases:Array<()=>void>=[];let admitted=0;
+    const database:JournalDatabase={status:()=>db.status(),page:after=>db.page(after),prepareOperation:async()=>{admitted++;expect(started).toHaveLength(2);}};
+    store.put=async(key,text,options)=>{
+      if(key.startsWith('intents/')||key.startsWith('commit-scopes/')){
+        started.push(key);await new Promise<void>(resolve=>releases.push(resolve));
+        if(failure&&key.startsWith(failure))throw Error('immutable unavailable');
+      }
+      return put(key,text,options);
+    };
+    let settled=false;
+    const preparing=prepareFencedPrivacyIntent(store,database).then(value=>({value}),error=>({error})).finally(()=>{settled=true;});
+    await expect.poll(()=>started.length).toBe(2);expect(admitted).toBe(0);
+    releases[0]();await new Promise(resolve=>setTimeout(resolve,0));expect(settled).toBe(false);expect(admitted).toBe(0);
+    releases[1]();const result=await preparing;
+    if(failure){expect(result).toHaveProperty('error');expect(admitted).toBe(0);expect((await readJournalControl(store)).value.pending).toEqual([]);}
+    else{expect(result).toHaveProperty('value');expect(admitted).toBe(1);expect((await readJournalControl(store)).value.pending).toHaveLength(1);}
+  });
   it('rechecks a checkpoint that commits between parallel SQL and object snapshots',async()=>{
     const store=new MemoryStore(),db=new MemoryDb();await initializePrivacyJournal(store,db);await activate(store);
     const get=store.get.bind(store);let release!:()=>void;const gate=new Promise<void>(resolve=>{release=resolve;});let first=true;
