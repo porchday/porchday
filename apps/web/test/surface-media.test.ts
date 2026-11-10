@@ -5,7 +5,7 @@ import { planSurfacePhotos, PROFILE_SLOTS } from "../src/surface-media";
 import type { MediaPayload } from "../src/api";
 import type { PendingAsset } from "../src/Media";
 vi.mock("../src/vault", () => ({
-  useVault: () => ({ member: { id: "member", handle: "member" } }),
+  useVault: () => ({ device:{id:"device"},keys:[{getFingerprint:()=>"key"}],member: { id: "member", handle: "member" } }),
 }));
 import { AssetPicker } from "../src/Media";
 
