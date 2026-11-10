@@ -46,7 +46,7 @@ import { ColorSchemeControls } from "./ColorSchemeControls";
 import { canonicalNavigation } from "./domain-navigation";
 import { initSiteAppearance } from "./site-appearance";
 import { initColorScheme } from "./color-scheme";
-import { BuilderChat, builderChatAvailable } from "./BuilderChat";
+import { BuilderChat } from "./BuilderChat";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import { installTracing } from "./tracing";
 // Loaded on first visit so the inspector adds nothing to the main bundle.
@@ -305,7 +305,6 @@ const secondaryLinks = [
   ["/notifications", "bell", "Notifications"],
   ["/wall", "wall", "My wall"],
 ];
-const featureLink = ["/features", "code", "Feature additions"];
 const settingsLink = ["/settings/profile", "settings", "Settings"];
 function AppShell({
   path,
@@ -331,12 +330,8 @@ function AppShell({
     countedPath.current = path;
     get("/me").then(m => setCount(m.connection_count)).catch(() => {});
   }, [path]);
-  // Builder chat appears only for allowlisted members; see design/builder-chat.md.
-  const [builderChat, setBuilderChat] = useState(false);
-  useEffect(() => {
-    if (vault.member.status !== "suspended") builderChatAvailable().then(setBuilderChat);
-  }, []);
-  const sidebarLinks = vault.member.status === "suspended" ? [settingsLink] : [...primaryLinks.filter(([href])=>href!=="/menu"), ...secondaryLinks, ...(builderChat ? [featureLink,["/builder-chat","chat","Builder chat"]] : []), settingsLink];
+  // Builder tools remain routable but are temporarily hidden from navigation.
+  const sidebarLinks = vault.member.status === "suspended" ? [settingsLink] : [...primaryLinks.filter(([href])=>href!=="/menu"), ...secondaryLinks, settingsLink];
   async function logout() {
     if (hasPendingSaves()) return;
     setPublishedPost(null);
@@ -368,7 +363,7 @@ function AppShell({
   else if (path.startsWith("/albums/")) content = <AlbumDetail key={path.split("/")[2]} id={path.split("/")[2]}>{album=><PhotoCollection album={album}/>}</AlbumDetail>;
   else if (path === "/photos") content = <FeedExperience initialContent="photos" initialView="calendar" />;
   else if (path === "/share") content = null;
-  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/features">Feature additions</a>{builderChat && <a href="/builder-chat">Builder chat</a>}<a href="/settings/profile">Settings</a><Button disabled={writesPending} onClick={logout}><Icon name="logout"/>Log out</Button></section>;
+  else if (path === "/menu") content = <section className="panel form-stack"><h1 className="mobile-tab-title">More</h1><a href="/groups">Groups</a><a href="/notifications">Notifications</a><a href="/wall">My wall</a><a href="/settings/profile">Settings</a><Button disabled={writesPending} onClick={logout}><Icon name="logout"/>Log out</Button></section>;
   else if (path.startsWith("/post/"))
     content = <Feed singleId={path.split("/")[2]} />;
   else if (path.startsWith("/wall"))

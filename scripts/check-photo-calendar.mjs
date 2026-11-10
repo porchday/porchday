@@ -390,13 +390,12 @@ try {
   assert.equal(await page.locator(".app-mobile-header").getByRole("button").count(),0);
   assert.equal(await page.locator(".app-mobile-header").getByRole("link").count(),1);
   const main = page.locator("main");
-  assert.equal(await main.getByRole('link',{name:'Feature additions',exact:true}).locator('svg').count(),0);
+  assert.equal(await main.locator('a[href="/features"],a[href="/builder-chat"]').count(),0);
   const sidebar=page.locator('.sidebar nav');
   assert.equal(await sidebar.locator('a[href="/menu"]').count(),0);
-  await sidebar.locator('a[href="/builder-chat"]').waitFor({state:'attached'});
+  assert.equal(await sidebar.locator('a[href="/features"],a[href="/builder-chat"]').count(),0);
   await main.getByRole("button",{name:"Log out",exact:true}).waitFor();
   await main.getByRole("link",{name:"Notifications",exact:true}).waitFor();
-  await main.getByRole("link", { name: "Builder chat", exact: true }).waitFor();
   assert.equal(
     await main
       .getByRole("link", { name: "My wall", exact: true })
