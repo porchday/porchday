@@ -1,3 +1,6 @@
+import {createCausalInspector} from './causal-inspector';
+import {createOperationTrace,parseTraceparent,cleanupOperationalTraces,causalFailure} from './causal-tracing';
+import {tracedBindings} from './causal-bindings';
 import {notificationPreviewDelivery} from './notification-previews';
 import {cleanupDeniedSessionCandidates as cleanupDeniedSessions,enqueueCandidateContinuation} from './session-denial-candidates';
 import { Hono } from 'hono';
@@ -92,6 +95,8 @@ app.route('/api/staff/moderation',createModerationRoutes());
 app.use('/api/staff/builder-chat',requireStaff('builder_chat'));
 app.use('/api/staff/builder-chat/*',requireStaff('builder_chat'));
 app.route('/api/staff/builder-chat',createStaffBuilderChatRoutes());
+app.use('/api/staff/observability/*',requireStaff('builder_chat'));
+app.route('/api/staff/observability',createCausalInspector());
 app.use('/api/staff/diagnostics/*',requireStaff('builder_chat'));
 app.route('/api/staff/diagnostics',createStaffDiagnosticRoutes());
 app.route('/api/builder-bridge',createBuilderBridgeRoutes());
@@ -129,19 +134,29 @@ app.onError((_error,c)=>{traceError(_error);reportConnectionRefusal(c.env,_error
 
 export { app };
 export default {
- fetch:app.fetch,
+ fetch:(request:Request,env:Env,ctx:ExecutionContext)=>app.fetch(request,tracedBindings(env),ctx),
  async scheduled(controller:ScheduledController,env:Env,ctx:ExecutionContext){
+  env=tracedBindings(env);
+  const trace=createOperationTrace(env,undefined,task=>ctx.waitUntil(task),'cron');
+  const run=async()=>{
   ctx.waitUntil(connectionScope('job:cron',()=>recordConnectionSnapshot(env)).catch(()=>{}));
   if(controller.cron==='17 3 * * *'){
    if(env.MEDIA_BACKUP_ENABLED==='true')ctx.waitUntil(env.JOBS.send({kind:'media_backup_start'}));
    ctx.waitUntil(cleanupTraces(env).catch(()=>{}));
+   ctx.waitUntil(cleanupOperationalTraces(env));
    ctx.waitUntil(deleteDiagnostics(env).catch(()=>{}));
   }else {
    ctx.waitUntil(env.JOBS.send({kind:'expiry'}));
    if(env.SESSION_DENIAL_CLEANUP_V1==='true')ctx.waitUntil(env.JOBS.send({kind:'session_denial_cleanup'}));
   }
+  };
+  try{if(trace)await trace.run(run);else await run();trace?.finish(200);}catch(error){trace?.finish(500);throw error;}
  },
- async queue(batch:MessageBatch<{kind:string;id?:string;denialProgressEtag?:string}>,env:Env){
+ async queue(batch:MessageBatch<{kind:string;id?:string;denialProgressEtag?:string;traceparent?:string}>,env:Env,ctx?:ExecutionContext){
+  env=tracedBindings(env);
+  const trace=createOperationTrace(env,undefined,task=>ctx?.waitUntil(task),'queue');
+  for(const message of batch.messages){const parent=parseTraceparent(message.body.traceparent);if(parent)trace?.link(parent);}
+  const run=async()=>{
   await connectionScope('job:queue',async()=>{
   const cleanup=batch.messages.filter(m=>!['media_backup','media_backup_start','session_denial_cleanup'].includes(m.body.kind));
   if(cleanup.length){
@@ -181,5 +196,7 @@ export default {
    catch(error){reportConnectionRefusal(env,error);event('error',{code:'media_backup_retry'},env);message.retry({delaySeconds:60});}
   }
   });
+  };
+  try{if(trace)await trace.run(run);else await run();trace?.finish(200);}catch(error){trace?.finish(500);throw error;}
  }
 } satisfies ExportedHandler<Env,{kind:string;id?:string;denialProgressEtag?:string}>;

@@ -1,3 +1,4 @@
+import {causeOf} from './causal-links';
 import {NotificationPreviewEnrollment} from './NotificationPreviewEnrollment';
 import {attachDiagnostics} from './diagnostics';
 import {DiagnosticsIndicator} from './DiagnosticPanels';
@@ -18,7 +19,7 @@ import {
   createRecoverySecret,
   decryptObject,
   displayFingerprint,
-  encryptObject,
+  encryptObject as rawEncryptObject,
   fingerprint,
   generateDeviceKeys,
   signStatement,
@@ -51,6 +52,7 @@ import { startInitialProfileSetup,type InitialProfileState } from "./initial-pro
 import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } from "./recovery-selection";
 import { preparePostAudienceRefresh, startPostAudienceRefresh, type AudienceRefreshState, type RefreshPost } from "./post-audience-refresh";
 import { markOnce, traced } from "./tracing";
+const encryptObject=(...args:Parameters<typeof rawEncryptObject>)=>traced("encrypt",()=>rawEncryptObject(...args));
 type BackupDevice = {
   id: string;
   public_key: string;
@@ -685,7 +687,7 @@ export function VaultProvider({
       recipients:devices.map(d=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
   }
   function open(row: Parameters<typeof openContent>[0]) {
-    return traced("decrypt", () => openContent(row)).then((value) => {
+    return traced("decrypt", () => openContent(row),causeOf(row.envelope)).then((value) => {
       markOnce("first-decrypt");
       return value;
     });

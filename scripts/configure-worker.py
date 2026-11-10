@@ -79,6 +79,7 @@ base['limits']={'cpu_ms':30000}
 # Disabling invocation logs alone does not establish that provider-enriched
 # console/error records omit token-bearing request URLs. Keep application log
 # persistence/tracing off; aggregate metrics and the independent monitor remain.
+base['vars']['OPERATIONAL_TRACING']='true' if env.get('operational_tracing') is True else 'false'
 base['observability']={'enabled':False,'logs':{'enabled':False,'invocation_logs':False},'traces':{'enabled':False}}
 base['logpush']=False
 base['analytics_engine_datasets']=[{'binding':'METRICS','dataset':'porchday_'+name+'_operations_v1'}]

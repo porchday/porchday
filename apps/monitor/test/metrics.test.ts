@@ -118,3 +118,13 @@ describe('Bounded private aggregate metrics consumer',()=>{
   const notice=metricsAlertText('staging','recovery','outage');expect(notice.text).toContain('No account action is automatic');expect(JSON.stringify(notice)).not.toContain(env.CLOUDFLARE_ANALYTICS_READ_TOKEN);
  });
 });
+
+it('causal pipeline detects missing ingestion and sustained export loss',async()=>{
+ const {readCausalHealth}=await import('../src/metrics');
+ const now=Date.now(),stamp=new Date(now-1000).toISOString();
+ const env={ENVIRONMENT:'production' as const,METRICS_ENABLED:'true',CAUSAL_METRICS_ENABLED:'true',ANALYTICS_ACCOUNT_ID:'a'.repeat(32),CLOUDFLARE_ANALYTICS_READ_TOKEN:'b'.repeat(40)};
+ const query=(data:unknown[])=>async()=>Response.json({data});
+ expect(await readCausalHealth(env,now,query([]) as typeof fetch)).toBe(false);
+ expect(await readCausalHealth(env,now,query([{code:'export_ok',events:100,latest:stamp}]) as typeof fetch)).toBe(true);
+ expect(await readCausalHealth(env,now,query([{code:'export_ok',events:100,latest:stamp},{code:'export_failed',events:10,latest:stamp}]) as typeof fetch)).toBe(false);
+});

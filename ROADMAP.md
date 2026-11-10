@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Active owner request (November 9):** [#12 production observability and causal tracing](https://github.com/porchday/porchday/issues/12) is now P1 implementation work. Correlate browser/encryption, edge/API, journal/storage/database and jobs; retain bounded failure evidence and verify staging/production before completion. Vendor selection and paid ingestion are separate decisions.
+
 **Composer timer follow-up:** [#207](https://github.com/porchday/porchday/issues/207), P2: timer moved beside bottom actions and setup-sharing note removed; deployed and hosted-verified. [Evidence](docs/evidence/composer-timer-footer-2026-11-09.md).
 
 **Current native appearance fix:** [#208](https://github.com/porchday/porchday/issues/208), P2: use the selected background color for the app-switcher privacy cover. Available in internal TestFlight: iOS 362, macOS 345. Automated checks passed; physical app-switcher verification remains pending. [Evidence](docs/evidence/app-switcher-appearance-2026-11-09.md).
@@ -181,7 +183,7 @@ These retain their `deferred` labels and are not current release requirements. T
 | 1 | [#23 History preferences in exports](https://github.com/porchday/porchday/issues/23) | P2 | Explicitly reopen portable-schema work after the sharing contract is verified. Preserve old archives and never infer new sharing consent from missing fields. |
 | 2 | [#20 Federation protocol](https://github.com/porchday/porchday/issues/20) | P2 | Agree the protocol and cross-server trust/revocation model and a bounded interoperability pilot. Existing design work does not make federation a current launch gate. |
 | 3 | [#11 Google and GitHub sign-in](https://github.com/porchday/porchday/issues/11) | Unset | Demonstrate demand and approve account-linking/recovery scope after invited email/password access is dependable. |
-| 4 | [#12 Datadog integration](https://github.com/porchday/porchday/issues/12) | Unset | Identify a measured monitoring gap, a privacy-preserving signal plan and an approved ingestion budget. #8 must not wait for this vendor choice. |
+| 4 | [#12 Production observability](https://github.com/porchday/porchday/issues/12) | P1, active | Promoted by the owner November 9; see the active request above. Datadog is an optional backend pending the concrete ingestion decision. |
 | 5 | [#13 Technical human verification](https://github.com/porchday/porchday/issues/13) | Unset | Establish the abuse need and acceptable privacy, accessibility, false-positive and appeal tradeoffs before selecting enforcement. |
 
 ## November 1 closeout review

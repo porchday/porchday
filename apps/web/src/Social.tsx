@@ -1,3 +1,4 @@
+import {causeOf} from './causal-links';
 import {PostText} from "./PostText";
 import {ReactionChips} from "./ReactionChips";
 import {prepareNotificationPreview} from './notification-previews';
@@ -1204,7 +1205,7 @@ function LegacyEncryptedPhoto({ media, thumbnail=false, photoProof }: { media: M
           throw new Error("Unsupported media format.");
         const bytes = base64ToBytes(payload.bytes);
         if(photoProof)await verifyPhotoBytes(photoProof,bytes);
-        const { blob } = await traced("media decode", () => validatedMedia(bytes, media.mime), { bytes: bytes.length });
+        const { blob } = await traced("media decode", () => validatedMedia(bytes, media.mime), { bytes: bytes.length,...causeOf(payload) });
         if (!alive) return;
         const expiry = envelope.context.expiresAt
           ? Date.parse(envelope.context.expiresAt)
