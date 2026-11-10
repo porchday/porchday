@@ -54,14 +54,7 @@ jobs:
       - run: node --input-type=module -e "await import('./scripts/availability-report.ts')"
       - run: node --input-type=module -e "await import('./scripts/external-monitor-backup.ts'); await import('./scripts/external-monitor-relay.ts'); await import('./scripts/external-monitor-delivery.ts')"
       - run: node scripts/prepare-test-databases.ts
-      - name: Bound browser dependency downloads
-        run: |
-          # The hosted runner's Azure HTTP mirror stalled two exact-source runs.
-          # Keep dependency checks intact while using Ubuntu's HTTPS archive.
-          if [ -f /etc/apt/apt-mirrors.txt ]; then
-            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
-          fi
-          printf 'Acquire::Retries "2";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99-porchday-ci-downloads >/dev/null
+      - run: bash scripts/prepare-browser-ci.sh
       - run: npx playwright install --with-deps chromium webkit
         timeout-minutes: 8
       - run: npm test

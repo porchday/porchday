@@ -26,5 +26,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: bash scripts/prepare-browser-ci.sh
       - run: npx playwright install --with-deps chromium
+        timeout-minutes: 8
       - run: node scripts/check-reaction-save-feedback.mjs
