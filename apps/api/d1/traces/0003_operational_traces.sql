@@ -5,6 +5,7 @@ CREATE TABLE operational_traces (
  route TEXT NOT NULL,status INTEGER NOT NULL,reason TEXT NOT NULL,payload TEXT NOT NULL,
  PRIMARY KEY(trace_id,root_id)
 ) WITHOUT ROWID;
+CREATE INDEX operational_traces_root ON operational_traces(root_id);
 CREATE INDEX operational_traces_started ON operational_traces(started_at);
 CREATE INDEX operational_traces_expiry ON operational_traces(expires_at);
 CREATE INDEX operational_traces_status ON operational_traces(status,started_at);
