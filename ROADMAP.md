@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Active owner priority November 9:** [#9](https://github.com/porchday/porchday/issues/9) log-driven performance: overlap independent journal preparation writes (#55), defer off-screen photo conversations (#168), and suppress acknowledged unchanged notification-key registration for 15 minutes. Implementation and verification in progress; not deployed. Keep journal admission, authorization and revocation barriers unchanged.
+
 
 **Delivered November 9:** [#168 photo scrolling/cache](https://github.com/porchday/porchday/issues/168), P1, `needs verification`: stable photo geometry, unchanged-record retention and bounded memory caching with nearby preloading are live in staging and production. Exact-source web/iOS/macOS checks and real encrypted-photo warm-scroll acceptance passed; physical-device scrolling remains a follow-up. [Release evidence](docs/evidence/photo-scroll-cache-release-2026-11-09.md).
 **Delivered November 9:** [#12 production observability and causal tracing](https://github.com/porchday/porchday/issues/12), P1, needs verification. Cloudflare-hosted tracing and first-party investigation tools are live in staging and production across opted-in browser/encryption, edge/API, journal/storage/database and jobs. Hosted causal-chain and continuity checks passed. Physical-device, real staff-identity UI acceptance, isolated hosted exporter-failure drills and controlled overhead comparison remain follow-ups; see [release evidence](docs/evidence/causal-observability-release-2026-11-09.md).

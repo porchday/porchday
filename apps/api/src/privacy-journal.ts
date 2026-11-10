@@ -288,9 +288,15 @@ export async function prepareFencedPrivacyIntent(store:JournalStore,db:JournalDa
   if(!db.prepareOperation)stop('PRIVACY_ADMISSION_REQUIRED');
   const remote=await assertJournalReadable(store,db,undefined,recoverAuthCommits);
   const intent={id:crypto.randomUUID(),started_at:new Date().toISOString()},original=JSON.stringify({v:1,...intent});
-  await immutable(store,`intents/${intent.id}.json`,{v:1,...intent});
   const record={v:1,...intent,generation:remote.value.generation,transaction:kind==='auth'?'single-auth-transaction':'fenced-multi-transaction',intent_sha256:await sha256(original),baseline:{sequence:remote.value.sequence,head:remote.value.head}};
-  await immutable(store,`commit-scopes/v1/${intent.id}.json`,record);
+  // Both immutable objects are prerequisites for admission, but neither write
+  // depends on the other. Drain both outcomes before touching SQL or control;
+  // a partial failure leaves only unregistered, non-authorizing objects.
+  const writes=await Promise.allSettled([
+    immutable(store,`intents/${intent.id}.json`,{v:1,...intent}),
+    immutable(store,`commit-scopes/v1/${intent.id}.json`,record),
+  ]);
+  for(const result of writes)if(result.status==='rejected')throw result.reason;
   const scope:AuthPrivacyCommitScope={operationId:intent.id,scopeSha256:await sha256(JSON.stringify(record)),generation:remote.value.generation,admission:true,...(kind==='multi'?{transactionKind:'multi' as const}:{})};
   await db.prepareOperation!(scope);
   await registerPrivacyIntent(store,db,intent,recoverAuthCommits);

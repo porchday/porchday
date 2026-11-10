@@ -10,15 +10,22 @@ const preference=(member:string)=>'porchday-notification-content:'+member;
 export function contentPreviewsEnabled(member:string){return localStorage.getItem(preference(member))!=='off';}
 export async function setContentPreviews(member:string,enabled:boolean){localStorage.setItem(preference(member),enabled?'on':'off');if(!enabled){await del('/notification-previews/keys');await clearPreviewKeys();if(isNativeShell())await nativeCall('clearPreviewKeys');}window.dispatchEvent(new Event('porchday:push-changed'));}
 function trustedPreviewAuthors(){const pins:Record<string,string>={};for(let i=0;i<localStorage.length;i++){const name=localStorage.key(i)||'';if(/^porchday-key:[a-f0-9-]{36}:[a-f0-9-]{36}$/i.test(name)){const value=localStorage.getItem(name)||'';if(/^[a-f0-9]{40,64}$/i.test(value))pins[name.slice('porchday-key:'.length)]=value;}}return pins;}
-export async function enrollContentPreviews(vault:Vault,active:()=>boolean){
- if(!contentPreviewsEnabled(vault.member.id)||!active())return;
+export type PreviewEnrollmentReceipt={key?:string;at?:number};
+export async function enrollContentPreviews(vault:Vault,active:()=>boolean,receipt?:PreviewEnrollmentReceipt){
+ if(!contentPreviewsEnabled(vault.member.id)||!active()){if(receipt){delete receipt.key;delete receipt.at;}return;}
  const native=isNativeShell(),stored=JSON.parse(localStorage.getItem(native?'porchday-native-push-subscription':'porchday-push-subscription')||'null');if(stored?.memberId!==vault.member.id||!stored.id)return;
  const generation=previewGeneration(),pins=trustedPreviewAuthors();let identity:PreviewIdentity;
  if(native){const result=await nativeCall('notificationPreviewKey',{memberId:vault.member.id,deviceId:vault.device.id,pins}) as {keyId:string;publicKey:string};identity={v:1,purpose:'porchday-notification-key',memberId:vault.member.id,deviceId:vault.device.id,keyId:result.keyId,publicKey:result.publicKey};}
  else{const row=(await storedPreviewKeys()).find(r=>r.identity.memberId===vault.member.id&&r.identity.deviceId===vault.device.id);if(row){identity=row.identity;await savePreviewKey({...row,pins},generation);}else{const key=await notificationKey();identity={v:1,purpose:'porchday-notification-key',memberId:vault.member.id,deviceId:vault.device.id,keyId:crypto.randomUUID(),publicKey:key.publicKey};if(!active())return;await savePreviewKey({identity,privateKey:key.privateKey,pins},generation);}}
  if(!active()||generation!==previewGeneration())return;
+ // Keep local/native trust pins current each minute, but an acknowledged
+ // unchanged registration needs only a bounded repair refresh. This receipt is
+ // component/session memory, never an authorization or delivery cache.
+ const enrollmentKey=JSON.stringify([identity,native,stored.id,generation]);
+ if(receipt?.key===enrollmentKey&&receipt.at!==undefined&&Date.now()>=receipt.at&&Date.now()-receipt.at<15*60_000)return;
  const certificate=await signStatement(identity,vault.privateKey);if(!active()||generation!==previewGeneration()||!contentPreviewsEnabled(vault.member.id))return;
  await post('/notification-previews/keys',{certificate,native,subscription_id:stored.id});
+ if(receipt&&active()&&generation===previewGeneration()&&contentPreviewsEnabled(vault.member.id)){receipt.key=enrollmentKey;receipt.at=Date.now();}
 }
 export async function previewThumbnail(photo?:{blob:Blob;mime?:string;poster?:string}):Promise<string|undefined>{
  if(!photo)return;const blob=photo.mime?.startsWith('video/')?(photo.poster?new Blob([Uint8Array.from(atob(photo.poster),c=>c.charCodeAt(0))],{type:"image/jpeg"}):null):photo.blob;if(!blob)return;
