@@ -198,13 +198,55 @@ Automated validation: `NotificationPreviewTests` consumes a synthetic WebCrypto/
 
 ## Reaction attribution
 
-The shared web shell uses the same ReactionChips component for post, comment and photo reaction details on iOS and macOS. Long-press opens the list on touch; right-click and View reactions provide desktop and keyboard access. Normal clicks still toggle reactions. Photo lists retain pagination. No native bridge or binary change is required. Chromium/WebKit gesture regression covers inspection without mutation and scroll cancellation; physical iOS/macOS acceptance remains tracked in #201. Production deployment and exact-source native CI have not yet been verified for this change.
+The shared web shell uses the same ReactionChips component for post, comment and photo reaction details on iOS and macOS. Long-press opens the list on touch; right-click and View reactions provide desktop and keyboard access. Normal clicks still toggle reactions. Photo lists retain pagination. No native bridge or binary change is required. Chromium/WebKit gesture regression covers inspection without mutation and scroll cancellation; physical iOS/macOS acceptance remains tracked in #201. Production deployment and exact-source iOS/macOS CI passed; see [release evidence](evidence/reaction-access-release-2026-11-09.md).
 
 
 ## Photo history pending keys
 
-Original social-photo access refresh now permits pending-key members while requiring every currently eligible ready device; server history policy continues to control later catch-up. Album refresh behavior is unchanged. Shared iOS/macOS shells use the same worker, including page draining and silent automatic retries. No native bridge change is needed. Exact-source native CI and production deployment remain pending; member-specific acceptance remains #22.
+Original social-photo access refresh now permits pending-key members while requiring every currently eligible ready device; server history policy continues to control later catch-up. Album refresh behavior is unchanged. Shared iOS/macOS shells use the same worker, including page draining and silent automatic retries. No native bridge change is needed. Exact-source iOS/macOS CI and production deployment passed; [release evidence](evidence/reaction-access-release-2026-11-09.md). Member-specific acceptance remains #22.
+
+
+## Clickable post links
+
+Shared post text renders HTTP/HTTPS and www links as safe React anchors while preserving plain text and punctuation. Browser links use a separate tab with noopener/noreferrer. Existing WebShell navigation delegates open external URLs using UIApplication/NSWorkspace on iOS/macOS and keep the Porchday web view in place. No bridge or native binary change is needed. Chromium/WebKit link activation tests and tokenizer tests pass, as do exact-source iOS/macOS CI and hosted staging/production link activation. See [release evidence](evidence/clickable-post-links-release-2026-11-09.md). Physical external-browser handoff remains a follow-up in #203.
+
+
+## Post deletion feedback
+
+The shared PostCard used by web, PWA, iOS and macOS now shows Deleting post immediately after confirmation, suppresses duplicate submissions, and replaces the post with Post deleted on server confirmation independently of parent refresh. A failed request restores content with an actionable error above the post. The state is scoped to the post identity. Mobile Chromium/WebKit browser tests cover cancellation, delayed response, failure/retry, success with stale parent data and identity reuse. No native bridge change is required. Exact-source native CI and hosted staging/production acceptance passed; physical-device acceptance remains pending in #205. See [release evidence](evidence/share-feedback-release-2026-11-09.md).
+
+
+## Composer footer and confirmed post handoff
+
+Share, smaller Discard draft and local draft status are grouped in the bottom footer after media guidance and audience controls. Video/storage guidance is collapsed by default and the attachment subsection heading is smaller. Restore/save retry controls remain outside the disabled draft fieldset. Shared iOS/macOS shells use the same UI without a bridge change.
+
+After a post is confirmed, the Share tab opens Feed with that post immediately rendered from the author's in-memory confirmed row/content. It does not wait for the feed read or decryption round trip. Matching server rows reconcile without duplication; the temporary row is account-scoped, cleared on logout and respects expiry. Failed publication stays in Share with the draft intact. Tests exercise a deliberately held feed response, reconciliation, failed publication and encrypted draft recovery in Chromium and WebKit. Exact-source native CI and hosted staging/production verification passed; physical verification remains pending in #207. See [release evidence](evidence/share-feedback-release-2026-11-09.md).
+
+## App-switcher background (#208)
+
+The shared native iOS/macOS privacy cover follows the web UI's selected opaque background color (Autumn, Clean or generated pattern palette). A main-frame-only script observes appearance application; the existing exact-origin bridge accepts only six-digit hex colors. Only that color is cached locally for relaunch, with Autumn as the default. The cover remains opaque and its label chooses a contrasting foreground; no page screenshot or member content crosses the bridge. This is native-only and requires an updated signed app. Exact-source iOS/macOS tests and signing passed; iOS 362 and macOS 345 are available in internal TestFlight. Physical-device app-switcher verification remains pending in #208. See [release evidence](evidence/app-switcher-appearance-2026-11-09.md).
+
+## Composer timer placement (#207)
+
+The shared web/PWA/iOS/macOS composer places the expiration selector in the bottom action area with Share, below media and audience controls. Its preset and custom inputs remain disabled while publishing, importing or restoring a draft. The informational paragraph about people still setting up sharing is removed; sharing behavior is unchanged. No native bridge or signed binary change is needed. Hosted staging/production acceptance and exact-source native CI passed. See [release evidence](evidence/composer-timer-footer-2026-11-09.md). Physical-device acceptance remains pending in #207.
 
 ## Causal observability
 
 The shared web implementation records consented network, encryption/decryption and media decoding spans in the existing persistent iOS/macOS WKWebView. Both shells receive the same tracing headers and investigation UI; no new native bridge or permission is added. Recording remains opt-in and has existing stop/expiry/delete controls. Operational API/edge/database/storage/job traces contain no decrypted member content. Native OS photo-picker/decoder internals and provider internals are not instrumented by this change. Exact-source automated iOS/macOS checks are required for the release; physical-device correlation acceptance remains pending under #49/#114 and observability #12 until actually performed.
+
+## Recipient rejoin invitation repair (#213)
+
+The shared API permits a replacement invitation after a verified recipient has deleted their identity, without bypassing live-account checks or replacement cooldowns. This applies equally to the web/PWA and iOS/macOS shells; no native binary changes are required. Exact-source iOS and macOS CI passed before production. Hosted staging/production invitation checks passed; the reported recipient completed creation of an active, verified new account. Physical-device feature acceptance remains separate and unverified. [Release evidence](evidence/rejoin-invitation-release-2026-11-09.md).
+
+## Stable photo scrolling and memory cache
+
+November 9, #168: the default iOS/macOS persistent WKWebView shells use the same `CachedEncryptedPhoto` implementation as the web app. Signed photo dimensions reserve the frame before download/decode, captions stay mounted, equivalent record refreshes preserve the image, and only a 400px window around the viewport retains mounted photos. A 48 MiB, 96-entry memory-only LRU budget includes blob bytes, identities and estimated decoded pixels, with proactive expiry cleanup; nearby work is limited to three simultaneous loads with visible work prioritized. Cache reuse first performs an authenticated HEAD request through the existing media authorization route; misses perform an authenticated GET. No disk cache or permission cache is added. Expiry, writes affecting access/content, account/key changes, backgrounding and logout invalidate or remove photos, including late completions.
+
+Chromium/WebKit mobile and desktop regression exercises delayed decoding without moving the reading anchor, stable DOM identity, warm scroll without byte downloads, denial, account changes and expiry. Cache tests cover concurrent coalescing, budgets, eviction and late invalidation. Exact-source iOS simulator and macOS checks are required before production. Physical iPhone/Mac scrolling and memory-pressure acceptance remain under #168/#49/#114; no device performance measurement or new native binary is claimed. The optional previous Swift interface retains its existing native cache implementation.
+
+Stable-photo release follow-up: exact-source iOS simulator and macOS gates passed, and the shared UI is live in staging and production. Hosted encrypted-photo warm-scroll/access checks passed in both environments. [Release evidence](evidence/photo-scroll-cache-release-2026-11-09.md) records the deployed source and versions; physical-device scrolling remains unverified under #168/#49/#114.
+
+
+## Log-driven performance reductions
+
+The shared iOS/macOS WKWebView receives the same viewport-deferred photo conversation reads and session-memory notification enrollment receipts as web/PWA. Notification trust pins still refresh each minute; acknowledged unchanged server registrations refresh every 15 minutes, with immediate registration for subscription/generation changes and push configuration events. No delivery authorization is cached. Backend fenced journal preparation overlaps two immutable writes, drains both outcomes and admits SQL work only after both succeed. Native bridge contracts and signatures are unchanged. Exact-source simulator/macOS checks are required before release; physical-device latency remains unverified under #9/#168/#49/#114.
