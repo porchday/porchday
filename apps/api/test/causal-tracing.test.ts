@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {OperationTrace,causalSpan,parseTraceparent,safeRoute,causalError,type CausalRecord,d1CausalSink,causalBodyStream} from '../src/causal-tracing';
+import {OperationTrace,causalSpan,parseTraceparent,safeRoute,causalError,type CausalRecord,d1CausalSink} from '../src/causal-tracing';
 import {causalPostgres,causalPgQuery} from '../src/causal-database';
 import {tracedBindings} from '../src/causal-bindings';
 import type {Env} from '../src/types';
@@ -46,12 +46,12 @@ describe('causal telemetry',()=>{
   const env=tracedBindings({OPERATIONAL_TRACING:'true',MEDIA:bucket} as unknown as Env);
   await h.trace.run(async()=>{expect(await(await env.MEDIA.get('private/key'))!.text()).toBe('private');});h.trace.finish(200);await h.flush();expect(h.records[0].spans.map(s=>s.name)).toEqual(['r2.get','r2.body']);expect(JSON.stringify(h.records)).not.toContain('private');
  });
- it('observes stream completion and cancellation without eager pulls or payload retention',async()=>{
+ it('preserves native streaming identity, laziness and cancellation',async()=>{
   const h=harness();let pulls=0,cancelled:unknown;
-  const source=new ReadableStream<Uint8Array>({pull(c){pulls++;if(pulls===1)c.enqueue(new Uint8Array([4,5]));else c.close();},cancel(reason){cancelled=reason;}},{highWaterMark:0});
-  const stream=h.trace.run(()=>causalBodyStream(source));await Promise.resolve();expect(pulls).toBe(0);
-  h.trace.finish(200);expect([...new Uint8Array(await new Response(stream).arrayBuffer())]).toEqual([4,5]);await h.flush();expect(h.records.at(-1)!.spans[0].outcome).toBe('ok');
-  const second=h.trace.run(()=>causalBodyStream(new ReadableStream({cancel(reason){cancelled=reason;}},{highWaterMark:0})));await second.cancel('private reason');await h.flush();expect(cancelled).toBe('private reason');expect(h.records.at(-1)!.spans[1].outcome).toBe('cancelled');expect(JSON.stringify(h.records)).not.toContain('private reason');
+  const body=new ReadableStream<Uint8Array>({pull(c){pulls++;c.enqueue(new Uint8Array([4,5]));},cancel(reason){cancelled=reason;}},{highWaterMark:0});
+  const env=tracedBindings({OPERATIONAL_TRACING:'true',MEDIA:{get:async()=>({body,size:2})}} as unknown as Env);
+  await h.trace.run(async()=>{const object=await env.MEDIA.get('private/key');expect(object!.body).toBe(body);expect(object!.body).toBe(body);await Promise.resolve();expect(pulls).toBe(0);await object!.body.cancel('private reason');});
+  h.trace.finish(200);await h.flush();expect(cancelled).toBe('private reason');expect(h.records.at(-1)!.spans.map(s=>s.name)).toEqual(['r2.get','r2.stream.handoff']);expect(h.records.at(-1)!.spans[1].quantity).toBe(2);expect(JSON.stringify(h.records)).not.toContain('private');
  });
  it('records exporter loss independently of the failed trace store',async()=>{
   const signal=vi.fn();const sink=d1CausalSink({ENVIRONMENT:'staging',METRICS:{writeDataPoint:signal},TRACES:{prepare(){throw Error('storage down');}}} as unknown as Env);
