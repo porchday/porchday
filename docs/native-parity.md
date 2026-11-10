@@ -233,3 +233,7 @@ The shared web/PWA/iOS/macOS composer places the expiration selector in the bott
 ## Causal observability
 
 The shared web implementation records consented network, encryption/decryption and media decoding spans in the existing persistent iOS/macOS WKWebView. Both shells receive the same tracing headers and investigation UI; no new native bridge or permission is added. Recording remains opt-in and has existing stop/expiry/delete controls. Operational API/edge/database/storage/job traces contain no decrypted member content. Native OS photo-picker/decoder internals and provider internals are not instrumented by this change. Exact-source automated iOS/macOS checks are required for the release; physical-device correlation acceptance remains pending under #49/#114 and observability #12 until actually performed.
+
+## Recipient rejoin invitation repair (#213)
+
+The shared API permits a replacement invitation after a verified recipient has deleted their identity, without bypassing live-account checks or replacement cooldowns. This applies equally to the web/PWA and iOS/macOS shells; no native binary changes are required. Exact-source native CI remains required before production. Recipient inbox and physical-device signup remain unverified.

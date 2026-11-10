@@ -1,6 +1,8 @@
 # Porchday roadmap
 
-**Active owner request (November 9):** [#12 production observability and causal tracing](https://github.com/porchday/porchday/issues/12) is now P1 implementation work. Correlate browser/encryption, edge/API, journal/storage/database and jobs; retain bounded failure evidence and verify staging/production before completion. Vendor selection and paid ingestion are separate decisions.
+**Active owner request (November 9):** [#12 production observability and causal tracing](https://github.com/porchday/porchday/issues/12) is now P1 implementation work. Correlate browser/encryption, edge/API, journal/storage/database and jobs; retain bounded failure evidence and verify staging/production before completion. Keep telemetry in Cloudflare and provide first-party investigation tools, as selected by the owner.
+
+**In progress:** #213 fixes invitation cooldown blocking rejoin after a verified recipient deletes their account. Preserve request audit/quota rows and duplicate suppression; regression coverage includes concurrent replacement requests. Production rollout pending.
 
 **Composer timer follow-up:** [#207](https://github.com/porchday/porchday/issues/207), P2: timer moved beside bottom actions and setup-sharing note removed; deployed and hosted-verified. [Evidence](docs/evidence/composer-timer-footer-2026-11-09.md).
 
