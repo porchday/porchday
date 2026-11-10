@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+
+**Delivered November 9:** [#168 photo scrolling/cache](https://github.com/porchday/porchday/issues/168), P1, `needs verification`: stable photo geometry, unchanged-record retention and bounded memory caching with nearby preloading are live in staging and production. Exact-source web/iOS/macOS checks and real encrypted-photo warm-scroll acceptance passed; physical-device scrolling remains a follow-up. [Release evidence](docs/evidence/photo-scroll-cache-release-2026-11-09.md).
 **Delivered November 9:** [#12 production observability and causal tracing](https://github.com/porchday/porchday/issues/12), P1, needs verification. Cloudflare-hosted tracing and first-party investigation tools are live in staging and production across opted-in browser/encryption, edge/API, journal/storage/database and jobs. Hosted causal-chain and continuity checks passed. Physical-device, real staff-identity UI acceptance, isolated hosted exporter-failure drills and controlled overhead comparison remain follow-ups; see [release evidence](docs/evidence/causal-observability-release-2026-11-09.md).
 
 **Delivered November 9:** #213 fixes invitation cooldown blocking rejoin after a verified recipient deletes their account. Original request audit/quota rows and duplicate suppression are preserved. Hosted staging/production checks, exact-source native CI, continuity, monitoring and final inventory verification passed. [Release evidence](docs/evidence/rejoin-invitation-release-2026-11-09.md).

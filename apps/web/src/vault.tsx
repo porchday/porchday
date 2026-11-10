@@ -1,3 +1,4 @@
+import {invalidatePhotos} from "./photo-cache";
 import {causeOf} from './causal-links';
 import {NotificationPreviewEnrollment} from './NotificationPreviewEnrollment';
 import {attachDiagnostics} from './diagnostics';
@@ -154,6 +155,8 @@ export function VaultProvider({
   useEffect(() => {
     if (active) markOnce("vault-ready");
   }, [active]);
+  useEffect(()=>{invalidatePhotos();return invalidatePhotos;},[member.id,active?.key,active?.history.map(key=>key.getFingerprint()).sort().join(",")]);
+  useEffect(()=>{const clear=()=>invalidatePhotos();document.addEventListener('visibilitychange',clear);window.addEventListener('pagehide',clear);return()=>{document.removeEventListener('visibilitychange',clear);window.removeEventListener('pagehide',clear);};},[]);
   const [error, setError] = useState("");
   const [generated, setGenerated] = useState<{
     device: BackupDevice;
@@ -764,6 +767,7 @@ export function VaultProvider({
         verifyDevice: checkDevice,
         audience,
         clear: async () => {
+          invalidatePhotos();
           await forgetAllDevices();
           setActive(null);
         },

@@ -17,7 +17,8 @@
         "docs/native-parity.md#notification-previews-and-tap-handling",
         "docs/native-parity.md#detailed-diagnostic-recordings",
         "docs/evidence/app-switcher-appearance-2026-11-09.md",
-        "docs/native-parity.md#causal-observability"
+        "docs/native-parity.md#causal-observability",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache"
       ],
       "implementation": {
         "ios": "implemented",
@@ -57,7 +58,8 @@
         "docs/native-parity.md#post-deletion-feedback",
         "docs/native-parity.md#composer-footer-and-confirmed-post-handoff",
         "docs/native-parity.md#composer-timer-placement-207",
-        "docs/native-parity.md#causal-observability"
+        "docs/native-parity.md#causal-observability",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache"
       ],
       "implementation": {
         "ios": "implemented",
@@ -83,7 +85,8 @@
         "docs/native-parity.md#photo-viewer-and-action-row-parity--november-4-follow-up",
         "docs/native-parity.md#shared-web-shell",
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
-        "docs/native-parity.md#unified-media-selection-and-capture-dates"
+        "docs/native-parity.md#unified-media-selection-and-capture-dates",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache"
       ],
       "implementation": {
         "ios": "implemented",
@@ -113,7 +116,8 @@
         "docs/native-parity.md#pending-encryption-setup",
         "docs/native-parity.md#share-draft-autosave",
         "docs/native-parity.md#recovered-device-access-updates",
-        "docs/native-parity.md#quiet-automatic-updates"
+        "docs/native-parity.md#quiet-automatic-updates",
+        "docs/native-parity.md#stable-photo-scrolling-and-memory-cache"
       ],
       "implementation": {
         "ios": "implemented",

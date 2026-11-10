@@ -1,3 +1,4 @@
+import {CachedEncryptedPhoto} from "./CachedEncryptedPhoto";
 import {causeOf} from './causal-links';
 import {PostText} from "./PostText";
 import {ReactionChips} from "./ReactionChips";
@@ -1150,7 +1151,7 @@ export function PostCard({
     </article>
   );
 }
-export function EncryptedPhoto(props:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){return (props.media.videoVersion===2||props.media.videoVersion===3)?<SegmentedVideo media={props.media} thumbnail={props.thumbnail} photoProof={props.photoProof}/>:<LegacyEncryptedPhoto {...props}/>;}
+export function EncryptedPhoto(props:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){return (props.media.videoVersion===2||props.media.videoVersion===3)?<SegmentedVideo media={props.media} thumbnail={props.thumbnail} photoProof={props.photoProof}/>:props.media.mime==="image/jpeg"?<CachedEncryptedPhoto {...props}/>:<LegacyEncryptedPhoto {...props}/>;}
 function LegacyEncryptedPhoto({ media, thumbnail=false, photoProof }: { media: MediaPayload; thumbnail?:boolean; photoProof?:PhotoProof }) {
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();

@@ -4953,3 +4953,17 @@ button.trace-row:focus-visible {
 .trace-inspector label { display: grid; gap: 8px; }
 .trace-inspector input { width: 100%; min-width: 0; box-sizing: border-box; font-family: monospace; }
 .trace-inspector article > p { overflow-wrap: anywhere; }
+
+/* The signed geometry and captions occupy exactly the same space before decode. */
+.stable-photo-frame { position:relative; width:100%; overflow:hidden; }
+.stable-photo-frame > img, .stable-photo-frame > .photo-placeholder { position:absolute; inset:0; width:100%; height:100%; min-height:0; max-height:none; object-fit:contain; }
+.stable-photo figure { margin:0; }
+.calendar-thumbnail.stable-photo .stable-photo-frame { height:100%; aspect-ratio:auto !important; }
+.calendar-thumbnail.stable-photo .stable-photo-frame > img { object-fit:cover; }
+
+.post-photos .stable-photo-frame { max-height:500px; }
+.calendar-post .stable-photo-frame { max-height:300px; }
+.profile-cover-photo .stable-photo, .profile-avatar-photo .stable-photo { height:100%; }
+.profile-cover-photo .stable-photo-frame, .profile-avatar-photo .stable-photo-frame { height:100%; aspect-ratio:auto !important; }
+.profile-cover-photo .stable-photo-frame > img, .profile-avatar-photo .stable-photo-frame > img { object-fit:cover; }
+.profile-background-preview .stable-photo-frame { height:180px; aspect-ratio:auto !important; }

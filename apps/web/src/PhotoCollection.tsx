@@ -1,3 +1,4 @@
+import {canonicalJson} from "@porchday/crypto";
 import {PhotoInteractions} from "./PhotoInteractions";
 import {updatePhoto} from "./photo-update";
 import {type PhotoProof} from "@porchday/crypto/photos";
@@ -13,7 +14,9 @@ export {openPhoto,type PhotoRow,type PhotoGrant} from "./photo-record";
 import {addPhotoToAlbum} from "./photo-album";
 export function PhotoCard({photo,onChanged,album,header}:{photo:PhotoRow;onChanged:()=>void;album?:AlbumRow;header?:React.ReactNode}){
   const vault=useVault(),action=useAction();
-  const [content,setContent]=useState<Content|null>(null),[error,setError]=useState("");
+  const photoIdentity=canonicalJson(JSON.parse(JSON.stringify(photo)))+vault.member.id+vault.keys.map(key=>key.getFingerprint()).sort().join(',');
+  const [opened,setOpened]=useState<{identity:string;content:Content}|null>(null),[error,setError]=useState("");
+  const content=opened?.identity===photoIdentity?opened.content:null;
   const [adding,setAdding]=useState(false),[destination,setDestination]=useState("");
   const [choices,setChoices]=useState<{id:string;name:string}[]>([]);
   async function chooseAlbum(){setAdding(true);setDestination("");await action.run(async()=>{
@@ -25,11 +28,11 @@ export function PhotoCard({photo,onChanged,album,header}:{photo:PhotoRow;onChang
   });}
   const [editing,setEditing]=useState(false),[date,setDate]=useState(photo.photo_date),[caption,setCaption]=useState("");
   const [tags,setTags]=useState<ReturnType<typeof validTags>>([]),[confirm,setConfirm]=useState<"delete"|"remove"|null>(null);
-  useEffect(()=>{let alive=true;setContent(null);setError("");void(async()=>{
+  useEffect(()=>{let alive=true;setOpened(null);setError("");void(async()=>{
     let last:unknown=Error("No encrypted photo is available.");
-    for(const grant of photo.grants){try{const decoded=await openPhoto(vault,photo,grant);if(alive){setContent(decoded);setDate(photo.photo_date);setCaption(decoded.media![0].alt);setTags(validTags(decoded.media![0].tags));}return;}catch(e){last=e;}}
+    for(const grant of photo.grants){try{const decoded=await openPhoto(vault,photo,grant);if(alive){setOpened({identity:photoIdentity,content:decoded});setDate(photo.photo_date);setCaption(decoded.media![0].alt);setTags(validTags(decoded.media![0].tags));}return;}catch(e){last=e;}}
     if(alive)setError(message(last));
-  })();return()=>{alive=false;};},[photo,vault.member.id]);
+  })();return()=>{alive=false;};},[photoIdentity,vault.member.id,vault.privateKey]);
   async function save(){await action.runSave(async()=>{
     await updatePhoto(vault,photo,date,m=>({...m,alt:caption,tags}));setEditing(false);onChanged();
   },"Photo updated.");}
