@@ -1,12 +1,12 @@
 /** Memory-only decrypted JPEGs, not retained decoded bitmaps. Every new consumer checks
  * the existing authenticated bytes route with HEAD before reusing a blob. */
 export type CachedPhoto = {blob:Blob;width:number;height:number;expiresAt:number|null;parentId?:string|null};
-type Entry = {value:CachedPhoto;until:number;cost:number;timer:ReturnType<typeof setTimeout>};
+type Entry = {value:CachedPhoto;until:number;cost:number;timer?:ReturnType<typeof setTimeout>};
 export class PhotoCache {
   private entries=new Map<string,Entry>();
   private pending=new Map<string,Promise<CachedPhoto>>();
   private generation=0;
-  constructor(private budget=128*1024*1024,private ttl=30*60_000,private now=()=>Date.now()){}
+  constructor(private budget=128*1024*1024,private now=()=>Date.now()){}
   private remove(key:string){const entry=this.entries.get(key);if(entry)clearTimeout(entry.timer);this.entries.delete(key);}
   cancelPending(){this.generation++;this.pending.clear();}
   clear(matches?:(key:string,value?:CachedPhoto)=>boolean){
@@ -23,22 +23,28 @@ export class PhotoCache {
       if(old&&old.until>this.now()){
         await authorize();
         if(generation!==this.generation||this.pending.get(key)!==work)throw Error('Photo access changed.');
-        if(old.until>this.now()){this.entries.delete(key);this.entries.set(key,old);return old.value;}
+        if(old.until>this.now())return old.value; // FIFO: a hit does not move insertion order.
       }
       this.remove(key);
       if(generation!==this.generation)throw Error('Photo access changed.');
       const value=await load();
       if(generation!==this.generation||this.pending.get(key)!==work)throw Error('Photo access changed.');
-      const until=Math.min(this.now()+this.ttl,value.expiresAt??Infinity);
-      if(!Number.isFinite(until)||until<=this.now())throw Error('This attachment expired.');
+      const until=value.expiresAt??Infinity;
+      if((value.expiresAt!==null&&!Number.isFinite(until))||until<=this.now())throw Error('This attachment expired.');
       const cost=value.blob.size+key.length*2+256;
       if(Number.isSafeInteger(cost)&&cost>0&&cost<=this.budget){
-        const entry:Entry={value,until,cost,timer:setTimeout(()=>{if(this.entries.get(key)===entry)this.remove(key);},Math.max(0,until-this.now()))};
-        // Node-only tests should not keep a process alive for a cache expiry.
-        if(typeof entry.timer==='object'&&'unref' in entry.timer)entry.timer.unref();
+        const entry:Entry={value,until,cost};
         this.entries.set(key,entry);
+        // No age-based cache eviction. Only signed content expiry gets a timer.
+        const expire=()=>{
+          if(this.entries.get(key)!==entry)return;
+          const left=until-this.now();if(left<=0){this.remove(key);return;}
+          entry.timer=setTimeout(expire,Math.min(left,2147483647));
+          if(typeof entry.timer==='object'&&'unref' in entry.timer)entry.timer.unref();
+        };
+        if(Number.isFinite(until))expire();
         let used=0;for(const entry of this.entries.values())used+=entry.cost;
-        while(used>this.budget||this.entries.size>256){const first=this.entries.keys().next().value!;used-=this.entries.get(first)!.cost;this.remove(first);}
+        while(used>this.budget){const first=this.entries.keys().next().value!;used-=this.entries.get(first)!.cost;this.remove(first);}
       }
       return value;
     })().catch(error=>{if(generation===this.generation&&this.pending.get(key)===work)this.remove(key);throw error;}).finally(()=>{if(this.pending.get(key)===work)this.pending.delete(key);});

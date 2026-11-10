@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner performance fix November 10:** [#168](https://github.com/porchday/porchday/issues/168), P1: extend photo prefetch and decrypted-memory retention for smooth 10–20-screen scrolling. Six-screen prefetch, twenty-screen warm retention, 128 MiB/256-entry/30-minute JPEG cache, nearby-only image surfaces, and earlier metadata/pagination are implemented; validation and release pending. Logout/access/expiry cleanup and foreground authorization remain.
+**Current owner performance fix November 10:** [#168](https://github.com/porchday/porchday/issues/168), P1: extend photo prefetch and decrypted-memory retention for smooth 10–20-screen scrolling. Six-screen prefetch, twenty-screen warm retention, 128 MiB session JPEG cache with FIFO size eviction and no time limit, nearby-only image surfaces, and earlier metadata/pagination are implemented; validation and release pending. Logout/access/expiry cleanup and foreground authorization remain.
 
 **Delivered November 10:** [#29](https://github.com/porchday/porchday/issues/29) and [#44](https://github.com/porchday/porchday/issues/44), P2, `needs verification`: Builder chat and Feature additions are hidden from production navigation; underlying routes/functionality/data remain intact. [Release evidence](docs/evidence/hidden-builder-navigation-2026-11-10.md). Physical-device confirmation and the reported loading failure remain open.
 
