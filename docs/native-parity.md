@@ -263,3 +263,5 @@ Idle-photo release follow-up: exact-source iOS simulator/macOS and hosted stagin
 ## Hidden builder navigation
 
 Builder chat and Feature additions are temporarily absent from the shared web More menu and desktop sidebar, and from the SwiftUI iOS/macOS More menu and macOS sidebar. Their routes, screens, APIs and stored data remain intact. The default native hosted shells share the web navigation; the alternate SwiftUI navigation is updated too. Menu-only availability probes were removed. Exact-source native CI is required for production; physical-device confirmation and signed distribution remain separately unverified. Tracked in #29 and #44.
+
+Hidden-builder navigation release: exact-source iOS/macOS and hosted staging/production checks passed; [release evidence](evidence/hidden-builder-navigation-2026-11-10.md). Physical-device and signed-distribution status remain as documented.

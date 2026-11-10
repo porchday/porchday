@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner containment November 10:** [#29](https://github.com/porchday/porchday/issues/29) and [#44](https://github.com/porchday/porchday/issues/44), P2: hide Builder chat and Feature additions from web/iOS/macOS navigation while retaining underlying routes, functionality and data. Implementation complete; validation/release pending. The reported Feature additions loading failure remains unresolved.
+**Delivered November 10:** [#29](https://github.com/porchday/porchday/issues/29) and [#44](https://github.com/porchday/porchday/issues/44), P2, `needs verification`: Builder chat and Feature additions are hidden from production navigation; underlying routes/functionality/data remain intact. [Release evidence](docs/evidence/hidden-builder-navigation-2026-11-10.md). Physical-device confirmation and the reported loading failure remain open.
 
 **Delivered November 10:** [#168](https://github.com/porchday/porchday/issues/168), P1, `needs verification`: idle photo flashing from unrelated background sharing is fixed in staging and production. Scoped invalidation preserves visible photos with diagnostics off/on; full access/expiry/logout invalidation remains. Exact-source CI/native and hosted checks passed. [Release evidence](docs/evidence/idle-photo-flash-release-2026-11-10.md); physical-device confirmation remains open.
 
