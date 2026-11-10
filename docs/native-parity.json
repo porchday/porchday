@@ -24,7 +24,8 @@
         "docs/native-parity.md#idle-photo-cache-invalidation",
         "docs/evidence/idle-photo-flash-release-2026-11-10.md",
         "docs/native-parity.md#hidden-builder-navigation",
-        "docs/evidence/hidden-builder-navigation-2026-11-10.md"
+        "docs/evidence/hidden-builder-navigation-2026-11-10.md",
+        "docs/native-parity.md#photo-scrolling-runway"
       ],
       "implementation": {
         "ios": "implemented",
@@ -69,7 +70,8 @@
         "docs/native-parity.md#log-driven-performance-reductions",
         "docs/evidence/performance-top-three-release-2026-11-09.md",
         "docs/native-parity.md#idle-photo-cache-invalidation",
-        "docs/evidence/idle-photo-flash-release-2026-11-10.md"
+        "docs/evidence/idle-photo-flash-release-2026-11-10.md",
+        "docs/native-parity.md#photo-scrolling-runway"
       ],
       "implementation": {
         "ios": "implemented",
@@ -100,7 +102,8 @@
         "docs/native-parity.md#log-driven-performance-reductions",
         "docs/evidence/performance-top-three-release-2026-11-09.md",
         "docs/native-parity.md#idle-photo-cache-invalidation",
-        "docs/evidence/idle-photo-flash-release-2026-11-10.md"
+        "docs/evidence/idle-photo-flash-release-2026-11-10.md",
+        "docs/native-parity.md#photo-scrolling-runway"
       ],
       "implementation": {
         "ios": "implemented",
@@ -135,7 +138,8 @@
         "docs/native-parity.md#log-driven-performance-reductions",
         "docs/evidence/performance-top-three-release-2026-11-09.md",
         "docs/native-parity.md#idle-photo-cache-invalidation",
-        "docs/evidence/idle-photo-flash-release-2026-11-10.md"
+        "docs/evidence/idle-photo-flash-release-2026-11-10.md",
+        "docs/native-parity.md#photo-scrolling-runway"
       ],
       "implementation": {
         "ios": "implemented",

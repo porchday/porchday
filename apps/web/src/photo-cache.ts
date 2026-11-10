@@ -1,4 +1,4 @@
-/** Memory only: cached pixels never authorize a read. Every new consumer checks
+/** Memory-only decrypted JPEGs, not retained decoded bitmaps. Every new consumer checks
  * the existing authenticated bytes route with HEAD before reusing a blob. */
 export type CachedPhoto = {blob:Blob;width:number;height:number;expiresAt:number|null;parentId?:string|null};
 type Entry = {value:CachedPhoto;until:number;cost:number;timer:ReturnType<typeof setTimeout>};
@@ -6,8 +6,9 @@ export class PhotoCache {
   private entries=new Map<string,Entry>();
   private pending=new Map<string,Promise<CachedPhoto>>();
   private generation=0;
-  constructor(private budget=48*1024*1024,private ttl=120_000,private now=()=>Date.now()){}
+  constructor(private budget=128*1024*1024,private ttl=30*60_000,private now=()=>Date.now()){}
   private remove(key:string){const entry=this.entries.get(key);if(entry)clearTimeout(entry.timer);this.entries.delete(key);}
+  cancelPending(){this.generation++;this.pending.clear();}
   clear(matches?:(key:string,value?:CachedPhoto)=>boolean){
     if(!matches){this.generation++;for(const key of this.entries.keys())this.remove(key);this.pending.clear();return;}
     for(const [key,entry] of this.entries)if(matches(key,entry.value))this.remove(key);
@@ -30,14 +31,14 @@ export class PhotoCache {
       if(generation!==this.generation||this.pending.get(key)!==work)throw Error('Photo access changed.');
       const until=Math.min(this.now()+this.ttl,value.expiresAt??Infinity);
       if(!Number.isFinite(until)||until<=this.now())throw Error('This attachment expired.');
-      const cost=value.blob.size+value.width*value.height*4+key.length*2+256;
+      const cost=value.blob.size+key.length*2+256;
       if(Number.isSafeInteger(cost)&&cost>0&&cost<=this.budget){
         const entry:Entry={value,until,cost,timer:setTimeout(()=>{if(this.entries.get(key)===entry)this.remove(key);},Math.max(0,until-this.now()))};
         // Node-only tests should not keep a process alive for a cache expiry.
         if(typeof entry.timer==='object'&&'unref' in entry.timer)entry.timer.unref();
         this.entries.set(key,entry);
         let used=0;for(const entry of this.entries.values())used+=entry.cost;
-        while(used>this.budget||this.entries.size>96){const first=this.entries.keys().next().value!;used-=this.entries.get(first)!.cost;this.remove(first);}
+        while(used>this.budget||this.entries.size>256){const first=this.entries.keys().next().value!;used-=this.entries.get(first)!.cost;this.remove(first);}
       }
       return value;
     })().catch(error=>{if(generation===this.generation&&this.pending.get(key)===work)this.remove(key);throw error;}).finally(()=>{if(this.pending.get(key)===work)this.pending.delete(key);});
@@ -55,14 +56,20 @@ export function photoMatches(key:string,target?:PhotoInvalidation,value?:Pick<Ca
 }
 const listeners=new Set<(target?:PhotoInvalidation)=>void>();
 export function invalidatePhotos(target?:PhotoInvalidation){epoch++;photoCache.clear(target?(key,value)=>photoMatches(key,target,value):undefined);for(const listener of listeners)listener(target);}
+// Hide/revalidate views on background/foreground without discarding session JPEGs.
+export function refreshPhotoViews(){epoch++;photoCache.cancelPending();for(const listener of listeners)listener();}
 export function photoEpoch(){return epoch;}
 export function subscribePhotos(listener:(target?:PhotoInvalidation)=>void){listeners.add(listener);return()=>{listeners.delete(listener);};}
-// Only three byte/decrypt/decode jobs at once; choose visible work before nearby work.
+// Three speculative jobs; reserve a fourth slot for an actually visible photo.
 type Job={run:()=>Promise<void>;priority:()=>number;signal:AbortSignal;cancel:()=>void};
 const queue:Job[]=[];let running=0;
 function pump(){
   queue.sort((a,b)=>b.priority()-a.priority());
-  while(running<3&&queue.length){const job=queue.shift()!;if(job.signal.aborted){job.cancel();continue;}running++;void job.run().finally(()=>{running--;pump();});}
+  while(running<4&&queue.length){if(running>=3&&queue[0].priority()<=0)break;const job=queue.shift()!;if(job.signal.aborted){job.cancel();continue;}running++;void job.run().finally(()=>{running--;pump();});}
+}
+// Scrolling can promote an already queued preload into the reserved visible slot.
+if(typeof window!=='undefined'){
+ let frame=0;window.addEventListener('scroll',()=>{if(queue.length&&!frame)frame=requestAnimationFrame(()=>{frame=0;pump();});},{passive:true});
 }
 export function schedulePhoto<T>(work:()=>Promise<T>,priority:()=>number,signal:AbortSignal):Promise<T>{
   return new Promise((resolve,reject)=>{

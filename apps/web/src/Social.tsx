@@ -692,7 +692,7 @@ export function Feed({
       loadingMore.current = true;
       observer.disconnect();
       void load(true).finally(() => { loadingMore.current = false; });
-    }, {rootMargin: "300px"});
+    }, {rootMargin: `${Math.ceil(innerHeight*6)}px`});
     observer.observe(sentinel.current);
     return () => observer.disconnect();
   }, [infinite, cursor, action.busy, action.error]);
@@ -809,7 +809,7 @@ export function PostCard({
   const [editTags,setEditTags]=useState<PersonTag[]>([]);
   const [editMedia,setEditMedia]=useState<MediaPayload[]>([]);
   const [editTimer, setEditTimer] = useState("inherit");
-  const { ref: cardRef, near: cardNear } = useNearViewport<HTMLElement>();
+  const { ref: cardRef, near: cardNear } = useNearViewport<HTMLElement>(true,6);
   // Reuse only the matching response that already authorized this post view.
   const seed = initialDetails?.post?.id === row.id &&
     initialDetails.post.envelope?.ciphertext === row.envelope.ciphertext ? initialDetails : null;
