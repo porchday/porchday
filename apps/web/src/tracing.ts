@@ -1,3 +1,5 @@
+import {diagnosticStatus,recordDiagnostic} from './diagnostics';
+import {parseClientCause,linkResponse,linkValue,clientSpanId,clearClientCauses,clientParent} from './causal-links';
 /** Opt-in, first-party performance tracing (docs/performance-tracing.md).
  * Off unless the member turns it on for this browser in Settings → My data.
  * One trace covers one page load. The browser adds a `traceparent` header to
@@ -25,7 +27,7 @@ export type TraceSpan = {
   dur: number;
   attrs?: Attrs;
 };
-type FetchRecord = { method: string; url: string; start: number; end: number; status?: number; error?: string };
+type FetchRecord = { method: string; url: string; start: number; end: number; status?: number; error?: string; trace_id?:string; span_id?:string };
 
 let state: {
   traceId: string;
@@ -106,11 +108,12 @@ export function installTracing(): void {
     if (!headers.has("traceparent")) headers.set("traceparent", `00-${state.traceId}-${hex(8)}-01`);
     const record: FetchRecord = {
       method: (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase(),
-      url: url.href, start: performance.now(), end: 0,
+      url: url.href, start: performance.now(), end: 0, ...parseClientCause(headers.get("traceparent")),
     };
     try {
       const response = await original(input, { ...init, headers });
       record.status = response.status;
+      linkResponse(response,parseClientCause(headers.get("traceparent")));
       return response;
     } catch (error) {
       record.error = error instanceof Error ? error.name : "FetchError";
@@ -153,6 +156,7 @@ function stopCollection(): void {
   state.pending = [];
 }
 function uninstallTracing(): void {
+  clearClientCauses();
   stopCollection();
   state = null;
 }
@@ -188,16 +192,20 @@ export function markOnce(name: string): void {
 }
 /** Time client work such as decryption. A no-op when tracing is off. */
 export async function traced<T>(name: string, work: () => Promise<T>, attrs?: Attrs): Promise<T> {
-  if (!state) return work();
+  const recording=diagnosticStatus(),captured=state;
+  if (!state&&!recording) return work();
   const start = performance.now();
+  const traceId=typeof attrs?.trace_id==='string'?attrs.trace_id:state?.traceId??crypto.randomUUID().replaceAll('-',''),spanId=clientSpanId();
+  attrs={...attrs,trace_id:traceId,span_id:spanId,...(attrs?.span_id?{parent_span_id:attrs.span_id}:{})};
   let error: string | undefined;
   try {
-    return await work();
+    const result=await work();if((captured&&state===captured)||(recording&&recording===diagnosticStatus()))linkValue(result,{trace_id:traceId,span_id:spanId});return result;
   } catch (failure) {
     error = failure instanceof Error ? failure.message.slice(0, 300) : "failed";
     throw failure;
   } finally {
-    push({ kind: "measure", name, start, dur: performance.now() - start,
+    if(recording&&recording===diagnosticStatus()&&["decrypt","encrypt","media decode"].includes(name))recordDiagnostic("operation",{operation:name,stage:"complete",outcome:error?"failed":"succeeded",duration:performance.now()-start,trace:traceId,span:spanId,...(attrs?.parent_span_id?{parent:String(attrs.parent_span_id)}:{})});
+    if(captured&&state===captured)push({ kind: "measure", name, start, dur: performance.now() - start,
       attrs: error ? { ...attrs, error } : attrs });
   }
 }
@@ -270,6 +278,8 @@ function collect(final: boolean): void {
     if (!entry && !final && now - record.end < 2_000) { waiting.push(record); continue; }
     if (entry) used.add(entry);
     const attrs: Attrs = entry ? resourceAttrs(entry) : {};
+    if(record.trace_id)attrs.trace_id=record.trace_id;
+    if(record.span_id){attrs.span_id=record.span_id;const parent=clientParent(record.span_id);if(parent)attrs.parent_span_id=parent;}
     if (record.status !== undefined) attrs.status = record.status;
     if (record.error) attrs.error = record.error;
     // fetch() resolves when headers arrive. Resource Timing's responseEnd

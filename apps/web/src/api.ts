@@ -1,3 +1,4 @@
+import {causalRequestHeaders} from './causal-links';
 import { withPendingSave } from "./pending-saves";
 import type { EncryptedEnvelope, ContentContext } from "@porchday/crypto";
 export type { EncryptedEnvelope, ContentContext };
@@ -166,9 +167,9 @@ export async function request<T = Json>(
 }
 export const get = <T = Json>(path: string) => request<T>(path);
 export const post = <T = Json>(path: string, data: unknown = {}) =>
-  request<T>(path, { method: "POST", body: JSON.stringify(data) });
+  request<T>(path, { method: "POST", body: JSON.stringify(data),headers:causalRequestHeaders(data) });
 export const patch = <T = Json>(path: string, data: unknown) =>
-  request<T>(path, { method: "PATCH", body: JSON.stringify(data) });
+  request<T>(path, { method: "PATCH", body: JSON.stringify(data),headers:causalRequestHeaders(data) });
 export const del = <T = Json>(path: string) =>
   request<T>(path, { method: "DELETE" });
 export const auth = <T = Json>(path: string, data: unknown) =>

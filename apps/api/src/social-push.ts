@@ -1,3 +1,4 @@
+import {causalSpan} from './causal-tracing';
 import {feedPushMetadata,feedPushBody} from './feed-push-payload';
 import {runtimeSessionDenied} from './session-denial';
 import {Hono, type Context} from 'hono';
@@ -113,7 +114,7 @@ export async function processWebPush(env: Pick<Env, 'HYPERDRIVE_JOBS'|'ENVIRONME
           if(await runtimeSessionDenied(env,row.delivery.sessionId)){outcome='failed';}
           else {
             const request = webPushRequest(row.delivery.subscription, env, row.delivery.feed);
-            const response = await send(request.url, request.init);
+            const response = await causalSpan('http.push',()=>send(request.url, request.init));
             if (response.status >= 300 && response.status < 400) outcome = 'failed';
             else if (response.ok) outcome = 'sent';
             else if ([404, 410].includes(response.status)) outcome = 'gone';

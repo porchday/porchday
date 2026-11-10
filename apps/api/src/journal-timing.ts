@@ -1,3 +1,4 @@
+import {causalSpan} from './causal-tracing';
 import {event} from './telemetry';
 import type {Env} from './types';
 import type {JournalPhase} from './journal-phases';
@@ -27,9 +28,9 @@ export function logoutJournalTiming(env:Pick<Env,'ENVIRONMENT'|'METRICS'|'LOGOUT
  * Nested I/O durations overlap enclosing phases; do not sum all dimensions.
  */
 export async function measureJournalPhase<T>(timing:JournalTiming|undefined,phase:JournalPhase,work:()=>Promise<T>):Promise<T> {
- if(!timing)return work();
+ if(!timing)return causalSpan(phase,work);
  let start:number|undefined;
  try{start=performance.now();}catch{}
- try{return await work();}
+ try{return await causalSpan(phase,work);}
  finally{try{if(start!==undefined)timing.record(phase,performance.now()-start);}catch{}}
 }

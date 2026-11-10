@@ -1,3 +1,4 @@
+import {causalSpan,withoutCausalSummary} from './causal-tracing';
 import type {Context, MiddlewareHandler} from 'hono';
 import {feedTiming, type FeedTiming} from './feed-timing';
 import {FEED_PHASES, type FeedPhase} from './telemetry';
@@ -45,8 +46,8 @@ export function phaseTiming(c: Context<{Bindings: Env; Variables: Variables}>): 
 }
 
 export async function measureJournalRead<T>(timing: RequestTiming | undefined, phase: 'journal_r2' | 'journal_db', work: () => Promise<T>): Promise<T> {
-  if (!timing) return work();
+  if (!timing) return causalSpan(phase,work);
   const start = performance.now();
-  try {return await work();}
-  finally {timing.record(phase, performance.now() - start);}
+  try {return await causalSpan(phase,work);}
+  finally {withoutCausalSummary(()=>timing.record(phase, performance.now() - start));}
 }

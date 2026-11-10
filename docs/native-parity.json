@@ -15,7 +15,8 @@
         "docs/native-parity.md#quiet-automatic-updates",
         "docs/native-parity.md#settings-organization",
         "docs/native-parity.md#notification-previews-and-tap-handling",
-        "docs/native-parity.md#detailed-diagnostic-recordings"
+        "docs/native-parity.md#detailed-diagnostic-recordings",
+        "docs/native-parity.md#causal-observability"
       ],
       "implementation": {
         "ios": "implemented",
