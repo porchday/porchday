@@ -236,7 +236,7 @@ The shared web implementation records consented network, encryption/decryption a
 
 ## Recipient rejoin invitation repair (#213)
 
-The shared API permits a replacement invitation after a verified recipient has deleted their identity, without bypassing live-account checks or replacement cooldowns. This applies equally to the web/PWA and iOS/macOS shells; no native binary changes are required. Exact-source native CI remains required before production. Recipient inbox and physical-device signup remain unverified.
+The shared API permits a replacement invitation after a verified recipient has deleted their identity, without bypassing live-account checks or replacement cooldowns. This applies equally to the web/PWA and iOS/macOS shells; no native binary changes are required. Exact-source iOS and macOS CI passed before production. Hosted staging/production invitation checks passed; the reported recipient completed creation of an active, verified new account. Physical-device feature acceptance remains separate and unverified. [Release evidence](evidence/rejoin-invitation-release-2026-11-09.md).
 
 ## Stable photo scrolling and memory cache
 
@@ -245,3 +245,4 @@ November 9, #168: the default iOS/macOS persistent WKWebView shells use the same
 Chromium/WebKit mobile and desktop regression exercises delayed decoding without moving the reading anchor, stable DOM identity, warm scroll without byte downloads, denial, account changes and expiry. Cache tests cover concurrent coalescing, budgets, eviction and late invalidation. Exact-source iOS simulator and macOS checks are required before production. Physical iPhone/Mac scrolling and memory-pressure acceptance remain under #168/#49/#114; no device performance measurement or new native binary is claimed. The optional previous Swift interface retains its existing native cache implementation.
 
 Stable-photo release follow-up: exact-source iOS simulator and macOS gates passed, and the shared UI is live in staging and production. Hosted encrypted-photo warm-scroll/access checks passed in both environments. [Release evidence](evidence/photo-scroll-cache-release-2026-11-09.md) records the deployed source and versions; physical-device scrolling remains unverified under #168/#49/#114.
+

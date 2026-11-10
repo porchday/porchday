@@ -11,7 +11,7 @@ Reviewed application/asset source: `8625135d0caaf57729503f98b01333408314f774`.
 | Staging | `8dfb8e37-68cd-46b4-8fa0-030ff4465b8f` | `b44f0e50-9f57-49ef-9e46-10ed0aec4709` |
 | Production | `7e3bd27d-1ee6-4f32-afc2-47f19ae5de94` | `352355dd-e449-40b2-9bf7-76bcd9b9b4fa` |
 
-Production activated at 07:00 UTC November 10 (November 9 Pacific). API versions, journal behavior and database schemas were unchanged. Activation used the maintained native-parity-gated release tooling at `cce72b4ce5e486b5413ffa0b7cac43dadcb471e6`.
+Production activated at 07:00 UTC November 10 (November 9 Pacific). API versions, journal behavior and database schemas were unchanged by this rollout. The retained API revisions were staging `73ea06087106ab39f924f287a0cfc7bda8f91d69` and production `2138cb05c7f8bad67e260e7431e538e943286250`, including the separately released invitation fix. Activation used the maintained native-parity-gated release tooling at `cce72b4ce5e486b5413ffa0b7cac43dadcb471e6`.
 
 ## Behavior
 
