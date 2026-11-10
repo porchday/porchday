@@ -61,7 +61,8 @@
       "privacy_commit_recovery_v1": true,
       "privacy_commit_writer_v1": true,
       "journal_latency_recovery_v1": true,
-      "journal_latency_writer_v1": true
+      "journal_latency_writer_v1": true,
+      "operational_tracing": true
     },
     "production": {
       "bucket": "porchday-production-media",
@@ -123,7 +124,8 @@
       "privacy_commit_recovery_v1": true,
       "privacy_commit_writer_v1": true,
       "journal_latency_recovery_v1": true,
-      "journal_latency_writer_v1": true
+      "journal_latency_writer_v1": true,
+      "operational_tracing": true
     }
   },
   "staff_access_identity_provider_id": "76862f58-8faf-4670-9040-15cec794b211",
