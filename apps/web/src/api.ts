@@ -1,4 +1,4 @@
-import {invalidatePhotos} from "./photo-cache";
+import {invalidatePhotos,type PhotoInvalidation} from "./photo-cache";
 import {causalRequestHeaders} from './causal-links';
 import { withPendingSave } from "./pending-saves";
 import type { EncryptedEnvelope, ContentContext } from "@porchday/crypto";
@@ -162,7 +162,20 @@ export async function request<T = Json>(
     const data = await response.json().catch(() => ({}));
     if(response.status===401||response.status===403)invalidatePhotos();
     if (!response.ok) throw new ApiError(response.status, data);
-    if (!["GET","HEAD","OPTIONS"].includes((options.method||"GET").toUpperCase()) && !/\/(?:reactions|comments|interactions)(?:\/|$)/.test(path) && /(?:media|photos|posts|grants|albums|connections|groups|devices|sign-out|revoke|account)/.test(path)) invalidatePhotos();
+    if (!["GET","HEAD","OPTIONS"].includes((options.method||"GET").toUpperCase()) && !/\/(?:reactions|comments|interactions)(?:\/|$)/.test(path) && /(?:media|photos|posts|grants|albums|connections|groups|devices|sign-out|revoke|account)/.test(path)) {
+      // Background history sharing reserves/uploads new media and then updates
+      // one parent. It must not repeatedly clear every visible photo.
+      const route=path.replace(/^\/api\/v1/, '').split('?')[0];
+      let target:PhotoInvalidation|undefined;
+      const media=route.match(/^\/media\/([^/]+)(?:\/bytes)?$/);
+      const parent=route.match(/^\/posts\/([^/]+)\/audience-refresh$/)||route.match(/^\/photos\/([^/]+)\/grants\/[^/]+\/refresh$/);
+      if(media)target={mediaId:media[1]};
+      else if(parent&&options.method?.toUpperCase()==='POST')target={parentId:parent[1]};
+      else if(route==='/media'&&options.method?.toUpperCase()==='POST'&&typeof options.body==='string'){
+        try{const id=JSON.parse(options.body).id;if(typeof id==='string'&&id)target={mediaId:id};}catch{/* Unknown scope invalidates conservatively. */}
+      }
+      invalidatePhotos(target);
+    }
     return data as T;
   };
   return ["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase())
