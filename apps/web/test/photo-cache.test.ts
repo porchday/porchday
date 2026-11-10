@@ -1,7 +1,16 @@
 import {describe,it,expect,vi} from 'vitest';
+import {request} from '../src/api';
+import {photoEpoch} from '../src/photo-cache';
 import {PhotoCache,schedulePhoto} from '../src/photo-cache';
 const photo=(expiresAt:number|null=null)=>({blob:new Blob(['photo']),width:10,height:10,expiresAt});
 describe('verified photo memory cache',()=>{
+ it('retains photos for reactions/comments but invalidates deletion and access denial',async()=>{
+  const original=globalThis.fetch;globalThis.fetch=vi.fn(async()=>Response.json({ok:true}));
+  try{const before=photoEpoch();await request('/photos/id/reactions',{method:'POST'});await request('/posts/id/comments/comment',{method:'DELETE'});expect(photoEpoch()).toBe(before);
+   await request('/photos/id',{method:'DELETE'});expect(photoEpoch()).toBe(before+1);
+   globalThis.fetch=vi.fn(async()=>Response.json({error:'denied'},{status:403}));await expect(request('/photos/id')).rejects.toThrow();expect(photoEpoch()).toBe(before+2);
+  }finally{globalThis.fetch=original;}
+ });
  it('coalesces concurrent reads; warm reuse still authorizes without decoding again',async()=>{
   const cache=new PhotoCache(),authorize=vi.fn(async()=>{}),load=vi.fn(async()=>photo());
   await Promise.all(Array.from({length:20},()=>cache.read('account:key:media:proof',authorize,load)));

@@ -162,7 +162,7 @@ export async function request<T = Json>(
     const data = await response.json().catch(() => ({}));
     if(response.status===401||response.status===403)invalidatePhotos();
     if (!response.ok) throw new ApiError(response.status, data);
-    if (!["GET","HEAD","OPTIONS"].includes((options.method||"GET").toUpperCase()) && /(?:media|photos|posts|grants|albums|connections|groups|devices|sign-out|revoke|account)/.test(path)) invalidatePhotos();
+    if (!["GET","HEAD","OPTIONS"].includes((options.method||"GET").toUpperCase()) && !/\/(?:reactions|comments)(?:\/|$)/.test(path) && /(?:media|photos|posts|grants|albums|connections|groups|devices|sign-out|revoke|account)/.test(path)) invalidatePhotos();
     return data as T;
   };
   return ["GET", "HEAD", "OPTIONS"].includes((options.method || "GET").toUpperCase())
