@@ -1,4 +1,4 @@
-import {causalSpan,causalTraceparent,causalBodyStream} from './causal-tracing';
+import {causalSpan,causalTraceparent,causalStreamHandoff} from './causal-tracing';
 import type {Env} from './types';
 
 /** Bind receiver-sensitive platform methods; never inspect keys or values. */
@@ -9,9 +9,9 @@ function bucket(bucket:R2Bucket):R2Bucket{
   return (...args:unknown[])=>causalSpan('r2.'+String(key),async()=>{
    const result=await value.apply(target,args);
    if(key!=='get'||!result)return result;
-   let body:ReadableStream<Uint8Array>|undefined;
+   let handedOff=false;
    return new Proxy(result,{get(object,property){const member=Reflect.get(object,property);
-    if(property==='body'&&member)return body??=causalBodyStream(member);
+    if(property==='body'&&member){if(!handedOff){handedOff=true;causalStreamHandoff(object.range?.length??object.size);}return member;}
     if(typeof member!=='function')return member;
     return ['arrayBuffer','text','json','blob'].includes(String(property))?(...args:unknown[])=>causalSpan('r2.body',()=>member.apply(object,args)):member.bind(object);
    }});

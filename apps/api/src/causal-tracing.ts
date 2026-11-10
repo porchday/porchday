@@ -5,7 +5,7 @@ import type {Env} from './types';
  * Incoming IDs are correlation hints, never authorization or sampling decisions. */
 export type TraceContext={traceId:string;spanId:string};
 export type CausalSpan={id:string;parent:string;name:string;start:number;duration?:number;outcome:'pending'|'ok'|'error'|'cancelled';code?:string;quantity?:number;frames?:string[]};
-const names=new Set(['request','cron','queue','queue.send','queue.sendBatch','r2.get','r2.put','r2.head','r2.delete','r2.list','r2.body','d1.query','email.send','db.auth.query','db.social.query','db.jobs.query','db.auth.connect','db.social.connect','db.jobs.connect','db.auth.close','db.social.close','db.jobs.close','db.transaction','journal.r2.get','journal.r2.body','journal.r2.put','journal.db.status','journal.db.page','journal.db.prepare','journal.db.recover','journal.db.seal','journal.retry','journal.deadline','http.response','background','crypto','http.push','http.apns','http.email','http.other','http.backend','infra.snapshot']);
+const names=new Set(['request','cron','queue','queue.send','queue.sendBatch','r2.get','r2.put','r2.head','r2.delete','r2.list','r2.body','r2.stream.handoff','d1.query','email.send','db.auth.query','db.social.query','db.jobs.query','db.auth.connect','db.social.connect','db.jobs.connect','db.auth.close','db.social.close','db.jobs.close','db.transaction','journal.r2.get','journal.r2.body','journal.r2.put','journal.db.status','journal.db.page','journal.db.prepare','journal.db.recover','journal.db.seal','journal.retry','journal.deadline','http.response','background','crypto','http.push','http.apns','http.email','http.other','http.backend','infra.snapshot']);
 const phases=new Set(['journal_check','journal_close','auth_session','auth_status','social_connect_begin','social_actor','social_query','social_commit','social_close','journal_r2','journal_db','auth_schema','auth_schema_wait','operations_snapshot','operations_close','worker','read_guard','read_guard_close','rate_limit','initial_authorization','guard','registration','work','work_pool_acquire','work_begin','work_identity_lock','work_reauthorization','work_handler','work_commit','work_rollback','checkpoint','receipt','retirement','close','r2_read','r2_write','database_status','database_page','r2_media_get']);
 const codeSet=new Set(['CONNECT_TIMEOUT','CONNECTION_CLOSED','CONNECTION_ENDED','ECONNRESET','ECONNREFUSED','ETIMEDOUT','ABORT_ERR','JOURNAL_IO_DEADLINE','PRIVACY_CHECKPOINT_REQUIRED','journal_unavailable','journal_begin_failed','journal_work_failed','journal_completion_failed','journal_close_failed','journal_io_deadline','journal_io_exhausted','request_failed','auth_failed','cleanup_journal_failed','cleanup_retry','cleanup_expiry_failed','cleanup_identity_failed','cleanup_auth_metadata_failed','cleanup_web_push_failed','cleanup_native_push_failed','cleanup_email_failed','cleanup_heartbeat_failed','cleanup_ack_failed','media_backup_retry','session_denial_cleanup_retry']);
 export function causalError(error:unknown):string {
@@ -34,7 +34,7 @@ export class OperationTrace {
  readonly traceId:string;readonly rootId=id(8);readonly started=Date.now();readonly origin=performance.now();
  readonly spans:CausalSpan[]=[];readonly links:TraceContext[]=[];
  private sampled:boolean;
- private dropped=0;private droppedLinks=0;private revision=0;private ended=false;private status=0;private responseDuration=0;private route='/api/*';private failed=false;private flushing=false;private dirty=false;
+ private observed=0;private dropped=0;private droppedLinks=0;private revision=0;private ended=false;private status=0;private responseDuration=0;private route='/api/*';private failed=false;private flushing=false;private dirty=false;
  constructor(readonly environment:string,readonly release:string,readonly parent:TraceContext|undefined,readonly sink:Sink,readonly retain:(task:Promise<unknown>)=>void,sampled:boolean|undefined=undefined,readonly service:'api'|'edge'='api',readonly kind:'http'|'cron'|'queue'='http'){this.traceId=parent?.traceId??id(16);this.sampled=sampled??traceSampled(this.traceId);}
  run<T>(work:()=>T):T{return local.run({trace:this,parent:this.rootId},work);}
  link(context:TraceContext){if(traceSampled(context.traceId))this.sampled=true;if(this.links.some(l=>l.traceId===context.traceId&&l.spanId===context.spanId))return;if(this.links.length>=32){this.droppedLinks++;return;}this.links.push(context);}
@@ -45,6 +45,7 @@ export class OperationTrace {
   const span:CausalSpan={id:id(8),parent,name,start:Math.max(0,start-this.origin),outcome:'pending'};this.spans.push(span);if(this.ended)this.flush();return span;
  }
  complete(span:CausalSpan|undefined,error?:unknown,failed=false){
+  this.observed=Math.max(this.observed,performance.now()-this.origin);
   if(span){span.duration=Math.max(0,performance.now()-this.origin-span.start);span.outcome=failed?'error':span.outcome==='cancelled'?'cancelled':'ok';if(failed){span.code=causalError(error);const stack=(error as {stack?:unknown})?.stack;if(typeof stack==='string')span.frames=[...new Set(stack.match(/\b(?:index|edge|worker)\.js:\d{1,7}:\d{1,7}/g)??[])].slice(0,5);}}
   if(failed)this.failed=true;
   if(this.ended)this.flush();
@@ -52,7 +53,7 @@ export class OperationTrace {
  phase(name:string,duration:number){if(!phases.has(name)||!Number.isFinite(duration)||duration<0)return;const span=this.add('phase.'+name,local.getStore()?.parent??this.rootId,performance.now()-duration);this.complete(span);}
  finish(status:number,route?:string){this.responseDuration=performance.now()-this.origin;this.status=status;this.route=safeRoute(route);this.ended=true;this.flush();}
  private record():CausalRecord|undefined{
-  const duration=performance.now()-this.origin,reason=this.failed||this.status>=500?'error':duration>=2000?'slow':this.sampled?'sample':undefined;
+  const duration=Math.max(this.responseDuration,this.observed,this.spans.some(s=>s.outcome==='pending')?performance.now()-this.origin:0),reason=this.failed||this.status>=500?'error':duration>=2000?'slow':this.sampled?'sample':undefined;
   if(!reason)return;
   return {v:1,traceId:this.traceId,rootId:this.rootId,parentId:this.parent?.spanId,service:this.service,kind:this.kind,environment:this.environment,release:this.release,started:this.started,duration,responseDuration:this.responseDuration,route:this.route,status:this.status,revision:++this.revision,reason,droppedSpans:this.dropped,droppedLinks:this.droppedLinks,links:[...this.links],spans:this.spans.map(s=>({...s}))};
  }
@@ -78,19 +79,13 @@ export function causalCallback<T>(name:string,invoke:(done:(error?:unknown)=>voi
  const done=(error?:unknown)=>{if(finished)return;finished=true;scope.trace.complete(span,error,error!==undefined&&error!==null);};
  try{return local.run({trace:scope.trace,parent:span?.id??scope.parent},()=>invoke(done));}catch(error){done(error);throw error;}
 }
-/** Preserve pull backpressure: observe the returned body only when consumed.
- * No eager read, tee, payload inspection, or per-chunk telemetry. */
-export function causalBodyStream(stream:ReadableStream<Uint8Array>):ReadableStream<Uint8Array>{
- const scope=local.getStore();if(!scope)return stream;
- let reader:ReadableStreamDefaultReader<Uint8Array>|undefined,span:CausalSpan|undefined,started=false,ended=false;
- const begin=()=>{if(!started){started=true;span=scope.trace.add('r2.body',scope.parent);}};
- const finish=(error?:unknown,cancelled=false)=>{if(ended)return;ended=true;if(cancelled&&span)span.outcome='cancelled';scope.trace.complete(span,error,error!==undefined);};
- return new ReadableStream<Uint8Array>({
-  async pull(controller){begin();try{reader??=stream.getReader();const part=await reader.read();if(part.done){finish();reader.releaseLock();controller.close();}else controller.enqueue(part.value);}catch(error){finish(error);controller.error(error);}},
-  async cancel(reason){begin();try{if(reader)await reader.cancel(reason);else await stream.cancel(reason);finish(undefined,true);}catch(error){finish(error);throw error;}finally{reader?.releaseLock();}},
- },{highWaterMark:0});
+/** Returning the native stream preserves Content-Length, BYOB and cancellation.
+ * This observes handoff only; client resource timings measure body transfer. */
+export function causalStreamHandoff(bytes:unknown){
+ const scope=local.getStore();if(!scope)return;const span=scope.trace.add('r2.stream.handoff',scope.parent);
+ if(span&&typeof bytes==='number'&&Number.isSafeInteger(bytes)&&bytes>=0)span.quantity=bytes;
+ scope.trace.complete(span);
 }
-
 export function causalInfrastructure(code:string,count:number){
  if(!/^(max_connections|reserved_connections|(auth|social|jobs|other)_(active|idle|idle_in_transaction|idle_in_transaction_aborted|fastpath|disabled|unknown))$/.test(code)||!Number.isSafeInteger(count)||count<0||count>1000000)return;
  const scope=local.getStore();if(!scope)return;const span=scope.trace.add('infra.snapshot',scope.parent);if(span){span.code=code;span.quantity=count;}scope.trace.complete(span);
