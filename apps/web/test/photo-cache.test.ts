@@ -1,7 +1,7 @@
 import {describe,it,expect,vi} from 'vitest';
 import {request} from '../src/api';
 import {photoEpoch} from '../src/photo-cache';
-import {PhotoCache,schedulePhoto} from '../src/photo-cache';
+import {PhotoCache,schedulePhoto,photoMatches,photoCache} from '../src/photo-cache';
 const photo=(expiresAt:number|null=null)=>({blob:new Blob(['photo']),width:10,height:10,expiresAt});
 describe('verified photo memory cache',()=>{
  it('retains photos for reactions/comments but invalidates deletion and access denial',async()=>{
@@ -10,6 +10,34 @@ describe('verified photo memory cache',()=>{
    await request('/photos/id',{method:'DELETE'});expect(photoEpoch()).toBe(before+1);
    globalThis.fetch=vi.fn(async()=>Response.json({error:'denied'},{status:403}));await expect(request('/photos/id')).rejects.toThrow();expect(photoEpoch()).toBe(before+2);
   }finally{globalThis.fetch=original;}
+ });
+ it('targets background media/history writes without evicting unrelated photos',async()=>{
+  const original=globalThis.fetch;globalThis.fetch=vi.fn(async()=>Response.json({ok:true}));photoCache.clear();
+  const a=JSON.stringify({id:'visible'}),b=JSON.stringify({id:'background'}),loadA=vi.fn(async()=>({...photo(),parentId:'post-a'})),loadB=vi.fn(async()=>({...photo(),parentId:'post-b'}));
+  try{
+   await photoCache.read(a,async()=>{},loadA);await photoCache.read(b,async()=>{},loadB);
+   await request('/media',{method:'POST',body:JSON.stringify({id:'new-media'})});await request('/api/v1/media/new-media/bytes',{method:'PUT'});
+   await request('/posts/post-b/audience-refresh',{method:'POST'});await request('/media/new-media',{method:'DELETE'});
+   await photoCache.read(a,async()=>{},loadA);expect(loadA).toHaveBeenCalledTimes(1);
+   await photoCache.read(b,async()=>{},loadB);expect(loadB).toHaveBeenCalledTimes(2);
+   await request('/connections/peer',{method:'DELETE'});await photoCache.read(a,async()=>{},loadA);expect(loadA).toHaveBeenCalledTimes(2);
+   globalThis.fetch=vi.fn(async()=>Response.json({}, {status:403}));await expect(request('/unrelated')).rejects.toThrow();
+   await photoCache.read(a,async()=>{},loadA);expect(loadA).toHaveBeenCalledTimes(3);
+  }finally{globalThis.fetch=original;photoCache.clear();}
+ });
+ it('rejects scoped invalidated pending work without disturbing its replacement or unrelated loads',async()=>{
+  const cache=new PhotoCache(),a=JSON.stringify({id:'a'}),b=JSON.stringify({id:'b'});let releaseA!:(v:ReturnType<typeof photo>)=>void,releaseB!:(v:ReturnType<typeof photo>)=>void;
+  const old=cache.read(a,async()=>{},()=>new Promise(resolve=>{releaseA=resolve;}));const oldResult=old.catch(error=>error);
+  const other=cache.read(b,async()=>{},()=>new Promise(resolve=>{releaseB=resolve;}));
+  cache.clear(key=>photoMatches(key,{mediaId:'a'}));
+  const replacement=vi.fn(async()=>photo());await cache.read(a,async()=>{},replacement);
+  releaseA(photo());expect(await oldResult).toBeInstanceOf(Error);
+  releaseB(photo());await other;await cache.read(a,async()=>{},replacement);expect(replacement).toHaveBeenCalledTimes(1);cache.clear();
+ });
+ it('invalidates unknown parent scopes conservatively',()=>{
+  expect(photoMatches(JSON.stringify({id:'a'}),{parentId:'post-a'})).toBe(true);
+  expect(photoMatches(JSON.stringify({id:'a'}),{parentId:'post-a'},{parentId:null})).toBe(false); // Signed root media cannot belong to this post.
+  expect(photoMatches(JSON.stringify({id:'a'}),{parentId:'post-a'},{parentId:'post-b'})).toBe(false);
  });
  it('coalesces concurrent reads; warm reuse still authorizes without decoding again',async()=>{
   const cache=new PhotoCache(),authorize=vi.fn(async()=>{}),load=vi.fn(async()=>photo());

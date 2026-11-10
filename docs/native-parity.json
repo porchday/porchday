@@ -20,7 +20,9 @@
         "docs/native-parity.md#causal-observability",
         "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
         "docs/native-parity.md#log-driven-performance-reductions",
-        "docs/evidence/performance-top-three-release-2026-11-09.md"
+        "docs/evidence/performance-top-three-release-2026-11-09.md",
+        "docs/native-parity.md#idle-photo-cache-invalidation",
+        "docs/evidence/idle-photo-flash-release-2026-11-10.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -63,7 +65,9 @@
         "docs/native-parity.md#causal-observability",
         "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
         "docs/native-parity.md#log-driven-performance-reductions",
-        "docs/evidence/performance-top-three-release-2026-11-09.md"
+        "docs/evidence/performance-top-three-release-2026-11-09.md",
+        "docs/native-parity.md#idle-photo-cache-invalidation",
+        "docs/evidence/idle-photo-flash-release-2026-11-10.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -92,7 +96,9 @@
         "docs/native-parity.md#unified-media-selection-and-capture-dates",
         "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
         "docs/native-parity.md#log-driven-performance-reductions",
-        "docs/evidence/performance-top-three-release-2026-11-09.md"
+        "docs/evidence/performance-top-three-release-2026-11-09.md",
+        "docs/native-parity.md#idle-photo-cache-invalidation",
+        "docs/evidence/idle-photo-flash-release-2026-11-10.md"
       ],
       "implementation": {
         "ios": "implemented",
@@ -125,7 +131,9 @@
         "docs/native-parity.md#quiet-automatic-updates",
         "docs/native-parity.md#stable-photo-scrolling-and-memory-cache",
         "docs/native-parity.md#log-driven-performance-reductions",
-        "docs/evidence/performance-top-three-release-2026-11-09.md"
+        "docs/evidence/performance-top-three-release-2026-11-09.md",
+        "docs/native-parity.md#idle-photo-cache-invalidation",
+        "docs/evidence/idle-photo-flash-release-2026-11-10.md"
       ],
       "implementation": {
         "ios": "implemented",
