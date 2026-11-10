@@ -1,7 +1,7 @@
 import {applicationOrigin,initialState,observe,type Environment,type MonitorState} from './protocol';
 
 export interface MetricsConfig {
- ENVIRONMENT:Environment;METRICS_ENABLED?:string;ANALYTICS_ACCOUNT_ID?:string;
+ ENVIRONMENT:Environment;METRICS_ENABLED?:string;CAUSAL_METRICS_ENABLED?:string;ANALYTICS_ACCOUNT_ID?:string;
  // A dedicated account-scoped Account Analytics / Read token, never the
  // deployment capability. No runtime fallback to another credential exists.
  CLOUDFLARE_ANALYTICS_READ_TOKEN?:string;
@@ -72,6 +72,19 @@ export async function readMetrics(env:MetricsConfig,now:number,request:typeof fe
   method:'POST',headers:{Authorization:'Bearer '+env.CLOUDFLARE_ANALYTICS_READ_TOKEN,'Content-Type':'text/plain'},body:metricsQuery(env.ENVIRONMENT),redirect:'manual',signal,
  })),now));}catch{return null;}
 }
+/** Separate pipeline signal: application metrics can remain healthy while
+ * detailed trace persistence is broken. Query is bounded and contains no IDs. */
+export async function readCausalHealth(env:MetricsConfig,now:number,request:typeof fetch=fetch):Promise<boolean>{
+ if(env.CAUSAL_METRICS_ENABLED!=='true')return true;
+ if(!metricsConfigured(env))return false;
+ try{return await bounded(async signal=>{
+  const value=await readJson(await request(`https://api.cloudflare.com/client/v4/accounts/${env.ANALYTICS_ACCOUNT_ID}/analytics_engine/sql`,{method:'POST',headers:{Authorization:'Bearer '+env.CLOUDFLARE_ANALYTICS_READ_TOKEN,'Content-Type':'text/plain'},body:`SELECT blob3 AS code,sum(_sample_interval) AS events,max(timestamp) AS latest FROM porchday_${env.ENVIRONMENT}_operations_v1 WHERE timestamp>NOW()-INTERVAL '5' MINUTE AND blob1='porchday_causal_v1' AND blob2='${env.ENVIRONMENT}' GROUP BY code FORMAT JSON`,redirect:'manual',signal}));
+  const rows=(value as {data?:unknown[]})?.data;if(!Array.isArray(rows)||rows.length>6)return false;
+  let success=0,loss=0,latest=0;
+  for(const raw of rows){const row=raw as {code:string;events:unknown;latest:string};const events=number(row.events),at=Date.parse(row.latest.replace(' ','T').replace(/Z?$/,'Z'));if(!Number.isFinite(at)||at>now+60000)return false;if(row.code==='export_ok'){success+=events;latest=Math.max(latest,at);}else if(['export_failed','export_dropped','export_oversize'].includes(row.code))loss+=events;}
+  return success>0&&now-latest<=5*60000&&!(loss>=5&&loss/(loss+success)>=0.01);
+ });}catch{return false;}
+}
 export async function heartbeat(environment:Environment,request:typeof fetch=fetch):Promise<boolean> {
  if(!['staging','production'].includes(environment))return false;
  try{return await bounded(async signal=>{
@@ -112,7 +125,7 @@ export async function checkMetrics(previous:MetricsState,env:MetricsConfig,now:n
  }
  state.startedAt??=now;
  const poll=state.lastPollTick<0||tick-state.lastPollTick>=5;
- const [alive,rows]=await Promise.all([heartbeat(env.ENVIRONMENT,request),poll?readMetrics(env,now,request):Promise.resolve(undefined)]);
+ const [alive,rows,causalHealthy]=await Promise.all([heartbeat(env.ENVIRONMENT,request),poll?readMetrics(env,now,request):Promise.resolve(undefined),poll?readCausalHealth(env,now,request):Promise.resolve(true)]);
  if(alive)state.heartbeatLastAt=now;
  if(!poll)return state;
  state.lastPollTick=tick;state.checkedAt=now;
@@ -122,7 +135,7 @@ export async function checkMetrics(previous:MetricsState,env:MetricsConfig,now:n
  // can never be classified as idle member traffic or used to clear an alert.
  const warming=rows!==null&&!fresh&&now-state.startedAt<5*60000;
  state.readiness=rows===null?'unavailable':fresh?'ready':warming?'checking':'unavailable';
- state.telemetry=warming?uncertain(state.telemetry):observe(state.telemetry,state.readiness==='ready',now,tick);
+ state.telemetry=warming?uncertain(state.telemetry):observe(state.telemetry,state.readiness==='ready'&&causalHealthy,now,tick);
  const signals=rows&&fresh?performanceSignals(rows):{latency:null,errors:null};
  for(const channel of ['latency','errors'] as const)state[channel]=signals[channel]===null?uncertain(state[channel]):observe(state[channel],signals[channel]!,now,tick);
  const security=rows&&fresh?securitySignals(rows):{authentication:null,recovery:null};
@@ -141,7 +154,7 @@ export function metricsAlertText(environment:Environment,channel:'latency'|'erro
  }
  const label=channel==='latency'?'feed latency':channel==='errors'?'API error checks':'metrics monitoring';
  const text=channel==='telemetry'
-  ?`Porchday ${environment} metrics monitoring ${recovered?'passed two':'failed three'} consecutive five-minute polls. A healthy metrics check requires a successful bounded query and a GET /health observation within five minutes. Query or ingestion failure means monitoring is unavailable; this does not itself establish an application outage. Inspect the private monitoring configuration and aggregate metrics.`
+  ?`Porchday ${environment} metrics monitoring ${recovered?'passed two':'failed three'} consecutive five-minute polls. A healthy metrics check requires a successful bounded query and a GET /health observation within five minutes. When enabled, causal tracing also requires recent successful storage exports and no sustained export-loss threshold breach. Query or ingestion failure means monitoring is unavailable; this does not itself establish an application outage. Inspect the private monitoring configuration and aggregate metrics.`
   :`Porchday ${environment} ${recovered?'passed two':'failed three'} consecutive five-minute ${label} polls with adequate request samples. The 15-minute objective is ${channel==='latency'?'feed p95 at most 500 ms':'application 5xx below 1%, with at least five errors before alerting'}. Inspect the private aggregate metrics. These estimates exclude network transfer and client decryption.`;
  return{subject:`Porchday ${environment}: ${label} ${recovered?'recovered':'need attention'}`,text};
 }

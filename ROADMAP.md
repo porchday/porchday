@@ -194,3 +194,5 @@ This was an evidence reconciliation, not a new deployment, device test, or produ
 - A merged PR is not a deployed feature. Track small follow-up PRs on their issue even when the parent work is complete, and give any unfinished delivery step an explicit place in the issue or queue.
 
 Roadmap maintenance is tracked in [#120](https://github.com/porchday/porchday/issues/120). The top eight workstreams reflect the owner’s explicit priorities; the remaining order is the prior planning baseline. Neither is an effort estimate or a waiver of operational safeguards.
+
+Active operator request: P1 causal observability and Cloudflare investigation tools, tracked in [#12](https://github.com/porchday/porchday/issues/12).

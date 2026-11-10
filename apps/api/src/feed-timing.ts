@@ -1,3 +1,4 @@
+import {causalSpan,withoutCausalSummary} from './causal-tracing';
 import {event,type FeedPhase} from './telemetry';
 import type {Env} from './types';
 import {activeTrace,recordTraceSpan} from './tracing';
@@ -16,11 +17,11 @@ export function recordFeedPhase(timing:FeedTiming|undefined,phase:FeedPhase,dura
 
 /** The operation, including its original error, always determines the result. */
 export function measureFeedPhase<T>(timing:FeedTiming|undefined,phase:FeedPhase,work:()=>Promise<T>):Promise<T> {
- if(!timing)return work();
+ if(!timing)return causalSpan(phase,work);
  const started=performance.now();
  return (async()=>{
-  try{return await work();}
-  finally{recordFeedPhase(timing,phase,performance.now()-started);}
+  try{return await causalSpan(phase,work);}
+  finally{withoutCausalSummary(()=>recordFeedPhase(timing,phase,performance.now()-started));}
  })();
 }
 

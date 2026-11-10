@@ -9,7 +9,7 @@ export const DIAGNOSTIC_HOUR=3_600_000,DIAGNOSTIC_RETENTION=3*24*DIAGNOSTIC_HOUR
 const uuid=z.string().uuid();
 export const diagnosticEvent=z.object({id:uuid,at:z.number().int(),kind:z.enum(['operation','request','error','navigation','interaction','content']),payload:z.record(z.string().max(40),z.union([z.string().max(24000),z.number().finite(),z.boolean()])).refine(p=>Object.keys(p).length<=12)}).strict().refine(e=>JSON.stringify(e).length<=32000);
 const batch=z.object({events:z.array(diagnosticEvent).min(1).max(20)}).strict();
-const fields:Record<string,string[]>={operation:['operation','stage','outcome','error','code','status','trace'],request:['method','route','status','duration','server_timing','trace'],error:['error','code','stack','trace'],navigation:['route'],interaction:['control','action'],content:['text','fields','thumbnail']};
+const fields:Record<string,string[]>={operation:['operation','stage','outcome','error','code','status','trace','duration','span','parent'],request:['method','route','status','duration','server_timing','trace','span','parent'],error:['error','code','stack','trace'],navigation:['route'],interaction:['control','action'],content:['text','fields','thumbnail']};
 export function validDiagnosticEvent(e:z.infer<typeof diagnosticEvent>,mode:string,start:number,end:number){
  if(e.at<start-60000||e.at>end||Object.keys(e.payload).some(k=>!fields[e.kind].includes(k)))return false;
  if(e.kind==='content'&&mode!=='content')return false;

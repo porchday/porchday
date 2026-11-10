@@ -1,3 +1,4 @@
+import {causalSpan} from './causal-tracing';
 import {currentJournalDeadline} from './journal-request-deadline';
 import {journalDeadline,JournalDeadlineError} from './journal-deadline';
 import type {JournalDatabase,JournalStore} from './privacy-journal';
@@ -27,7 +28,7 @@ export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options
     firstFailure??=started;
     const delay=1000*2**retries+Math.floor(random()*250);
     if(retries>=3||now()-firstFailure+delay>10000){report('journal_io_exhausted');throw error;}
-    retries++;report(code);await deadline.run(async scope=>{await sleep(delay);scope.assertOpen();});
+    retries++;report(code);await deadline.run(async scope=>{await causalSpan('journal.retry',()=>sleep(delay));scope.assertOpen();});
    }
   }
  }
@@ -41,21 +42,21 @@ export function resilientJournalIO(store:JournalStore,db:JournalDatabase,options
   store:{
    async get(key){
     // Include reading the body; it may fail after the object lookup succeeds.
-    return retry(()=>deadline.run(async scope=>{const object=await store.get(key);scope.assertOpen();if(!object)return null;const text=await object.text();scope.assertOpen();return {etag:object.etag,text:async()=>text};}),()=> 'journal_r2_read_retry');
+    return retry(()=>deadline.run(async scope=>{const object=await causalSpan('journal.r2.get',()=>store.get(key));scope.assertOpen();if(!object)return null;const text=await causalSpan('journal.r2.body',()=>object.text());scope.assertOpen();return {etag:object.etag,text:async()=>text};}),()=> 'journal_r2_read_retry');
    },
    async put(key,value,condition){
-    if(!condition?.onlyIf?.etagMatches&&condition?.onlyIf?.etagDoesNotMatch!=='*')return deadline.run(()=>store.put(key,value,condition));
+    if(!condition?.onlyIf?.etagMatches&&condition?.onlyIf?.etagDoesNotMatch!=='*')return deadline.run(()=>causalSpan('journal.r2.put',()=>store.put(key,value,condition)));
     // Clone the condition once so a caller cannot change it between attempts.
     const pinned={onlyIf:{...condition.onlyIf}};
-    return retry(()=>deadline.run(()=>store.put(key,value,pinned)),()=> 'journal_r2_write_retry');
+    return retry(()=>deadline.run(()=>causalSpan('journal.r2.put',()=>store.put(key,value,pinned))),()=> 'journal_r2_write_retry');
    },
   } satisfies JournalStore,
   db:{
    // Preparation/recovery can commit metadata. Bound waiting without replaying
    // an uncertain database mutation; later recovery uses its exact identity.
-   ...(db.seal?{seal:(scope:Parameters<NonNullable<JournalDatabase['seal']>>[0])=>deadline.run(()=>db.seal!(scope))}:{}),
-   ...(db.prepareOperation?{prepareOperation:(scope:Parameters<NonNullable<JournalDatabase['prepareOperation']>>[0])=>deadline.run(()=>db.prepareOperation!(scope))}:{}),
-   ...(db.recoverOperation?{recoverOperation:(scope:Parameters<NonNullable<JournalDatabase['recoverOperation']>>[0])=>deadline.run(()=>db.recoverOperation!(scope))}:{}),
-   status:()=>retry(()=>deadline.run(()=>db.status()),databaseFailure),page:(after)=>retry(()=>deadline.run(()=>db.page(after)),databaseFailure)} satisfies JournalDatabase,
+   ...(db.seal?{seal:(scope:Parameters<NonNullable<JournalDatabase['seal']>>[0])=>deadline.run(()=>causalSpan('journal.db.seal',()=>db.seal!(scope)))}:{}),
+   ...(db.prepareOperation?{prepareOperation:(scope:Parameters<NonNullable<JournalDatabase['prepareOperation']>>[0])=>deadline.run(()=>causalSpan('journal.db.prepare',()=>db.prepareOperation!(scope)))}:{}),
+   ...(db.recoverOperation?{recoverOperation:(scope:Parameters<NonNullable<JournalDatabase['recoverOperation']>>[0])=>deadline.run(()=>causalSpan('journal.db.recover',()=>db.recoverOperation!(scope)))}:{}),
+   status:()=>retry(()=>deadline.run(()=>causalSpan('journal.db.status',()=>db.status())),databaseFailure),page:(after)=>retry(()=>deadline.run(()=>causalSpan('journal.db.page',()=>db.page(after))),databaseFailure)} satisfies JournalDatabase,
  };
 }

@@ -204,3 +204,7 @@ The shared web shell uses the same ReactionChips component for post, comment and
 ## Photo history pending keys
 
 Original social-photo access refresh now permits pending-key members while requiring every currently eligible ready device; server history policy continues to control later catch-up. Album refresh behavior is unchanged. Shared iOS/macOS shells use the same worker, including page draining and silent automatic retries. No native bridge change is needed. Exact-source native CI and production deployment remain pending; member-specific acceptance remains #22.
+
+## Causal observability
+
+The shared web implementation records consented network, encryption/decryption and media decoding spans in the existing persistent iOS/macOS WKWebView. Both shells receive the same tracing headers and investigation UI; no new native bridge or permission is added. Recording remains opt-in and has existing stop/expiry/delete controls. Operational API/edge/database/storage/job traces contain no decrypted member content. Native OS photo-picker/decoder internals and provider internals are not instrumented by this change. Exact-source automated iOS/macOS checks are required for the release; physical-device correlation acceptance remains pending under #49/#114 and observability #12 until actually performed.

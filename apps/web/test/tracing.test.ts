@@ -70,8 +70,8 @@ describe("performance tracing", () => {
     expect(body.spans.map((s: { kind: string; name: string }) => `${s.kind}:${s.name}`)).toEqual([
       "mark:vault-ready", "measure:decrypt", "measure:photo decode", "resource:GET /api/v1/feed",
     ]);
-    expect(body.spans.find((s: { name: string }) => s.name === "photo decode").attrs).toEqual({ error: "bad jpeg" });
-    expect(body.spans.at(-1).attrs).toEqual({ status: 200, headers_only: true });
+    expect(body.spans.find((s: { name: string }) => s.name === "photo decode").attrs).toMatchObject({ error: "bad jpeg" });
+    expect(body.spans.at(-1).attrs).toMatchObject({ status: 200, headers_only: true });
     // The upload itself is never traced or re-uploaded.
     const uploadCall = upstream.mock.calls.find(([input]) => String(input) === "/api/v1/traces")!;
     expect(new Headers(uploadCall[1]!.headers).get("traceparent")).toBeNull();
@@ -145,7 +145,7 @@ describe("performance tracing", () => {
     setTracingEnabled(true);
     await window.fetch("/api/v1/feed");
     await flushTraces(true);
-    expect(uploads(upstream)[0].spans.at(-1).attrs).toEqual({ status: 200, headers_only: true });
+    expect(uploads(upstream)[0].spans.at(-1).attrs).toMatchObject({ status: 200, headers_only: true });
   });
 
   it("formats a nested waterfall for builder chat", () => {

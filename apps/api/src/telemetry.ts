@@ -1,3 +1,4 @@
+import {causalFailure,causalInfrastructure} from './causal-tracing';
 import {JOURNAL_PHASES} from './journal-phases';
 import type {Env} from './types';
 import {JOURNAL_IO_CODES} from './journal-io';
@@ -67,6 +68,8 @@ export function event(name:'journal_phase'|'request'|'job'|'email'|'error'|'feed
   else if((name==='db_conn'||name==='db_snapshot')&&typeof fields.route==='string'&&(['job:cron','job:queue'].includes(fields.route)||(fields.route.length<=100&&ROUTE_PATTERN.test(fields.route))))safe.route=fields.route;
   if(fields.method&&methods.has(fields.method))safe.method=fields.method;
   if(fields.code&&(name==='denial_cleanup_phase'?denialCleanupPhases:name==='journal_phase'?journalPhases:name==='feed_phase'?feedPhases:codes).has(fields.code))safe.code=fields.code;
+  if(name==='error'&&safe.code)causalFailure({code:safe.code});
+  if(name==='db_snapshot'&&typeof safe.code==='string'&&typeof fields.count==='number')causalInfrastructure(safe.code,fields.count);
   const environment=env?.ENVIRONMENT??fields.environment;
   if(environment&&environments.has(environment))safe.environment=environment;
   if(Number.isInteger(fields.status)&&fields.status!>=100&&fields.status!<=599)safe.status=fields.status!;

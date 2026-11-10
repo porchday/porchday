@@ -1,3 +1,4 @@
+import {linkResponse,parseClientCause,clearClientCauses,clientParent} from './causal-links';
 /** Explicit per-account/per-device recordings. No request bodies or arbitrary input capture. */
 export type DiagnosticMode='details'|'content';
 export type DiagnosticSession={id:string;mode:DiagnosticMode;started_at:number;expires_at:number};
@@ -58,6 +59,7 @@ export async function startDiagnostics(mode:DiagnosticMode,contentConsent:boolea
  recordDiagnostic('navigation',{route:location.pathname});
 }
 export async function stopDiagnostics(){
+ clearClientCauses();
  const current=session;session=null;stopped=true;
  if(owner)localStorage.removeItem(sessionKey());notify();
  await writes;
@@ -113,10 +115,10 @@ export function attachDiagnostics(member:string,device:string){
   const active=session;let url:URL;try{url=new URL(input instanceof Request?input.url:String(input),location.href);}catch{return original(input,init);}
   if(!active||active.expires_at<=Date.now()||url.origin!==location.origin||!url.pathname.startsWith('/api/')||url.pathname.includes('/diagnostics/')||url.pathname.includes('/traces')||url.pathname.startsWith('/api/auth/')||url.pathname.includes('recovery'))return original(input,init);
   const headers=new Headers(init?.headers??(input instanceof Request?input.headers:undefined));
-  const generated=crypto.randomUUID().replaceAll('-','');if(!headers.has('traceparent'))headers.set('traceparent',`00-${generated}-${generated.slice(0,16)}-01`);const trace=headers.get('traceparent')!.split('-')[1];
+  const generated=crypto.randomUUID().replaceAll('-','');if(!headers.has('traceparent'))headers.set('traceparent',`00-${generated}-${generated.slice(0,16)}-01`);const trace=headers.get('traceparent')!.split('-')[1],span=headers.get('traceparent')!.split('-')[2],parent=clientParent(span);
   headers.set('X-Porchday-Diagnostic-Session',active.id);
   const started=performance.now(),method=(init?.method??(input instanceof Request?input.method:'GET')).toUpperCase();
-  try{const response=await original(input,{...init,headers});if(session===active)recordDiagnostic('request',{method,route:url.pathname,status:response.status,duration:performance.now()-started,server_timing:(response.headers.get('Server-Timing')??'').slice(0,6000),trace});return response;}
+  try{const response=await original(input,{...init,headers});linkResponse(response,parseClientCause(headers.get('traceparent')));if(session===active)recordDiagnostic('request',{method,route:url.pathname,status:response.status,duration:performance.now()-started,server_timing:(response.headers.get('Server-Timing')??'').slice(0,6000),trace,span,...(parent?{parent}:{})});return response;}
   catch(error){if(session===active){const {stack,status,...safe}=safeDiagnosticError(error);recordDiagnostic('error',{...safe,stack,trace});recordDiagnostic('request',{method,route:url.pathname,status:0,duration:performance.now()-started,trace});}throw error;}
  };
  window.fetch=wrapper;
@@ -128,7 +130,7 @@ export function attachDiagnostics(member:string,device:string){
  const tick=()=>{if(session&&session.expires_at<=Date.now()){void stopDiagnostics();return;}if(location.pathname!==lastRoute){lastRoute=location.pathname;recordDiagnostic('navigation',{route:lastRoute});}captureContent();void flushDiagnostics();};
  window.addEventListener('error',error);window.addEventListener('unhandledrejection',rejection);window.addEventListener('online',tick);document.addEventListener('click',click);document.addEventListener('input',input);document.addEventListener('visibilitychange',tick);
  timer=setInterval(tick,10000);
- const detach=()=>{clearTimeout(inputTimer);if(timer)clearInterval(timer);timer=null;window.removeEventListener('error',error);window.removeEventListener('unhandledrejection',rejection);window.removeEventListener('online',tick);document.removeEventListener('click',click);document.removeEventListener('input',input);document.removeEventListener('visibilitychange',tick);if(window.fetch===wrapper)window.fetch=original;originalFetch=null;owner=null;session=null;stopped=true;notify();};
+ const detach=()=>{clearClientCauses();clearTimeout(inputTimer);if(timer)clearInterval(timer);timer=null;window.removeEventListener('error',error);window.removeEventListener('unhandledrejection',rejection);window.removeEventListener('online',tick);document.removeEventListener('click',click);document.removeEventListener('input',input);document.removeEventListener('visibilitychange',tick);if(window.fetch===wrapper)window.fetch=original;originalFetch=null;owner=null;session=null;stopped=true;notify();};
  notify();return detach;
 }
 

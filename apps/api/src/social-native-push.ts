@@ -1,4 +1,5 @@
 import {event} from './telemetry';
+import {causalSpan} from './causal-tracing';
 import {feedPushMetadata,feedPushBody} from './feed-push-payload';
 import {runtimeSessionDenied} from './session-denial';
 import { Hono, type Context } from "hono";
@@ -291,7 +292,7 @@ export async function processNativePush(
             else {
               const request = nativePushRequest(row.delivery.subscription, env, token, row.delivery.feed);
               result = await nativePushOutcome(
-                await send(request.url, request.init),
+                await causalSpan('http.apns',()=>send(request.url, request.init)),
                 Number(job.attempts),
               );
             }

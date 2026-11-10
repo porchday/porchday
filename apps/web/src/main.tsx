@@ -48,6 +48,7 @@ import { BuilderChat, builderChatAvailable } from "./BuilderChat";
 import { AccountDeletionReceipt, completeDeletionInCurrentSession, deletionContextMatches, type DeletionReceipt } from "./account-deletion";
 import { installTracing } from "./tracing";
 // Loaded on first visit so the inspector adds nothing to the main bundle.
+const Observability = React.lazy(() => import("./Observability"));
 const DiagnosticInspector = React.lazy(() => import("./DiagnosticPanels"));
 const TraceInspector = React.lazy(() => import("./TraceInspector"));
 import "./styles.css";
@@ -375,6 +376,8 @@ function AppShell({
   else if (path === "/notifications") content = <Notifications />;
   else if (path === "/features") content = <FeatureAdditions />;
   else if (path === "/builder-chat") content = <BuilderChat />;
+  else if (path === "/operations/traces")
+    content = <React.Suspense fallback={<Loading />}><Observability /></React.Suspense>;
   else if (path === "/diagnostics")
     content = <React.Suspense fallback={<Loading />}><DiagnosticInspector /></React.Suspense>;
   else if (path === "/performance")

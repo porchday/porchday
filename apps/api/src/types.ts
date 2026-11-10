@@ -3,6 +3,8 @@ import type {RequestTiming} from './request-timing';
 export interface DenialJob {kind:string;id?:string;denialProgressEtag?:string;denialPartition?:number}
 export interface Env {
   METRICS?: AnalyticsEngineDataset;
+  /** Bounded first-party causal telemetry; enable after D1 migration 0003. */
+  OPERATIONAL_TRACING?: string;
   /** Opt-in performance traces (docs/performance-tracing.md). Absent until provisioned. */
   TRACES?: D1Database;
   /** Temporary aggregate diagnostics; honored only in staging, never production. */
