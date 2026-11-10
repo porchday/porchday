@@ -50,7 +50,7 @@ export type PhotoInvalidation={mediaId:string}|{parentId:string};
 /** Unknown ownership is conservatively invalidated; known unrelated photos stay mounted. */
 export function photoMatches(key:string,target?:PhotoInvalidation,value?:Pick<CachedPhoto,'parentId'>){
  if(!target)return true;
- if('parentId' in target)return !value?.parentId||value.parentId===target.parentId;
+ if('parentId' in target)return value?.parentId===undefined||value.parentId===target.parentId;
  try{const identity=JSON.parse(key);return typeof identity.id!=='string'||identity.id===target.mediaId;}catch{return true;}
 }
 const listeners=new Set<(target?:PhotoInvalidation)=>void>();

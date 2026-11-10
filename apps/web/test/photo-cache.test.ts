@@ -36,6 +36,7 @@ describe('verified photo memory cache',()=>{
  });
  it('invalidates unknown parent scopes conservatively',()=>{
   expect(photoMatches(JSON.stringify({id:'a'}),{parentId:'post-a'})).toBe(true);
+  expect(photoMatches(JSON.stringify({id:'a'}),{parentId:'post-a'},{parentId:null})).toBe(false); // Signed root media cannot belong to this post.
   expect(photoMatches(JSON.stringify({id:'a'}),{parentId:'post-a'},{parentId:'post-b'})).toBe(false);
  });
  it('coalesces concurrent reads; warm reuse still authorizes without decoding again',async()=>{
