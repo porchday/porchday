@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**In progress:** #213 fixes invitation cooldown blocking rejoin after a verified recipient deletes their account. Preserve request audit/quota rows and duplicate suppression; regression coverage includes concurrent replacement requests. Production rollout pending.
+
 **Composer timer follow-up:** [#207](https://github.com/porchday/porchday/issues/207), P2: timer moved beside bottom actions and setup-sharing note removed; deployed and hosted-verified. [Evidence](docs/evidence/composer-timer-footer-2026-11-09.md).
 
 **Current native appearance fix:** [#208](https://github.com/porchday/porchday/issues/208), P2: use the selected background color for the app-switcher privacy cover. Available in internal TestFlight: iOS 362, macOS 345. Automated checks passed; physical app-switcher verification remains pending. [Evidence](docs/evidence/app-switcher-appearance-2026-11-09.md).
