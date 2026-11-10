@@ -236,4 +236,4 @@ The shared web implementation records consented network, encryption/decryption a
 
 ## Recipient rejoin invitation repair (#213)
 
-The shared API permits a replacement invitation after a verified recipient has deleted their identity, without bypassing live-account checks or replacement cooldowns. This applies equally to the web/PWA and iOS/macOS shells; no native binary changes are required. Exact-source native CI remains required before production. Recipient inbox and physical-device signup remain unverified.
+The shared API permits a replacement invitation after a verified recipient has deleted their identity, without bypassing live-account checks or replacement cooldowns. This applies equally to the web/PWA and iOS/macOS shells; no native binary changes are required. Exact-source iOS and macOS CI passed before production. Hosted staging/production invitation checks passed; the reported recipient completed creation of an active, verified new account. Physical-device feature acceptance remains separate and unverified. [Release evidence](evidence/rejoin-invitation-release-2026-11-09.md).

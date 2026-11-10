@@ -2,7 +2,7 @@
 
 **Delivered November 9:** [#12 production observability and causal tracing](https://github.com/porchday/porchday/issues/12), P1, needs verification. Cloudflare-hosted tracing and first-party investigation tools are live in staging and production across opted-in browser/encryption, edge/API, journal/storage/database and jobs. Hosted causal-chain and continuity checks passed. Physical-device, real staff-identity UI acceptance, isolated hosted exporter-failure drills and controlled overhead comparison remain follow-ups; see [release evidence](docs/evidence/causal-observability-release-2026-11-09.md).
 
-**In progress:** #213 fixes invitation cooldown blocking rejoin after a verified recipient deletes their account. Preserve request audit/quota rows and duplicate suppression; regression coverage includes concurrent replacement requests. Production rollout pending.
+**Delivered November 9:** #213 fixes invitation cooldown blocking rejoin after a verified recipient deletes their account. Original request audit/quota rows and duplicate suppression are preserved. Hosted staging/production checks, exact-source native CI, continuity, monitoring and final inventory verification passed. [Release evidence](docs/evidence/rejoin-invitation-release-2026-11-09.md).
 
 **Composer timer follow-up:** [#207](https://github.com/porchday/porchday/issues/207), P2: timer moved beside bottom actions and setup-sharing note removed; deployed and hosted-verified. [Evidence](docs/evidence/composer-timer-footer-2026-11-09.md).
 
