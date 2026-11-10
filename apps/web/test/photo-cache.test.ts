@@ -45,24 +45,45 @@ describe('verified photo memory cache',()=>{
   await cache.read('account:key:media:proof',authorize,load);
   expect(load).toHaveBeenCalledTimes(1);expect(authorize).toHaveBeenCalledTimes(1);
  });
- it('expires idle entries proactively and caps tiny-photo entry count',async()=>{
+ it('expires signed content proactively but does not evict small photos at an arbitrary count',async()=>{
   vi.useFakeTimers();try{const cache=new PhotoCache(),load=vi.fn(async()=>photo(Date.now()+50)),authorize=vi.fn(async()=>{});
    await cache.read('a',authorize,load);await vi.advanceTimersByTimeAsync(60);
    await cache.read('a',authorize,async()=>photo());expect(authorize).not.toHaveBeenCalled();cache.clear();
-   const tiny=new PhotoCache();for(let i=0;i<97;i++)await tiny.read(String(i),async()=>{},async()=>photo());
-   const again=vi.fn(async()=>photo());await tiny.read('0',async()=>{},again);expect(again).toHaveBeenCalledTimes(1);tiny.clear();
+   const tiny=new PhotoCache();for(let i=0;i<257;i++)await tiny.read(String(i),async()=>{},async()=>photo());
+   const again=vi.fn(async()=>photo());await tiny.read('0',async()=>{},again);expect(again).not.toHaveBeenCalled();tiny.clear();
   }finally{vi.useRealTimers();}
+ });
+ it('retains realistic photo history for days without any age-based eviction',async()=>{
+  let now=0;const cache=new PhotoCache(undefined,()=>now),loads=vi.fn(async()=>({...photo(),blob:new Blob([new Uint8Array(512*1024)]),width:2400,height:1600}));
+  for(let i=0;i<80;i++)await cache.read(String(i),async()=>{},loads);
+  for(const age of [10*60_000,24*60*60_000,30*24*60*60_000]){now=age;for(let i=79;i>=0;i--)await cache.read(String(i),async()=>{},loads);}
+  expect(loads).toHaveBeenCalledTimes(80);cache.clear();
+ });
+ it('keeps session blobs across foreground revalidation but rejects suspended pending work',async()=>{
+  const cache=new PhotoCache(),load=vi.fn(async()=>photo()),authorize=vi.fn(async()=>{});await cache.read('warm',authorize,load);
+  let done!:(v:ReturnType<typeof photo>)=>void;const pending=cache.read('pending',authorize,()=>new Promise(resolve=>done=resolve));cache.cancelPending();done(photo());await expect(pending).rejects.toThrow('access changed');
+  await cache.read('warm',authorize,load);expect(load).toHaveBeenCalledTimes(1);expect(authorize).toHaveBeenCalledTimes(1);cache.clear();
+ });
+ it('reserves a fourth slot for visible work ahead of speculative photos',async()=>{
+  const release:Array<()=>void>=[],order:string[]=[];
+  const work=(id:string)=>()=>new Promise<void>(resolve=>{order.push(id);release.push(resolve);});
+  const first=Array.from({length:3},(_,i)=>schedulePhoto(work(String(i)),()=>0,new AbortController().signal));
+  const far=schedulePhoto(work('far'),()=>-6,new AbortController().signal),visible=schedulePhoto(work('visible'),()=>1,new AbortController().signal);
+  expect(order).toEqual(['0','1','2','visible']);release.slice().forEach(fn=>fn());await Promise.all([...first,visible]);
+  expect(order).toContain('far');release.at(-1)!();await far;
  });
  it('denied access evicts cached bytes and cannot display a warm result',async()=>{
   const cache=new PhotoCache(),load=vi.fn(async()=>photo());await cache.read('a',async()=>{},load);
   await expect(cache.read('a',async()=>{throw Error('denied');},load)).rejects.toThrow('denied');
   await cache.read('a',async()=>{},load);expect(load).toHaveBeenCalledTimes(2);
  });
- it('enforces expiry and LRU byte plus decoded-pixel budgets',async()=>{
-  let now=0;const cache=new PhotoCache(1326,100,()=>now),load=vi.fn(async()=>photo());
-  for(const key of ['a','b','a','c','a','b'])await cache.read(key,async()=>{},load);
-  expect(load).toHaveBeenCalledTimes(4);now=101;await cache.read('b',async()=>{},load);expect(load).toHaveBeenCalledTimes(5);
-  await expect(cache.read('expired',async()=>{},async()=>photo(100))).rejects.toThrow('expired');
+ it('evicts FIFO under the byte budget even when the oldest entry was recently used',async()=>{
+  let now=0;const cache=new PhotoCache(526,()=>now),load=vi.fn(async()=>photo());
+  for(const key of ['a','b','a','c'])await cache.read(key,async()=>{},load);
+  expect(load).toHaveBeenCalledTimes(3);
+  await cache.read('a',async()=>{},load);expect(load).toHaveBeenCalledTimes(4); // a was oldest, despite its hit.
+  now=30*24*60*60_000;await cache.read('c',async()=>{},load);expect(load).toHaveBeenCalledTimes(4);
+  await expect(cache.read('expired',async()=>{},async()=>photo(100))).rejects.toThrow('expired');cache.clear();
  });
  it('rejects late completions after logout or invalidation',async()=>{
   const cache=new PhotoCache();let done!:(v:ReturnType<typeof photo>)=>void;

@@ -1,4 +1,4 @@
-import React,{useEffect,useRef,useState} from 'react';
+import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {base64ToBytes,canonicalJson,type EncryptedEnvelope} from '@porchday/crypto';
 import {verifyPhotoBytes,type PhotoProof} from '@porchday/crypto/photos';
 import type {MediaPayload} from './api';
@@ -15,7 +15,9 @@ import {causeOf} from './causal-links';
 
 export function CachedEncryptedPhoto({media,thumbnail=false,photoProof}:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){
  const imageRef=useRef<HTMLImageElement>(null);
- const vault=useVault(),{ref,near}=useNearViewport<HTMLDivElement>(false);
+ const vault=useVault(),{ref,near}=useNearViewport<HTMLDivElement>(false,6,20);
+ const {ref:displayRef,near:displayNear}=useNearViewport<HTMLDivElement>(false,2);
+ const attach=useCallback((element:HTMLDivElement|null)=>{ref.current=element;displayRef.current=element;},[]);
  const [epoch,setEpoch]=useState(photoEpoch),[opened,setOpened]=useState<{key:string;url:string;parentId?:string|null}|null>(null),[error,setError]=useState(''),[viewer,setViewer]=useState(false);
  const width=Number.isSafeInteger(media.width)&&media.width>0&&media.width<=16000?media.width:1;
  const height=Number.isSafeInteger(media.height)&&media.height>0&&media.height<=16000?media.height:1;
@@ -52,7 +54,7 @@ export function CachedEncryptedPhoto({media,thumbnail=false,photoProof}:{media:M
     const decoded=await traced('media decode',()=>validatedPhoto(bytes),{bytes:bytes.length,...causeOf(payload)});
     if(decoded.width!==width||decoded.height!==height)throw Error('Photo dimensions did not match its signed metadata.');
     return {...decoded,parentId:envelope.context.parentId,expiresAt:envelope.context.expiresAt?Date.parse(envelope.context.expiresAt):null};
-  });},()=>{const box=ref.current?.getBoundingClientRect();return box&&box.bottom>0&&box.top<window.innerHeight?1:0;},controller.signal).then(value=>{
+  });},()=>{const box=ref.current?.getBoundingClientRect();return !box?-Infinity:box.bottom>0&&box.top<window.innerHeight?1:-Math.max(0,box.top-window.innerHeight,-box.bottom)/Math.max(1,window.innerHeight);},controller.signal).then(value=>{
     if(!alive||revision!==invalidations.current||identityRef.current!==identity)return;
     if(value.expiresAt!==null&&(!Number.isFinite(value.expiresAt)||value.expiresAt<=Date.now()))throw Error('This attachment expired.');
     objectUrl=URL.createObjectURL(value.blob);setOpened({key:identity,url:objectUrl,parentId:value.parentId});markOnce('photo-decoded');
@@ -61,9 +63,9 @@ export function CachedEncryptedPhoto({media,thumbnail=false,photoProof}:{media:M
   return()=>{alive=false;controller.abort();if(timer)clearTimeout(timer);if(objectUrl)URL.revokeObjectURL(objectUrl);};
  },[identity,near]);
  useEffect(()=>{const image=imageRef.current;if(!currentTraceId()||!image||!url)return;return observeVisibleMilestone(image,()=>image.getAttribute('src')===url,()=>markOnce('first-visible-photo'));},[url]);
- return <div ref={ref} className={thumbnail?'calendar-thumbnail stable-photo':'stable-photo'}><figure>
+ return <div ref={attach} className={thumbnail?'calendar-thumbnail stable-photo':'stable-photo'}><figure>
   <div className="stable-photo-frame" style={{aspectRatio:`${width} / ${height}`}}>
-   {url?<img ref={imageRef} src={url} width={width} height={height} alt={media.alt||'Shared photo (no description provided)'} decoding="async" role={thumbnail?undefined:'button'} tabIndex={thumbnail?undefined:0} aria-label={thumbnail?undefined:`Open photo: ${media.alt||'Shared photo'}`} onClick={thumbnail?undefined:()=>setViewer(true)} onKeyDown={thumbnail?undefined:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setViewer(true);}}}/>:<div className="photo-placeholder"><Icon name={error?'shield':'photo'} size={24}/><span>{error||(near?'Opening encrypted media…':'Media loads as you scroll')}</span></div>}
+   {url&&displayNear?<img ref={imageRef} src={url} width={width} height={height} alt={media.alt||'Shared photo (no description provided)'} decoding="async" role={thumbnail?undefined:'button'} tabIndex={thumbnail?undefined:0} aria-label={thumbnail?undefined:`Open photo: ${media.alt||'Shared photo'}`} onClick={thumbnail?undefined:()=>setViewer(true)} onKeyDown={thumbnail?undefined:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setViewer(true);}}}/>:<div className="photo-placeholder"><Icon name={error?'shield':'photo'} size={24}/><span>{error||(displayNear?'Opening encrypted media…':'Media loads as you scroll')}</span></div>}
   </div>
   {!thumbnail&&media.alt&&<figcaption>{media.alt}</figcaption>}{!thumbnail&&<Tags value={media.tags}/>}
   {!thumbnail&&viewer&&url&&<PhotoViewer src={url} alt={media.alt||''} onClose={()=>setViewer(false)}/>}

@@ -60,7 +60,7 @@ export function PhotoFeed({authorFilter,content="photos",publishedPost,onReconci
  const data=usePhotos(undefined,true,false,content,"shared"),sentinel=useRef<HTMLDivElement>(null);
  useEffect(()=>{
   if(!data.next||data.busy||data.error||!sentinel.current)return;
-  const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))void data.load(data.next!);},{rootMargin:"600px"});observer.observe(sentinel.current);return()=>observer.disconnect();
+  const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting))void data.load(data.next!);},{rootMargin:`${Math.ceil(innerHeight*6)}px`});observer.observe(sentinel.current);return()=>observer.disconnect();
  },[data.next,data.busy,data.error]);
  const recent=publishedPost&&publishedPost.row.author_id===authorFilter.memberId&&(!publishedPost.row.expires_at||Date.parse(publishedPost.row.expires_at)>Date.now())?publishedPost:null;
  useEffect(()=>{if(recent&&data.entries.some(e=>e.kind==="post"&&e.id===recent.row.id))onReconciled?.();},[recent,data.entries,onReconciled]);
@@ -70,7 +70,7 @@ export function PhotoFeed({authorFilter,content="photos",publishedPost,onReconci
  return <><Alert>{data.error}</Alert><div className="activity-feed">{visible.map(entry=><EntryCard key={entry.kind+entry.id} entry={entry} refresh={()=>{if(recent?.row.id===entry.id)onReconciled?.();void data.load();}}/>)}</div>{data.busy&&<Loading/>}{data.loaded&&!data.error&&!data.next&&!visible.length&&<Empty icon="photo" title="Nothing in this view"><a href="/share">Share something</a>, or change your filters.</Empty>}<div ref={sentinel}/>{data.next&&<Button busy={data.busy} onClick={()=>data.load(data.next!)}>Load more activity</Button>}</>;
 }
 function PhotoMonth({month,authorFilter,content}:{month:Date;authorFilter:AuthorFilter;content:FeedContent}){
- const {ref,near}=useNearViewport<HTMLElement>();
+ const {ref,near}=useNearViewport<HTMLElement>(true,6);
  const key=localDay(month).slice(0,7),data=usePhotos(key,near,false,content),[selected,setSelected]=useState<string|null>(null);
  const visible=data.entries.filter(e=>matchesAuthor(e,authorFilter));
  const label=month.toLocaleDateString(undefined,{month:"long",year:"numeric"});

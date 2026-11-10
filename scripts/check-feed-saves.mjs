@@ -30,7 +30,7 @@ try {for(const engine of [chromium,webkit]){
   const context=await browser.newContext({viewport:{width:800,height:800},serviceWorkers:'block'});const page=await context.newPage();
   const errors=[];page.on('pageerror',e=>errors.push(e.message));
   await page.goto(origin);await page.locator('img').first().waitFor();
-  assert(calls.filter(x=>x.url.includes('/media/')).length<5,'offscreen photos deferred');
+  await page.waitForLoadState('networkidle');assert(calls.some(x=>x.url.includes('/media/media-6/')),'photos several screens ahead are prefetched');assert(calls.filter(x=>x.url.includes('/media/')).length<=12,'six-screen prefetch remains bounded');assert(!calls.some(x=>x.url.includes('/media/media-29/')),'distant photos remain deferred');
   await page.locator('article').nth(29).scrollIntoViewIfNeeded();await page.locator('article').nth(29).locator('img').waitFor();
   assert(calls.some(x=>x.url.includes('media-29')),'scroll fetches photo');
   await page.goto(origin);await page.locator('img').first().waitFor();
@@ -75,7 +75,7 @@ try {for(const engine of [chromium,webkit]){
   // Independent/nested requests keep the warning until every save settles.
   await page.evaluate(()=>{window.startSave();window.endFirst=window.endSave;window.startSave();});await page.evaluate(()=>window.endFirst());assert.equal(await page.locator('.pending-save-status').count(),1);await page.evaluate(()=>window.failSave(new Error('synthetic failure')));await page.locator('.pending-save-status').waitFor({state:'hidden'});
   assert.deepEqual(errors,[]);await context.close();
-  const fallback=await browser.newContext();await fallback.addInitScript(()=>{window.IntersectionObserver=undefined});const fallbackPage=await fallback.newPage();calls=[];await fallbackPage.goto(origin);await fallbackPage.locator('img').first().waitFor();assert(calls.filter(x=>x.url.includes('/media/')).length<5,'observer fallback remains bounded');await fallbackPage.locator('article').nth(29).scrollIntoViewIfNeeded();await fallbackPage.locator('article').nth(29).locator('img').waitFor();assert(calls.some(x=>x.url.includes('media-29')));await fallback.close();
+  const fallback=await browser.newContext();await fallback.addInitScript(()=>{window.IntersectionObserver=undefined});const fallbackPage=await fallback.newPage();calls=[];await fallbackPage.goto(origin);await fallbackPage.locator('img').first().waitFor();await fallbackPage.waitForLoadState('networkidle');assert(calls.filter(x=>x.url.includes('/media/')).length<=12,'observer fallback remains bounded');assert(!calls.some(x=>x.url.includes('/media/media-29/')),'fallback defers distant photos');await fallbackPage.locator('article').nth(29).scrollIntoViewIfNeeded();await fallbackPage.locator('article').nth(29).locator('img').waitFor();assert(calls.some(x=>x.url.includes('media-29')));await fallback.close();
   console.log(engine.name()+': deferred photos, scroll, observer fallback, saving during encryption/request, navigation guard, concurrent saves, optimistic success/failure rollback and separate photo-date saves passed');
  }finally{await browser.close();}
 }}finally{server.close();}
