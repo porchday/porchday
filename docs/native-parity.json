@@ -16,7 +16,8 @@
         "docs/native-parity.md#settings-organization",
         "docs/native-parity.md#notification-previews-and-tap-handling",
         "docs/native-parity.md#detailed-diagnostic-recordings",
-        "docs/evidence/app-switcher-appearance-2026-11-09.md"
+        "docs/evidence/app-switcher-appearance-2026-11-09.md",
+        "docs/native-parity.md#causal-observability"
       ],
       "implementation": {
         "ios": "implemented",
@@ -55,7 +56,8 @@
         "docs/native-parity.md#clickable-post-links",
         "docs/native-parity.md#post-deletion-feedback",
         "docs/native-parity.md#composer-footer-and-confirmed-post-handoff",
-        "docs/native-parity.md#composer-timer-placement-207"
+        "docs/native-parity.md#composer-timer-placement-207",
+        "docs/native-parity.md#causal-observability"
       ],
       "implementation": {
         "ios": "implemented",

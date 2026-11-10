@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Delivered November 9:** [#12 production observability and causal tracing](https://github.com/porchday/porchday/issues/12), P1, needs verification. Cloudflare-hosted tracing and first-party investigation tools are live in staging and production across opted-in browser/encryption, edge/API, journal/storage/database and jobs. Hosted causal-chain and continuity checks passed. Physical-device, real staff-identity UI acceptance, isolated hosted exporter-failure drills and controlled overhead comparison remain follow-ups; see [release evidence](docs/evidence/causal-observability-release-2026-11-09.md).
+
 **In progress:** #213 fixes invitation cooldown blocking rejoin after a verified recipient deletes their account. Preserve request audit/quota rows and duplicate suppression; regression coverage includes concurrent replacement requests. Production rollout pending.
 
 **Composer timer follow-up:** [#207](https://github.com/porchday/porchday/issues/207), P2: timer moved beside bottom actions and setup-sharing note removed; deployed and hosted-verified. [Evidence](docs/evidence/composer-timer-footer-2026-11-09.md).
@@ -17,7 +19,7 @@
 
 **Released November 8:** [#7](https://github.com/porchday/porchday/issues/7) encrypted post/caption/thumbnail notification previews are live in production, with per-device controls. iOS 337 and macOS 320 are available in internal TestFlight. Hosted delivery, access checks and production monitoring passed; physical-device receipt and the earlier crash report remain `needs verification`. [Release evidence](docs/evidence/encrypted-notification-content-release-2026-11-08.md).
 
-**Released November 8:** [#196](https://github.com/porchday/porchday/issues/196), P1, `needs verification`: opt-in device diagnostics and separately consented content recordings are live, including the #198 timeline routing fix. Hosted staging/production checks pass; physical-device and real operator acceptance remain follow-ups. [Release evidence](docs/evidence/diagnostics-release-2026-11-08.md). Deferred Datadog #12 remains deferred.
+**Released November 8:** [#196](https://github.com/porchday/porchday/issues/196), P1, `needs verification`: opt-in device diagnostics and separately consented content recordings are live, including the #198 timeline routing fix. Hosted staging/production checks pass; physical-device and real operator acceptance remain follow-ups. [Release evidence](docs/evidence/diagnostics-release-2026-11-08.md). The later November 9 Cloudflare observability upgrade is tracked above under #12.
 
 **Released November 8:** #22 post/photo access updates now recover automatically with per-item backoff and read-back reconciliation, replacing manual Retry buttons. Staging and production synthetic recipient checks pass. [Release evidence](docs/evidence/automatic-access-recovery-release-2026-11-08.md).
 
@@ -183,7 +185,7 @@ These retain their `deferred` labels and are not current release requirements. T
 | 1 | [#23 History preferences in exports](https://github.com/porchday/porchday/issues/23) | P2 | Explicitly reopen portable-schema work after the sharing contract is verified. Preserve old archives and never infer new sharing consent from missing fields. |
 | 2 | [#20 Federation protocol](https://github.com/porchday/porchday/issues/20) | P2 | Agree the protocol and cross-server trust/revocation model and a bounded interoperability pilot. Existing design work does not make federation a current launch gate. |
 | 3 | [#11 Google and GitHub sign-in](https://github.com/porchday/porchday/issues/11) | Unset | Demonstrate demand and approve account-linking/recovery scope after invited email/password access is dependable. |
-| 4 | [#12 Datadog integration](https://github.com/porchday/porchday/issues/12) | Unset | Identify a measured monitoring gap, a privacy-preserving signal plan and an approved ingestion budget. #8 must not wait for this vendor choice. |
+| 4 | [#12 Production observability](https://github.com/porchday/porchday/issues/12) | P1, needs verification | Cloudflare tracing and investigation tools delivered November 9; see release evidence above for remaining verification. The owner selected Cloudflare, without a paid backend. |
 | 5 | [#13 Technical human verification](https://github.com/porchday/porchday/issues/13) | Unset | Establish the abuse need and acceptable privacy, accessibility, false-positive and appeal tradeoffs before selecting enforcement. |
 
 ## November 1 closeout review

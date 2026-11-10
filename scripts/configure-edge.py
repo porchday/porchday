@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the public edge front end. No secrets, databases or event consumers."""
+"""Render the public edge front end. No application secrets, application databases or event consumers."""
 import json,sys
 from pathlib import Path
 
@@ -29,5 +29,8 @@ config={
  'observability':{'enabled':False,'logs':{'enabled':False,'invocation_logs':False},'traces':{'enabled':False}},
  'routes':[{'pattern':host,'custom_domain':True} for host in hosts],
 }
+if env.get('operational_tracing') is True:
+ config['vars']['OPERATIONAL_TRACING']='true'
+ config['d1_databases']=[{'binding':'TRACES','database_name':'porchday-'+name+'-traces','database_id':env['traces_d1_database_id'],'migrations_dir':'d1/traces'}]
 path=Path('apps/api/wrangler.edge.'+name+'.jsonc');path.write_text(json.dumps(config,indent=2)+'\n')
 print('Wrote '+str(path)+'; verify domain ownership before moving custom-domain bindings.')

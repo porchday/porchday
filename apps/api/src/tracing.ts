@@ -1,3 +1,4 @@
+import {createOperationTrace,parseTraceparent,causalPhase,causalFailure,causalSpan} from './causal-tracing';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import type {MiddlewareHandler} from 'hono';
 import {routePath} from 'hono/route';
@@ -6,7 +7,7 @@ import type {Env,Variables} from './types';
 /** Opt-in, first-party performance tracing. A browser that the member has
  * opted in sends a W3C `traceparent` header. The Worker then keeps
  * request-local spans and returns them to that member's own browser in
- * `Server-Timing`, so ordinary requests never write trace storage. The browser
+ * `Server-Timing`, while bounded operational traces are collected independently of device consent. The browser
  * batches its spans (with these server spans nested inside each fetch) into a
  * single upload. See docs/performance-tracing.md.
  */
@@ -43,14 +44,14 @@ export function traceIdFrom(header:string|undefined):string|undefined {
 }
 /** Record a span that ended now. Diagnostics never affect the operation. */
 export function recordTraceSpan(name:string,durationMs:number):void {
- try{const trace=store.getStore();trace?.span(name,performance.now()-durationMs,durationMs);}catch{}
+ try{causalPhase(name,durationMs);const trace=store.getStore();trace?.span(name,performance.now()-durationMs,durationMs);}catch{}
 }
 export function countTrace(name:string,amount=1):void {try{store.getStore()?.count(name,amount);}catch{}}
 export async function traceSpan<T>(name:string,work:()=>Promise<T>):Promise<T> {
  const trace=store.getStore();
- if(!trace)return work();
+ if(!trace)return causalSpan(name,work);
  const start=performance.now();
- try{return await work();}
+ try{return await causalSpan(name,work);}
  finally{trace.span(name,start,performance.now()-start);}
 }
 
@@ -81,9 +82,14 @@ function round(value:number):number {return Math.round(value*10)/10;}
 export function tracingMiddleware():MiddlewareHandler<{Bindings:Env;Variables:Variables}> {
  return async(c,next)=>{
   const traceId=traceIdFrom(c.req.header('traceparent'));
-  if(!traceId)return next();
-  const trace=new RequestTrace(traceId);
-  await store.run(trace,()=>next());
+  const operational=c.req.path.startsWith('/api/')?createOperationTrace(c.env,parseTraceparent(c.req.header('traceparent')),task=>c.executionCtx.waitUntil(task)):undefined;
+  if(!traceId&&!operational)return next();
+  const trace=new RequestTrace(traceId??operational!.traceId);
+  const run=()=>store.run(trace,()=>next());
+  try{if(operational)await operational.run(run);else await run();}
+  finally{operational?.finish(c.res.status,routePath(c));}
+  if(operational){c.header('X-Porchday-Trace',operational.traceId);c.header('X-Porchday-Span',operational.rootId);}
+  if(!traceId)return;
   // Only a signed-in member's own browser receives internal phase timings,
   // matching the existing rule that anonymous callers see no phase detail.
   if(!c.get('memberId'))return;
@@ -100,7 +106,7 @@ export function tracingMiddleware():MiddlewareHandler<{Bindings:Env;Variables:Va
  };
 }
 /** Called from app.onError so a traced 503 still explains itself. */
-export function traceError(error:unknown):void {try{const trace=store.getStore();if(trace&&!trace.error)trace.error=describeError(error);}catch{}}
+export function traceError(error:unknown):void {try{causalFailure(error);const trace=store.getStore();if(trace&&!trace.error)trace.error=describeError(error);}catch{}}
 
 /** Bounded server phases for an explicitly consented diagnostic request. */
 export function diagnosticServerPhases(){const trace=store.getStore();return trace?{trace:trace.traceId,phases:trace.spans.map(s=>({name:s.name,start:s.start,duration:s.duration})),error:trace.error?.split(' msg=')[0]}:null;}

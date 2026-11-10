@@ -1,3 +1,5 @@
+import {causalSpan,causalCallback,causalContext} from './causal-tracing';
+import {causalPostgres,causalPgQuery} from './causal-database';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import type {Pool} from 'pg';
 import type postgres from 'postgres';
@@ -54,16 +56,22 @@ export function trackPostgres<T extends postgres.Sql<any>>(env:object,role:Conne
   // Intercept only end(); tagged-template calls and every other member pass
   // straight through to the original client, which is left unmodified.
   const end=(options?:{timeout?:number})=>sql.end(options).finally(close);
-  return new Proxy(sql,{get:(target,key)=>key==='end'?end:Reflect.get(target,key)});
+  return causalPostgres(new Proxy(sql,{get:(target,key)=>key==='end'?end:Reflect.get(target,key)}),role);
  }catch{return sql;}
 }
 /** pg pools may open several connections; each physical connect is counted. */
 export function trackPool<T extends Pool>(env:object,role:ConnectionRole,pool:T):T {
  try{
   const {connect,close}=open(env as MetricsEnv,role);
-  pool.on('connect',connect);
+  pool.on('connect',client=>{connect();try{if(client&&typeof client.query==='function')causalPgQuery(client,role);}catch{}});
+  const acquire=pool.connect.bind(pool) as (...args:any[])=>any;
+  (pool as any).connect=(...args:any[])=>{
+   if(!causalContext())return acquire(...args);
+   if(typeof args[0]==='function')return causalCallback('db.'+role+'.connect',done=>acquire((error:any,client:any,release:any)=>{done(error);return args[0](error,client,release);}));
+   return causalSpan('db.'+role+'.connect',()=>acquire(...args));
+  };
   const end=pool.end.bind(pool) as ()=>Promise<void>;
-  (pool as {end:()=>Promise<void>}).end=()=>end().finally(close);
+  (pool as {end:()=>Promise<void>}).end=()=>causalSpan('db.'+role+'.close',end).finally(close);
  }catch{}
  return pool;
 }
