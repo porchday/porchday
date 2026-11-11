@@ -110,7 +110,10 @@ private final class ShellObservers: @unchecked Sendable {
     override init() {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
+        // Encrypted video uses the same service-worker range streaming as the PWA.
+        // WKWebView requires both this flag and WKAppBoundDomains in Info.plist.
         #if os(iOS)
+        configuration.limitsNavigationsToAppBoundDomains = true
         configuration.allowsInlineMediaPlayback = true
         #endif
         webView = WKWebView(frame: .zero, configuration: configuration)

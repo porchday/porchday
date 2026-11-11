@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Delivered November 11:** [#49](https://github.com/porchday/porchday/issues/49) / [#114](https://github.com/porchday/porchday/issues/114), P1, `needs verification`: native video service-worker capability fix is available in internal TestFlight, iOS **424** / macOS **410**. Native runtime regressions, signed archives and full CI passed. [Evidence](docs/evidence/native-video-service-workers-2026-11-11.md). Physical playback/seeking remains open; web fallback wording is source-only, with no web/API deployment in this release.
+
 **Delivered November 10:** [#168](https://github.com/porchday/porchday/issues/168), P1, `needs verification`: six-screen prefetch, twenty-screen warm retention, 128 MiB session JPEG cache with FIFO size eviction and no time limit and earlier metadata/pagination are live. [Release evidence](docs/evidence/photo-scroll-runway-2026-11-10.md). Physical scrolling and memory-pressure measurements remain open.
 
 **Delivered November 10:** [#29](https://github.com/porchday/porchday/issues/29) and [#44](https://github.com/porchday/porchday/issues/44), P2, `needs verification`: Builder chat and Feature additions are hidden from production navigation; underlying routes/functionality/data remain intact. [Release evidence](docs/evidence/hidden-builder-navigation-2026-11-10.md). Physical-device confirmation and the reported loading failure remain open.

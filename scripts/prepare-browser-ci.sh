@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# A hosted runner's Azure HTTP mirror can stall all browser verification.
-# Keep the dependency checks; bound downloads and use Ubuntu's HTTPS archive.
+# Keep dependency verification, but do not pin every runner to a broken mirror.
+# APT still verifies Ubuntu's signed repository metadata and package hashes.
 if command -v apt-get >/dev/null 2>&1; then
   if [ -f /etc/apt/apt-mirrors.txt ]; then
-    sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+    ubuntu_codename="$(. /etc/os-release; printf '%s' "$VERSION_CODENAME")"
+    ubuntu_mirror=''
+    for candidate in https://archive.ubuntu.com/ubuntu https://us.archive.ubuntu.com/ubuntu https://mirrors.edge.kernel.org/ubuntu; do
+      if curl --fail --silent --show-error --head --connect-timeout 5 --max-time 10 \
+        "$candidate/dists/$ubuntu_codename/InRelease" >/dev/null; then
+        ubuntu_mirror="$candidate"
+        break
+      fi
+    done
+    if [ -z "$ubuntu_mirror" ]; then
+      echo 'No reachable Ubuntu archive mirror; required browser dependencies cannot be installed.' >&2
+      exit 1
+    fi
+    printf '%s\n' "$ubuntu_mirror" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
+    echo "Browser dependency archive: $ubuntu_mirror"
   fi
   printf 'Acquire::Retries "2";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/99-porchday-ci-downloads >/dev/null
 fi

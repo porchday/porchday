@@ -65,11 +65,34 @@ final class WebShellTests: XCTestCase {
         XCTAssertNil(WebShellPolicy.badge(true)); XCTAssertNil(WebShellPolicy.badge(-1)); XCTAssertNil(WebShellPolicy.badge(2.5)); XCTAssertNil(WebShellPolicy.badge("1")); XCTAssertNil(WebShellPolicy.badge(1_000_001))
         XCTAssertEqual(WebShellPolicy.badge(0), 0); XCTAssertEqual(WebShellPolicy.badge(123), 123)
     }
+    // Exercise the real WebKit capability, not just a configuration assertion.
+    // Inline content uses the trusted HTTPS base URL and makes no network request.
+    @MainActor func testTrustedShellExposesServiceWorkers() async throws {
+        let store = WebShellStore()
+        store.webView.stopLoading()
+        store.webView.loadHTMLString("<!doctype html><title>Video capability test</title>", baseURL: ServerConfiguration.origin)
+        defer { store.webView.stopLoading() }
+        for _ in 0..<100 {
+            if let ready = try? await store.webView.evaluateJavaScript("document.title === 'Video capability test'"), ready as? Bool == true { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        let title = try await store.webView.evaluateJavaScript("document.title")
+        XCTAssertEqual(title as? String, "Video capability test")
+        let supported = try await store.webView.evaluateJavaScript("!!navigator.serviceWorker && !!window.webkit.messageHandlers.porchday")
+        XCTAssertEqual(supported as? Bool, true, "Video streaming and the native bridge must both be available in the installed shell")
+    }
+
     @MainActor func testForegroundAndSwiftUIUpdatesRetainWebView() {
         let store = WebShellStore(), original = store.webView
         store.setActive(false); store.setActive(true)
         XCTAssertTrue(store.webView === original)
         XCTAssertTrue(store.webView.configuration.websiteDataStore.isPersistent)
+        #if os(iOS)
+        XCTAssertTrue(store.webView.configuration.limitsNavigationsToAppBoundDomains)
+        #endif
+        let domains = Bundle.main.object(forInfoDictionaryKey: "WKAppBoundDomains") as? [String]
+        XCTAssertEqual(Set(domains ?? []), Set(["porchday.org", "staging.porchday.com"]))
+        XCTAssertTrue(domains?.contains(ServerConfiguration.origin.host!) == true)
         XCTAssertTrue(store.webView.allowsBackForwardNavigationGestures)
         XCTAssertNil(store.failure)
         store.webView.stopLoading()

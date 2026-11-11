@@ -73,7 +73,8 @@
         "docs/native-parity.md#idle-photo-cache-invalidation",
         "docs/evidence/idle-photo-flash-release-2026-11-10.md",
         "docs/native-parity.md#photo-scrolling-runway",
-        "docs/evidence/photo-scroll-runway-2026-11-10.md"
+        "docs/evidence/photo-scroll-runway-2026-11-10.md",
+        "docs/native-parity.md#native-video-service-worker-capability"
       ],
       "implementation": {
         "ios": "implemented",
@@ -143,7 +144,8 @@
         "docs/native-parity.md#idle-photo-cache-invalidation",
         "docs/evidence/idle-photo-flash-release-2026-11-10.md",
         "docs/native-parity.md#photo-scrolling-runway",
-        "docs/evidence/photo-scroll-runway-2026-11-10.md"
+        "docs/evidence/photo-scroll-runway-2026-11-10.md",
+        "docs/native-parity.md#native-video-service-worker-capability"
       ],
       "implementation": {
         "ios": "implemented",
@@ -226,7 +228,8 @@
         "docs/native-parity.md#shared-web-shell",
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
         "docs/native-parity.md#recovered-device-access-updates",
-        "docs/native-parity.md#photo-history-pending-keys"
+        "docs/native-parity.md#photo-history-pending-keys",
+        "docs/native-parity.md#native-video-service-worker-capability"
       ],
       "implementation": {
         "ios": "implemented",
@@ -249,7 +252,8 @@
         "docs/native-parity.md#larger-videos--november-6-implementation",
         "design/larger-videos.md",
         "docs/native-parity.md#shared-web-shell",
-        "docs/native-parity.md#direct-videos-and-10-gb-storage"
+        "docs/native-parity.md#direct-videos-and-10-gb-storage",
+        "docs/native-parity.md#native-video-service-worker-capability"
       ],
       "implementation": {
         "ios": "implemented",
