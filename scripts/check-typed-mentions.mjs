@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {createServer} from 'node:http';
+import {build} from 'esbuild';
+import {chromium,webkit} from 'playwright';
+const people=[{id:'00000000-0000-4000-8000-000000000001',handle:'alice'},{id:'00000000-0000-4000-8000-000000000002',handle:'bob'},{id:'00000000-0000-4000-8000-000000000003',handle:'carol'}];
+const bundle=await build({stdin:{contents:`import React,{useState} from 'react';import{createRoot}from'react-dom/client';import{PeopleDirectory,TagPicker,useMentionResolver}from'./apps/web/src/PeopleTags';import{PostText}from'./apps/web/src/PostText';function Editor(){const[text,setText]=useState(''),[tags,setTags]=useState([]),[saved,setSaved]=useState(null);const resolve=useMentionResolver();return <><textarea aria-label="Text" value={text} onChange={e=>setText(e.target.value)}/><TagPicker text={text} value={tags} onChange={setTags}/><button onClick={async()=>setSaved({text,tags:await resolve(text,tags)})}>Save</button>{saved&&<><p id="result"><PostText text={saved.text} tags={saved.tags}/></p><output>{JSON.stringify(saved.tags)}</output><button onClick={()=>{setText(saved.text);setTags(saved.tags);}}>Edit saved</button></>}</>};createRoot(document.getElementById('root')).render(<PeopleDirectory><Editor/></PeopleDirectory>);`,resolveDir:process.cwd(),loader:'tsx'},bundle:true,write:false,format:'esm',plugins:[{name:'synthetic-directory',setup(b){b.onResolve({filter:/^\.\/vault$/},()=>({path:'vault',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const useVault=()=>({member:${JSON.stringify(people[0])}});`}));b.onResolve({filter:/^\.\/api$/},()=>({path:'api',namespace:'api-fixture'}));b.onLoad({filter:/.*/,namespace:'api-fixture'},()=>({contents:`export const items=r=>r.items||[];export async function get(path){return path==='/connections'?{items:[{member_a:'${people[0].id}',member_b:'${people[1].id}'},{member_a:'${people[0].id}',member_b:'${people[2].id}'}],handles:${JSON.stringify(people)}}:{items:[]};}`}));}}]});
+const server=createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/fixture.js'?'text/javascript':'text/html');res.end(req.url==='/fixture.js'?bundle.outputFiles[0].text:'<!doctype html><div id="root"></div><script type="module" src="/fixture.js"></script>');});
+await new Promise(r=>server.listen(0,'127.0.0.1',r));
+try{for(const engine of [chromium,webkit]){const browser=await engine.launch();try{const page=await browser.newPage();await page.goto(`http://127.0.0.1:${server.address().port}`);
+ await page.getByRole('textbox',{name:'Text',exact:true}).fill('Hi @bob, @bob! @unknown mail@carol.com');
+ await page.getByRole('button',{name:'Tag people',exact:true}).click();
+ await page.getByRole('checkbox',{name:'@carol',exact:true}).check();
+ await page.getByRole('checkbox',{name:'@alice',exact:true}).check();
+ assert.equal(await page.getByRole('checkbox',{checked:true}).count(),2);
+ await page.getByRole('button',{name:'Save',exact:true}).click();
+ await page.locator('#result a').first().waitFor();
+ let tags=JSON.parse(await page.locator('output').textContent());assert.equal(tags.length,3);assert.equal(tags.filter(t=>t.id===people[1].id).length,1);
+ assert.equal(await page.locator('#result a').count(),2);assert.equal(await page.locator('#result a').first().getAttribute('href'),'/wall/'+people[1].id);
+ await page.getByRole('button',{name:'Edit saved',exact:true}).click();
+ await page.getByRole('textbox',{name:'Text',exact:true}).fill('Removed the mention');
+ await page.getByRole('button',{name:'Save',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('#result')?.textContent==='Removed the mention');
+ tags=JSON.parse(await page.locator('output').textContent());assert.equal(tags.length,2);assert(!tags.some(t=>t.id===people[1].id));
+ await page.getByRole('checkbox',{name:'@alice',exact:true}).uncheck();await page.getByRole('button',{name:'Save',exact:true}).click();await page.waitForFunction(()=>JSON.parse(document.querySelector('output').textContent).length===1);
+ console.log(engine.name()+': typed handles, stable linked rendering, multi-select, duplicates, unknown/email text and edited removal passed');
+ }finally{await browser.close();}}}finally{server.close();}

@@ -7,7 +7,8 @@ import React, {
 } from "react";
 import { get, items, type Content, type Json } from "./api";
 import { useVault } from "./vault";
-export type PersonTag = { id: string; kind: "member" | "child"; label: string };
+import {handleTokens, resolveMentionTags} from "./mentions";
+export type PersonTag = { id: string; kind: "member" | "child"; label: string; source?: "mention" };
 export type ChildRecord = Json & {
   id: string;
   owner_id: string;
@@ -192,97 +193,47 @@ export function validTags(value: unknown): PersonTag[] {
     )
     .slice(0, 30);
 }
-export function TagPicker({
-  value,
-  onChange,
-  label = "Tag people",
-  disabled = false,
-}: {
-  value: PersonTag[];
-  onChange: (tags: PersonTag[]) => void;
-  label?: string;
-  disabled?: boolean;
+// Resolve at save time as well as preview time so a quick submit cannot miss a tag.
+export function useMentionResolver() {
+  const vault = useVault();
+  return async (text: string, tags: PersonTag[]) => {
+    if (!handleTokens(text).length) return tags.filter(t => t.source !== "mention");
+    const connections = await get("/connections");
+    const ids = new Set(items<Json>(connections).flatMap(r => [r.member_a, r.member_b]));
+    const people: PersonTag[] = [{id:vault.member.id,kind:"member",label:vault.member.handle},
+      ...(connections.handles || []).filter((h:Json) => ids.has(h.id)).map((h:Json) => ({id:h.id,kind:"member" as const,label:h.handle}))];
+    return resolveMentionTags(text,tags,people);
+  };
+}
+export function TagPicker({value,onChange,label="Tag people",disabled=false,text=""}: {
+ value:PersonTag[];onChange:(tags:PersonTag[])=>void;label?:string;disabled?:boolean;text?:string;
 }) {
-  const directory = usePeopleDirectory();
-  const [choosing, setChoosing] = useState(false);
-  if (!choosing && !value.length)
-    return (
-      <button
-        type="button"
-        className="text-button"
-        onClick={() => {
-          directory.ensure();
-          setChoosing(true);
-        }}
-      >
-        {label}
-      </button>
-    );
-  return (
-    <div className="people-tag-picker">
-      <label>
-        {label}
-        <select
-          onFocus={directory.ensure}
-          aria-label={label}
-          value=""
-          disabled={disabled || value.length >= 30}
-          onChange={(e) => {
-            const person = directory.people.find(
-              (p) => p.kind + ":" + p.id === e.target.value,
-            );
-            if (person) onChange([...value, person]);
-          }}
-        >
-          <option value="">Choose a person…</option>
-          {directory.people
-            .filter(
-              (p) => !value.some((t) => t.id === p.id && t.kind === p.kind),
-            )
-            .map((p) => (
-              <option key={p.kind + p.id} value={p.kind + ":" + p.id}>
-                {p.kind === "member" ? "@" : ""}
-                {p.label}
-                {p.kind === "child" ? " (child)" : ""}
-              </option>
-            ))}
-        </select>
-      </label>
-      {directory.loading && <p role="status">Loading people…</p>}
-      {directory.more && (
-        <button
-          type="button"
-          disabled={directory.loading}
-          onClick={directory.loadMore}
-        >
-          Load more children
-        </button>
-      )}
-      <div className="people-tags">
-        {value.map((p) => (
-          <button
-            type="button"
-            disabled={disabled}
-            key={p.kind + p.id}
-            onClick={() =>
-              onChange(value.filter((t) => t.id !== p.id || t.kind !== p.kind))
-            }
-            aria-label={`Remove tag ${p.label}`}
-          >
-            {p.label} ×
-          </button>
-        ))}
-      </div>
-      {directory.error && (
-        <p role="alert">
-          {directory.error}{" "}
-          <button type="button" onClick={directory.reload}>
-            Retry
-          </button>
-        </p>
-      )}
-    </div>
-  );
+ const directory=usePeopleDirectory();
+ const [choosing,setChoosing]=useState(false),[search,setSearch]=useState("");
+ const hasHandles=handleTokens(text).length>0;
+ useEffect(()=>{if(hasHandles)directory.ensure();},[hasHandles,directory.ensure]);
+ let preview=value;
+ let limitError="";
+ try { preview=resolveMentionTags(text,value,directory.people); } catch(error) { limitError=(error as Error).message; }
+ const typed=preview.filter(p=>p.source==="mention");
+ const unresolved=handleTokens(text).filter(token=>!preview.some(p=>p.kind==="member"&&p.label.toLowerCase()===token.handle));
+ return <div className="people-tag-picker">
+  <button type="button" className="text-button" disabled={disabled} aria-expanded={choosing} onClick={()=>{directory.ensure();setChoosing(!choosing);}}>{choosing?"Done selecting people":label}</button>
+  {choosing&&<fieldset disabled={disabled}><legend>{label}</legend>
+   <label>Find people<input type="search" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Name or @handle"/></label>
+   <div className="people-tag-options">{directory.people.filter(p=>p.label.toLowerCase().includes(search.replace(/^@/,"").toLowerCase())).map(p=>{
+    const checked=value.some(t=>t.id===p.id&&t.kind===p.kind&&t.source!=="mention");
+    return <label key={p.kind+p.id}><input type="checkbox" checked={checked} disabled={!checked&&preview.length>=30} onChange={()=>onChange(checked?value.filter(t=>t.id!==p.id||t.kind!==p.kind):[...value.filter(t=>t.id!==p.id||t.kind!==p.kind),{id:p.id,kind:p.kind,label:p.label}])}/>{p.kind==="member"?"@":""}{p.label}{p.kind==="child"?" (child)":""}</label>;
+   })}</div>
+   {directory.more&&<button type="button" disabled={directory.loading} onClick={directory.loadMore}>Load more children</button>}
+  </fieldset>}
+  <div className="people-tags">{value.filter(p=>p.source!=="mention").map(p=><button type="button" disabled={disabled} key={p.kind+p.id} onClick={()=>onChange(value.filter(t=>t.id!==p.id||t.kind!==p.kind))} aria-label={`Remove tag ${p.label}`}>{p.kind==="member"?"@":""}{p.label} ×</button>)}</div>
+  {typed.length>0&&<p className="small-copy">Tagged in text: {typed.map(p=>"@"+p.label).join(", ")}. Remove the handle from the text to remove its tag.</p>}
+  {hasHandles&&unresolved.length>0&&!directory.loading&&<p className="small-copy">Unrecognized handles stay as text. You can tag yourself and your connections.</p>}
+  {(choosing||hasHandles)&&directory.loading&&<p role="status">Loading people…</p>}
+  {limitError&&<p role="alert">{limitError}</p>}
+  {(choosing||hasHandles)&&directory.error&&<p role="alert">{directory.error} <button type="button" disabled={disabled} onClick={directory.reload}>Retry</button></p>}
+ </div>;
 }
 export function Tags({ value }: { value: unknown }) {
   return (
