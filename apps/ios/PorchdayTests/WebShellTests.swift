@@ -87,7 +87,9 @@ final class WebShellTests: XCTestCase {
         store.setActive(false); store.setActive(true)
         XCTAssertTrue(store.webView === original)
         XCTAssertTrue(store.webView.configuration.websiteDataStore.isPersistent)
+        #if os(iOS)
         XCTAssertTrue(store.webView.configuration.limitsNavigationsToAppBoundDomains)
+        #endif
         let domains = Bundle.main.object(forInfoDictionaryKey: "WKAppBoundDomains") as? [String]
         XCTAssertEqual(Set(domains ?? []), Set(["porchday.org", "staging.porchday.com"]))
         XCTAssertTrue(domains?.contains(ServerConfiguration.origin.host!) == true)
