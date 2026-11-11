@@ -1,3 +1,4 @@
+import {PostText} from "./PostText";
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {base64ToBytes,canonicalJson,type EncryptedEnvelope} from '@porchday/crypto';
 import {verifyPhotoBytes,type PhotoProof} from '@porchday/crypto/photos';
@@ -67,7 +68,7 @@ export function CachedEncryptedPhoto({media,thumbnail=false,photoProof}:{media:M
   <div className="stable-photo-frame" style={{aspectRatio:`${width} / ${height}`}}>
    {url&&displayNear?<img ref={imageRef} src={url} width={width} height={height} alt={media.alt||'Shared photo (no description provided)'} decoding="async" role={thumbnail?undefined:'button'} tabIndex={thumbnail?undefined:0} aria-label={thumbnail?undefined:`Open photo: ${media.alt||'Shared photo'}`} onClick={thumbnail?undefined:()=>setViewer(true)} onKeyDown={thumbnail?undefined:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setViewer(true);}}}/>:<div className="photo-placeholder"><Icon name={error?'shield':'photo'} size={24}/><span>{error||(displayNear?'Opening encrypted media…':'Media loads as you scroll')}</span></div>}
   </div>
-  {!thumbnail&&media.alt&&<figcaption>{media.alt}</figcaption>}{!thumbnail&&<Tags value={media.tags}/>}
+  {!thumbnail&&media.alt&&<figcaption><PostText text={media.alt} tags={media.tags}/></figcaption>}{!thumbnail&&<Tags value={media.tags}/>}
   {!thumbnail&&viewer&&url&&<PhotoViewer src={url} alt={media.alt||''} onClose={()=>setViewer(false)}/>}
  </figure></div>;
 }

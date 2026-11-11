@@ -1,3 +1,5 @@
+import {TagPicker,Tags,useMentionResolver,type PersonTag} from "./PeopleTags";
+import {PostText} from "./PostText";
 import {useNearViewport} from "./near-viewport";
 import {ReactionChips} from "./ReactionChips";
 import {EmojiPicker} from "./EmojiPicker";
@@ -17,6 +19,8 @@ export function validatePhotoInteraction(row:Row,photo:PhotoRow){
 export function PhotoInteractions({photo}:{photo:PhotoRow}){
  const {ref,near}=useNearViewport<HTMLElement>();
  const vault=useVault(),action=useAction();const [expired,setExpired]=useState(false),[expanded,setExpanded]=useState(false),[rows,setRows]=useState<Row[]>([]),[ownReaction,setOwnReaction]=useState<Row|null>(null),[next,setNext]=useState<string|null>(null),[text,setText]=useState("");
+ const resolveMentions=useMentionResolver();
+ const [tags,setTags]=useState<PersonTag[]>([]);
  const [picker,setPicker]=useState(false);const addButton=useRef<HTMLButtonElement>(null);
  const generation=useRef(0),pending=useRef<{envelope:EncryptedEnvelope;text:string}|null>(null);
  async function load(after?:string){const token=++generation.current;try{const result=await get(`/photos/${photo.id}/interactions`+(after?"?after="+encodeURIComponent(after):""));
@@ -26,16 +30,17 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
  }catch(error){if(token===generation.current){setRows([]);setOwnReaction(null);}throw error;}}
  useEffect(()=>{const deadline=photo.expires_at?Date.parse(photo.expires_at):null;const check=()=>setExpired(deadline!==null&&Date.now()>=deadline);check();if(deadline===null)return;const timer=setInterval(check,1000);return()=>clearInterval(timer);},[photo.id,photo.expires_at]);
  useEffect(()=>{if(expired){generation.current++;pending.current=null;setRows([]);setOwnReaction(null);setText("");}},[expired]);
- useEffect(()=>{pending.current=null;setText("");setRows([]);setOwnReaction(null);setNext(null);},[photo.id,vault.member.id]);
+ useEffect(()=>{pending.current=null;setText("");setTags([]);setRows([]);setOwnReaction(null);setNext(null);},[photo.id,vault.member.id]);
  useEffect(()=>{if(near&&!expired)void action.run(()=>load());return()=>{generation.current++;};},[near,expired,photo.id,vault.member.id,vault.device.id]);
  const own=ownReaction||rows.find(r=>r.kind==="reaction"&&r.author_id===vault.member.id),write=vault.member.status==="active";
  async function send(kind:"comment"|"reaction",value:string|ReactionPayload){await action.runSave(async()=>{
   if(kind==="reaction"&&own?.content?.emoji===(typeof value==="string"?value:value.emoji)){await del(`/photos/${photo.id}/interactions/${own.id}`);await load();return;}
-  const key=kind+":"+JSON.stringify(value);
-  if(!pending.current||pending.current.text!==key)pending.current={text:key,envelope:await vault.seal(kind==="comment"?{text:value}:await validateReactionPayload(value),{kind,audience:"photo",parentId:photo.id,expiresAt:photo.expires_at?new Date(photo.expires_at).toISOString():null},photo.id)};
+  const commentTags=kind==="comment"?await resolveMentions(String(value),tags):[];
+  const key=kind+":"+JSON.stringify([value,commentTags]);
+  if(!pending.current||pending.current.text!==key)pending.current={text:key,envelope:await vault.seal(kind==="comment"?{text:value,tags:commentTags}:await validateReactionPayload(value),{kind,audience:"photo",parentId:photo.id,expiresAt:photo.expires_at?new Date(photo.expires_at).toISOString():null},photo.id)};
   try{await request(`/photos/${photo.id}/interactions`,{method:"POST",body:JSON.stringify({envelope:pending.current.envelope})});}
   catch(error){if(error&&typeof error==="object"&&"code" in error&&["AUDIENCE_CHANGED","INVALID_CREATION_TIME"].includes(String(error.code)))pending.current=null;throw error;}
-  pending.current=null;if(kind==="comment")setText("");else setPicker(false);await load();
+  pending.current=null;if(kind==="comment"){setText("");setTags([]);}else setPicker(false);await load();
  });}
  if(expired)return <p>This photo has expired.</p>;
  const reactions=[...rows.filter(r=>r.kind==="reaction"&&!r.error),...(ownReaction&&!ownReaction.error&&!rows.some(r=>r.id===ownReaction.id)?[ownReaction]:[])];
@@ -50,9 +55,9 @@ export function PhotoInteractions({photo}:{photo:PhotoRow}){
   {rows.some(r=>r.kind==="reaction"&&r.error)&&<p className="small-copy">Some reactions could not be opened.</p>}
   {next&&!expanded&&<button type="button" className="text-button" disabled={action.busy} onClick={()=>action.run(()=>load(next))}>Load more reactions and comments</button>}
   {expanded&&<section className="comments" aria-label="Comments">
-   {comments.map(row=><article key={row.id} className="comment"><strong>@{row.author_handle||"member"}</strong><p style={{whiteSpace:"pre-wrap"}}>{row.error||String(row.content?.text||"")}</p>{write&&(row.author_id===vault.member.id||photo.owner_id===vault.member.id)&&<Button variant="quiet" disabled={action.busy} onClick={()=>action.runSave(async()=>{await del(`/photos/${photo.id}/interactions/${row.id}`);await load();})}>Delete comment</Button>}</article>)}
+   {comments.map(row=><article key={row.id} className="comment"><strong>@{row.author_handle||"member"}</strong><p style={{whiteSpace:"pre-wrap"}}>{row.error||<PostText text={String(row.content?.text||"")} tags={row.content?.tags}/>}</p><Tags value={row.content?.tags}/>{write&&(row.author_id===vault.member.id||photo.owner_id===vault.member.id)&&<Button variant="quiet" disabled={action.busy} onClick={()=>action.runSave(async()=>{await del(`/photos/${photo.id}/interactions/${row.id}`);await load();})}>Delete comment</Button>}</article>)}
    {next&&<Button busy={action.busy} onClick={()=>action.run(()=>load(next))}>Load more comments and reactions</Button>}
-   {write&&<form className="form-stack comment-composer" onSubmit={e=>{e.preventDefault();if(text.trim())void send("comment",text.trim());}}><label>Comment<textarea data-diagnostic-input="photo-comment" maxLength={5000} value={text} disabled={action.busy} onChange={e=>setText(e.target.value)} placeholder="Write a comment…"/></label><Button variant="primary" type="submit" disabled={!text.trim()} busy={action.busy}>Comment</Button></form>}
+   {write&&<form className="form-stack comment-composer" onSubmit={e=>{e.preventDefault();if(text.trim())void send("comment",text.trim());}}><label>Comment<textarea data-diagnostic-input="photo-comment" maxLength={5000} value={text} disabled={action.busy} onChange={e=>setText(e.target.value)} placeholder="Write a comment…"/></label><TagPicker text={text} value={tags} onChange={setTags} disabled={action.busy}/><Button variant="primary" type="submit" disabled={!text.trim()} busy={action.busy}>Comment</Button></form>}
   </section>}
  </section>;
 }

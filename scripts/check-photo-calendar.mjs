@@ -268,11 +268,9 @@ try {
   await page.goto(origin + "/compose");
   assert.deepEqual(await page.getByRole("combobox",{name:"Post audience",exact:true}).locator("option").allTextContents(),["Friends & family","Friends","Family","Extended family","Community","Only me"]);
   await page.getByRole("button", { name: "Tag people", exact: true }).click();
-  await page
-    .getByLabel("Tag people", { exact: true })
-    .selectOption("member:" + friend);
+  await page.getByRole("checkbox", {name:"@friend",exact:true}).check();
   await page.getByRole("button", { name: "Remove tag friend" }).waitFor();
-  await page.getByLabel("Write a post").fill("A tagged moment");
+  await page.getByLabel("Write a post").fill("A tagged moment with @parent");
   await page.getByLabel("Posting on behalf of",{exact:true}).selectOption(child);
   await page.getByRole("button", { name: /Share/ }).click();
   await page.getByText("Post shared.").waitFor();
@@ -284,6 +282,7 @@ try {
     ),
   );
   assert(calls.some(c=>c.path==='/api/v1/posts'&&c.body.on_behalf_of===child&&c.body.envelope.payload.tags.some(t=>t.id===child)));
+  assert(calls.some(c=>c.path==='/api/v1/posts'&&c.body.envelope.payload.tags.some(t=>t.id===self&&t.source==='mention')));
   for (const [extension,mime] of [['mp4','video/mp4'],['mov','video/quicktime']]) {
     const bytes=await readFile(`apps/web/test/fixtures/synthetic-video.${extension}`);
     const result=await page.evaluate(async encoded=>{

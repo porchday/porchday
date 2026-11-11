@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner request November 11:** [#125](https://github.com/porchday/porchday/issues/125), P2: typed @handles and persistent multi-select tagging across post text, comments and photo/video captions. Implementing in the shared web/iOS/macOS shell; production release and physical-device acceptance are not yet verified.
+
 **Delivered November 11:** [#49](https://github.com/porchday/porchday/issues/49) / [#114](https://github.com/porchday/porchday/issues/114), P1, `needs verification`: native video capability fix is in internal TestFlight iOS **424** / macOS **410**, and accurate native/browser playback guidance is live on staging and production. [Native evidence](docs/evidence/native-video-service-workers-2026-11-11.md), [web release evidence](docs/evidence/native-video-web-release-2026-11-11.md). Physical playback remains open. Initial monitor window had one journey deadline; eight subsequent healthy probes verified recovery, tracked in #55.
 
 **Delivered November 10:** [#168](https://github.com/porchday/porchday/issues/168), P1, `needs verification`: six-screen prefetch, twenty-screen warm retention, 128 MiB session JPEG cache with FIFO size eviction and no time limit and earlier metadata/pagination are live. [Release evidence](docs/evidence/photo-scroll-runway-2026-11-10.md). Physical scrolling and memory-pressure measurements remain open.

@@ -7,13 +7,13 @@ import {get,request,del,items,message,type Content,type EncryptedEnvelope} from 
 import {useVault} from "./vault";
 import {Alert,Button,Empty,Field,Loading,Modal,useAction} from "./ui";
 import {EncryptedPhoto} from "./Social";
-import {TagPicker,validTags} from "./PeopleTags";
+import {TagPicker,validTags,useMentionResolver} from "./PeopleTags";
 import type {AlbumRow} from "./Albums";
 import {openPhoto,type PhotoRow} from "./photo-record";
 export {openPhoto,type PhotoRow,type PhotoGrant} from "./photo-record";
 import {addPhotoToAlbum} from "./photo-album";
 export function PhotoCard({photo,onChanged,album,header}:{photo:PhotoRow;onChanged:()=>void;album?:AlbumRow;header?:React.ReactNode}){
-  const vault=useVault(),action=useAction();
+  const vault=useVault(),action=useAction(),resolveMentions=useMentionResolver();
   const photoIdentity=canonicalJson(JSON.parse(JSON.stringify(photo)))+vault.member.id+vault.keys.map(key=>key.getFingerprint()).sort().join(',');
   const [opened,setOpened]=useState<{identity:string;content:Content}|null>(null),[error,setError]=useState("");
   const content=opened?.identity===photoIdentity?opened.content:null;
@@ -34,7 +34,8 @@ export function PhotoCard({photo,onChanged,album,header}:{photo:PhotoRow;onChang
     if(alive)setError(message(last));
   })();return()=>{alive=false;};},[photoIdentity,vault.member.id,vault.privateKey]);
   async function save(){await action.runSave(async()=>{
-    await updatePhoto(vault,photo,date,m=>({...m,alt:caption,tags}));setEditing(false);onChanged();
+    const resolvedTags=await resolveMentions(caption,tags);
+    await updatePhoto(vault,photo,date,m=>({...m,alt:caption,tags:resolvedTags}));setEditing(false);onChanged();
   },"Photo updated.");}
   const own=photo.owner_id===vault.member.id,write=vault.member.status==="active";
   return <article data-feed-readable={content ? "true" : "false"} className={"panel independent-photo"+(header?" feed-photo-card":"")}>{header&&<header className="post-heading">{header}</header>}<Alert>{error||action.error}</Alert><Alert success>{action.notice}</Alert>
@@ -45,7 +46,7 @@ export function PhotoCard({photo,onChanged,album,header}:{photo:PhotoRow;onChang
     {album&&write&&(own||album.role==="admin")&&<Button variant="quiet" onClick={()=>setConfirm("remove")}>Remove from album</Button>}
     {own&&write&&<Button variant="quiet" onClick={()=>setConfirm("delete")}>Delete photo</Button>}
     {adding&&<Modal title="Add photo to an album" onClose={()=>setAdding(false)}><div className="form-stack"><Alert>{action.error}</Alert><label>Album<select aria-label="Album" value={destination} disabled={action.busy} onChange={e=>setDestination(e.target.value)}><option value="">Choose an album</option>{choices.map(choice=><option key={choice.id} value={choice.id}>{choice.name}</option>)}</select></label>{!action.busy&&!choices.length&&<p>No other writable albums are available. Create one in Albums first.</p>}<p>Everyone in the selected album will be able to see this photo. Its original audience and other albums keep their access. Future album members may receive album history.</p><Button variant="primary" disabled={!destination} busy={action.busy} onClick={()=>action.runSave(async()=>{await addPhotoToAlbum(vault,photo.id,destination);setAdding(false);onChanged();},"Photo added to album.")}>Add photo to album</Button></div></Modal>}
-    {editing&&<Modal title="Edit photo" onClose={()=>setEditing(false)}><form className="form-stack" onSubmit={e=>{e.preventDefault();void save();}}><Field disabled={action.busy} label="Photo date" type="date" required value={date} onChange={e=>setDate(e.target.value)}/><Field disabled={action.busy} label="Caption" maxLength={1000} value={caption} onChange={e=>setCaption(e.target.value)}/><TagPicker value={tags} disabled={action.busy} onChange={setTags}/><p>Changing the date or caption keeps the photo’s existing sharing permissions.</p><Alert>{action.error}</Alert><Button type="submit" busy={action.busy} variant="primary">Save photo</Button></form></Modal>}
+    {editing&&<Modal title="Edit photo" onClose={()=>setEditing(false)}><form className="form-stack" onSubmit={e=>{e.preventDefault();void save();}}><Field disabled={action.busy} label="Photo date" type="date" required value={date} onChange={e=>setDate(e.target.value)}/><Field disabled={action.busy} label="Caption" maxLength={1000} value={caption} onChange={e=>setCaption(e.target.value)}/><TagPicker text={caption} value={tags} disabled={action.busy} onChange={setTags}/><p>Changing the date or caption keeps the photo’s existing sharing permissions.</p><Alert>{action.error}</Alert><Button type="submit" busy={action.busy} variant="primary">Save photo</Button></form></Modal>}
     {confirm&&<Modal title={confirm==="delete"?"Delete this photo?":"Remove from album?"} onClose={()=>setConfirm(null)}><p>{confirm==="delete"?"This deletes the photo, its original post attachment if present, and its album sharing paths. Copies already saved by others cannot be recalled.":"This removes only this album’s access. Other albums and the original audience keep their access."}</p><Alert>{action.error}</Alert><Button busy={action.busy} onClick={()=>action.runSave(async()=>{if(confirm==="delete")await del("/photos/"+photo.id);else{const grant=photo.grants.find(g=>g.album_id===album?.id);if(!grant)throw Error("Reload the album before removing this photo.");await del(`/photos/${photo.id}/grants/${grant.id}`);}setConfirm(null);onChanged();})}>Confirm</Button></Modal>}
   </article>;
 }

@@ -81,6 +81,7 @@ jobs:
       - run: node scripts/check-existing-album-photos.mjs
       - run: node scripts/check-photo-interactions.mjs
       - run: node scripts/check-post-links.mjs
+      - run: node scripts/check-typed-mentions.mjs
       - run: node scripts/check-photo-viewer.mjs
       - run: node scripts/check-photo-scroll-cache.mjs
       - run: node scripts/check-photo-interaction-demand.mjs

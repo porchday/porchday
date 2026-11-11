@@ -74,7 +74,8 @@
         "docs/evidence/idle-photo-flash-release-2026-11-10.md",
         "docs/native-parity.md#photo-scrolling-runway",
         "docs/evidence/photo-scroll-runway-2026-11-10.md",
-        "docs/native-parity.md#native-video-service-worker-capability"
+        "docs/native-parity.md#native-video-service-worker-capability",
+        "docs/native-parity.md#typed-handles-and-multiple-person-selection"
       ],
       "implementation": {
         "ios": "implemented",
@@ -107,7 +108,8 @@
         "docs/native-parity.md#idle-photo-cache-invalidation",
         "docs/evidence/idle-photo-flash-release-2026-11-10.md",
         "docs/native-parity.md#photo-scrolling-runway",
-        "docs/evidence/photo-scroll-runway-2026-11-10.md"
+        "docs/evidence/photo-scroll-runway-2026-11-10.md",
+        "docs/native-parity.md#typed-handles-and-multiple-person-selection"
       ],
       "implementation": {
         "ios": "implemented",
@@ -145,7 +147,8 @@
         "docs/evidence/idle-photo-flash-release-2026-11-10.md",
         "docs/native-parity.md#photo-scrolling-runway",
         "docs/evidence/photo-scroll-runway-2026-11-10.md",
-        "docs/native-parity.md#native-video-service-worker-capability"
+        "docs/native-parity.md#native-video-service-worker-capability",
+        "docs/native-parity.md#typed-handles-and-multiple-person-selection"
       ],
       "implementation": {
         "ios": "implemented",

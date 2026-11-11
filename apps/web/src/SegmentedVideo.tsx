@@ -1,3 +1,4 @@
+import {PostText} from "./PostText";
 import {verifyPhotoVideo} from './photo-video';
 import type {PhotoProof} from '@porchday/crypto/photos';
 import React,{useEffect,useRef,useState} from 'react';
@@ -30,5 +31,5 @@ export function SegmentedVideo({media,thumbnail=false,photoProof}:{media:MediaPa
    setURL(playback.url);
   }catch(e){if(!abort.signal.aborted)setError((e as Error).message);abort.abort();}finally{if(active.current===abort)setBusy(false);}
  }
- return <figure className="photo-figure">{url?<video src={url} controls playsInline preload="metadata" poster={poster||undefined} aria-label={media.alt||'Shared video'} onError={()=>{setError('This video could not be streamed. Check your connection and try again.');stop();}}/>:<>{poster&&<img src={poster} alt={media.alt||'Video preview'}/>}<Button disabled={busy||thumbnail} onClick={()=>void play()}>{busy?'Opening video…':thumbnail?'Video':'Play video'}</Button>{media.duration&&<span className="small-copy">{Math.floor(media.duration/60)}:{String(Math.floor(media.duration%60)).padStart(2,'0')}</span>}</>}<Alert>{error}</Alert>{!thumbnail&&media.alt&&<figcaption>{media.alt}</figcaption>}{!thumbnail&&<Tags value={media.tags}/>}</figure>;
+ return <figure className="photo-figure">{url?<video src={url} controls playsInline preload="metadata" poster={poster||undefined} aria-label={media.alt||'Shared video'} onError={()=>{setError('This video could not be streamed. Check your connection and try again.');stop();}}/>:<>{poster&&<img src={poster} alt={media.alt||'Video preview'}/>}<Button disabled={busy||thumbnail} onClick={()=>void play()}>{busy?'Opening video…':thumbnail?'Video':'Play video'}</Button>{media.duration&&<span className="small-copy">{Math.floor(media.duration/60)}:{String(Math.floor(media.duration%60)).padStart(2,'0')}</span>}</>}<Alert>{error}</Alert>{!thumbnail&&media.alt&&<figcaption><PostText text={media.alt} tags={media.tags}/></figcaption>}{!thumbnail&&<Tags value={media.tags}/>}</figure>;
 }
