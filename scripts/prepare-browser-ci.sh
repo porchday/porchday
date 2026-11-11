@@ -6,7 +6,7 @@ if command -v apt-get >/dev/null 2>&1; then
   if [ -f /etc/apt/apt-mirrors.txt ]; then
     ubuntu_codename="$(. /etc/os-release; printf '%s' "$VERSION_CODENAME")"
     ubuntu_mirror=''
-    for candidate in https://archive.ubuntu.com/ubuntu https://us.archive.ubuntu.com/ubuntu; do
+    for candidate in https://archive.ubuntu.com/ubuntu https://us.archive.ubuntu.com/ubuntu https://mirrors.edge.kernel.org/ubuntu; do
       if curl --fail --silent --show-error --head --connect-timeout 5 --max-time 10 \
         "$candidate/dists/$ubuntu_codename/InRelease" >/dev/null; then
         ubuntu_mirror="$candidate"
@@ -14,7 +14,7 @@ if command -v apt-get >/dev/null 2>&1; then
       fi
     done
     if [ -z "$ubuntu_mirror" ]; then
-      echo 'No reachable official Ubuntu archive; required browser dependencies cannot be installed.' >&2
+      echo 'No reachable Ubuntu archive mirror; required browser dependencies cannot be installed.' >&2
       exit 1
     fi
     printf '%s\n' "$ubuntu_mirror" | sudo tee /etc/apt/apt-mirrors.txt >/dev/null
