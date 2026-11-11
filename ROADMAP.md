@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current native video defect:** [#49](https://github.com/porchday/porchday/issues/49) / [#114](https://github.com/porchday/porchday/issues/114), P1: the installed web shell omits app-bound-domain configuration required for service-worker video streaming. PWA playback succeeds while TestFlight rejects it. Configuration fix and capability regression are implemented; native CI, updated signed distribution and physical playback acceptance remain pending.
+
 **Delivered November 10:** [#168](https://github.com/porchday/porchday/issues/168), P1, `needs verification`: six-screen prefetch, twenty-screen warm retention, 128 MiB session JPEG cache with FIFO size eviction and no time limit and earlier metadata/pagination are live. [Release evidence](docs/evidence/photo-scroll-runway-2026-11-10.md). Physical scrolling and memory-pressure measurements remain open.
 
 **Delivered November 10:** [#29](https://github.com/porchday/porchday/issues/29) and [#44](https://github.com/porchday/porchday/issues/44), P2, `needs verification`: Builder chat and Feature additions are hidden from production navigation; underlying routes/functionality/data remain intact. [Release evidence](docs/evidence/hidden-builder-navigation-2026-11-10.md). Physical-device confirmation and the reported loading failure remain open.

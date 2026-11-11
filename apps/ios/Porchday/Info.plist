@@ -2,6 +2,11 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>WKAppBoundDomains</key>
+	<array>
+		<string>porchday.org</string>
+		<string>staging.porchday.com</string>
+	</array>
 	<key>PorchdayNotificationKeychainGroup</key>
 	<string>$(PORCHDAY_NOTIFICATION_KEYCHAIN_GROUP)</string>
 	<key>PorchdayAPNsEnvironment</key>
