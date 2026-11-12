@@ -18,6 +18,8 @@ Porchday's original source is licensed under Apache License 2.0. Dependencies ke
 | React Scheduler | 0.28.0 | MIT | https://github.com/facebook/react |
 | fflate | 0.8.3 | MIT | https://github.com/101arrowz/fflate/tree/v0.8.3 |
 | node-qrcode | 1.5.4 | MIT | https://github.com/soldair/node-qrcode/tree/v1.5.4 |
+| jsQR | 1.4.0 | Apache-2.0 | https://github.com/cozmo/jsQR |
+| shamir-secret-sharing | 0.0.4 | Apache-2.0 | https://github.com/privy-io/shamir-secret-sharing |
 | dijkstrajs | 1.0.3 | MIT | https://github.com/andrewhayward/dijkstra |
 
 OpenPGP.js is used without Porchday changes. Its distribution includes upstream bundled dependencies; retain its source tree, lockfile, package metadata and bundled copyright/license headers when rebuilding or redistributing. The accompanying LGPL v3 text incorporates GPL v3; both full texts are included. Do not remove upstream notices or restrict permitted debugging/modification of the library.
