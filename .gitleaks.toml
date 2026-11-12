@@ -139,3 +139,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['(?:^|/)docs/evidence/reaction-access-release-2026-11-09\.md$']
 regexes = ['^(?:4474062837b36ed1e33bd8c7e3f45cbe3d4dc777|4d230fc96af750f168c1b21a20d71f6813d7847e)$']
+
+[[allowlists]]
+description = "Exact two schema declarations containing PGP armor header validators; no key material. Historical complete-file scanner spans these adjacent headers."
+targetRules = ["private-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['(?:^|/)apps/api/src/social\.ts$']
+regexes = ["^\\-\\-\\-\\-\\-BEGIN\\ PGP\\ PRIVATE\\ KEY\\ BLOCK\\-\\-\\-\\-\\-'\\)\\.max\\(30000\\)\\ \\}\\)\\.strict\\(\\);\\\nconst\\ deviceBackupKey\\ =\\ z\\.object\\(\\{id:uuid,public_key:z\\.string\\(\\)\\.max\\(30000\\),fingerprint:z\\.string\\(\\)\\.regex\\(/\\^\\[0\\-9a\\-f\\]\\{64\\}\\$/\\),encrypted_private_key:z\\.string\\(\\)\\.startsWith\\('\\-\\-\\-\\-\\-BEGIN\\ PGP\\ PRIVATE\\ KEY\\ BLOCK\\-\\-\\-\\-\\-$"]
