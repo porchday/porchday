@@ -189,8 +189,15 @@ function readObjectURL(blob: Blob) {
 export async function preparePhoto(file: File, maxDimension = 2400) {
   if (file.size > PHOTO_SOURCE_MAX_BYTES)
     throw new Error("Each source photo must be 50 MB or smaller.");
-  const bytes = new Uint8Array(await file.arrayBuffer()),
-    mime = photoSourceMime(bytes),
+  let bytes: Uint8Array;
+  try {
+    bytes = new Uint8Array(await file.arrayBuffer());
+  } catch {
+    throw new Error(
+      "Your browser could not read this photo. Choose it again. If you selected it from the Mac Photos library, export it from Photos as a JPEG to Downloads, then choose that file. If it is stored in the cloud, download it to this device first.",
+    );
+  }
+  const mime = photoSourceMime(bytes),
     source = mime === "image/jpeg" ? jpegSource(bytes) : null;
   let bitmap: ImageBitmap;
   try {
