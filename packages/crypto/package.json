@@ -9,17 +9,19 @@
     "./browser": "./src/browser.ts",
     "./reactions": "./src/reactions.ts",
     "./photos": "./src/photos.ts",
-    "./video": "./src/video.ts"
+    "./video": "./src/video.ts",
+    "./recovery": "./src/recovery.ts"
   },
   "scripts": {
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "openpgp": "6.3.2"
+    "openpgp": "6.3.2",
+    "shamir-secret-sharing": "0.0.4"
   },
   "devDependencies": {
-    "typescript": "5.9.3",
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.0.0",
+    "typescript": "5.9.3"
   }
 }

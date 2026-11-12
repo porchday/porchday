@@ -54,6 +54,7 @@ export interface Env {
   APNS_TEAM_ID?: string;
   APNS_KEY_ID?: string;
   APNS_BUNDLE_ID?: string;
+  KEY_RECOVERY_ENABLED?: string;
   APNS_PRIVATE_KEY?: string;
   CF_VERSION_METADATA?: { id: string; tag: string; timestamp: string };
 }

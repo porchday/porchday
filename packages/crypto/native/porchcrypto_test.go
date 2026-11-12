@@ -242,3 +242,53 @@ func TestNativeRejectsNullPhotoDateAndUnsafeInteger(t *testing.T) {
 		t.Fatal("accepted unsafe revision")
 	}
 }
+
+func TestRecoveryBackupJavaScriptToNative(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "recovery.json")
+	cmd := exec.Command("node", "../test/recovery-native-interop.ts", path)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("fixture generation: %v %s", err, output)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var f struct {
+		Author     fixtureKey      `json:"author"`
+		Recipient  fixtureKey      `json:"recipient"`
+		Binding    json.RawMessage `json:"binding"`
+		Ciphertext string          `json:"ciphertext"`
+	}
+	if err = json.Unmarshal(data, &f); err != nil {
+		t.Fatal(err)
+	}
+	recipient := session(t, f.Recipient)
+	payload, err := recipient.OpenRecoveryPayload(f.Ciphertext, string(f.Binding), f.Author.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var armor string
+	if err = json.Unmarshal([]byte(payload), &armor); err != nil {
+		t.Fatal(err)
+	}
+	recovered, err := SessionFromRecoveredKey(armor, f.Author.Fingerprint)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recovered.Close()
+	var binding map[string]any
+	if err = json.Unmarshal(f.Binding, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding["memberId"] = "wrong-member"
+	wrong, _ := json.Marshal(binding)
+	if _, err = recipient.OpenRecoveryPayload(f.Ciphertext, string(wrong), f.Author.PublicKey); err == nil {
+		t.Fatal("wrong member accepted")
+	}
+	if _, err = recipient.OpenRecoveryPayload(f.Ciphertext, string(f.Binding), f.Recipient.PublicKey); err == nil {
+		t.Fatal("wrong signer accepted")
+	}
+	if _, err = SessionFromRecoveredKey(armor, f.Recipient.Fingerprint); err == nil {
+		t.Fatal("wrong private key accepted")
+	}
+}

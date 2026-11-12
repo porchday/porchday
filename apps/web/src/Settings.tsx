@@ -1,3 +1,4 @@
+import {RecoveryManager} from './RecoveryManager';
 import {contentPreviewsEnabled,setContentPreviews,enrollContentPreviews} from './notification-previews';
 import {DiagnosticsSettings} from './DiagnosticPanels';
 import { ChildrenSettings } from "./ChildrenSettings";
@@ -625,6 +626,7 @@ function SecuritySettings({ onLogout }: { onLogout: () => Promise<void> }) {
     <>
       <EmailSettings />
       <MfaSettings />
+      <RecoveryManager actor={vault} />
       <section className="panel form-stack">
         <h2>Your password</h2>
         <form

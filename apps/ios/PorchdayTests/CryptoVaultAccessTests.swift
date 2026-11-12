@@ -12,6 +12,7 @@ final class CryptoVaultAccessTests: XCTestCase {
         var requests: [(String, String)] = []
         var stored: [String: Data] = [:]
         var failStorage = false
+        var recovery: JSON = .null
         var photoSnapshot: JSON = .null
         var secret: String { json["bob"]["recoverySecret"].string! }
         init(status: String, revoked: Bool = false) throws {
@@ -33,7 +34,7 @@ final class CryptoVaultAccessTests: XCTestCase {
                 guard method == "GET" else { throw PorchError.message("Synthetic enrollment boundary") }
                 if path == "/albums/synthetic/audience" || path == "/photos/synthetic/grants/synthetic/refresh-audience" { return photoSnapshot }
                 if path == "/devices" { return .object(["items": .array(roster)]) }
-                if path == "/keys/backup" { return .object(["envelope": .object(["v": .number(1), "devices": .array(entries)])]) }
+                if path == "/keys/backup" { return .object(["envelope": .object(["v": .number(1), "devices": .array(entries), "recovery": recovery])]) }
                 if path == "/devices/" + json["envelope"]["context"]["authorDeviceId"].string! {
                     return Self.entry(json["alice"], id: json["envelope"]["context"]["authorDeviceId"])
                         .replacing("member_id", with: json["envelope"]["context"]["authorId"])
@@ -45,6 +46,18 @@ final class CryptoVaultAccessTests: XCTestCase {
                 stored[account] = data
             })
         }
+    }
+
+    @MainActor func testRecoveryCheckIsReadOnlyAndRequiresRecoveryAuthority() async throws {
+        let fixture = try Fixture(status: "active"), vault = fixture.vault()
+        do { try await vault.checkRecovery(member: fixture.member, secret: fixture.secret); XCTFail("Missing recovery authority must fail") } catch {}
+        fixture.recovery = fixture.entries[0]
+        try await vault.checkRecovery(member: fixture.member, secret: fixture.secret)
+        XCTAssertFalse(vault.unlocked)
+        XCTAssertTrue(fixture.stored.isEmpty)
+        XCTAssertTrue(fixture.requests.allSatisfy { $0.0 == "/keys/backup" && $0.1 == "GET" })
+        do { try await vault.checkRecovery(member: fixture.member, secret: String(repeating: "x", count: 43)); XCTFail("Wrong secret must fail") } catch {}
+        XCTAssertFalse(vault.unlocked)
     }
 
     @MainActor func testAlbumSnapshotsNeverOmitUnkeyedRevokedOrDuplicateRecipients() async throws {

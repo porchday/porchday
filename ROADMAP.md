@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner request November 12:** [#228](https://github.com/porchday/porchday/issues/228), P1: implement member-controlled recovery options and verified recovery setup. Candidate implementation includes local restore rehearsals, trusted-device transfer, PRF passkeys and two-of-three trusted contacts. Existing members remain exempt from mandatory setup. Production rollout and exact-source native validation remain pending; physical-provider checks remain separate follow-up.
+
 **Delivered November 12:** [#55](https://github.com/porchday/porchday/issues/55), P1, `needs verification`: faster independently durable session denial and bounded cleanup are active in production. Independent monitor deadlines no longer let earlier requests consume revocation's budget. Production retained/restored-row denial, contention recovery, native CI and rollout continuity passed. [Evidence](docs/evidence/logout-latency-release-2026-11-12.md). Sustained tail-latency/99.99% measurement and physical-device timing remain open.
 
 **Delivered November 12:** [#8](https://github.com/porchday/porchday/issues/8), P1, `needs verification`: production Mac monitor and GitHub backup now confirm transient alerts and reuse one incident conversation. Twenty completed duplicates archived; history retained. Exact-source CI/native and eight post-install healthy probes passed. [Evidence](docs/evidence/incident-notification-noise-2026-11-12.md). Underlying latency remains in #55; unreliable GitHub scheduling/receipt checks remain open.

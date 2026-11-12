@@ -556,3 +556,71 @@ func requireAEAD(ciphertext string) error {
 	}
 	return errors.New("encrypted data packet missing")
 }
+
+// OpenRecoveryPayload authenticates a purpose/account/request-bound recovery transfer.
+// Callers must derive expectedBindingJSON from the requested recovery operation.
+func (s *Session) OpenRecoveryPayload(ciphertext, expectedBindingJSON, authorPublicKey string) (string, error) {
+	if err := s.check(); err != nil {
+		return "", err
+	}
+	if len(ciphertext) > 2100000 {
+		return "", errors.New("recovery payload too large")
+	}
+	var binding struct {
+		V                    int    `json:"v"`
+		Purpose              string `json:"purpose"`
+		RecipientFingerprint string `json:"recipientFingerprint"`
+	}
+	if err := json.Unmarshal([]byte(expectedBindingJSON), &binding); err != nil {
+		return "", err
+	}
+	if binding.V != 1 || binding.RecipientFingerprint != s.key.GetFingerprint() || (binding.Purpose != "porchday-device-backup" && binding.Purpose != "porchday-device-transfer" && binding.Purpose != "porchday-recovery-share" && binding.Purpose != "porchday-recovery-response") {
+		return "", errors.New("recovery binding mismatch")
+	}
+	if err := requireAEAD(ciphertext); err != nil {
+		return "", err
+	}
+	author, err := pgp.NewKeyFromArmored(authorPublicKey)
+	if err != nil {
+		return "", err
+	}
+	decryptor, err := handle().Decryption().DecryptionKey(s.key).VerificationKey(author).MaxDecompressedMessageSize(1500000).New()
+	if err != nil {
+		return "", err
+	}
+	result, err := decryptor.Decrypt([]byte(ciphertext), pgp.Armor)
+	if err != nil {
+		return "", err
+	}
+	if err = result.SignatureError(); err != nil {
+		return "", err
+	}
+	if len(result.Signatures) != 1 {
+		return "", errors.New("one recovery signature required")
+	}
+	var decoded struct {
+		Binding json.RawMessage `json:"binding"`
+		Payload json.RawMessage `json:"payload"`
+	}
+	if err = json.Unmarshal(result.Bytes(), &decoded); err != nil {
+		return "", err
+	}
+	if !equalJSON(decoded.Binding, []byte(expectedBindingJSON)) {
+		return "", errors.New("recovery context mismatch")
+	}
+	return string(decoded.Payload), nil
+}
+
+// SessionFromRecoveredKey accepts only an already authenticated/decrypted transfer.
+func SessionFromRecoveredKey(privateArmor, expectedFingerprint string) (*Session, error) {
+	session, err := SessionFromKeychain(privateArmor, expectedFingerprint)
+	if err != nil {
+		return nil, err
+	}
+	valid, err := session.key.Check()
+	if err != nil || !valid {
+		session.Close()
+		return nil, errors.New("invalid recovered private key")
+	}
+	return session, nil
+}

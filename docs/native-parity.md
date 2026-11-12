@@ -293,6 +293,18 @@ The November 12 change affects the independent operator monitor and GitHub backu
 
 Incident notification release acceptance (November 12): [evidence](evidence/incident-notification-noise-2026-11-12.md) records passing exact-source iOS/macOS checks and production monitor installation. Application/native behavior and signed binary availability remain unchanged.
 
+
+## Recovery setup verification
+
+[#228](https://github.com/porchday/porchday/issues/228): the shared web shells and legacy shared Swift screens now require a local restore rehearsal during first-key setup and expose a read-only Account settings check. Both check historical device keys and the recovery authorization key without enrolling a device or storing the supplied secret. `recovery-check.test.ts`, `recovery-check-browser.test.ts` and `CryptoVaultAccessTests.testRecoveryCheckIsReadOnlyAndRequiresRecoveryAuthority` cover these boundaries. Native automated execution and physical-device acceptance are pending; this is source implementation, not a signed-binary or production release. Passkey, contact and trusted-device transfer additions remain open in #228.
+
+
+## Member-controlled recovery options
+
+Candidate #228 / PR #229 implements passkey PRF recovery, two-of-three accepted contacts and explicitly approved QR/manual pairing in the production shared web shells for both iOS and macOS. Existing members remain exempt from mandatory setup. Both native targets add webcredentials associated domains (signed macOS target) and camera permission scoped to the trusted main frame. The native Go/Swift readers support the new recovery-public-key-wrapped paired backup format. `TestRecoveryBackupJavaScriptToNative` exercises real browser-format ciphertext and rejection boundaries. Chromium/WebKit pairing tests verify history access and original-kit compatibility; virtual-authenticator tests verify PRF recovery.
+
+Exact-source iOS simulator and macOS build/test results must be recorded before deployment. New entitlements/camera behavior require a newly signed native build; existing binaries receive shared recovery UI but cannot be assumed to support every passkey/camera path. Manual code entry and QR-image fallback are available. Physical provider, camera, installed-binary and hosted-native checks remain pending under #228, #49 and #114; no physical test is represented as passed.
+
 ## Logout and revocation latency
 
 The November 12 change adds fixed server phase spans for independent denial
@@ -310,3 +322,5 @@ simulator and macOS checks before production activation; exact monitor source
 both native shells. [Release evidence](evidence/logout-latency-release-2026-11-12.md)
 records production verification separately from unperformed physical-device timing.
 No new signed installer or TestFlight build was distributed for this server fix.
+
+Existing-member access regression: `recovery-existing-member-browser.test.ts` exercises remembered-key unlock, original-secret restore and reload in Chromium and WebKit while the new recovery endpoint returns 503. Old encrypted content remains readable and the mandatory gate stays absent. The API migration fixture also enrolls a previously keyless, pre-migration member and verifies that enrollment does not retroactively require a second method. These synthetic checks do not claim to decrypt real members’ backups.

@@ -41,6 +41,17 @@ import Porchcrypto
         var error: NSError?; let result = PorchcryptoNewSession(entry["encrypted_private_key"].string, secret, entry["fingerprint"].string, &error)
         if let error { throw error }; guard let result else { throw PorchError.message("The recovery secret did not unlock this device.") }; return result
     }
+    private func recoverEntry(_ entry: JSON, backup: JSON, memberID: String, secret: String) throws -> PorchcryptoSession {
+        guard let ciphertext = entry["recovery_ciphertext"].string else { return try recover(entry, secret: secret) }
+        let authority = try recover(backup["recovery"], secret: secret); defer { authority.close() }
+        let binding: JSON = .object(["v": .number(1), "purpose": .string("porchday-device-backup"), "memberId": .string(memberID), "methodId": entry["id"], "requestId": .string(""), "recipientFingerprint": backup["recovery"]["fingerprint"]])
+        var error: NSError?
+        let value = authority.openRecoveryPayload(ciphertext, expectedBindingJSON: try binding.serialized(), authorPublicKey: entry["public_key"].string, error: &error)
+        if let error { throw error }
+        guard let armor = try JSON.parse(value).string else { throw PorchError.message("Invalid recovered device backup.") }
+        let session = PorchcryptoSessionFromRecoveredKey(armor, entry["fingerprint"].string, &error)
+        if let error { throw error }; guard let session else { throw PorchError.message("Invalid recovered device key.") }; return session
+    }
     private func backupEntry(_ keys: JSON, id: String? = nil) -> JSON {
         var value: [String: JSON] = ["public_key": keys["publicKey"], "fingerprint": keys["fingerprint"], "encrypted_private_key": keys["encryptedPrivateKey"]]
         if let id { value["id"] = .string(id) }; return .object(value)
@@ -75,16 +86,40 @@ import Porchcrypto
         pending = (try generate(member: member.id, id: id, secret: secret), try generate(member: member.id, id: "recovery", secret: secret), id)
         recoveryNote = secret
     }
-    func finishInitial(member: Member) async throws {
+    func finishInitial(member: Member, savedSecret: String) async throws {
         try member.access.requireSocialWrite()
         guard let pending, !recoveryNote.isEmpty else { throw PorchError.message("Create your keys first.") }
         let entry = backupEntry(pending.device, id: pending.id), recovery = backupEntry(pending.recovery)
         let backup: JSON = .object(["v": .number(1), "devices": .array([entry]), "recovery": recovery])
+        try verifyRecoveryBackup(backup, memberID: member.id, secret: savedSecret)
         let raw: JSON = .object(["id": .string(pending.id), "member_id": .string(member.id), "public_key": entry["public_key"], "fingerprint": entry["fingerprint"], "name": .string("iPhone"), "authorization": .object(["type": .string("initial")]), "recovery_public_key": recovery["public_key"], "backup": backup])
         _ = try await social("/devices", method: "POST", body: raw)
         let active = try Device(raw), session = try recover(entry, secret: recoveryNote)
         sessions[active.fingerprint] = session; device = active; devices = [active]; access = member.access
         try persist(member: member); self.pending = nil; recoveryNote = ""
+    }
+    private func verifyRecoveryBackup(_ backup: JSON, memberID: String, secret: String) throws {
+        guard backup["v"].integer == 1, !backup["devices"].array.isEmpty,
+              backup["recovery"]["fingerprint"].string?.isEmpty == false else {
+            throw PorchError.message("No complete recovery backup is available. Keep this device signed in.")
+        }
+        do {
+            for entry in backup["devices"].array + [backup["recovery"]] {
+                guard entry["fingerprint"].string?.isEmpty == false,
+                      (entry["encrypted_private_key"].string?.isEmpty == false || entry["recovery_ciphertext"].string?.isEmpty == false) else {
+                    throw PorchError.message("Incomplete backup")
+                }
+                let session = try recoverEntry(entry, backup: backup, memberID: memberID, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines))
+                session.close()
+            }
+        } catch {
+            throw PorchError.message("That secret could not unlock the complete backup. Check the saved copy for this account. Keep this device signed in.")
+        }
+    }
+    func checkRecovery(member: Member, secret: String) async throws {
+        guard member.access.managesData else { throw PorchError.message("Account data is unavailable while ownership is under review.") }
+        let response = try await social("/keys/backup")
+        try verifyRecoveryBackup(response["envelope"], memberID: member.id, secret: secret)
     }
     func unlock(member: Member, secret: String) async throws {
         guard member.access.managesData else { throw PorchError.message("Account data is unavailable while ownership is under review.") }
@@ -92,7 +127,7 @@ import Porchcrypto
         guard backup["v"].integer == 1, !backup["devices"].array.isEmpty else { throw PorchError.message("No compatible backup exists. Use a trusted device.") }
         var recovered: [String: PorchcryptoSession] = [:]
         do {
-            for entry in backup["devices"].array { let session = try recover(entry, secret: secret); recovered[session.fingerprint()] = session }
+            for entry in backup["devices"].array { let session = try recoverEntry(entry, backup: backup, memberID: member.id, secret: secret); recovered[session.fingerprint()] = session }
             if member.access.restoresKeysLocally {
                 let matches = devices.filter { device in
                     device.memberID == member.id && backup["devices"].array.contains { entry in

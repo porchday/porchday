@@ -216,6 +216,10 @@ private final class ShellObservers: @unchecked Sendable {
         if (error as NSError).code != NSURLErrorCancelled { failure = "Porchday could not load. Check your connection and try again." }
     }
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { self.webView(webView, didFailProvisionalNavigation: navigation, withError: error) }
+    func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping @MainActor @Sendable (WKPermissionDecision) -> Void) {
+        let trustedOrigin = origin.protocol == "https" && origin.host == ServerConfiguration.origin.host && (origin.port == 0 || origin.port == (ServerConfiguration.origin.port ?? 443))
+        decisionHandler(trustedOrigin && frame.isMainFrame && WebShellPolicy.trusted(frame.request.url) && type == .camera ? .prompt : .deny)
+    }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failure = "Porchday needs to reopen this page. Unsaved changes may need to be entered again." }
     func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void) {
         guard let url = action.request.url else { decisionHandler(.cancel); return }

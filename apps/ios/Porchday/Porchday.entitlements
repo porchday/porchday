@@ -7,6 +7,8 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:porchday.org</string>
+		<string>webcredentials:porchday.org</string>
+		<string>webcredentials:porchday.com</string>
 		<string>applinks:porchday.com</string>
 	</array>
 	<key>keychain-access-groups</key>
