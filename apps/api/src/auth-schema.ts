@@ -14,6 +14,8 @@ export class AuthSchemaGate {
   if(this.verdicts.get(key)==='failed')throw Error('AUTH_SCHEMA_UNAVAILABLE');
   return this.verdicts.get(key)!=='valid';
  }
+ /** Whether a successful verdict exists, without failing on a failed one. */
+ validated(key:string|undefined):boolean {return key!==undefined&&this.verdicts.get(key)==='valid';}
  succeeded(key:string|undefined):void {
   if(key===undefined)return;
   // A concurrent failure wins over a successful validation for this version.
