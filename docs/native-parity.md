@@ -322,3 +322,5 @@ simulator and macOS checks before production activation; exact monitor source
 both native shells. [Release evidence](evidence/logout-latency-release-2026-11-12.md)
 records production verification separately from unperformed physical-device timing.
 No new signed installer or TestFlight build was distributed for this server fix.
+
+Existing-member access regression: `recovery-existing-member-browser.test.ts` exercises remembered-key unlock, original-secret restore and reload in Chromium and WebKit while the new recovery endpoint returns 503. Old encrypted content remains readable and the mandatory gate stays absent. The API migration fixture also enrolls a previously keyless, pre-migration member and verifies that enrollment does not retroactively require a second method. These synthetic checks do not claim to decrypt real members’ backups.
