@@ -1,4 +1,5 @@
 import {build} from 'esbuild';
+import {createServer} from 'node:http';
 import {chromium,webkit} from 'playwright';
 import {wrapRecoverySecret,splitContactRecoverySecret,combineContactRecoveryShares,recoveryDigest,sealRecoveryPayload,openRecoveryPayload,deviceBackupBinding,readRecoveryBackup} from '@porchday/crypto/recovery';
 import { beforeAll, afterAll, describe, it, expect, vi } from 'vitest';
@@ -172,15 +173,25 @@ suite('Key recovery with real encryption and runtime RLS', () => {
         if(location.pathname==='/owner'){const key=await importRecoveryPrivateKey(f.armor,f.device.fingerprint);root.render(<RecoveryManager actor={{member:f.member,device:f.device,privateKey:key,keys:[key]}}/>);}
         else root.render(<VaultProvider member={f.member} onAccountDeleted={async()=>{}}><History/></VaultProvider>);
       `,resolveDir:process.cwd(),loader:'tsx'},bundle:true,format:'esm',write:false,define:{'process.env.NODE_ENV':'"production"'}});
-      const browser=await(engine==='chromium'?chromium:webkit).launch();let contexts:Awaited<ReturnType<typeof browser.newContext>>[]=[];try{
-        contexts=await Promise.all([browser.newContext({viewport:{width:390,height:844}}),browser.newContext({viewport:{width:390,height:844}})]);
-        for(const context of contexts)await context.route('http://localhost:43193/**',async route=>{
-          const req=route.request(),path=new URL(req.url()).pathname;
-          if(path==='/module.js')return route.fulfill({contentType:'text/javascript',body:bundle.outputFiles[0].text});
-          if(path.startsWith('/api/v1/')){const response=await app.request('https://porchday.test'+path.replace('/api/v1','')+new URL(req.url()).search,{method:req.method(),headers:{'x-test-member':owner.id,'content-type':'application/json'},...(req.postData()?{body:req.postData()!}:{})},env);return route.fulfill({status:response.status,contentType:'application/json',body:await response.text()});}
-          return route.fulfill({contentType:'text/html',body:'<main><div id="root"></div></main><script>window.fixture='+JSON.stringify(path==='/owner'?fixture:{member,envelope}).replaceAll('<','\u003c')+'</script><script type="module" src="/module.js"></script>'});
-        });
-        const trusted=await contexts[0].newPage(),phone=await contexts[1].newPage();await trusted.goto('http://localhost:43193/owner');await phone.goto('http://localhost:43193/phone');
+      const inflight=new Set<Promise<void>>(),serverErrors:unknown[]=[];
+      const server=createServer((req,res)=>{
+        const work=(async()=>{
+          const url=new URL(req.url!,'http://localhost'),path=url.pathname;
+          if(path==='/module.js'){res.setHeader('content-type','text/javascript');res.end(bundle.outputFiles[0].text);return;}
+          if(path.startsWith('/api/v1/')){
+            const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
+            const response=await app.request('https://porchday.test'+path.replace('/api/v1','')+url.search,{method:req.method,headers:{'x-test-member':owner.id,'content-type':'application/json'},...(chunks.length?{body:Buffer.concat(chunks).toString()}:{})},env);
+            res.writeHead(response.status,{'content-type':'application/json'});res.end(await response.text());return;
+          }
+          res.setHeader('content-type','text/html');res.end('<main><div id="root"></div></main><script>window.fixture='+JSON.stringify(path==='/owner'?fixture:{member,envelope}).replaceAll('<','\\u003c')+'</script><script type="module" src="/module.js"></script>');
+        })().catch(error=>{serverErrors.push(error);if(!res.writableEnded){res.statusCode=500;res.end();}});
+        inflight.add(work);void work.finally(()=>inflight.delete(work));
+      });
+      await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+      const origin='http://127.0.0.1:'+(server.address() as {port:number}).port;
+      const browser=await(engine==='chromium'?chromium:webkit).launch();try{
+        const contexts=await Promise.all([browser.newContext({viewport:{width:390,height:844}}),browser.newContext({viewport:{width:390,height:844}})]);
+        const trusted=await contexts[0].newPage(),phone=await contexts[1].newPage();await trusted.goto(origin+'/owner');await phone.goto(origin+'/phone');
         await phone.getByLabel(/This is my private device/).check();
         if(engine==='chromium'){
           await trusted.getByRole('button',{name:'Show a QR code for my other device to scan'}).click();
@@ -197,7 +208,7 @@ suite('Key recovery with real encryption and runtime RLS', () => {
         await phone.getByText('history recovered through pairing',{exact:true}).waitFor({timeout:20000});
         const backup=(await request(owner.id,'/keys/backup')).data.envelope;expect((await readRecoveryBackup(backup,owner.secret,owner.id)).devices).toHaveLength(2);
         await phone.reload();await phone.getByText('history recovered through pairing',{exact:true}).waitFor({timeout:20000});
-      }finally{for(const context of contexts)await context.unrouteAll({behavior:'wait'});await browser.close();}
+      }finally{await browser.close();await Promise.all([...inflight]);await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}expect(serverErrors).toEqual([]);
     },60000);
 
 });
