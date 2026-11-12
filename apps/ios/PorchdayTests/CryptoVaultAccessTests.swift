@@ -31,7 +31,7 @@ final class CryptoVaultAccessTests: XCTestCase {
             CryptoVault(request: { [self] path, method, _ in
                 requests.append((path, method))
                 guard method == "GET" else { throw PorchError.message("Synthetic enrollment boundary") }
-                if path == "/albums/synthetic/audience" { return photoSnapshot }
+                if path == "/albums/synthetic/audience" || path == "/photos/synthetic/grants/synthetic/refresh-audience" { return photoSnapshot }
                 if path == "/devices" { return .object(["items": .array(roster)]) }
                 if path == "/keys/backup" { return .object(["envelope": .object(["v": .number(1), "devices": .array(entries)])]) }
                 if path == "/devices/" + json["envelope"]["context"]["authorDeviceId"].string! {
@@ -69,6 +69,18 @@ final class CryptoVaultAccessTests: XCTestCase {
             fixture.photoSnapshot = invalid
             do { _ = try await vault.sealSnapshot(.object([:]), member: member, context: context, path: "/albums/synthetic/audience"); XCTFail("Unsafe audience must not encrypt") } catch { }
         }
+        vault.clear()
+    }
+
+    @MainActor func testSocialPhotoRefreshAllowsPendingRecipients() async throws {
+        let fixture = try Fixture(status: "restricted"), vault = fixture.vault()
+        try await vault.load(member: fixture.member); try await vault.unlock(member: fixture.member, secret: fixture.secret)
+        let member = try Member(fixture.member.raw.replacing("status", with: .string("active")))
+        try await vault.load(member: member)
+        fixture.photoSnapshot = .object(["epoch": .number(1), "pending_members": .array([.string("unkeyed")]), "devices": .array(fixture.roster)])
+        let context = NativePhotoContract.context(kind: "photo", id: "synthetic", parent: "synthetic", audience: "connections", album: nil, expiry: .null, date: "2024-02-29")
+        let envelope = try await vault.sealSnapshot(.object([:]), member: member, context: context, path: "/photos/synthetic/grants/synthetic/refresh-audience")
+        XCTAssertEqual(envelope["recipients"].array.count, fixture.roster.count)
         vault.clear()
     }
 
