@@ -5,7 +5,8 @@ const at=Date.parse('2026-10-28T21:00:00Z');
 const observation=(offset:number,healthy:boolean):Observation=>({v:1,at:new Date(at+offset).toISOString(),environment:'production',healthy,checks:[{name:'protected_readiness',ok:healthy}],durationMs:1,scope:'login_authorized_reads_logout_and_readiness'});
 describe('external monitor alert transitions',()=>{
  it('alerts once for an outage, then only after stability beyond the stale-intent horizon',()=>{
-  let state=advance(initialState(),observation(0,false),'outage');
+  let state=advance(initialState(),observation(-20000,false),'first-failure');
+  state=advance(state,observation(0,false),'outage');
   state=advance(state,observation(20000,false),'repeat');
   state=advance(state,observation(40000,true),'first-good');
   expect(state.pending.map(e=>e.id)).toEqual(['outage']);
@@ -17,20 +18,23 @@ describe('external monitor alert transitions',()=>{
   expect(state.pending).toHaveLength(2);
  });
  it('preserves an undelivered outage and recovery across JSON persistence',()=>{
-  let state=advance(initialState(),observation(0,false),'outage');
+  let state=advance(initialState(),observation(-20000,false),'first-failure');
+  state=advance(state,observation(0,false),'outage');
   state=advance(JSON.parse(JSON.stringify(state)),observation(20000,true),'first');
   for(let t=40000;t<=160000;t+=20000)state=advance(state,observation(t,true),'recovery');
   expect(state.pending.map(e=>e.kind)).toEqual(['outage','recovery']);
  });
  it('does not count monitoring gaps as recovery or accept older observations',()=>{
-  let state=advance(initialState(),observation(0,false),'outage');
+  let state=advance(initialState(),observation(-20000,false),'first-failure');
+  state=advance(state,observation(0,false),'outage');
   state=advance(state,observation(20000,true),'first');
   state=advance(state,observation(100000,true),'after-gap');
   expect(state.incident).toBe(true);expect(state.healthyStreak).toBe(1);
   expect(advance(state,observation(0,true),'old')).toBe(state);
  });
  it('retains the outage when a partial recovery fails again',()=>{
-  let state=advance(initialState(),observation(0,false),'outage');
+  let state=advance(initialState(),observation(-20000,false),'first-failure');
+  state=advance(state,observation(0,false),'outage');
   state=advance(state,observation(20000,true),'first');
   state=advance(state,observation(40000,false),'failed-again');
   expect(state.healthyStreak).toBe(0);expect(state.pending).toHaveLength(1);
@@ -43,4 +47,11 @@ describe('external monitor alert transitions',()=>{
   const body=alertBody({id:'drill',kind:'outage',at:new Date(at).toISOString(),failedChecks:['login']},'operator-mac',true);
   expect(body).toContain('@andyk @bobbyhwilder');expect(body).toContain('Notification drill');expect(body).toContain('<!-- porchday-external-monitor:operator-mac:drill -->');
  });
+});
+
+it('records an isolated failure without notification and confirms contiguous failures across restart',()=>{
+ let state=advance(initialState(),observation(0,false),'first');expect(state.pending).toHaveLength(0);
+ const recovered=advance(state,observation(20000,true),'good');expect(recovered.pending).toHaveLength(0);expect(recovered.incident).toBe(false);
+ const gap=advance(state,observation(60000,false),'gap');expect(gap.pending).toHaveLength(0);
+ state=advance(JSON.parse(JSON.stringify(state)),observation(20000,false),'confirmed');expect(state.pending).toHaveLength(1);expect(state.pending[0].at).toBe(observation(0,false).at);
 });

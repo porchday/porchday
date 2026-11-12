@@ -25,6 +25,8 @@ export function readState(directory:string):AlertState {
  if(state.v!==1||typeof state.incident!=='boolean'||![0,1,2].includes(state.healthyStreak)
   ||(state.lastAt!==null&&!Number.isFinite(Date.parse(state.lastAt)))||!Array.isArray(state.pending))throw Error('MONITOR_STATE_INVALID');
  if(state.lastRelayAttempt!==undefined&&(!state.lastRelayAttempt||!/^[a-zA-Z0-9-]{1,64}$/.test(state.lastRelayAttempt.id)||!Number.isFinite(Date.parse(state.lastRelayAttempt.at))))throw Error('MONITOR_STATE_INVALID');
+ if(state.failureStreak!==undefined&&![0,1,2].includes(state.failureStreak))throw Error('MONITOR_STATE_INVALID');
+ if(state.firstFailureAt!==undefined&&!Number.isFinite(Date.parse(state.firstFailureAt)))throw Error('MONITOR_STATE_INVALID');
  if(state.healthySince!==undefined&&!Number.isFinite(Date.parse(state.healthySince)))throw Error('MONITOR_STATE_INVALID');
  for(const event of state.pending)alertBody(event,'operator-mac');
  return state;

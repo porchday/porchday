@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner request November 12:** [#8](https://github.com/porchday/porchday/issues/8), P1: reduce repeated incident threads/notifications with durable responder-thread reuse, two-probe alert confirmation, and backup execution-noise correction. Preserve raw failures and prompt sustained-outage recovery. Latency failures remain tracked in [#55](https://github.com/porchday/porchday/issues/55). Production monitor installation is pending.
+
 **Delivered November 11:** [#125](https://github.com/porchday/porchday/issues/125), P2, `needs verification`: typed @handles and persistent multi-select tagging are live in post text, comments and photo/video captions through the shared web/iOS/macOS UI. Exact-source CI/native and hosted encrypted-tag checks passed. [Release evidence](docs/evidence/typed-mentions-release-2026-11-11.md). Physical-device acceptance and mention-specific notification work remain open.
 
 **Delivered November 11:** [#49](https://github.com/porchday/porchday/issues/49) / [#114](https://github.com/porchday/porchday/issues/114), P1, `needs verification`: native video capability fix is in internal TestFlight iOS **424** / macOS **410**, and accurate native/browser playback guidance is live on staging and production. [Native evidence](docs/evidence/native-video-service-workers-2026-11-11.md), [web release evidence](docs/evidence/native-video-web-release-2026-11-11.md). Physical playback remains open. Initial monitor window had one journey deadline; eight subsequent healthy probes verified recovery, tracked in #55.

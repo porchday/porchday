@@ -7,7 +7,7 @@ import {IncidentCodex} from './incident-codex.ts';
 
 export type DispatchConfig={cwd:string;codexPath:string};
 export type Incident={v:1;id:string;at:string;lastAt:string;failures:number;failedChecks:string[];healthySince?:string;closedAt?:string;
- phase:'watching'|'creating'|'ready'|'sending'|'accepted'|'uncertain';threadId?:string;turnId?:string;previousThreadId?:string;lastAttempt?:string;lastEscalation?:string;error?:string};
+ phase:'watching'|'creating'|'ready'|'sending'|'accepted'|'uncertain';threadId?:string;turnId?:string;previousThreadId?:string;priorTurnId?:string;lastAttempt?:string;lastEscalation?:string;error?:string};
 type Rpc={call(method:string,params:any):Promise<any>;close():void};
 type Dependencies={connect:()=>Promise<Rpc>;save:(incident:Incident)=>void;notify:(event:string,id:string)=>void;uuid:()=>string};
 const uuid=/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
@@ -16,7 +16,7 @@ export function validateDispatchConfig(value:DispatchConfig){
  if(!value||!isAbsolute(value.cwd)||!isAbsolute(value.codexPath))throw Error('INCIDENT_DISPATCH_CONFIGURATION');
 }
 export function incidentPrompt(incident:Incident,cwd:string,drill=false){
- return `${drill?'Notification drill: perform read-only checks only. Do not change production, create incidents, or send messages.':'The owner has authorized this automatically dispatched Porchday incident task to investigate and restore service without waiting for a chat message.'}
+ return `Porchday incident response — ${incident.failedChecks.join(', ')}\n${drill?'Notification drill: perform read-only checks only. Do not change production, create incidents, or send messages.':'The owner has authorized this automatically dispatched Porchday incident task to investigate and restore service without waiting for a chat message.'}
 Incident ID: ${incident.id}. First observed: ${incident.at}. Failed checks: ${incident.failedChecks.join(', ')}.
 Work from ${cwd}. Begin with fresh public session checks, protected readiness and the independent monitor evidence. Treat this alert as a trigger, not proof that service is still down. If healthy, verify stability beyond the 120-second privacy-intent grace period and report; do not change production unnecessarily.
 Read docs/incident-response.md, docs/restore-safety.md, docs/deployment-recovery.md, and docs/incident-dispatch.md. Discover the current canonical deployment and active operation under /Users/bobby/Development/inner-circle/artifacts/private. Old versions in chat history are not recovery targets. Preserve and respect the deployment lease. Resolve unfinished operations using their existing identity and evidence before starting another.
@@ -39,7 +39,7 @@ export class IncidentDispatcher {
    // An unfinished dispatch is retained through recovery; never lose an unknown
    // turn response by replacing its incident with a new one.
    if(item&&['creating','sending','uncertain'].includes(item.phase))return;
-   item={v:1,id:this.deps.uuid(),at:observation.at,lastAt:observation.at,failures:0,failedChecks:[],phase:'watching',...(item?.threadId?{previousThreadId:item.threadId}:{})};
+   item={v:1,id:this.deps.uuid(),at:observation.at,lastAt:observation.at,failures:0,failedChecks:[],phase:'watching',...((item?.threadId||item?.previousThreadId)?{previousThreadId:item.threadId||item.previousThreadId}:{})};
   }
   const contiguous=Date.parse(observation.at)-Date.parse(item.lastAt)<=45000;
   if(observation.healthy){
@@ -63,10 +63,11 @@ export class IncidentDispatcher {
   try{
    item.lastAttempt=new Date().toISOString();this.deps.save(item);
    rpc=await this.deps.connect();
+   if((item.closedAt||item.failures<2)&&!['creating','sending'].includes(item.phase))return;
    if(item.phase==='uncertain'){this.escalate(item);return;}
    if(item.phase==='accepted'){
-    const value=await rpc.call('thread/read',{threadId:item.threadId,includeTurns:true});
-    const turn=value.thread?.turns?.at(-1);
+    const value=await rpc.call('thread/turns/list',{threadId:item.threadId,limit:1,sortDirection:'desc',itemsView:'notLoaded'});
+    const turn=value.data?.[0];
     // Completion of an agent turn is not service recovery. Continue normal
     // probes and explicitly alert owners if the responder stops while down.
     if(!turn||['completed','failed','interrupted'].includes(turn.status)||Date.now()-Date.parse(item.at)>15*60000)this.escalate(item);
@@ -77,25 +78,37 @@ export class IncidentDispatcher {
    // execute work; creation ambiguity still requires explicit review.
    if(item.phase==='creating'||item.phase==='sending'){
     if(item.threadId){
-     const value=await rpc.call('thread/read',{threadId:item.threadId,includeTurns:true});
-     const turns=value.thread?.turns??[];
-     if(turns.length){item.phase='accepted';item.turnId=turns.at(-1).id;delete item.error;this.deps.save(item);this.deps.notify('incident_reconciled',item.id);return;}
+     const value=await rpc.call('thread/turns/list',{threadId:item.threadId,limit:1,sortDirection:'desc',itemsView:'full'});
+     const turns=value.data??[];
+     const dispatched=turns.find((turn:any)=>turn.id!==item.priorTurnId&&turn.items?.some((entry:any)=>entry.type==='userMessage'&&entry.content?.some((part:any)=>part.type==='text'&&part.text?.includes('Dispatch marker: porchday-incident:'+item.id))));
+     // Legacy incidents created a new empty thread, so any turn was theirs.
+     const confirmed=dispatched||(!item.priorTurnId?turns.at(-1):undefined);
+     if(confirmed){item.phase='accepted';item.turnId=confirmed.id;delete item.error;this.deps.save(item);this.deps.notify('incident_reconciled',item.id);return;}
     }
     item.phase='uncertain';item.error='INCIDENT_DISPATCH_UNCONFIRMED';this.deps.save(item);this.deps.notify('incident_dispatch_uncertain',item.id);return;
    }
+   if(item.closedAt||item.failures<2)return;
    if(item.phase==='watching'){
     if(item.previousThreadId){
-     const prior=await rpc.call('thread/read',{threadId:item.previousThreadId,includeTurns:true});
-     const turn=prior.thread?.turns?.at(-1);
+     const prior=await rpc.call('thread/turns/list',{threadId:item.previousThreadId,limit:1,sortDirection:'desc',itemsView:'notLoaded'});
+     const turn=prior.data?.[0];
      if(turn?.status==='inProgress'){
       item.threadId=item.previousThreadId;item.turnId=turn.id;item.phase='accepted';this.deps.save(item);this.deps.notify('incident_coalesced',item.id);return;
      }
-    }
+     // Load the existing durable conversation before beginning another turn.
+     // Save the prior turn identity so a lost send reply cannot be mistaken for
+     // an older completed incident in this now-reused thread.
+     await rpc.call('thread/resume',{threadId:item.previousThreadId,excludeTurns:true,cwd:this.config.cwd,approvalPolicy:'never',sandbox:this.drill?'read-only':'danger-full-access'});
+     item.threadId=item.previousThreadId;item.priorTurnId=turn?.id;item.phase='ready';this.deps.save(item);
+    }else{
+    if(item.closedAt||item.failures<2)return;
     item.phase='creating';this.deps.save(item);
     const result=await rpc.call('thread/start',{cwd:this.config.cwd,approvalPolicy:'never',sandbox:this.drill?'read-only':'danger-full-access',ephemeral:false});
     const id=result.thread?.id;if(typeof id!=='string'||!uuid.test(id))throw Error('INCIDENT_THREAD_INVALID');
     item.threadId=id;item.phase='ready';this.deps.save(item);
+    }
    }
+   if(item.closedAt||item.failures<2)return;
    item.phase='sending';this.deps.save(item);
    const result=await rpc.call('turn/start',{threadId:item.threadId,clientUserMessageId:item.id,input:[{type:'text',text:incidentPrompt(item,this.config.cwd,this.drill)}]});
    if(typeof result.turn?.id!=='string')throw Error('INCIDENT_TURN_INVALID');

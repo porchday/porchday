@@ -26,7 +26,7 @@ function fixture(results:boolean[],initial:{id:number;body:string;user:typeof bo
 }
 describe('hosted backup monitor',()=>{
  it('records two independent observations without notifying while healthy',async()=>{
-  const f=fixture([true,true]);expect(await runBackup(config,f.options)).toEqual({healthy:true,notificationsDelivered:true});
+  const f=fixture([true,true]);expect(await runBackup(config,f.options)).toEqual({healthy:true,notificationsDelivered:true,incidentOpen:false});
   expect(f.writes()).toBe(0);expect(f.observations).toHaveLength(2);
   expect(Date.parse(f.observations[1].at)-Date.parse(f.observations[0].at)).toBe(20000);
  });
@@ -46,12 +46,12 @@ describe('hosted backup monitor',()=>{
  it('retains observations when the GitHub state API is unavailable',async()=>{
   const f=fixture([false,true]);
   const result=await runBackup(config,{...f.options,transport:async()=>{throw Error('SECRET_RESPONSE');}});
-  expect(result).toEqual({healthy:false,notificationsDelivered:false});expect(f.observations).toHaveLength(8);
+  expect(result).toEqual({healthy:false,notificationsDelivered:false,incidentOpen:false});expect(f.observations).toHaveLength(2);
   expect(JSON.stringify(result)).not.toContain('SECRET_RESPONSE');
  });
  it('reports a prior execution gap and recovery even when the next application checks pass',async()=>{
   const f=fixture([true,true]);
-  expect(await runBackup(config,{...f.options,previousExecutionFailed:true})).toEqual({healthy:true,notificationsDelivered:true});
+  expect(await runBackup(config,{...f.options,previousExecutionFailed:true})).toEqual({healthy:true,notificationsDelivered:true,incidentOpen:false});
   expect(f.writes()).toBe(2);expect(f.comments[0].body).toContain('backup_execution');expect(f.comments[1].body).toContain('checks recovered');
  });
  it('does not duplicate a known outage merely because the previous workflow failed',async()=>{
@@ -90,4 +90,8 @@ describe('hosted backup monitor',()=>{
   expect(f.writes()).toBe(2);expect(f.comments.every(c=>c.body.includes('Notification drill'))).toBe(true);
   expect(await latestHostedEvent(53,transport)).toBe(null);
  });
+});
+
+it('does not convert a lone failed probe into an execution-failure alert on the next run',async()=>{
+ const f=fixture([false,true]);expect(await runBackup(config,f.options)).toEqual({healthy:false,notificationsDelivered:true,incidentOpen:false});expect(f.writes()).toBe(0);expect(f.observations).toHaveLength(2);
 });

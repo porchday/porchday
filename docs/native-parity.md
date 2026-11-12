@@ -286,3 +286,7 @@ The default iOS/macOS WKWebView shells and PWA share typed @handle resolution, e
 Exact-source iOS simulator/macOS CI is required before production activation. Physical-device input, keyboard and scrolling acceptance remains pending under #125; browser checks do not stand in for those checks. Mention-specific notifications are not added by this change: existing audience-scoped post/comment notifications remain in place under #7.
 
 Typed handle release acceptance (November 11): [release evidence](evidence/typed-mentions-release-2026-11-11.md) records passing exact-source web/iOS/macOS CI and staging/production encrypted typed-tag checks. Both default native shells receive the shared UI without a new signed binary. Physical input acceptance remains pending.
+
+## Incident notification deduplication
+
+The November 12 change affects the independent operator monitor and GitHub backup only. Application APIs, encrypted content, social notifications and default iOS/macOS shell behavior are unchanged. Existing shared native implementations remain at parity. Exact-source iOS simulator and macOS CI still gate production monitor installation. No signed native binary or hosted app deployment is required; physical app verification statuses remain unchanged.

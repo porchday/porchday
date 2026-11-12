@@ -2,7 +2,7 @@ import type {Observation} from './external-monitor-probe.ts';
 
 export const checkNames = ['protected_readiness','anonymous_session','legacy_anonymous_session','monitor_freshness','login','authorized_profile','authorized_feed','logout','revocation','backup_execution'] as const;
 export type AlertEvent = {id:string;kind:'outage'|'recovery';at:string;failedChecks:string[]};
-export type AlertState = {v:1;incident:boolean;healthyStreak:number;healthySince?:string;lastAt:string|null;pending:AlertEvent[];lastRelayAttempt?:{id:string;at:string}};
+export type AlertState = {v:1;incident:boolean;healthyStreak:number;healthySince?:string;failureStreak?:number;firstFailureAt?:string;lastAt:string|null;pending:AlertEvent[];lastRelayAttempt?:{id:string;at:string}};
 export const initialState = ():AlertState=>({v:1,incident:false,healthyStreak:0,lastAt:null,pending:[]});
 
 /** Reduce only validated, fixed-format observations. No response bodies enter the outbox. */
@@ -14,11 +14,15 @@ export function advance(state:AlertState, observation:Observation, eventId:strin
  if(!observation.healthy){
   next.healthyStreak=0;
   delete next.healthySince;
-  if(!state.incident){
+  const contiguous=state.lastAt!==null&&Date.parse(observation.at)-Date.parse(state.lastAt)<=45000;
+  next.failureStreak=Math.min(2,(contiguous?(state.failureStreak||0):0)+1);
+  next.firstFailureAt=contiguous&&state.failureStreak?state.firstFailureAt||observation.at:observation.at;
+  if(!state.incident&&next.failureStreak>=2){
    next.incident=true;
-   next.pending.push({id:eventId,kind:'outage',at:observation.at,failedChecks:observation.checks.filter(c=>!c.ok).map(c=>c.name).sort()});
+   next.pending.push({id:eventId,kind:'outage',at:next.firstFailureAt!,failedChecks:observation.checks.filter(c=>!c.ok).map(c=>c.name).sort()});
   }
  } else {
+  next.failureStreak=0;delete next.firstFailureAt;
   // A gap breaks the recovery streak; missing checks are not successful checks.
   const consecutive=state.lastAt!==null && Date.parse(observation.at)-Date.parse(state.lastAt)<=45000;
   next.healthyStreak=Math.min(2,(consecutive?state.healthyStreak:0)+1);
