@@ -11,7 +11,7 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
  transport?:GitHubTransport;probe?:typeof probe;sleep?:(ms:number)=>Promise<unknown>;now?:()=>number;
  previousExecutionFailed?:boolean;
  observe:(observation:Observation)=>void;
-}):Promise<{healthy:boolean;notificationsDelivered:boolean}>{
+}):Promise<{healthy:boolean;notificationsDelivered:boolean;incidentOpen:boolean}>{
  validateProbeConfig(config);
  if(config.environment!=='production')throw Error('HOSTED_MONITOR_PRODUCTION_ONLY');
  let state=initialState(),stateAvailable=true,allHealthy=true;
@@ -34,7 +34,7 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
   }
   if(sample===0||(state.incident&&sample<7))await (options.sleep??sleep)(Math.max(0,20000-(now()-started)));
  }
- return {healthy:allHealthy,notificationsDelivered:stateAvailable&&state.pending.length===0};
+ return {healthy:allHealthy,notificationsDelivered:stateAvailable&&state.pending.length===0,incidentOpen:state.incident};
 }
 
 export async function notificationDrill(issue:number,runId:string,transport:GitHubTransport=ghTransport):Promise<void>{
@@ -61,6 +61,6 @@ async function main(){
   await notificationDrill(config.issue,process.env.GITHUB_RUN_ID??'');
   console.log('HOSTED_NOTIFICATION_DRILL_GITHUB_ACCEPTED');
  }
- if(!result.healthy||!result.notificationsDelivered||!executionHistoryAvailable)process.exitCode=1;
+ if(result.incidentOpen||!result.notificationsDelivered||!executionHistoryAvailable)process.exitCode=1;
 }
 if(process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url))main().catch(()=>{console.error('HOSTED_MONITOR_FAILED');process.exitCode=1;});

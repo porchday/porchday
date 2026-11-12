@@ -166,3 +166,5 @@ later report. Malformed observations, mismatched monthly files, nonprivate files
 and a torn trailing record stop reporting; they are never discarded to improve
 availability. Preserve the input byte prefixes alongside retained reports to
 reproduce a fixed snapshot. The reporter does not delete history or post alerts.
+
+November 12 alert confirmation: outage delivery requires two consecutive failed probes no more than 45 seconds apart. A lone failure remains recorded without an outage/recovery notification pair. Confirmed recovery still requires 140 seconds of continuous healthy observations. See [incident dispatch](incident-dispatch.md#november-12-notification-noise-remediation) for responder thread reuse and backup workflow exit semantics.
