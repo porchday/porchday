@@ -255,7 +255,8 @@
         "docs/native-parity.md#notification-previews-and-tap-handling",
         "docs/native-parity.md#encrypted-notification-content-previews",
         "design/notification-content-previews.md",
-        "docs/native-parity.md#log-driven-performance-reductions"
+        "docs/native-parity.md#log-driven-performance-reductions",
+        "docs/native-parity.md#logout-and-revocation-latency"
       ],
       "implementation": {
         "ios": "implemented",
