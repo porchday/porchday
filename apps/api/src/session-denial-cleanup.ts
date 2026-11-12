@@ -69,9 +69,8 @@ export async function deleteDeniedSession(pool:Pool,sessionId:string):Promise<bo
  };
  let failed=false;
  try{
-  await query('BEGIN');
-  await query("SET LOCAL statement_timeout='5s'");
-  await query("SET LOCAL lock_timeout='5s'");
+  // Static setup shares one request; values remain in separate parameterized queries.
+  await query("BEGIN; SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='5s'");
   const {rows}=await query('SELECT "userId" FROM public.auth_session WHERE id=$1',[sessionId]);
   let deleted=false;
   if(rows[0]){

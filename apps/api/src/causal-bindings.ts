@@ -26,7 +26,7 @@ export function tracedBindings(env:Env):Env{
   const value=Reflect.get(target,key);if(!value)return value;
   let wrapped:unknown=value;
   if(['MEDIA','MEDIA_BACKUP','RECOVERY_JOURNAL'].includes(String(key)))wrapped=bucket(value);
-  if(key==='JOBS')wrapped=new Proxy(value,{get(queue,method){const fn=Reflect.get(queue,method);if(typeof fn!=='function')return fn;
+  if(['JOBS','DENIAL_RANGE_0','DENIAL_RANGE_1','DENIAL_RANGE_2'].includes(String(key)))wrapped=new Proxy(value,{get(queue,method){const fn=Reflect.get(queue,method);if(typeof fn!=='function')return fn;
    if(method==='send')return (body:Record<string,unknown>,...args:unknown[])=>causalSpan('queue.send',()=>fn.call(queue,{...body,...(causalTraceparent()?{traceparent:causalTraceparent()}: {})},...args));
    if(method==='sendBatch')return (messages:{body:Record<string,unknown>}[],...args:unknown[])=>causalSpan('queue.sendBatch',()=>fn.call(queue,messages.map(m=>({...m,body:{...m.body,...(causalTraceparent()?{traceparent:causalTraceparent()}: {})}})),...args));
    return fn.bind(queue);
