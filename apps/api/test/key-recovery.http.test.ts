@@ -172,8 +172,8 @@ suite('Key recovery with real encryption and runtime RLS', () => {
         if(location.pathname==='/owner'){const key=await importRecoveryPrivateKey(f.armor,f.device.fingerprint);root.render(<RecoveryManager actor={{member:f.member,device:f.device,privateKey:key,keys:[key]}}/>);}
         else root.render(<VaultProvider member={f.member} onAccountDeleted={async()=>{}}><History/></VaultProvider>);
       `,resolveDir:process.cwd(),loader:'tsx'},bundle:true,format:'esm',write:false,define:{'process.env.NODE_ENV':'"production"'}});
-      const browser=await(engine==='chromium'?chromium:webkit).launch();try{
-        const contexts=await Promise.all([browser.newContext({viewport:{width:390,height:844}}),browser.newContext({viewport:{width:390,height:844}})]);
+      const browser=await(engine==='chromium'?chromium:webkit).launch();let contexts:Awaited<ReturnType<typeof browser.newContext>>[]=[];try{
+        contexts=await Promise.all([browser.newContext({viewport:{width:390,height:844}}),browser.newContext({viewport:{width:390,height:844}})]);
         for(const context of contexts)await context.route('http://localhost:43193/**',async route=>{
           const req=route.request(),path=new URL(req.url()).pathname;
           if(path==='/module.js')return route.fulfill({contentType:'text/javascript',body:bundle.outputFiles[0].text});
@@ -197,7 +197,7 @@ suite('Key recovery with real encryption and runtime RLS', () => {
         await phone.getByText('history recovered through pairing',{exact:true}).waitFor({timeout:20000});
         const backup=(await request(owner.id,'/keys/backup')).data.envelope;expect((await readRecoveryBackup(backup,owner.secret,owner.id)).devices).toHaveLength(2);
         await phone.reload();await phone.getByText('history recovered through pairing',{exact:true}).waitFor({timeout:20000});
-      }finally{await browser.close();}
+      }finally{for(const context of contexts)await context.unrouteAll({behavior:'wait'});await browser.close();}
     },60000);
 
 });
