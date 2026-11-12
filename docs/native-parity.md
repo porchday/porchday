@@ -292,3 +292,14 @@ Typed handle release acceptance (November 11): [release evidence](evidence/typed
 The November 12 change affects the independent operator monitor and GitHub backup only. Application APIs, encrypted content, social notifications and default iOS/macOS shell behavior are unchanged. Existing shared native implementations remain at parity. Exact-source iOS simulator and macOS CI still gate production monitor installation. No signed native binary or hosted app deployment is required; physical app verification statuses remain unchanged.
 
 Incident notification release acceptance (November 12): [evidence](evidence/incident-notification-noise-2026-11-12.md) records passing exact-source iOS/macOS checks and production monitor installation. Application/native behavior and signed binary availability remain unchanged.
+
+## Logout and revocation latency
+
+The November 12 change adds fixed server phase spans for independent denial
+publication and exact SQL cleanup, and separates external synthetic operation
+deadlines. iOS, macOS and web use the same authenticated sign-out endpoint and
+retain the same cookie clearing, local-key cleanup and rejected-old-session
+contract. No native implementation or distributed binary change is required.
+Exact-source iOS simulator and macOS automated checks remain release gates;
+physical-device behavior is not asserted from these server/monitor checks.
+See [logout latency acceptance](logout-latency.md) and issue #55.
