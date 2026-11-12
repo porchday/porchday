@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner request November 12:** [#8](https://github.com/porchday/porchday/issues/8), P1: reduce repeated incident threads/notifications with durable responder-thread reuse, two-probe alert confirmation, and backup execution-noise correction. Preserve raw failures and prompt sustained-outage recovery. Latency failures remain tracked in [#55](https://github.com/porchday/porchday/issues/55). Production monitor installation is pending.
+**Delivered November 12:** [#8](https://github.com/porchday/porchday/issues/8), P1, `needs verification`: production Mac monitor and GitHub backup now confirm transient alerts and reuse one incident conversation. Twenty completed duplicates archived; history retained. Exact-source CI/native and eight post-install healthy probes passed. [Evidence](docs/evidence/incident-notification-noise-2026-11-12.md). Underlying latency remains in #55; unreliable GitHub scheduling/receipt checks remain open.
 
 **Delivered November 11:** [#125](https://github.com/porchday/porchday/issues/125), P2, `needs verification`: typed @handles and persistent multi-select tagging are live in post text, comments and photo/video captions through the shared web/iOS/macOS UI. Exact-source CI/native and hosted encrypted-tag checks passed. [Release evidence](docs/evidence/typed-mentions-release-2026-11-11.md). Physical-device acceptance and mention-specific notification work remain open.
 

@@ -112,3 +112,5 @@ Rollout must preserve current incident/outbox/history state. Where the old bug
 has already erased the previous thread pointer, recover it from the latest
 acknowledged archived incident after read-only identity/status verification.
 Never replace an active or uncertain dispatch to make rollout easier.
+
+[November 12 production release evidence](evidence/incident-notification-noise-2026-11-12.md) records exact-source checks, installed bundle, preserved state, healthy post-install probes, reversible duplicate-thread cleanup and remaining scheduler/latency limitations.
