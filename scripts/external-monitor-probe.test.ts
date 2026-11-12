@@ -1,4 +1,4 @@
-import {describe, expect, it} from 'vitest';
+import {describe, expect, it, vi} from 'vitest';
 import {probe, type ProbeConfig} from './external-monitor-probe';
 
 const id='00000000-0000-4000-8000-000000000001';
@@ -77,4 +77,41 @@ describe('external synthetic account readiness',()=>{
   const f=fixture();await expect(probe({...config,synthetic:{...config.synthetic,email:'member@example.com'}},f)).rejects.toThrow('SYNTHETIC_CONFIGURATION_REQUIRED');
   expect(f.calls).toHaveLength(0);
  });
+ it('gives revocation its own budget after an ambiguous logout deadline without replaying logout',async()=>{
+  vi.useFakeTimers();vi.setSystemTime(now);
+  try{
+   const f=fixture();let signouts=0;
+   const pending=probe(config,{now:Date.now,fetch:(async(input,init={})=>{
+    const result=await f.fetch(input,init);
+    if(String(input).endsWith('/sign-out')){
+     signouts++;
+     // The mutation happened; only its acknowledgement stalled.
+     return new Promise<Response>((_,reject)=>init.signal!.addEventListener('abort',()=>reject(Error('timeout')),{once:true}));
+    }
+    return result;
+   }) as typeof fetch});
+   await vi.advanceTimersByTimeAsync(10001);
+   const result=await pending;
+   expect(signouts).toBe(1);expect(result.healthy).toBe(false);
+   expect(result.checks.find(c=>c.name==='logout')).toMatchObject({ok:false,failure:'deadline',durationMs:10000});
+   expect(result.checks.find(c=>c.name==='revocation')).toMatchObject({ok:true,status:401,remainingBudgetMs:5000});
+   expect(vi.getTimerCount()).toBe(0);
+  }finally{vi.useRealTimers();}
+ });
+ it('records a slow composite journey without starving later operations',async()=>{
+  vi.useFakeTimers();vi.setSystemTime(now);
+  try{
+   const f=fixture();
+   const pending=probe(config,{now:Date.now,fetch:(async(input,init={})=>{
+    if(/sign-in|sign-out|feed/.test(String(input)))await new Promise(resolve=>setTimeout(resolve,4000));
+    return f.fetch(input,init);
+   }) as typeof fetch});
+   await vi.advanceTimersByTimeAsync(12000);const result=await pending;
+   expect(result.healthy).toBe(true);
+   expect(result.timing).toEqual({version:2,journeyBudgetMs:35000,legacyTenSecondJourneyExceeded:true});
+   expect(result.checks.find(c=>c.name==='logout')).toMatchObject({durationMs:4000,remainingBudgetMs:10000});
+   expect(result.checks.find(c=>c.name==='revocation')).toMatchObject({ok:true,status:401});
+  }finally{vi.useRealTimers();}
+ });
+
 });

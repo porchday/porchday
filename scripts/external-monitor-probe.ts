@@ -2,7 +2,11 @@ import {AsyncLocalStorage} from 'node:async_hooks';
 /** External account-readiness probe. Only fixed checks/statuses leave this module. */
 export type ProbeConfig={environment:'staging'|'production';healthToken:string;synthetic:{id:string;email:string;password:string}};
 export type Check={name:string;ok:boolean;status?:number;durationMs?:number;traceId?:string;spanId?:string;phase?:'headers'|'body'|'complete';headersMs?:number;bodyMs?:number;remainingBudgetMs?:number;startedOffsetMs?:number;transportCode?:string;failure?:'deadline'|'transport_or_response'|'dependency'};
-export type Observation={v:1;at:string;environment:'staging'|'production';healthy:boolean;checks:Check[];durationMs:number;scope:'login_authorized_reads_logout_and_readiness'};
+export type Observation={v:1;at:string;environment:'staging'|'production';healthy:boolean;checks:Check[];durationMs:number;scope:'login_authorized_reads_logout_and_readiness';timing?:{version:2;journeyBudgetMs:number;legacyTenSecondJourneyExceeded:boolean}};
+// Availability is evaluated per operation; the journey cap prevents overlapping work.
+export const PROBE_REQUEST_TIMEOUT_MS=10000;
+export const PROBE_REVOCATION_TIMEOUT_MS=5000;
+export const PROBE_JOURNEY_TIMEOUT_MS=35000;
 const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export function validateProbeConfig(config:ProbeConfig){
  if(!['staging','production'].includes(config.environment)||typeof config.healthToken!=='string'||config.healthToken.length<32
@@ -25,23 +29,28 @@ export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?
  const request=options.fetch??fetch,now=options.now??Date.now,started=now(),checks:Check[]=[];
  const origin=config.environment==='production'?'https://porchday.org':'https://staging.porchday.com';
  const statusOrigin=config.environment==='production'?'https://status.porchday.com':'https://staging-status.porchday.com';
- const local=new AsyncLocalStorage<Partial<Check>>(),traceId=crypto.randomUUID().replaceAll('-','');
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),options.timeoutMs??10000);
+ const local=new AsyncLocalStorage<{evidence:Partial<Check>;signal:AbortSignal}>(),traceId=crypto.randomUUID().replaceAll('-','');
+ const journeyBudgetMs=options.timeoutMs??PROBE_JOURNEY_TIMEOUT_MS;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),journeyBudgetMs);
  async function json(url:string,init:RequestInit={}){
-  const check=local.getStore(),headers=new Headers(init.headers),spanId=crypto.randomUUID().replaceAll('-','').slice(0,16);
+  const context=local.getStore(),check=context?.evidence,headers=new Headers(init.headers),spanId=crypto.randomUUID().replaceAll('-','').slice(0,16);
   headers.set('traceparent',`00-${traceId}-${spanId}-01`);
   if(check){check.traceId=traceId;check.spanId=spanId;check.phase='headers';}
   const before=now();
-  const r=await request(url,{...init,headers,redirect:'manual',signal:controller.signal});
+  const r=await request(url,{...init,headers,redirect:'manual',signal:context?.signal??controller.signal});
   if(check){check.status=r.status;check.headersMs=Math.max(0,now()-before);check.phase='body';}
   if(r.status>=300&&r.status<400){await r.body?.cancel();throw Error('REDIRECT_REJECTED');}
   const bodyStart=now(),value=await boundedJson(r);if(check){check.bodyMs=Math.max(0,now()-bodyStart);check.phase='complete';}
   return {response:r,value};
  }
  const safe=async(name:string,work:()=>Promise<{ok:boolean;status?:number}>)=>{
-  const checkStarted=now(),evidence:Partial<Check>={startedOffsetMs:Math.max(0,checkStarted-started),remainingBudgetMs:Math.max(0,(options.timeoutMs??10000)-(checkStarted-started))};
-  try{checks.push({name,...await local.run(evidence,work),...evidence,durationMs:Math.max(0,Math.round(now()-checkStarted))});}
-  catch(error){const code=(error as {cause?:{code?:unknown}})?.cause?.code;if(typeof code==='string'&&['ECONNRESET','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(code))evidence.transportCode=code;checks.push({name,ok:false,...evidence,durationMs:Math.max(0,Math.round(now()-checkStarted)),failure:controller.signal.aborted?'deadline':'transport_or_response'});}
+  const checkStarted=now(),budget=Math.min(name==='revocation'?PROBE_REVOCATION_TIMEOUT_MS:PROBE_REQUEST_TIMEOUT_MS,Math.max(0,journeyBudgetMs-(checkStarted-started)));
+  const operation=new AbortController(),signal=AbortSignal.any([controller.signal,operation.signal]);
+  const deadline=setTimeout(()=>operation.abort(),budget);
+  const evidence:Partial<Check>={startedOffsetMs:Math.max(0,checkStarted-started),remainingBudgetMs:budget};
+  try{checks.push({name,...await local.run({evidence,signal},work),...evidence,durationMs:Math.max(0,Math.round(now()-checkStarted))});}
+  catch(error){const code=(error as {cause?:{code?:unknown}})?.cause?.code;if(typeof code==='string'&&['ECONNRESET','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(code))evidence.transportCode=code;checks.push({name,ok:false,...evidence,durationMs:Math.max(0,Math.round(now()-checkStarted)),failure:signal.aborted?'deadline':'transport_or_response'});}
+  finally{clearTimeout(deadline);}
  };
  let cookie:string|undefined;
  try{
@@ -77,6 +86,7 @@ export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?
   ]);
  }finally{clearTimeout(timer);cookie=undefined;}
  checks.sort((a,b)=>a.name.localeCompare(b.name));
+ const durationMs=Math.max(0,Math.round(now()-started));
  return{v:1,at:new Date(started).toISOString(),environment:config.environment,healthy:checks.every(check=>check.ok),checks,
-  durationMs:Math.max(0,Math.round(now()-started)),scope:'login_authorized_reads_logout_and_readiness'};
+  durationMs,timing:{version:2,journeyBudgetMs,legacyTenSecondJourneyExceeded:durationMs>10000},scope:'login_authorized_reads_logout_and_readiness'};
 }
