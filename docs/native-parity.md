@@ -28,7 +28,7 @@ Photo contexts require valid Gregorian dates; post contexts reject custom dates.
 
 ## audiences
 
-Native crypto and sharing choices include Community and Extended family. Server audience snapshots define relationships; native clients do not infer access from display filters. Family is mutual. New encryption recipients with missing keys stop sharing instead of being silently omitted.
+Native crypto and sharing choices include Community and Extended family. Server audience snapshots define relationships; native clients do not infer access from display filters. Family is mutual. Social posts, attachments, and direct photos/videos publish to every ready eligible device while keyless direct connections retain eligibility for later encrypted catch-up. Pending eligibility grants no read access, is tied to the original connection, and is revoked on blocking, relabeling, or disconnect. Album administration retains its strict snapshot policy.
 
 ## invitations
 
