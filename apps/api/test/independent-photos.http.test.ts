@@ -163,6 +163,41 @@ suite("Encrypted independent photo API",()=>{
   });
 
 
+  it("publishes standalone photos with pending future-only recipients and catches up without widening access",async()=>{
+    const owner=await person(),ready=await person(),pending=await person(),stillPending=await person(),later=await person();
+    for(const peer of [ready,pending,stillPending])await connect(owner,peer);
+    await db`update app.connections set history_a='future',history_b='future' where member_a=${owner.id} or member_b=${owner.id}`;
+    await db`update app.device_keys set revoked_at=now() where member_id in (${pending.id},${stillPending.id})`;
+    const p=await publish(owner,"connections"),gid=p.grant.envelope.context.id,path=`/photos/${p.id}/grants/${gid}`;
+    expect((await call(ready.id,`/photos/${p.id}`)).status).toBe(200);
+    expect((await call(pending.id,`/photos/${p.id}`)).status).toBe(404);
+    expect(await db`select * from app.pending_photo_members where grant_id=${gid}`).toHaveLength(2);
+    await connect(owner,later);
+    await db`update app.connections set history_a='future',history_b='future' where member_a=${owner.id} or member_b=${owner.id}`;
+    await db`update app.device_keys set revoked_at=null where member_id=${pending.id}`;
+    expect((await call(owner.id,"/photos/history-refresh")).data.items.map((x:any)=>x.id)).toContain(p.id);
+    const snapshot=await call(owner.id,path+"/refresh-audience");
+    expect(snapshot.data.pending_members).toEqual([stillPending.id]);
+    expect(snapshot.data.devices.map((d:any)=>d.member_id).sort()).toEqual([owner.id,ready.id,pending.id].sort());
+    const encrypt=(payload:unknown,context:ContentContext)=>encryptObject({payload,context:{...context,epoch:snapshot.data.epoch},signingKey:owner.key,recipients:snapshot.data.devices.map((d:any)=>({memberId:d.member_id,deviceId:d.id,publicKey:d.public_key}))});
+    const media=randomUUID(),{photoDate:_,...context}=p.grant.envelope.context;
+    const encrypted=await encrypt({bytes:"aGVsbG8=",mime:"image/jpeg"},{...context,id:media,kind:"media"}),bytes=new TextEncoder().encode(JSON.stringify(encrypted));
+    expect((await call(owner.id,"/media","POST",{id:media,envelope:encrypted,byte_size:bytes.length,photo_refresh_id:gid})).status).toBe(201);
+    expect((await app.request(`https://local.test/media/${media}/bytes`,{method:"PUT",headers:{"x-member":owner.id,"content-type":"application/octet-stream"},body:bytes},env)).status).toBe(200);
+    const envelope=await encrypt({media:[{id:media,mime:"image/jpeg"}]},p.grant.envelope.context);
+    expect((await call(owner.id,path+"/refresh","POST",{envelope,media_id:media,expected_media_id:p.grant.media_id,expected_revision:1})).status).toBe(200);
+    const detail=await call(pending.id,`/photos/${p.id}`);expect(detail.status).toBe(200);
+    expect((await decryptObject<any>({envelope:detail.data.photo.grants[0].envelope,expectedContext:envelope.context,privateKey:pending.key,authorPublicKey:owner.keys.publicKey})).media[0].id).toBe(media);
+    expect((await call(later.id,`/photos/${p.id}`)).status).toBe(404);
+    expect((await call(stillPending.id,`/photos/${p.id}`)).status).toBe(404);
+    await db`insert into app.blocks(actor,target) values(${owner.id},${stillPending.id})`;
+    expect(await db`select * from app.pending_photo_members where grant_id=${gid} and member_id=${stillPending.id}`).toHaveLength(0);
+    await db`delete from app.connections where member_a=${[owner.id,pending.id].sort()[0]} and member_b=${[owner.id,pending.id].sort()[1]}`;
+    await connect(owner,pending);
+    await db`update app.connections set history_a='future',history_b='future' where member_a=${owner.id} or member_b=${owner.id}`;
+    expect((await call(owner.id,path+"/refresh-audience")).data.devices.some((d:any)=>d.member_id===pending.id)).toBe(false);
+  },60000);
+
   it("shares encrypted photo conversations only with current readers and supports retry-safe reactions",async()=>{
     const owner=await person(),reader=await person(),outsider=await person();await connect(owner,reader);
     const {id}=await publish(owner,"connections"),path=`/photos/${id}/interactions`;
