@@ -324,3 +324,5 @@ records production verification separately from unperformed physical-device timi
 No new signed installer or TestFlight build was distributed for this server fix.
 
 Existing-member access regression: `recovery-existing-member-browser.test.ts` exercises remembered-key unlock, original-secret restore and reload in Chromium and WebKit while the new recovery endpoint returns 503. Old encrypted content remains readable and the mandatory gate stays absent. The API migration fixture also enrolls a previously keyless, pre-migration member and verifies that enrollment does not retroactively require a second method. These synthetic checks do not claim to decrypt real members’ backups.
+
+Recovery release acceptance (November 12): exact-source iOS simulator and macOS tests passed for a56aa104. Hosted staging and production old-key, passkey, pairing and contact recovery checks passed. [Release evidence](evidence/member-recovery-release-2026-11-12.md) records pending physical-provider/native acceptance and signed distribution separately. No new signed native binary is claimed.
