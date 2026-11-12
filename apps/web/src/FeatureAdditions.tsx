@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { get, post, request, type Json } from "./api";
 import { Alert, Button, Loading, useAction } from "./ui";
+import { proposalOverview, proposalSections } from "./feature-presentation";
 import { Disclosure, type BuilderState } from "./BuilderChat";
 
 export const featureStatus: Record<string,string> = {
@@ -8,16 +9,30 @@ export const featureStatus: Record<string,string> = {
   delivered: "Code delivered · deployment may still be pending", needs_attention: "Needs review · implementation did not finish",
 };
 export function FeatureCard({ feature, busy, onVote }: { feature: Json; busy: boolean; onVote: (value: number) => void }) {
-  return <article className="panel form-stack">
+  const overview = proposalOverview(feature.plan);
+  const sections = proposalSections(overview.original);
+  return <article className="panel form-stack" id={`feature-${feature.id}`} style={{minWidth:0,overflowWrap:"anywhere"}}>
     <h2>{feature.title}</h2>
-    <p>{feature.author_handle ? `Proposed by @${feature.author_handle} · ` : ""}{featureStatus[feature.status]}</p>
-    <p style={{whiteSpace:"pre-wrap",overflowWrap:"anywhere"}}>{feature.plan}</p>
+    <p>{featureStatus[feature.status]}</p>
+    <p>{overview.summary}</p>
+    {!!overview.highlights.length && <ul>{overview.highlights.map((point,index)=><li key={index}>{point}</li>)}</ul>}
     <strong>Net votes: {feature.score > 0 ? "+" : ""}{feature.score} / +3 needed</strong>
     {feature.status === "voting" && <div className="inline-form" role="group" aria-label={`Vote on ${feature.title}`}>
       <Button disabled={busy} aria-pressed={feature.my_vote === 1} onClick={() => onVote(feature.my_vote === 1 ? 0 : 1)}>Support +1</Button>
       <Button disabled={busy} aria-pressed={feature.my_vote === -1} onClick={() => onVote(feature.my_vote === -1 ? 0 : -1)}>Against −1</Button>
       {feature.my_vote !== 0 && <Button disabled={busy} onClick={() => onVote(0)}>Remove my vote</Button>}
     </div>}
+    <div className="form-stack" aria-label={`Details for ${feature.title}`}>
+      {overview.reviewed && sections.map(section=><details key={section.title}>
+        <summary>{section.title}</summary>
+        <p style={{whiteSpace:"pre-wrap"}}>{section.text}</p>
+      </details>)}
+      <details open={!overview.reviewed}>
+        <summary>Complete original plan{!overview.reviewed ? " · summary needs review" : ""}</summary>
+        <p style={{whiteSpace:"pre-wrap"}}>{overview.original}</p>
+      </details>
+      <details><summary>Attribution</summary><p>{feature.author_handle ? `Listed by @${feature.author_handle}.` : "Original author unavailable."} See sources and history for the original proposal’s provenance.</p></details>
+    </div>
     {!!feature.commits?.length && <p>Commits: {feature.commits.map((hash: string) => <a key={hash} href={`https://github.com/porchday/porchday/commit/${hash}`} style={{marginRight:"0.5em"}}>{hash.slice(0,7)}</a>)}</p>}
   </article>;
 }

@@ -376,3 +376,10 @@ describe('feature voting bridge protocol',()=>{
   expect(featureProposal(block({title:'',plan:'Plan'}))).toBeNull();
  });
 });
+
+it('requests concise overviews without hiding policy or privacy tradeoffs',()=>{
+ const prompt=frame({...message,share_plan:true,task_kind:'feature_plan'});
+ expect(prompt).toContain('Proposal overview v1');expect(prompt).toContain('target at most 40 words');
+ expect(prompt).toContain('approval-policy changes, costs and privacy implications');
+ expect(prompt).toContain('Original plan:');expect(prompt).toContain('Sources and history');
+});
