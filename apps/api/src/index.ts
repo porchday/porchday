@@ -2,7 +2,7 @@ import {createCausalInspector} from './causal-inspector';
 import {createOperationTrace,parseTraceparent,cleanupOperationalTraces,causalFailure} from './causal-tracing';
 import {tracedBindings} from './causal-bindings';
 import {notificationPreviewDelivery} from './notification-previews';
-import {cleanupDeniedSessions} from './session-denial-cleanup';
+import {cleanupDeniedSessionCandidates as cleanupDeniedSessions,enqueueCandidateContinuation} from './session-denial-candidates';
 import { Hono } from 'hono';
 import {requestTimingMiddleware} from './request-timing';
 import { bodyLimit } from 'hono/body-limit';
@@ -77,7 +77,7 @@ app.get('/.well-known/apple-app-site-association',c=>{
  return c.json({applinks:{details:[{appIDs:[team+'.'+bundle],components:[{'/':'/post/*',comment:'Open a Porchday post in the signed native app.'},{'/':'/app/post/*',comment:'Open a Porchday post in the signed native app.'}]}]}});
 });
 app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
- const result=await readOperationalHealth(c.env);
+ const result=await readOperationalHealth(c.env,c.get('requestTiming'));
  return c.json(result,result.status==='ok'?200:503);
 });
 app.use('/api/v1/*',prepareMemberAuth);
@@ -152,7 +152,7 @@ export default {
   };
   try{if(trace)await trace.run(run);else await run();trace?.finish(200);}catch(error){trace?.finish(500);throw error;}
  },
- async queue(batch:MessageBatch<{kind:string;id?:string;traceparent?:string}>,env:Env,ctx?:ExecutionContext){
+ async queue(batch:MessageBatch<{kind:string;id?:string;denialProgressEtag?:string;traceparent?:string}>,env:Env,ctx?:ExecutionContext){
   env=tracedBindings(env);
   const trace=createOperationTrace(env,undefined,task=>ctx?.waitUntil(task),'queue');
   for(const message of batch.messages){const parent=parseTraceparent(message.body.traceparent);if(parent)trace?.link(parent);}
@@ -186,7 +186,9 @@ export default {
    }catch(error){reportConnectionRefusal(env,error);event('error',{code:failedPhase},env);event('error',{code:'cleanup_retry'},env);for(const message of cleanup)message.retry({delaySeconds:60});}
   }
   for(const message of batch.messages.filter(m=>m.body.kind==='session_denial_cleanup')){
-   try{const result=await cleanupDeniedSessions(env);event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
+   try{const result=await cleanupDeniedSessions(env,message.body.denialProgressEtag);
+    if(result.continuation)await enqueueCandidateContinuation(env,result.continuation);
+    event('job',{code:'session_denial_cleanup_complete',count:result.deleted},env);if(result.invalid)event('error',{code:'session_denial_cleanup_invalid',count:result.invalid},env);message.ack();}
    catch{event('error',{code:'session_denial_cleanup_retry'},env);message.retry({delaySeconds:60});}
   }
   for(const message of batch.messages.filter(m=>['media_backup','media_backup_start'].includes(m.body.kind))){
@@ -197,4 +199,4 @@ export default {
   };
   try{if(trace)await trace.run(run);else await run();trace?.finish(200);}catch(error){trace?.finish(500);throw error;}
  }
-} satisfies ExportedHandler<Env,{kind:string;id?:string}>;
+} satisfies ExportedHandler<Env,{kind:string;id?:string;denialProgressEtag?:string}>;

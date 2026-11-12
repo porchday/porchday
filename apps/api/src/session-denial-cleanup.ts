@@ -3,7 +3,7 @@ import type {JournalStore} from './privacy-journal';
 import {sessionIdFromDenialObject,SessionDenialError} from './session-denial';
 import {authPool} from './auth';
 import type {Env} from './types';
-const CURSOR='session-denial-maintenance/v1/cursor.json';
+import {denialProgressKey,parseDenialProgress,type DenialProgress} from './session-denial-progress';
 const PREFIX='session-denials/v1/';
 export interface DenialSweepStore extends JournalStore{
  list(options:{prefix:string;limit:number;cursor?:string}):Promise<{objects:{key:string}[];truncated:boolean;cursor?:string}>;
@@ -23,15 +23,16 @@ async function bounded<T>(work:()=>Promise<T>):Promise<T>{
  * Denials are never deleted. Cursor writes are progress, not privacy authority.
  */
 export async function sweepSessionDenials(store:DenialSweepStore,cleanup:(sessionId:string)=>Promise<boolean>){
- const saved=await bounded(async()=>{const object=await store.get(CURSOR);return object?{etag:object.etag,text:await object.text()}:null;});
- let cursor:string|null=null;
+ const startedAt=Date.now();
+ const saved=await bounded(async()=>{const object=await store.get(denialProgressKey);return object?{etag:object.etag,text:await object.text()}:null;});
+ let previous:DenialProgress|null=null;
  if(saved){
   try{
-   const value=JSON.parse(saved.text);
-   if(value?.v!==1||!(value.cursor===null||typeof value.cursor==='string'&&value.cursor.length>0&&value.cursor.length<=8192)||Object.keys(value).sort().join(',')!=='cursor,v')throw Error();
-   cursor=value.cursor;
+   previous=parseDenialProgress(saved.text);
+   if(previous.pageCompletedAt>startedAt)throw Error();
   }catch{throw new DenialCleanupError();}
  }
+ const cursor=previous?.cursor??null;
  const page=await bounded(()=>store.list({prefix:PREFIX,limit:10,...(cursor?{cursor}:{})}));
  if(!Array.isArray(page.objects)||page.objects.length>10||typeof page.truncated!=='boolean'||page.truncated&&(typeof page.cursor!=='string'||!page.cursor||page.cursor===cursor||page.cursor.length>8192))throw new DenialCleanupError();
  const result={seen:0,deleted:0,invalid:0,advanced:false};
@@ -46,9 +47,15 @@ export async function sweepSessionDenials(store:DenialSweepStore,cleanup:(sessio
   if(await cleanup(sessionId))result.deleted++;
  }
  const next=page.truncated?page.cursor!:null;
- if(next===cursor)return result; // A single page needs no persistent cursor.
- const updated=await bounded(()=>store.put(CURSOR,JSON.stringify({v:1,cursor:next}),{onlyIf:saved?{etagMatches:saved.etag}:{etagDoesNotMatch:'*'}}));
- result.advanced=!!updated; // Another worker won the cursor; never overwrite it.
+ const completedAt=Date.now(),passStartedAt=previous?.passStartedAt??startedAt;
+ if(completedAt<startedAt)throw new DenialCleanupError();
+ const seen=(previous?.passSeen??0)+result.seen,invalid=(previous?.passInvalid??0)+result.invalid;
+ const progress:DenialProgress={v:2,cursor:next,pageCompletedAt:completedAt,passStartedAt:next?passStartedAt:null,
+  passSeen:next?seen:0,passInvalid:next?invalid:0,lastPass:next?(previous?.lastPass??null):{completedAt,durationMs:completedAt-passStartedAt,seen,invalid}};
+ // Cursor and health advance atomically. A losing or late worker cannot refresh
+ // the winner's heartbeat. Even a single/empty page records real completion.
+ const updated=await bounded(()=>store.put(denialProgressKey,JSON.stringify(progress),{onlyIf:saved?{etagMatches:saved.etag}:{etagDoesNotMatch:'*'}}));
+ result.advanced=!!updated&&next!==cursor;
  return result;
 }
 /** Caller has already verified an immutable denial. No R2 operation occurs

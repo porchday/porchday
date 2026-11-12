@@ -1,8 +1,10 @@
 import postgres from 'postgres';
+import {measureOperationsPhase, type RequestTiming} from './request-timing';
 import {z} from 'zod';
 import {createMiddleware} from 'hono/factory';
 import type {Env,Variables} from './types';
 import {trackPostgres} from './connection-metrics';
+import {readCandidateCleanupHealth as readDenialCleanupHealth} from './session-denial-candidates';
 
 const count=z.number().int().nonnegative();
 export const operationalSnapshotSchema=z.object({
@@ -40,21 +42,25 @@ export function mediaBackupIssues(snapshot:z.infer<typeof mediaBackupSnapshotSch
  if(snapshot.failed_runs>0)issues.push('media_backup_retrying');
  return issues;
 }
-async function operationsDb<T>(env:Pick<Env,'HYPERDRIVE_JOBS'>,work:(sql:ReturnType<typeof postgres>)=>Promise<T>){
+async function operationsDb<T>(env:Pick<Env,'HYPERDRIVE_JOBS'>,work:(sql:ReturnType<typeof postgres>)=>Promise<T>,timing?:RequestTiming){
  const sql=trackPostgres(env,'jobs',postgres(env.HYPERDRIVE_JOBS.connectionString,{max:1,prepare:true,fetch_types:false,connect_timeout:5,idle_timeout:1}));
- try{return await work(sql);}finally{await sql.end({timeout:1});}
+ try{return await measureOperationsPhase(timing,'operations_snapshot',()=>work(sql));}finally{await measureOperationsPhase(timing,'operations_close',()=>sql.end({timeout:1}));}
 }
 export const recordCleanupSuccess=(env:Pick<Env,'HYPERDRIVE_JOBS'>)=>operationsDb(env,async sql=>{await sql`select app.record_cleanup_success()`;});
-type HealthEnvironment=Pick<Env,'HYPERDRIVE_JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'MEDIA_BACKUP_ENABLED'|'MEDIA_BACKUP'|'RECOVERY_JOURNAL'>>;
-export const readOperationalHealth=(env:HealthEnvironment)=>operationsDb(env,async sql=>{
+type HealthEnvironment=Pick<Env,'HYPERDRIVE_JOBS'>&Partial<Pick<Env,'ENVIRONMENT'|'MEDIA_BACKUP_ENABLED'|'MEDIA_BACKUP'|'RECOVERY_JOURNAL'|'SESSION_DENIAL_CLEANUP_V1'>>;
+export const readOperationalHealth=async(env:HealthEnvironment,timing?:RequestTiming)=>{
+ const [database,denialCleanup]=await Promise.all([operationsDb(env,async sql=>{
  const [row]=await sql`select app.operational_snapshot_v3() as value,app.media_backup_health() as backup`;
  const snapshot=operationalSnapshotSchema.parse(row.value),issues=operationalIssues(snapshot);
  const backup=mediaBackupSnapshotSchema.parse(row.backup);
  if(env.ENVIRONMENT==='staging'||env.ENVIRONMENT==='production'){
   issues.push(...mediaBackupIssues(backup,env.MEDIA_BACKUP_ENABLED==='true'&&!!env.MEDIA_BACKUP&&!!env.RECOVERY_JOURNAL));
  }
- return {status:issues.length?'degraded':'ok',issues,snapshot,backup};
-});
+ return {issues,snapshot,backup};
+ },timing),readDenialCleanupHealth(env)]);
+ const issues=[...database.issues,...denialCleanup.issues];
+ return {...database,status:issues.length?'degraded':'ok',issues,denial_cleanup:denialCleanup.snapshot};
+};
 
 /** Dedicated monitoring capability; cannot authenticate a member or read content. */
 export const requireOperations=createMiddleware<{Bindings:Env;Variables:Variables}>(async(c,next)=>{
@@ -66,5 +72,6 @@ export const requireOperations=createMiddleware<{Bindings:Env;Variables:Variable
  const [left,right]=await Promise.all([digest(expected),digest(provided)]);
  let difference=0;for(let i=0;i<left.length;i++)difference|=left[i]^right[i];
  if(difference)return c.json({error:{code:'UNAUTHORIZED'}},401);
+ c.set('operationsAuthorized',true);
  await next();
 });
