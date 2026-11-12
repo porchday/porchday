@@ -48,7 +48,7 @@ import Porchcrypto
         var error: NSError?
         let value = authority.openRecoveryPayload(ciphertext, expectedBindingJSON: try binding.serialized(), authorPublicKey: entry["public_key"].string, error: &error)
         if let error { throw error }
-        guard let value, let armor = try JSON.parse(value).string else { throw PorchError.message("Invalid recovered device backup.") }
+        guard let armor = try JSON.parse(value).string else { throw PorchError.message("Invalid recovered device backup.") }
         let session = PorchcryptoSessionFromRecoveredKey(armor, entry["fingerprint"].string, &error)
         if let error { throw error }; guard let session else { throw PorchError.message("Invalid recovered device key.") }; return session
     }
