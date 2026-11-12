@@ -7,6 +7,12 @@ import type {Observation} from './external-monitor-probe.ts';
 const start=Date.parse('2026-10-01T00:00:00.000Z');
 function sample(offset:number,healthy=true):Observation{return{v:1,at:new Date(start+offset).toISOString(),environment:'production',scope:'login_authorized_reads_logout_and_readiness',healthy,durationMs:1000,checks:['anonymous_session','authorized_feed','authorized_profile','legacy_anonymous_session','login','logout','monitor_freshness','protected_readiness','revocation'].map(name=>({name,ok:healthy||name!=='login',status:!healthy&&name==='login'?503:name==='revocation'?401:200}))};}
 describe('availability evidence',()=>{
+ it('discloses mixed timing policies and preserves legacy composite exceedances',()=>{
+  const w=new AvailabilityWindow(start,start+60000,start+60000,'production');
+  w.add(sample(0,false));w.add({...sample(20000),durationMs:12000,timing:{version:2,journeyBudgetMs:35000,legacyTenSecondJourneyExceeded:true}});
+  const r=w.report();expect(r.failedSamples).toBe(1);expect(r.timingPolicies).toEqual({legacySharedDeadlineSamples:1,independentOperationDeadlineSamples:1,independentSamplesExceedingLegacyJourneyBudget:1,mixed:true});
+  expect(()=>w.add({...sample(40000),timing:{version:2,journeyBudgetMs:35000,legacyTenSecondJourneyExceeded:true}})).toThrow();
+ });
  it('keeps missing history unknown, with no manufactured success percentage',()=>{const r=new AvailabilityWindow(start,start+60000,start+60000,'production').report();expect(r.unknownSeconds).toBe(60);expect(r.sampledSuccessRatePercent).toBeNull();expect(r.sloStatus).toBe('not-established');});
  it('retains gaps and failed buckets; duplicate success cannot erase a failure or multiply time',()=>{const w=new AvailabilityWindow(start,start+120000,start+120000,'production');for(const o of [sample(0),sample(1),sample(40000,false),sample(40000),sample(100000)])w.add(o);const r=w.report();expect(r.estimatedHealthySeconds).toBe(40);expect(r.estimatedFailedSeconds).toBe(20);expect(r.unknownSeconds).toBe(60);expect(r.coveragePercent).toBe(50);expect(r.failedChecks).toEqual({login:1});});
  it('does not credit unfinished observations, future samples or the current incomplete bucket',()=>{const w=new AvailabilityWindow(start,start+60000,start+45000,'production');w.add(sample(0));w.add(sample(40000));w.add({...sample(20000),durationMs:30000});w.add(sample(50000));const r=w.report();expect(r.estimatedHealthySeconds).toBe(20);expect(r.unknownSeconds).toBe(25);expect(r.ignoredFutureOrUnfinishedSamples).toBe(2);expect(r.completeWindow).toBe(false);});

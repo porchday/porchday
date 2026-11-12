@@ -371,8 +371,8 @@ authRoutes.all("/*", async (c) => {
       // Independent publication precedes SQL, outside any transaction/lock. The
       // ordinary global read guard still ran before this route. Do not register
       // a global unfinished intent for this exact independently denied session.
-      await publishSessionDenial(c.env,proof.sessionId);
-      await deleteDeniedSession(physicalPool,proof.sessionId);
+      await measureJournalPhase(logoutTiming,'denial_publish',()=>publishSessionDenial(c.env,proof.sessionId!));
+      await measureJournalPhase(logoutTiming,'denial_cleanup',()=>deleteDeniedSession(physicalPool,proof.sessionId!));
       const response=await proof.auth.api.clearDeniedSessionCookies({headers:c.req.raw.headers,asResponse:true});
       committedAndConfirmed=true;return response;
     }

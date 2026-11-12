@@ -289,7 +289,8 @@
         "design/notification-content-previews.md",
         "docs/native-parity.md#log-driven-performance-reductions",
         "docs/evidence/performance-top-three-release-2026-11-09.md",
-        "docs/native-parity.md#incident-notification-deduplication"
+        "docs/native-parity.md#incident-notification-deduplication",
+        "docs/native-parity.md#logout-and-revocation-latency"
       ],
       "implementation": {
         "ios": "implemented",

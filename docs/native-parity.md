@@ -304,3 +304,21 @@ Incident notification release acceptance (November 12): [evidence](evidence/inci
 Candidate #228 / PR #229 implements passkey PRF recovery, two-of-three accepted contacts and explicitly approved QR/manual pairing in the production shared web shells for both iOS and macOS. Existing members remain exempt from mandatory setup. Both native targets add webcredentials associated domains (signed macOS target) and camera permission scoped to the trusted main frame. The native Go/Swift readers support the new recovery-public-key-wrapped paired backup format. `TestRecoveryBackupJavaScriptToNative` exercises real browser-format ciphertext and rejection boundaries. Chromium/WebKit pairing tests verify history access and original-kit compatibility; virtual-authenticator tests verify PRF recovery.
 
 Exact-source iOS simulator and macOS build/test results must be recorded before deployment. New entitlements/camera behavior require a newly signed native build; existing binaries receive shared recovery UI but cannot be assumed to support every passkey/camera path. Manual code entry and QR-image fallback are available. Physical provider, camera, installed-binary and hosted-native checks remain pending under #228, #49 and #114; no physical test is represented as passed.
+
+## Logout and revocation latency
+
+The November 12 change adds fixed server phase spans for independent denial
+publication and exact SQL cleanup, and separates external synthetic operation
+deadlines. iOS, macOS and web use the same authenticated sign-out endpoint and
+retain the same cookie clearing, local-key cleanup and rejected-old-session
+contract. No native implementation or distributed binary change is required.
+Exact-source iOS simulator and macOS automated checks remain release gates;
+physical-device behavior is not asserted from these server/monitor checks.
+See [logout latency acceptance](logout-latency.md) and issue #55.
+
+Logout release acceptance (November 12): exact runtime `0d7966c` passed iOS
+simulator and macOS checks before production activation; exact monitor source
+`aa49644` passed both as well. Shared sign-out semantics remain implemented in
+both native shells. [Release evidence](evidence/logout-latency-release-2026-11-12.md)
+records production verification separately from unperformed physical-device timing.
+No new signed installer or TestFlight build was distributed for this server fix.

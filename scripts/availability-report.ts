@@ -15,6 +15,7 @@ function timestamp(value:unknown):number{
 }
 function validate(value:unknown):asserts value is Observation{
  const o=value as Observation;if(!o||o.v!==1||!['production','staging'].includes(o.environment)||o.scope!==scope||typeof o.healthy!=='boolean'||!Number.isFinite(o.durationMs)||o.durationMs<0||!Array.isArray(o.checks))throw invalid();
+ if(o.timing!==undefined&&(!o.timing||typeof o.timing!=='object'||o.timing.version!==2||!Number.isFinite(o.timing.journeyBudgetMs)||o.timing.journeyBudgetMs<=0||o.timing.legacyTenSecondJourneyExceeded!==(o.durationMs>10000)))throw invalid();
  timestamp(o.at);const expected=[...checks,...(o.environment==='production'?['legacy_anonymous_session']:[])].sort();
  if(JSON.stringify(o.checks.map(c=>c?.name).sort())!==JSON.stringify(expected))throw invalid();
  if(o.checks.some(c=>typeof c.ok!=='boolean'||c.status!==undefined&&(!Number.isInteger(c.status)||c.status<100||c.status>599)||c.durationMs!==undefined&&(!Number.isFinite(c.durationMs)||c.durationMs<0)||c.failure!==undefined&&!failureCodes.includes(c.failure)||c.ok&&(c.status!==(c.name==='revocation'?401:200)||c.failure!==undefined)||!c.ok&&c.status===undefined&&c.failure===undefined))throw invalid();
@@ -27,6 +28,7 @@ export function monthWindow(month:string):{start:number;end:number}{
 export class AvailabilityWindow{
  private buckets=new Map<number,boolean>();private sampleCount=0;private failedSamples=0;private first:number|null=null;private last:number|null=null;
  private failedChecks=new Map<string,number>();private outsideAsOf=0;
+ private legacyTimingSamples=0;private independentTimingSamples=0;private legacyJourneyExceeded=0;
  readonly start:number;readonly end:number;readonly asOf:number;readonly environment:'staging'|'production';
  constructor(start:number,end:number,asOf:number,environment:'staging'|'production'){
   this.start=start;this.end=end;this.asOf=asOf;this.environment=environment;
@@ -37,6 +39,7 @@ export class AvailabilityWindow{
   if(at<this.start||at>=this.end)return;
   // A future or unfinished observation cannot establish coverage at the report cutoff.
   if(at>=stop||at+value.durationMs>stop){this.outsideAsOf++;return;}
+  if(value.timing){this.independentTimingSamples++;if(value.timing.legacyTenSecondJourneyExceeded)this.legacyJourneyExceeded++;}else this.legacyTimingSamples++;
   this.sampleCount++;this.first=this.first===null?at:Math.min(this.first,at);this.last=this.last===null?at:Math.max(this.last,at);
   if(!value.healthy){this.failedSamples++;for(const c of value.checks)if(!c.ok)this.failedChecks.set(c.name,(this.failedChecks.get(c.name)??0)+1);}
   const bucket=Math.floor(at/cadence)*cadence;
@@ -51,13 +54,14 @@ export class AvailabilityWindow{
   return{start:new Date(this.start).toISOString(),end:new Date(this.end).toISOString(),asOf:new Date(stop).toISOString(),completeWindow:this.asOf>=this.end,
    scope,environment:this.environment,method:'completed-20-second-UTC-buckets; any failure wins; no gap filling',
    collectionFirstObservation:this.first===null?null:new Date(this.first).toISOString(),collectionLastObservation:this.last===null?null:new Date(this.last).toISOString(),
+   timingPolicies:{legacySharedDeadlineSamples:this.legacyTimingSamples,independentOperationDeadlineSamples:this.independentTimingSamples,independentSamplesExceedingLegacyJourneyBudget:this.legacyJourneyExceeded,mixed:this.legacyTimingSamples>0&&this.independentTimingSamples>0},
    samples:this.sampleCount,failedSamples:this.failedSamples,ignoredFutureOrUnfinishedSamples:this.outsideAsOf,
    failedChecks:Object.fromEntries([...this.failedChecks].sort(([a],[b])=>a.localeCompare(b))),
    elapsedSeconds:elapsedMs/1000,estimatedHealthySeconds:healthyMs/1000,estimatedFailedSeconds:failedMs/1000,unknownSeconds:unknownMs/1000,
    coveragePercent:elapsedMs?knownMs/elapsedMs*100:0,sampledSuccessRatePercent:knownMs?healthyMs/knownMs*100:null,
    fullWindowErrorBudgetSeconds:windowMs*0.0001/1000,sampledFailureBudgetRatio:failedMs/(windowMs*0.0001),
    budgetAssessment:failedMs>windowMs*0.0001?'sampled-failures-exceed-budget':'not-established',sloStatus:'not-established',
-   limitations:['Sampled buckets estimate this probe only; they do not measure continuous uptime.','Unobserved time and incidents before collection are not healthy observations.','Encrypted writes, mail delivery, regional coverage and responder acknowledgment are not established by this report.']};
+   limitations:['Timing policies can differ within the window; use the reported policy counts and legacy exceedances when comparing releases.','Sampled buckets estimate this probe only; they do not measure continuous uptime.','Unobserved time and incidents before collection are not healthy observations.','Encrypted writes, mail delivery, regional coverage and responder acknowledgment are not established by this report.']};
  }
 }
 export async function availabilityReport(directory:string,asOf:string,month=asOf.slice(0,7),environment:'staging'|'production'='production'){
