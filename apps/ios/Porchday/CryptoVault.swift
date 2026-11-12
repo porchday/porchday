@@ -159,7 +159,7 @@ import Porchcrypto
                   recipients.contains(where: { $0.id == device.id && $0.memberID == member.id && !$0.revoked }),
                   recipients.allSatisfy({ !$0.revoked }), Set(recipients.map(\.id)).count == recipients.count else { throw PorchError.message("The history-sharing audience is unavailable.") }
             for recipient in recipients { try verify(recipient) }
-        } else { let resolved = try await self.audience(audience, group: group, post: post, allowPending: post == nil && group == nil && ["post", "media"].contains(kind) && ["connections", "friends", "family", "community", "extended_family"].contains(audience)); epoch = resolved.0; recipients = resolved.1 }
+        } else { let resolved = try await self.audience(audience, group: group, post: post, allowPending: post == nil && group == nil && ["post", "media", "photo"].contains(kind) && ["connections", "friends", "family", "community", "extended_family"].contains(audience)); epoch = resolved.0; recipients = resolved.1 }
         var context = original?.object ?? ["id": .string(id), "kind": .string(kind), "createdAt": .string(PorchDate.string()), "revision": .number(1)]
         context["authorId"] = .string(member.id); context["authorDeviceId"] = .string(device.id); context["audience"] = .string(audience)
         context["parentId"] = parent.map(JSON.string) ?? .null; context["groupId"] = group.map(JSON.string) ?? .null; context["epoch"] = .number(Double(epoch)); context["expiresAt"] = expiry.map { .string(PorchDate.string($0)) } ?? .null
@@ -170,7 +170,9 @@ import Porchcrypto
         try member.access.requireSocialWrite()
         guard access.writesSocial, let device, !device.revoked, let session = sessions[device.fingerprint] else { throw PorchError.message("Unlock an active device before sharing.") }
         let snapshot = try await social(path)
-        guard case .array(let pending) = snapshot["pending_members"], pending.isEmpty,
+        let deferredPhotoHistory = path.hasPrefix("/photos/") && path.hasSuffix("/refresh-audience") && context["groupId"] == .null &&
+            ["photo", "media"].contains(context["kind"].string ?? "") && ["connections", "friends", "family", "community", "extended_family"].contains(context["audience"].string ?? "")
+        guard case .array(let pending) = snapshot["pending_members"], pending.isEmpty || deferredPhotoHistory,
               let epoch = snapshot["epoch"].integer, epoch >= 0,
               case .array(let devices) = snapshot["devices"] else { throw PorchError.message("The audience is not ready. No recipients were omitted.") }
         let recipients = try devices.map(Device.init)

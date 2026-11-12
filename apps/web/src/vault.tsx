@@ -638,7 +638,7 @@ export function VaultProvider({
       partial.groupId,
       postId,
       signal,
-      !postId && !partial.groupId && ["connections", "friends", "family", "community", "extended_family"].includes(partial.audience) && ["post", "media"].includes(partial.kind),
+      !postId && !partial.groupId && ["connections", "friends", "family", "community", "extended_family"].includes(partial.audience) && ["post", "media", "photo"].includes(partial.kind),
     );
     const context: ContentContext = {
       id: crypto.randomUUID(),
