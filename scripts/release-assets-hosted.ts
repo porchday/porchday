@@ -11,6 +11,10 @@ export function hostedDocumentMatches(bytes:Buffer,expected:string):boolean{
  const text=bytes.toString(),pattern=/<script type="module" src="https:\/\/static\.cloudflareinsights\.com\/beacon\.min\.js\/[A-Za-z0-9]+" integrity="sha512-[A-Za-z0-9+/=]+" data-cf-beacon='[^<>\r\n]+' crossorigin="anonymous"><\/script>\n<\/body>/g;
  return [...text.matchAll(pattern)].length===1&&sha(text.replace(pattern,'</body>'))===expected;
 }
+/** Literal relative module paths only: reject interpolation, variables and URLs. */
+export function literalLazyModulePaths(entry:string):string[]{
+ return [...new Set([...entry.matchAll(/import\((["'`])(\.\/[A-Za-z0-9_-]+\.js)\1\)/g)].map(m=>'/assets/'+m[2].slice(2)))];
+}
 function errors(page:Page){
  const counts={pageErrors:0,moduleMimeErrors:0};
  page.on('pageerror',()=>{counts.pageErrors++;});
@@ -57,7 +61,7 @@ export async function beginHostedAssetTransition(input:Options){
   need(entryResponse.body,'HOSTED_ASSET_ENTRY_BODY');const reader=entryResponse.body!.getReader(),chunks:Uint8Array[]=[];let size=0;
   try{for(;;){const chunk=await reader.read();fetchSignal.throwIfAborted();if(chunk.done)break;size+=chunk.value.length;need(size<=maxBytes,'HOSTED_ASSET_ENTRY_LIMIT');chunks.push(chunk.value);}}finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
   const entry=Buffer.concat(chunks);need(sha(entry)===baseline.files[entries[0].slice(1)],'HOSTED_ASSET_ENTRY_BYTES');
-  const lazy=[...new Set([...entry.toString().matchAll(/import\("(\.\/[A-Za-z0-9_-]+\.js)"\)/g)].map(m=>'/assets/'+m[1].slice(2)))];
+  const lazy=literalLazyModulePaths(entry.toString());
   need(lazy.length>0&&lazy.length<=100&&lazy.every(path=>!requested.has(path)&&baseline.files[path.slice(1)]),'HOSTED_ASSET_LAZY_NOT_COLD');
   need(lazy.every(path=>candidate.files[path.slice(1)]===baseline.files[path.slice(1)]),'HOSTED_ASSET_RETENTION_MISSING');
   need(oldErrors.pageErrors===0&&oldErrors.moduleMimeErrors===0,'HOSTED_ASSET_BASELINE_ERRORS');

@@ -1,7 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import {createHash} from 'node:crypto';
 import {chromium,type Browser,type Route} from 'playwright';
-import {beginHostedAssetTransition,hostedDocumentMatches} from './release-assets-hosted.ts';
+import {beginHostedAssetTransition,hostedDocumentMatches,literalLazyModulePaths} from './release-assets-hosted.ts';
 import {mkdtempSync,realpathSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
@@ -10,9 +10,9 @@ import {recoverDeployment,type DeploymentPlan,type DeploymentObservation,type Re
 const sha=(text:string)=>createHash('sha256').update(text).digest('hex');
 const origin='https://staging.porchday.com';
 const form=`document.body.innerHTML='<label for="email">Email address</label><input id="email" type="email"><input type="password">';`;
-function fixture(fault:'none'|'exception'|'mime'|'old-bytes'|'shell'|'requests'|'named-export'='none'){
+function fixture(fault:'none'|'exception'|'mime'|'old-bytes'|'shell'|'requests'|'named-export'='none',quote='"'){
  const oldHtml='<html><body><script type="module" src="/assets/index-old.js"></script></body></html>',newHtml=oldHtml.replace('index-old','index-new');
- const oldEntry=form+'\nexport const lazy=()=>import("./Lazy-old.js");',lazy=fault==='named-export'?'export const loaded=true;':'export default function Lazy(){}';
+ const oldEntry=form+'\nexport const lazy=()=>import('+quote+'./Lazy-old.js'+quote+');',lazy=fault==='named-export'?'export const loaded=true;':'export default function Lazy(){}';
  const newEntry=form+(fault==='exception'?'\nthrow Error("private synthetic exception");':fault==='mime'?'\nawait import("./missing.js").catch(()=>{});':fault==='requests'?'\nawait Promise.all([fetch("https://elsewhere.invalid/test").catch(()=>{}),fetch("/api/should-not-write",{method:"POST",body:"synthetic"}).catch(()=>{})]);':'');
  const files={'index.html':sha(oldHtml),'assets/index-old.js':sha(oldEntry),'assets/Lazy-old.js':sha(lazy)};
  const baseline={source:'a'.repeat(40),files},candidate={source:'b'.repeat(40),files:{...files,'index.html':sha(newHtml),'assets/index-new.js':sha(newEntry)}};
@@ -100,4 +100,14 @@ describe.skipIf(process.env.RELEASE_ASSET_BROWSER_TESTS!=='1')('hosted observer 
   const f=fixture();delete (f.candidate.files as Record<string,string>)['assets/Lazy-old.js'];
   await expect(beginHostedAssetTransition({origin,...f})).rejects.toThrow('RETENTION_MISSING');expect(f.counts().closed).toBe(1);
  });
+});
+
+describe.skipIf(process.env.RELEASE_ASSET_BROWSER_TESTS!=='1')('literal module browser retention',()=>{
+it.each(['"',"'",'`'])('verifies cold module retention with %s literals',async quote=>{
+ const f=fixture('none',quote),observer=await beginHostedAssetTransition({origin,...f});
+ try{f.switch();const report=await observer.finish();expect(report.passed).toBe(true);expect(report.loadedModules).toBe(1);expect(report.assets[0].matchesBaseline).toBe(true);}finally{await observer.close();}
+});
+});
+it('discovers only bounded relative literal imports',()=>{
+ expect(literalLazyModulePaths('import(`./A.js`);import("./A.js");import(\'./B.js\');import(`./${name}.js`);import(path);import("https://example.test/a.js");import("../A.js");import("./A.js\')')).toEqual(['/assets/A.js','/assets/B.js']);
 });
