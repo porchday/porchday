@@ -187,7 +187,7 @@ struct UnlockView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var vault: CryptoVault
     @State private var secret = ""
-    @State private var saved = false
+    @State private var checkingSavedSecret = false
     @State private var accountControls = false
     @State private var busy = false
     var body: some View {
@@ -195,7 +195,22 @@ struct UnlockView: View {
             Section { Label("Encryption keys", systemImage: "lock.shield").font(.title2); Text("Your encryption recovery secret is separate from your login password. Support cannot restore encrypted history without it.") }
             if vault.devices.isEmpty {
                 if vault.recoveryNote.isEmpty { Section { Button("Set up private sharing") { Task { await model.perform { try vault.prepareInitial(member: member) } } } } }
-                else { Section("Save this recovery secret somewhere safe") { Text(vault.recoveryNote).font(.system(.body, design: .monospaced)).textSelection(.enabled).privacySensitive(); Text("Save it in a password manager or a private printed note. Do not send it to support."); Toggle("I saved my secret and understand it cannot be replaced", isOn: $saved); Button("Continue") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.finishInitial(member: member) } } }.disabled(!saved || busy) } }
+                else { Section("Save and check your recovery secret") {
+                    if !checkingSavedSecret {
+                        Text(vault.recoveryNote).font(.system(.body, design: .monospaced)).textSelection(.enabled).privacySensitive()
+                        Text("Save it in a password manager or a private printed note. It is separate from your login password and two-factor backup codes. Do not send it to support.")
+                        Button("I saved it — check my copy") { secret = ""; checkingSavedSecret = true }
+                    } else {
+                        Text("Open your saved note or password manager and paste the secret here. We test your copy on this device before continuing.")
+                        SecureField("Saved encryption recovery secret", text: $secret).porchContentType(.none).autocorrectionDisabled().privacySensitive().disabled(busy)
+                        Button("Show secret again") { secret = ""; checkingSavedSecret = false }.disabled(busy)
+                        Button("Check secret and continue") { Task {
+                            busy = true; let input = secret; secret = ""; defer { busy = false }
+                            await model.perform { try await vault.finishInitial(member: member, savedSecret: input) }
+                        } }.disabled(secret.isEmpty || busy)
+                    }
+                } }
+
             } else { Section(member.access.restoresKeysLocally ? "Restore your saved keys on this device" : "Restore and authorize this device") { if member.access.restoresKeysLocally { Text("This restores existing keys locally for reading and export. It does not enroll a device or restore social permissions.") }; SecureField("Recovery secret", text: $secret).porchContentType(.none).autocorrectionDisabled(); Button("Unlock") { Task { busy = true; defer { busy = false }; await model.perform { try await vault.unlock(member: member, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines)); secret = "" } } }.disabled(secret.isEmpty || busy) } }
             Section { Button("Account, deletion and appeals without unlocking") { accountControls = true }; Text("This app stores your device keys in device-only Apple Keychain. Signing out clears local keys. Keep the recovery secret to restore after reinstalling or losing this device.").font(.footnote); Button("Sign out", role: .destructive) { Task { await model.signOut() } } }
         }.navigationTitle("Encryption")

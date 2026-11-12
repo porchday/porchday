@@ -12,6 +12,9 @@ struct SettingsView: View {
     @State private var mutes: [JSON] = []
     @State private var ownedGroups: [JSON] = []
     @State private var deletingGroup: String?
+    @State private var recoveryCheckSecret = ""
+    @State private var recoveryCheckNotice = ""
+    @State private var checkingRecovery = false
     @State private var currentPassword = ""
     @State private var newPassword = ""
     @State private var confirm = ""
@@ -58,6 +61,22 @@ struct SettingsView: View {
                 ForEach(Array(sessions.enumerated()), id: \.offset) { _, session in HStack { VStack(alignment:.leading) { Text(session["userAgent"].string ?? "Signed-in session").lineLimit(2); Text(session["createdAt"].string ?? "").font(.caption) }; Spacer(); Button("Sign out", role:.destructive) { Task { await model.perform { _ = try await model.api.auth("revoke-session", body:.object(["token":session["token"]])); await model.restore(); await refresh() } } } } }
                 Button("Sign out other sessions") { Task { await model.perform { _ = try await model.api.auth("revoke-other-sessions", body:.object([:])); await refresh() } } }
                 NavigationLink("Manage two-factor authentication and email") { AccountSecurityView() }
+            }
+            Section("Check your recovery setup") {
+                Text("Your recovery secret unlocks encrypted backups of the keys for your history and for authorizing a replacement device. It is separate from your login password and two-factor backup codes.")
+                Text("Retrieve your saved copy. This check runs locally without sending the secret to Porchday or changing your keys.")
+                SecureField("Saved encryption recovery secret", text: $recoveryCheckSecret).porchContentType(.none).autocorrectionDisabled().privacySensitive().disabled(checkingRecovery)
+                Button("Check saved secret") { Task {
+                    guard let member = model.member else { return }
+                    checkingRecovery = true; recoveryCheckNotice = ""; let input = recoveryCheckSecret; recoveryCheckSecret = ""
+                    defer { checkingRecovery = false }
+                    await model.perform {
+                        try await vault.checkRecovery(member: member, secret: input)
+                        recoveryCheckNotice = "Your saved secret unlocked all backed-up keys, including the key for authorizing a replacement device. Keep that saved copy safe."
+                    }
+                } }.disabled(recoveryCheckSecret.isEmpty || checkingRecovery)
+                if !recoveryCheckNotice.isEmpty { Text(recoveryCheckNotice) }
+                Text("Keep a second private copy independent of this device. If you cannot find the secret, stay signed in. Do not delete your account, reinstall the app or clear its storage.").font(.footnote)
             }
             Section("Encryption devices") { ForEach(vault.devices) { device in VStack(alignment:.leading) { Text(device.id == vault.device?.id ? "This device" : "Trusted device"); Text(device.fingerprint).font(.system(.caption,design:.monospaced)).textSelection(.enabled); if device.revoked { Text("Revoked").foregroundStyle(.secondary) } else { Button("Revoke this device",role:.destructive) { Task { await model.perform { _ = try await model.api.social("/devices/"+device.id,method:"DELETE"); if device.id == vault.device?.id { await model.signOut() } else { await refresh() } } } }.disabled(!model.canWriteSocial) } } }; Text("Revoking a device stops future sharing. It cannot erase content already saved on that device.").font(.footnote) }
             Section("Privacy and notifications") {

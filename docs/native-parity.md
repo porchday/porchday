@@ -292,3 +292,8 @@ Typed handle release acceptance (November 11): [release evidence](evidence/typed
 The November 12 change affects the independent operator monitor and GitHub backup only. Application APIs, encrypted content, social notifications and default iOS/macOS shell behavior are unchanged. Existing shared native implementations remain at parity. Exact-source iOS simulator and macOS CI still gate production monitor installation. No signed native binary or hosted app deployment is required; physical app verification statuses remain unchanged.
 
 Incident notification release acceptance (November 12): [evidence](evidence/incident-notification-noise-2026-11-12.md) records passing exact-source iOS/macOS checks and production monitor installation. Application/native behavior and signed binary availability remain unchanged.
+
+
+## Recovery setup verification
+
+[#228](https://github.com/porchday/porchday/issues/228): the shared web shells and legacy shared Swift screens now require a local restore rehearsal during first-key setup and expose a read-only Account settings check. Both check historical device keys and the recovery authorization key without enrolling a device or storing the supplied secret. `recovery-check.test.ts`, `recovery-check-browser.test.ts` and `CryptoVaultAccessTests.testRecoveryCheckIsReadOnlyAndRequiresRecoveryAuthority` cover these boundaries. Native automated execution and physical-device acceptance are pending; this is source implementation, not a signed-binary or production release. Passkey, contact and trusted-device transfer additions remain open in #228.

@@ -1,3 +1,4 @@
+import {verifyRecoveryBackup} from './recovery-check';
 import {invalidatePhotos,refreshPhotoViews} from "./photo-cache";
 import {causeOf} from './causal-links';
 import {NotificationPreviewEnrollment} from './NotificationPreviewEnrollment';
@@ -164,7 +165,8 @@ export function VaultProvider({
     recovery: DeviceKeys;
     secret: string;
   } | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [checkingSavedSecret, setCheckingSavedSecret] = useState(false);
+  const [savedSecret, setSavedSecret] = useState("");
   const [secret, setSecret] = useState("");
   const [remember, setRemember] = useState(false);
   const [profileSetup, setProfileSetup] = useState<{key:string;state:InitialProfileState}|null>(null);
@@ -283,7 +285,7 @@ export function VaultProvider({
     });
   }
   async function finish() {
-    if (!generated || !saved) return;
+    if (!generated || !checkingSavedSecret || !savedSecret.trim() || action.busy) return;
     await action.run(async () => {
       const backup: Backup = {
         v: 1,
@@ -294,6 +296,8 @@ export function VaultProvider({
           encrypted_private_key: generated.recovery.encryptedPrivateKey,
         },
       };
+      const input = savedSecret; setSavedSecret("");
+      await verifyRecoveryBackup(backup, input);
       const device = {
         ...generated.device,
         member_id: member.id,
@@ -517,6 +521,7 @@ export function VaultProvider({
                 password manager or store a printed copy somewhere private. We
                 can’t replace it.
               </p>
+              <div data-diagnostic-private hidden={checkingSavedSecret}>
               <div className="secret-box">
                 <code>{generated.secret}</code>
               </div>
@@ -537,17 +542,16 @@ export function VaultProvider({
                 <Icon name="download" size={17} />
                 Download recovery note
               </Button>
-              <label className="check-field">
-                <input
-                  type="checkbox"
-                  checked={saved}
-                  onChange={(e) => setSaved(e.target.checked)}
-                />
-                <span>
-                  I saved my secret. I understand that losing it and all trusted
-                  devices means losing my encrypted history.
-                </span>
-              </label>
+              <Button variant="primary" onClick={() => {setSavedSecret(""); setCheckingSavedSecret(true);}}>
+                I saved it — check my copy
+              </Button>
+              </div>
+              {checkingSavedSecret && <div className="form-stack" data-diagnostic-private>
+                <h3>Check the copy you saved</h3>
+                <p>Open your password manager or saved note and paste the secret here. We’ll test it on this device before creating your account’s encryption backup. Your login password and two-factor backup codes will not work here.</p>
+                <Field label="Saved encryption recovery secret" type="password" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={savedSecret} disabled={action.busy} onChange={e => setSavedSecret(e.target.value)} />
+                <Button variant="quiet" disabled={action.busy} onClick={() => {setSavedSecret(""); setCheckingSavedSecret(false);}}>Show secret again</Button>
+              </div>}
               <label className="check-field">
                 <input
                   type="checkbox"
@@ -562,10 +566,10 @@ export function VaultProvider({
               <Button
                 variant="primary"
                 busy={action.busy}
-                disabled={!saved}
+                disabled={!checkingSavedSecret || !savedSecret.trim()}
                 onClick={finish}
               >
-                Continue
+                Check secret and continue
               </Button>
             </>
           ) : ["restricted", "suspended"].includes(member.status || "") ? (

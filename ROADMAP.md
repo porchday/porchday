@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner request November 12:** [#228](https://github.com/porchday/porchday/issues/228), P1: implement member-controlled recovery options and verified recovery setup. Start with local restore rehearsals, then trusted-device transfer, passkey-protected recovery and explicit threshold trusted contacts. These additional methods are not yet released.
+
 **Delivered November 12:** [#8](https://github.com/porchday/porchday/issues/8), P1, `needs verification`: production Mac monitor and GitHub backup now confirm transient alerts and reuse one incident conversation. Twenty completed duplicates archived; history retained. Exact-source CI/native and eight post-install healthy probes passed. [Evidence](docs/evidence/incident-notification-noise-2026-11-12.md). Underlying latency remains in #55; unreliable GitHub scheduling/receipt checks remain open.
 
 **Delivered November 11:** [#125](https://github.com/porchday/porchday/issues/125), P2, `needs verification`: typed @handles and persistent multi-select tagging are live in post text, comments and photo/video captions through the shared web/iOS/macOS UI. Exact-source CI/native and hosted encrypted-tag checks passed. [Release evidence](docs/evidence/typed-mentions-release-2026-11-11.md). Physical-device acceptance and mention-specific notification work remain open.

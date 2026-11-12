@@ -115,9 +115,9 @@ try{
  progress('local-verification');const verification=await destination.verification();await targetPage.goto(verification);check(new URL(targetPage.url()).origin===destination.origin,'LOCAL_VERIFICATION_REDIRECTED');
  await login(targetPage,destination.origin,destination.email,destination.password);targetCookie=(await target.cookies(destination.origin)).map(c=>`${c.name}=${c.value}`).join('; ');
  const me=await targetAPI('/api/v1/me');member=me.id;check(me.handle===destination.handle&&me.status==='active'&&me.connection_count===0,'FRESH_DESTINATION_REQUIRED');
- progress('local-key-setup');await targetPage.getByRole('button',{name:'Create my private keys',exact:false}).click();await targetPage.getByRole('heading',{name:'Save your recovery secret',exact:true}).waitFor();
+ progress('local-key-setup');await targetPage.getByRole('button',{name:'Set up private sharing',exact:false}).click();await targetPage.getByRole('heading',{name:'Save your recovery secret',exact:true}).waitFor();
  targetSecret=(await targetPage.locator('.secret-box code').textContent())!.trim();check(targetSecret.length>20,'DESTINATION_SECRET_REQUIRED');
- await targetPage.getByRole('checkbox',{name:/I saved my secret/}).check();await targetPage.getByRole('checkbox',{name:/Remember keys on this private device/}).check();await targetPage.getByRole('button',{name:'Continue',exact:true}).click();
+ await targetPage.getByRole('button',{name:'I saved it — check my copy'}).click();await targetPage.getByLabel('Saved encryption recovery secret').fill(targetSecret);await targetPage.getByRole('checkbox',{name:/Remember keys on this private device/}).check();await targetPage.getByRole('button',{name:'Check secret and continue',exact:true}).click();
  await targetPage.locator('.feed-heading').getByText('Posts',{exact:true}).waitFor({timeout:90000});await Promise.all(tasks);check(!observerFailure&&!uncertain,'LOCAL_ONBOARDING_UNCONFIRMED');
  const devices=list(await targetAPI('/api/v1/devices'));check(devices.length===1,'FRESH_DESTINATION_DEVICE_REQUIRED');device=devices[0].id;targetPublic=devices[0].public_key;
  const backup=await targetAPI('/api/v1/keys/backup');const key=(backup.envelope||backup).devices.find((d:any)=>d.id===device);targetKey=await unlockPrivateKey(key.encrypted_private_key,targetSecret,key.fingerprint);

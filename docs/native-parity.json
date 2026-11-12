@@ -232,7 +232,8 @@
         "docs/native-parity.md#direct-videos-and-10-gb-storage",
         "docs/native-parity.md#recovered-device-access-updates",
         "docs/native-parity.md#photo-history-pending-keys",
-        "docs/native-parity.md#native-video-service-worker-capability"
+        "docs/native-parity.md#native-video-service-worker-capability",
+        "docs/native-parity.md#recovery-setup-verification"
       ],
       "implementation": {
         "ios": "implemented",
@@ -242,7 +243,8 @@
         "https://github.com/porchday/porchday/issues/49",
         "https://github.com/porchday/porchday/issues/114",
         "https://github.com/porchday/porchday/issues/108",
-        "https://github.com/porchday/porchday/issues/181"
+        "https://github.com/porchday/porchday/issues/181",
+        "https://github.com/porchday/porchday/issues/228"
       ]
     },
     {

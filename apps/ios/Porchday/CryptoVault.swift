@@ -75,16 +75,40 @@ import Porchcrypto
         pending = (try generate(member: member.id, id: id, secret: secret), try generate(member: member.id, id: "recovery", secret: secret), id)
         recoveryNote = secret
     }
-    func finishInitial(member: Member) async throws {
+    func finishInitial(member: Member, savedSecret: String) async throws {
         try member.access.requireSocialWrite()
         guard let pending, !recoveryNote.isEmpty else { throw PorchError.message("Create your keys first.") }
         let entry = backupEntry(pending.device, id: pending.id), recovery = backupEntry(pending.recovery)
         let backup: JSON = .object(["v": .number(1), "devices": .array([entry]), "recovery": recovery])
+        try verifyRecoveryBackup(backup, secret: savedSecret)
         let raw: JSON = .object(["id": .string(pending.id), "member_id": .string(member.id), "public_key": entry["public_key"], "fingerprint": entry["fingerprint"], "name": .string("iPhone"), "authorization": .object(["type": .string("initial")]), "recovery_public_key": recovery["public_key"], "backup": backup])
         _ = try await social("/devices", method: "POST", body: raw)
         let active = try Device(raw), session = try recover(entry, secret: recoveryNote)
         sessions[active.fingerprint] = session; device = active; devices = [active]; access = member.access
         try persist(member: member); self.pending = nil; recoveryNote = ""
+    }
+    private func verifyRecoveryBackup(_ backup: JSON, secret: String) throws {
+        guard backup["v"].integer == 1, !backup["devices"].array.isEmpty,
+              backup["recovery"]["fingerprint"].string?.isEmpty == false else {
+            throw PorchError.message("No complete recovery backup is available. Keep this device signed in.")
+        }
+        do {
+            for entry in backup["devices"].array + [backup["recovery"]] {
+                guard entry["fingerprint"].string?.isEmpty == false,
+                      entry["encrypted_private_key"].string?.isEmpty == false else {
+                    throw PorchError.message("Incomplete backup")
+                }
+                let session = try recover(entry, secret: secret.trimmingCharacters(in: .whitespacesAndNewlines))
+                session.close()
+            }
+        } catch {
+            throw PorchError.message("That secret could not unlock the complete backup. Check the saved copy for this account. Keep this device signed in.")
+        }
+    }
+    func checkRecovery(member: Member, secret: String) async throws {
+        guard member.access.managesData else { throw PorchError.message("Account data is unavailable while ownership is under review.") }
+        let response = try await social("/keys/backup")
+        try verifyRecoveryBackup(response["envelope"], secret: secret)
     }
     func unlock(member: Member, secret: String) async throws {
         guard member.access.managesData else { throw PorchError.message("Account data is unavailable while ownership is under review.") }
