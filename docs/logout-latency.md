@@ -1,7 +1,7 @@
 # Logout and revocation latency
 
-Investigation and release plan, November 12, 2026; implementation is not yet
-production acceptance. Track [#55](https://github.com/porchday/porchday/issues/55).
+Implemented and activated November 12, 2026; see the
+[release evidence](evidence/logout-latency-release-2026-11-12.md). Track [#55](https://github.com/porchday/porchday/issues/55).
 
 The 24-hour Mac monitor window ending 15:57:25 UTC contains 4,320 probes.
 Among successful checks, logout p50/p95/p99 were 3,843/5,102/6,455 ms;
@@ -12,8 +12,8 @@ and 19 unsuccessful revocation checks, including dependent failures. The old
 Sampled server phases show journal registration, checkpoint, receipt and
 retirement dominate ordinary logout; this does not explain every tail event.
 
-The corrective rollout should use the existing immutable session-denial protocol
-once current reader, cleanup, rollback and concurrency acceptance is established.
+Production now uses the immutable session-denial protocol, following reader,
+cleanup, rollback and staged acceptance.
 Publication must be confirmed before exact identity-locked SQL deletion; both
 must finish before HTTP success. Unknown writes are never replayed. Global
 read guards and other privacy mutations retain the recovery journal. New fixed

@@ -303,3 +303,10 @@ contract. No native implementation or distributed binary change is required.
 Exact-source iOS simulator and macOS automated checks remain release gates;
 physical-device behavior is not asserted from these server/monitor checks.
 See [logout latency acceptance](logout-latency.md) and issue #55.
+
+Logout release acceptance (November 12): exact runtime `0d7966c` passed iOS
+simulator and macOS checks before production activation; exact monitor source
+`aa49644` passed both as well. Shared sign-out semantics remain implemented in
+both native shells. [Release evidence](evidence/logout-latency-release-2026-11-12.md)
+records production verification separately from unperformed physical-device timing.
+No new signed installer or TestFlight build was distributed for this server fix.
