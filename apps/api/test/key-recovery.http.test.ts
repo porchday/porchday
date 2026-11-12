@@ -173,7 +173,7 @@ suite('Key recovery with real encryption and runtime RLS', () => {
         if(location.pathname==='/owner'){const key=await importRecoveryPrivateKey(f.armor,f.device.fingerprint);root.render(<RecoveryManager actor={{member:f.member,device:f.device,privateKey:key,keys:[key]}}/>);}
         else root.render(<VaultProvider member={f.member} onAccountDeleted={async()=>{}}><History/></VaultProvider>);
       `,resolveDir:process.cwd(),loader:'tsx'},bundle:true,format:'esm',write:false,define:{'process.env.NODE_ENV':'"production"'}});
-      const inflight=new Set<Promise<void>>(),serverErrors:unknown[]=[];
+      const inflight=new Set<Promise<void>>(),serverErrors:unknown[]=[];let interruptEnrollment=engine==='webkit';
       const server=createServer((req,res)=>{
         const work=(async()=>{
           const url=new URL(req.url!,'http://localhost'),path=url.pathname;
@@ -181,6 +181,7 @@ suite('Key recovery with real encryption and runtime RLS', () => {
           if(path.startsWith('/api/v1/')){
             const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));
             const response=await app.request('https://porchday.test'+path.replace('/api/v1','')+url.search,{method:req.method,headers:{'x-test-member':owner.id,'content-type':'application/json'},...(chunks.length?{body:Buffer.concat(chunks).toString()}:{})},env);
+            if(interruptEnrollment&&path==='/api/v1/devices'&&req.method==='POST'&&response.status===201){interruptEnrollment=false;res.writeHead(503,{'content-type':'application/json'});res.end(JSON.stringify({error:{code:'TEST_INTERRUPTED_RESPONSE'}}));return;}
             res.writeHead(response.status,{'content-type':'application/json'});res.end(await response.text());return;
           }
           res.setHeader('content-type','text/html');res.end('<main><div id="root"></div></main><script>window.fixture='+JSON.stringify(path==='/owner'?fixture:{member,envelope}).replaceAll('<','\\u003c')+'</script><script type="module" src="/module.js"></script>');
@@ -205,9 +206,16 @@ suite('Key recovery with real encryption and runtime RLS', () => {
         }
         await trusted.getByLabel(/I compared this full fingerprint/).check();await trusted.getByRole('button',{name:'Approve encrypted transfer'}).click();
         await phone.getByRole('button',{name:'Verify transfer and unlock'}).click({timeout:20000});
+        if(engine==='webkit'){await expect.poll(()=>phone.getByRole('button',{name:'Verify transfer and unlock'}).isEnabled()).toBe(true);await phone.getByRole('button',{name:'Verify transfer and unlock'}).click();}
         await phone.getByText('history recovered through pairing',{exact:true}).waitFor({timeout:20000});
         const backup=(await request(owner.id,'/keys/backup')).data.envelope;expect((await readRecoveryBackup(backup,owner.secret,owner.id)).devices).toHaveLength(2);
         await phone.reload();await phone.getByText('history recovered through pairing',{exact:true}).waitFor({timeout:20000});
+        if(engine==='chromium'){
+          const third=await browser.newContext(),page=await third.newPage();await page.goto(origin+'/phone');await page.getByLabel(/This is my private device/).check();await page.getByRole('button',{name:'Use another trusted device',exact:true}).click();
+          const code=await page.locator('code').filter({hasText:'porchday-pair:'}).textContent();await trusted.getByLabel('Or paste pairing code').fill(code!);await trusted.getByRole('button',{name:'Use pairing code',exact:true}).click();await trusted.getByLabel(/I compared this full fingerprint/).check();await trusted.getByRole('button',{name:'Approve encrypted transfer'}).click();await page.getByRole('button',{name:'Verify transfer and unlock'}).click({timeout:20000});await page.getByText('history recovered through pairing',{exact:true}).waitFor({timeout:20000});
+          const complete=(await request(owner.id,'/keys/backup')).data.envelope;expect((await readRecoveryBackup(complete,owner.secret,owner.id)).devices).toHaveLength(3);
+        }
+
       }finally{await browser.close();await Promise.all([...inflight]);await new Promise<void>((resolve,reject)=>server.close(error=>error?reject(error):resolve()));}expect(serverErrors).toEqual([]);
     },60000);
 

@@ -18,7 +18,7 @@ This catches incomplete or wrong copies; it cannot prove the member stored the s
 
 ### Trusted-device transfer
 
-A new device creates a key pair and requests a fresh existing enrollment challenge. An already unlocked device verifies a QR/manual fingerprint over a trusted channel, obtains explicit approval, signs the purpose/account/device/fingerprint/challenge/expiry statement, and encrypts historical device private keys to the approved new key. The recovery-only signing key is never left on an ordinary unlocked device. Replay, expiry, cancellation, revocation and cross-account checks apply before enrollment and before consuming transfer material. Retain a recovery kit because losing every device defeats this method.
+A new device creates a key pair and requests a fresh existing enrollment challenge. An already unlocked device verifies a QR/manual fingerprint over a trusted channel, obtains explicit approval, signs the purpose/account/device/fingerprint/challenge/expiry statement, and encrypts the historical device private keys available on the approving device to the approved new key. The recovery-only signing key is never left on an ordinary unlocked device. Replay, expiry, cancellation, revocation and cross-account checks apply before enrollment and before consuming transfer material. Retain a recovery kit because losing every device defeats this method.
 
 ### Passkey-protected capsule
 
@@ -51,3 +51,5 @@ Pairing invitations expire in four minutes; requester QR codes in nine minutes; 
 ## Verification
 
 Local Chromium and WebKit tests pair distinct browser contexts through the actual manager/unlock UI, decrypt older content, reload successfully, and restore the new device key with the original kit. The QR image path exercises the actual decoder. Chromium virtual WebAuthn tests prove PRF capsule recovery and reject unsupported authenticators. Real PostgreSQL runtime-role tests exercise enrollment, grandfathering, contact separation, cancellation, replay, invitation consumption, expiry and revoked-device authorization. JavaScript-to-Go interoperability verifies paired backup decryption and rejects changed context, signer and key identity. Automated tests are not evidence of physical-provider compatibility or independent cryptographic review.
+
+A trusted device transfers its available historical keys, including its own key; it does not need private keys created later on other devices. Pairing preserves every existing backup entry and appends the new wrapped key. Repeating receipt after an interrupted enrollment reconciles the existing device identity before saving history, instead of attempting duplicate enrollment. The original kit remains the complete historical-key backup.

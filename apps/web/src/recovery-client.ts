@@ -53,7 +53,8 @@ export async function approvePairing(actor:RecoveryActor,request:any,code:string
  if(request.kind!=='pair'||request.state!=='pending'||s.id!==expected.id||s.fingerprint!==expected.fingerprint||s.memberId!==actor.member.id||Date.parse(s.expiresAt)<=Date.now())throw Error('Pairing code expired or does not match this account.');
  await verifyStatement(request.record,s.publicKey);
  const {envelope:backup}=await get('/keys/backup') as {envelope:RecoveryBackup};
- const keys=[actor.privateKey,...actor.keys],entries=backup.devices.map(device=>{const key=keys.find(k=>k.getFingerprint()===device.fingerprint);if(!key)throw Error('This device does not have all history keys. Unlock with your recovery secret here first.');return{device,armor:key.armor()};});
+ const keys=[actor.privateKey,...actor.keys],entries=backup.devices.flatMap(device=>{const key=keys.find(k=>k.getFingerprint()===device.fingerprint);return key?[{device,armor:key.armor()}]:[];});
+ if(!entries.some(e=>e.device.fingerprint===actor.device.fingerprint))throw Error('This device key is missing from your backup. Check recovery before pairing.');
  const challenge=await post('/devices/challenge',{id:s.deviceId,public_key:s.publicKey,fingerprint:s.fingerprint});
  const authorization=await authorizeDevice({v:1,purpose:'porchday-device-authorization',memberId:s.memberId,authorizingDeviceId:actor.device.id,deviceId:s.deviceId,fingerprint:s.fingerprint,challenge:challenge.challenge,expiresAt:challenge.expires_at},actor.privateKey);
  const binding:RecoveryBinding={v:1,purpose:'porchday-device-transfer',memberId:s.memberId,methodId:s.id,requestId:s.id,recipientFingerprint:s.fingerprint};
@@ -67,12 +68,14 @@ export async function receivePairing(pending:PendingRecovery,request:any){
  const binding:RecoveryBinding={v:1,purpose:'porchday-device-transfer',memberId:s.memberId,methodId:s.id,requestId:s.id,recipientFingerprint:s.fingerprint};
  const payload=await openRecoveryPayload<{entries:{device:RecoveryBackup['devices'][number];armor:string}[]}>(a.ciphertext,binding,pending.key,author.public_key);
  const {envelope:backup}=await get('/keys/backup') as {envelope:RecoveryBackup};
- if(payload.entries.length!==backup.devices.length||new Set(payload.entries.map(e=>e.device.id)).size!==payload.entries.length)throw Error('History changed. Start a new pairing request.');
+ if(!payload.entries.length||payload.entries.length>backup.devices.length||new Set(payload.entries.map(e=>e.device.id)).size!==payload.entries.length||!payload.entries.some(e=>e.device.fingerprint===author.fingerprint))throw Error('Transferred history does not match the approving device.');
  const history:UnlockedPrivateKey[]=[];
  for(const entry of payload.entries){const saved=backup.devices.find(d=>d.id===entry.device.id&&d.fingerprint===entry.device.fingerprint&&d.public_key===entry.device.public_key);if(!saved)throw Error('History key mismatch.');history.push(await importRecoveryPrivateKey(entry.armor,saved.fingerprint));}
  const device={id:s.deviceId,member_id:s.memberId,public_key:s.publicKey,fingerprint:s.fingerprint,name:s.label};
  const recovery_ciphertext=await sealRecoveryPayload(deviceBackupBinding(s.memberId,device,backup.recovery.fingerprint),pending.key.armor(),backup.recovery.public_key,pending.key);
- await post('/devices',{...device,authorization:{type:'trusted',signed:a.authorization},backup:{...backup,devices:[...backup.devices,{id:device.id,public_key:device.public_key,fingerprint:device.fingerprint,recovery_ciphertext}]}});
+ const existing=backup.devices.find(d=>d.id===device.id);
+ if(existing){const enrolled=await get('/devices/'+device.id);if(enrolled.revoked_at||enrolled.member_id!==s.memberId||enrolled.fingerprint!==s.fingerprint||existing.public_key!==s.publicKey)throw Error('Paired device identity changed.');}
+ else await post('/devices',{...device,authorization:{type:'trusted',signed:a.authorization},backup:{...backup,devices:[...backup.devices,{id:device.id,public_key:device.public_key,fingerprint:device.fingerprint,recovery_ciphertext}]}});
  for(const key of history){const old=backup.devices.find(d=>d.fingerprint===key.getFingerprint())!;await rememberDevice({memberId:s.memberId,deviceId:old.id,fingerprint:old.fingerprint},key);}
  // Persist the active-device pointer before clearing the resumable request.
  localStorage.setItem('porchday-device:'+s.memberId,device.id);
