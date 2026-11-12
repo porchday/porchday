@@ -86,6 +86,7 @@ export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?
   ]);
  }finally{clearTimeout(timer);cookie=undefined;}
  checks.sort((a,b)=>a.name.localeCompare(b.name));
+ const durationMs=Math.max(0,Math.round(now()-started));
  return{v:1,at:new Date(started).toISOString(),environment:config.environment,healthy:checks.every(check=>check.ok),checks,
-  durationMs:Math.max(0,Math.round(now()-started)),timing:{version:2,journeyBudgetMs,legacyTenSecondJourneyExceeded:now()-started>10000},scope:'login_authorized_reads_logout_and_readiness'};
+  durationMs,timing:{version:2,journeyBudgetMs,legacyTenSecondJourneyExceeded:durationMs>10000},scope:'login_authorized_reads_logout_and_readiness'};
 }
