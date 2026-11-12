@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner request November 12:** [#228](https://github.com/porchday/porchday/issues/228), P1: implement member-controlled recovery options and verified recovery setup. Start with local restore rehearsals, then trusted-device transfer, passkey-protected recovery and explicit threshold trusted contacts. These additional methods are not yet released.
+**Current owner request November 12:** [#228](https://github.com/porchday/porchday/issues/228), P1: implement member-controlled recovery options and verified recovery setup. Candidate implementation includes local restore rehearsals, trusted-device transfer, PRF passkeys and two-of-three trusted contacts. Existing members remain exempt from mandatory setup. Production rollout and exact-source native validation remain pending; physical-provider checks remain separate follow-up.
 
 **Delivered November 12:** [#8](https://github.com/porchday/porchday/issues/8), P1, `needs verification`: production Mac monitor and GitHub backup now confirm transient alerts and reuse one incident conversation. Twenty completed duplicates archived; history retained. Exact-source CI/native and eight post-install healthy probes passed. [Evidence](docs/evidence/incident-notification-noise-2026-11-12.md). Underlying latency remains in #55; unreliable GitHub scheduling/receipt checks remain open.
 

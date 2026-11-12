@@ -74,7 +74,7 @@ app.get('/.well-known/apple-app-site-association',c=>{
  const team=c.env.APNS_TEAM_ID,bundle=c.env.APNS_BUNDLE_ID;
  if(!team||!/^[A-Z0-9]{10}$/.test(team)||!bundle||!/^([A-Za-z0-9-]+\.)+[A-Za-z0-9-]+$/.test(bundle))return c.json({error:{code:'NOT_CONFIGURED'}},404);
  c.header('Cache-Control','public, max-age=3600');
- return c.json({applinks:{details:[{appIDs:[team+'.'+bundle],components:[{'/':'/post/*',comment:'Open a Porchday post in the signed native app.'},{'/':'/app/post/*',comment:'Open a Porchday post in the signed native app.'}]}]}});
+ return c.json({webcredentials:{apps:[team+'.'+bundle]},applinks:{details:[{appIDs:[team+'.'+bundle],components:[{'/':'/post/*',comment:'Open a Porchday post in the signed native app.'},{'/':'/app/post/*',comment:'Open a Porchday post in the signed native app.'}]}]}});
 });
 app.get('/api/operations/health',requireOperations,privacyReadGuard,async c=>{
  const result=await readOperationalHealth(c.env,c.get('requestTiming'));

@@ -3,7 +3,7 @@ import {get} from './api';
 import {Alert, Button, Field, useAction} from './ui';
 import {verifyRecoveryBackup, type RecoveryBackup} from './recovery-check';
 
-export function RecoverySettings() {
+export function RecoverySettings({memberId=''}:{memberId?:string}={}) {
   const [secret, setSecret] = useState('');
   const action = useAction();
   return <section className="panel form-stack" data-diagnostic-private>
@@ -16,7 +16,7 @@ export function RecoverySettings() {
       void action.run(async () => {
         const input = secret; setSecret('');
         const result = await get('/keys/backup') as {envelope: RecoveryBackup};
-        await verifyRecoveryBackup(result.envelope, input);
+        await verifyRecoveryBackup(result.envelope, input, memberId);
       }, 'Your saved secret unlocked all backed-up keys, including the key needed to authorize a replacement device. Keep that saved copy safe.');
     }}>
       <Field label="Saved encryption recovery secret" type="password" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={secret} onChange={event => setSecret(event.target.value)} required disabled={action.busy}/>

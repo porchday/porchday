@@ -20,7 +20,7 @@ export async function readMemberBootstrap(env: Pick<Env,'HYPERDRIVE_SOCIAL'>, me
       await client.query(`BEGIN; SET LOCAL app.member_id = '${memberId}'`);
     });
     const member=await measureFeedPhase(timing,'social_query',async()=>{
-      const results=await client!.query(`select m.id,m.status,m.notification_preferences,p.handle,p.envelope,
+      const results=await client!.query(`select m.id,m.status,m.recovery_setup_required,m.notification_preferences,p.handle,p.envelope,
         (select count(*)::int from app.connections) as connection_count,
         ${bootstrap ? `(select coalesce(jsonb_agg(roster order by roster.created_at),'[]'::jsonb) from
           (select id,member_id,public_key,fingerprint,created_at,revoked_at from app.device_keys) roster)` : 'null'} as startup_devices

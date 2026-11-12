@@ -12,6 +12,7 @@ test('Apple association is absent until real signing identifiers are configured 
  expect(response.headers.get('content-type')).toContain('application/json');
  expect(response.headers.get('cache-control')).toBe('public, max-age=3600');
  const body=await response.json() as any;
+ expect(body.webcredentials.apps).toEqual(['A123456789.com.example.porchday']);
  expect(body.applinks.details).toHaveLength(1);
  expect(body.applinks.details[0].appIDs).toEqual(['A123456789.com.example.porchday']);
  expect(body.applinks.details[0].components.map((c:Record<string,string>)=>c['/'])).toEqual(['/post/*','/app/post/*']);

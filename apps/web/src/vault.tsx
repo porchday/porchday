@@ -1,3 +1,7 @@
+import {RecoveryGate} from './RecoveryManager';
+import {RecoveryUnlock} from './RecoveryUnlock';
+import {finishRecoveryRequest,recoveryAction,recoveryState,type PendingRecovery} from './recovery-client';
+import {readRecoveryBackup,type RecoveryBackup as Backup,type RecoveryBackupDevice as BackupDevice} from '@porchday/crypto/recovery';
 import {verifyRecoveryBackup} from './recovery-check';
 import {invalidatePhotos,refreshPhotoViews} from "./photo-cache";
 import {causeOf} from './causal-links';
@@ -26,6 +30,7 @@ import {
   generateDeviceKeys,
   signStatement,
   unlockPrivateKey,
+  protectPrivateKey,
   type Audience,
   type ContentContext,
   type EncryptedEnvelope,
@@ -55,21 +60,6 @@ import { refreshRecoveredAuthor, requireSealingAuthor, selectRecoveredDevice } f
 import { preparePostAudienceRefresh, startPostAudienceRefresh, type AudienceRefreshState, type RefreshPost } from "./post-audience-refresh";
 import { markOnce, traced } from "./tracing";
 const encryptObject=(...args:Parameters<typeof rawEncryptObject>)=>traced("encrypt",()=>rawEncryptObject(...args));
-type BackupDevice = {
-  id: string;
-  public_key: string;
-  fingerprint: string;
-  encrypted_private_key: string;
-};
-type Backup = {
-  v: 1;
-  devices: BackupDevice[];
-  recovery: {
-    public_key: string;
-    fingerprint: string;
-    encrypted_private_key: string;
-  };
-};
 type VaultValue = {
   member: Member;
   device: Device;
@@ -297,7 +287,7 @@ export function VaultProvider({
         },
       };
       const input = savedSecret; setSavedSecret("");
-      await verifyRecoveryBackup(backup, input);
+      await verifyRecoveryBackup(backup, input, member.id);
       const device = {
         ...generated.device,
         member_id: member.id,
@@ -309,6 +299,7 @@ export function VaultProvider({
         fingerprint: device.fingerprint,
         name: device.name,
         authorization: { type: "initial" },
+        recovery_setup_version:1,
         recovery_public_key: generated.recovery.publicKey,
         backup,
       });
@@ -327,6 +318,7 @@ export function VaultProvider({
           key,
         );
       saveDevice(member.id, device.id);
+      if((await recoveryState().catch(()=>null))?.enabled)await recoveryAction({member,device,privateKey:key,keys:[key]},'kit-checked',member.id,backup.recovery.fingerprint);
       setDevices([device]);
       setActive({ device, key, history: [] });
       setGenerated(null);
@@ -335,23 +327,17 @@ export function VaultProvider({
   }
   async function unlock(e: React.FormEvent) {
     e.preventDefault();
-    await action.run(async () => {
+    await action.run(()=>unlockWithSecret(secret));
+  }
+  async function unlockWithSecret(input:string,pending?:PendingRecovery) {
       const result = await get("/keys/backup");
       const backup = (result.envelope || result.backup || result) as Backup;
       if (backup.v !== 1 || !backup.devices?.length)
         throw new Error(
           "No compatible encrypted backup is available. Use a trusted device.",
         );
-      const unlocked = await Promise.all(
-        backup.devices.map(async (d) => ({
-          device: d,
-          key: await unlockPrivateKey(
-            d.encrypted_private_key,
-            secret.trim(),
-            d.fingerprint,
-          ),
-        })),
-      );
+      const recoveredBackup = await readRecoveryBackup(backup, input.trim(), member.id);
+      const unlocked = recoveredBackup.devices;
       const existing = devices!.find(
         (d) => d.id === storedDevice(member.id) && !d.revoked_at,
       );
@@ -361,7 +347,7 @@ export function VaultProvider({
         const restored = selectRecoveredDevice(unlocked, devices!, member.id);
         device = restored.device;
         key = restored.key;
-      } else if (existing) {
+      } else if (existing && !pending) {
         const match = unlocked.find((v) => v.device.id === existing.id);
         if (!match)
           throw new Error(
@@ -370,8 +356,8 @@ export function VaultProvider({
         device = existing;
         key = match.key;
       } else {
-        const id = crypto.randomUUID();
-        const newKeys = await generateDeviceKeys(member.id, id, secret.trim());
+        const id = pending?.record.statement.deviceId ?? crypto.randomUUID();
+        const newKeys = pending?{publicKey:pending.record.statement.publicKey,fingerprint:pending.record.statement.fingerprint,encryptedPrivateKey:await protectPrivateKey(pending.key,input.trim())}:await generateDeviceKeys(member.id,id,input.trim());
         const challenge = await post("/devices/challenge", {
           id,
           public_key: newKeys.publicKey,
@@ -379,7 +365,7 @@ export function VaultProvider({
         });
         const recoveryKey = await unlockPrivateKey(
           backup.recovery.encrypted_private_key,
-          secret.trim(),
+          input.trim(),
           backup.recovery.fingerprint,
         );
         const signed = await authorizeDevice(
@@ -421,12 +407,12 @@ export function VaultProvider({
         });
         key = await unlockPrivateKey(
           newKeys.encryptedPrivateKey,
-          secret.trim(),
+          input.trim(),
           device.fingerprint,
         );
         setDevices([...devices!, device]);
       }
-      if (remember) {
+      if (remember || pending) {
         await rememberDevice(
           {
             memberId: member.id,
@@ -446,9 +432,10 @@ export function VaultProvider({
           );
       }
       saveDevice(member.id, device.id);
+      if(pending)await finishRecoveryRequest(pending,false);
       setActive({ device, key, history: unlocked.map((v) => v.key) });
       setSecret("");
-    });
+
   }
   if (error)
     return (
@@ -594,6 +581,7 @@ export function VaultProvider({
             </>
           )}
         </div>
+        {devices.length>0 && member.status!=='restricted' && member.status!=='suspended' && <RecoveryUnlock member={member} onSecret={unlockWithSecret} onPaired={value=>{saveDevice(member.id,value.device.id);setDevices(previous=>[...(previous??[]).filter(d=>d.id!==value.device.id),value.device]);setActive(value);}}/>}
         <p className="small-copy">
           Encryption protects content, not every detail: the service still needs
           account, connection, delivery, and timing metadata.{" "}
@@ -788,7 +776,7 @@ export function VaultProvider({
           <Button variant="outline" onClick={() => setDismissedProfileSetup(profileContext)}>Dismiss</Button>
         </div>
       )}
-      {children}
+      <RecoveryGate actor={{member,device:active.device,privateKey:active.key,keys:[active.key,...active.history]}}>{children}</RecoveryGate>
     </Vault.Provider>
   );
 }

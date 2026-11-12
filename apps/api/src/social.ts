@@ -1,3 +1,4 @@
+import {registerKeyRecovery,KeyRecoveryError} from './key-recovery';
 import {registerNotificationPreviewRoutes,notificationPreviewSchema,storeNotificationPreview} from './notification-previews';
 import {registerFeedReadRoutes} from './social-feed-read';
 import {photoInteractionSnapshot,registerPhotoInteractionRoutes} from "./photo-interactions";
@@ -143,11 +144,12 @@ async function attachMedia(db: Db, member: string, postId: string, mediaIds: str
 } for (let i = 0; i < mediaIds.length; i++)
     await db `update app.media_assets set post_id=${postId},state='attached',display_order=${i} where id=${mediaIds[i]}`; }
 const backupKey = z.object({ public_key: z.string().max(30000), fingerprint: z.string().regex(/^[0-9a-f]{64}$/), encrypted_private_key: z.string().startsWith('-----BEGIN PGP PRIVATE KEY BLOCK-----').max(30000) }).strict();
-const backupSchema = z.object({ v: z.literal(1), devices: z.array(backupKey.extend({ id: uuid })).min(1).max(32), recovery: backupKey }).strict();
+const deviceBackupKey = z.object({id:uuid,public_key:z.string().max(30000),fingerprint:z.string().regex(/^[0-9a-f]{64}$/),encrypted_private_key:z.string().startsWith('-----BEGIN PGP PRIVATE KEY BLOCK-----').max(30000).optional(),recovery_ciphertext:z.string().startsWith('-----BEGIN PGP MESSAGE-----').max(60000).optional()}).strict().refine(x=>!!x.encrypted_private_key!==!!x.recovery_ciphertext);
+const backupSchema = z.object({ v: z.literal(1), devices: z.array(deviceBackupKey).min(1).max(32), recovery: backupKey }).strict();
 async function checkBackup(value: unknown) { const backup = backupSchema.parse(value); for (const key of [...backup.devices, backup.recovery]) {
     if (await fingerprint(key.public_key) !== key.fingerprint)
         fail('INVALID_KEY');
-    await validateEncryptedPrivateKey(key.encrypted_private_key, key.fingerprint);
+    if(key.encrypted_private_key) await validateEncryptedPrivateKey(key.encrypted_private_key, key.fingerprint);
 } return backup; }
 export function createSocialRoutes() {
     const app = new Hono<{
@@ -155,6 +157,7 @@ export function createSocialRoutes() {
         Variables: Variables;
     }>();
     app.onError((err, c) => {
+        if (err instanceof KeyRecoveryError) return c.json({error:{code:'RECOVERY_UNAVAILABLE',message:err.message}},409);
         if (err instanceof SocialError)
             return c.json({ error: { code: err.code, message: err.code.toLowerCase().replaceAll('_', ' '), ...(err.details ? { details: err.details } : {}) } }, err.status);
         if (err instanceof z.ZodError || err instanceof SyntaxError)
@@ -180,6 +183,7 @@ export function createSocialRoutes() {
             fail('RATE_LIMIT', 429);
     } c.header('Cache-Control', 'private, no-store'); await next(); });
     registerFeedReadRoutes(app,{tx,body});
+    registerKeyRecovery(app);
     registerPhotoRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerPhotoInteractionRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
     registerAlbumRoutes(app,{tx,body,fail,id,writeAllowed,checkEnvelope});
@@ -212,7 +216,7 @@ export function createSocialRoutes() {
         fail('INVALID_KEY'); const challenge = crypto.randomUUID() + crypto.randomUUID(); const expires = new Date(Date.now() + 10 * 60000).toISOString(); return c.json(await tx(c, async (db) => { await db `insert into app.device_challenges(member_id,device_id,public_key,fingerprint,challenge,expires_at) values(${c.get('memberId')},${b.id},${b.public_key},${b.fingerprint},${challenge},${expires}) on conflict(device_id) do update set challenge=excluded.challenge,expires_at=excluded.expires_at,consumed_at=null where device_challenges.member_id=excluded.member_id and device_challenges.public_key=excluded.public_key`; return { challenge, expires_at: expires }; })); });
     app.post('/devices', async (c) => {
         recent(c);
-        const b = await body(c, deviceInput.extend({ authorization: z.object({ type: z.enum(['initial', 'trusted', 'recovery']), signed: z.any().optional() }), recovery_public_key: z.string().max(30000).optional(), backup: backupSchema.optional() }));
+        const b = await body(c, deviceInput.extend({ authorization: z.object({ type: z.enum(['initial', 'trusted', 'recovery']), signed: z.any().optional() }), recovery_setup_version:z.literal(1).optional(),recovery_public_key: z.string().max(30000).optional(), backup: backupSchema.optional() }));
         if (await fingerprint(b.public_key) !== b.fingerprint)
             fail('INVALID_KEY');
         return c.json(await tx(c, async (db) => {
@@ -231,6 +235,7 @@ export function createSocialRoutes() {
                 await checkBackup(b.backup);
                 if (b.backup.recovery.public_key !== b.recovery_public_key || !b.backup.devices.some(d => d.id === b.id && d.public_key === b.public_key))
                     fail('BACKUP_KEY_MISMATCH');
+                if(b.recovery_setup_version===1 && c.env.KEY_RECOVERY_ENABLED==='true')await db`update app.members set recovery_setup_required=true where id=${c.get('memberId')} and recovery_setup_eligible=true`;
                 await db `insert into app.recovery_keys(member_id,public_key) values(${c.get('memberId')},${b.recovery_public_key})`;
                 await db `insert into app.encrypted_key_backups(member_id,envelope) values(${c.get('memberId')},${db.json(b.backup)})`;
             }
