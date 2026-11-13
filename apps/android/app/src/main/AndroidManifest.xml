@@ -24,6 +24,8 @@
         <!-- No shortcut/file/share extras are accepted from other applications. -->
         <activity android:name="com.google.androidbrowserhelper.trusted.ShortcutTrampolineActivity" tools:node="remove" />
         <activity android:name="com.google.androidbrowserhelper.trusted.ColdShortcutActivity" tools:node="remove" />
+        <activity android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity"
+            android:exported="false" />
         <!-- AndroidX validates the browser caller against its stored verified-origin token. -->
         <service android:name="com.google.androidbrowserhelper.trusted.DelegationService"
             android:exported="true" tools:ignore="ExportedService">
