@@ -3,4 +3,5 @@
     <foreground>
         <inset android:drawable="@drawable/porchday_mark" android:inset="18%" />
     </foreground>
+    <monochrome android:drawable="@drawable/ic_notification" />
 </adaptive-icon>
