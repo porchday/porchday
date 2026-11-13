@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Porchday</string>
-    <string name="asset_statements" translatable="false">[{"relation":["delegate_permission/common.handle_all_urls"],"target":{"namespace":"web","site":"https://porchday.org"}}]</string>
+    <string name="asset_statements" translatable="false">[{\"relation\":[\"delegate_permission/common.handle_all_urls\"],\"target\":{\"namespace\":\"web\",\"site\":\"https://porchday.org\"}}]</string>
     <color name="porchday_background">#FFFAF0</color>
 </resources>

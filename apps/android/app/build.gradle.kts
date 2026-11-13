@@ -33,7 +33,13 @@ android {
             if (signingConfigs.findByName("upload") != null) signingConfig = signingConfigs.getByName("upload")
         }
     }
-    lint { abortOnError = true; warningsAsErrors = true }
+    lint {
+        abortOnError = true
+        warningsAsErrors = true
+        // Version-availability advisories are not correctness checks. Pin the reviewed
+        // AGP/Gradle pair and Play-required API 36; do not silently adopt untested SDKs.
+        disable += setOf("OldTargetApi", "AndroidGradlePluginVersion")
+    }
 }
 
 dependencies {
