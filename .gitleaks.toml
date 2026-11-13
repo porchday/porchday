@@ -147,3 +147,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['(?:^|/)apps/api/src/social\.ts$']
 regexes = ["^\\-\\-\\-\\-\\-BEGIN\\ PGP\\ PRIVATE\\ KEY\\ BLOCK\\-\\-\\-\\-\\-'\\)\\.max\\(30000\\)\\ \\}\\)\\.strict\\(\\);\\\nconst\\ deviceBackupKey\\ =\\ z\\.object\\(\\{id:uuid,public_key:z\\.string\\(\\)\\.max\\(30000\\),fingerprint:z\\.string\\(\\)\\.regex\\(/\\^\\[0\\-9a\\-f\\]\\{64\\}\\$/\\),encrypted_private_key:z\\.string\\(\\)\\.startsWith\\('\\-\\-\\-\\-\\-BEGIN\\ PGP\\ PRIVATE\\ KEY\\ BLOCK\\-\\-\\-\\-\\-$"]
+
+[[allowlists]]
+description = "Exact verified Git source revision in the November 12 member recovery release report; a commit ID, not a credential."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['(?:^|/)docs/evidence/member-recovery-release-2026-11-12\.md$']
+regexes = ['^a56aa1047aa07cfc1a47043f5545131be855bd56\.$']

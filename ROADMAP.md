@@ -93,6 +93,8 @@ Owner bug follow-up November 4: #123 corrects confusing existing-photo picker co
 
 Owner follow-up November 4: **[#151](https://github.com/porchday/porchday/issues/151), P2: standalone photo comments and reactions**, with a photo icon/label in the feed. **Delivered to staging and production (November 4)** with encrypted audience checks, deletion/retry safety and archives. Shared iOS/macOS implementation and automated native verification passed; native distribution/manual acceptance remain separate follow-ups. See [design](design/photo-interactions.md) and [release verification](docs/evidence/photo-interactions-release-2026-11-04.md).
 
+Owner priority update November 13: add Android distribution through Google Play alongside Apple store delivery. **[#231](https://github.com/porchday/porchday/issues/231), P1** tracks the shared-web Android client, exact-source package tests, Play account/signing/domain association, required testing, disclosures and verified public distribution. [Release plan](docs/android-play-release.md). Account access, installed-device acceptance and Play approval remain external gates; no Android publication is claimed.
+
 ## How to choose the next task
 
 1. An active outage, credible security report or risk of losing access to encrypted content takes precedence. Handle sensitive reports through [SECURITY.md](SECURITY.md).
