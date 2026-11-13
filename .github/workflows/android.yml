@@ -25,7 +25,7 @@ jobs:
           gradle-version: '8.13'
       - name: Test, lint and package
         working-directory: apps/android
-        run: gradle --no-daemon testDebugUnitTest lintDebug assembleDebug bundleRelease
+        run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug bundleRelease
       - name: Record build provenance
         run: |
           mkdir -p apps/android/artifacts

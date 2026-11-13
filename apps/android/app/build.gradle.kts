@@ -1,5 +1,10 @@
 plugins { id("com.android.application") }
 
+val signingNames = listOf("PORCHDAY_ANDROID_KEYSTORE", "PORCHDAY_ANDROID_STORE_PASSWORD", "PORCHDAY_ANDROID_KEY_ALIAS", "PORCHDAY_ANDROID_KEY_PASSWORD")
+val signingValues = signingNames.map { providers.environmentVariable(it).orNull }
+require(signingValues.all { it == null } || signingValues.all { !it.isNullOrBlank() }) {
+    "Provide all Android signing variables or none; partial signing configuration is refused."
+}
 android {
     namespace = "org.porchday.app"
     compileSdk = 36
@@ -14,8 +19,19 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    if (signingValues.all { !it.isNullOrBlank() }) {
+        signingConfigs.create("upload") {
+            storeFile = file(signingValues[0]!!)
+            storePassword = signingValues[1]
+            keyAlias = signingValues[2]
+            keyPassword = signingValues[3]
+        }
+    }
     buildTypes {
-        release { isMinifyEnabled = false }
+        release {
+            isMinifyEnabled = false
+            if (signingConfigs.findByName("upload") != null) signingConfig = signingConfigs.getByName("upload")
+        }
     }
     lint { abortOnError = true; warningsAsErrors = true }
 }
@@ -24,5 +40,4 @@ dependencies {
     implementation("com.google.androidbrowserhelper:androidbrowserhelper:2.7.4")
     testImplementation("junit:junit:4.13.2")
 }
-// Signing is intentionally absent until the owner's Play account/upload key is configured.
-// A successful bundleRelease alone is not a publishable or uploaded release.
+// Without explicitly supplied private signing inputs, bundleRelease is unsigned.
