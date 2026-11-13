@@ -93,6 +93,8 @@ Owner bug follow-up November 4: #123 corrects confusing existing-photo picker co
 
 Owner follow-up November 4: **[#151](https://github.com/porchday/porchday/issues/151), P2: standalone photo comments and reactions**, with a photo icon/label in the feed. **Delivered to staging and production (November 4)** with encrypted audience checks, deletion/retry safety and archives. Shared iOS/macOS implementation and automated native verification passed; native distribution/manual acceptance remain separate follow-ups. See [design](design/photo-interactions.md) and [release verification](docs/evidence/photo-interactions-release-2026-11-04.md).
 
+Owner priority update November 13: complete **public App Store distribution on iOS and macOS** under [#49](https://github.com/porchday/porchday/issues/49) / [#114](https://github.com/porchday/porchday/issues/114). TestFlight availability does not complete this request. Existing builds 424/410 are attached to store drafts with release after approval, but submission is blocked by unfinished screenshots, privacy/age-rating/distribution setup and public support/privacy disclosures. See [submission preparation evidence](docs/evidence/app-store-preparation-2026-11-13.md). Keep ordinary production gates and device-verification gaps explicit.
+
 ## How to choose the next task
 
 1. An active outage, credible security report or risk of losing access to encrypted content takes precedence. Handle sensitive reports through [SECURITY.md](SECURITY.md).

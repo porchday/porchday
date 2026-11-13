@@ -214,7 +214,11 @@ function App() {
   else if (["/login", "/join", "/forgot", "/reset", "/verify"].includes(path))
     page = <AuthPage key={route} mode={path.slice(1)} onSignedIn={session} />;
   else if (informationPage) {
-    page = member ? (path === "/about" ? <Landing /> : <Policy page={path === "/mission" ? "about" : path.slice(1)} />)
+    // Store visitors and people seeking account help must not need membership.
+    // This exposes only static policy/help copy, never member content.
+    const hasPolicyInvite = new URLSearchParams(location.hash.slice(1)).has("invite");
+    const publicPolicy = ["/privacy", "/help", "/contact"].includes(path) && !hasPolicyInvite;
+    page = member || publicPolicy ? (path === "/about" ? <Landing /> : <Policy page={path === "/mission" ? "about" : path.slice(1)} />)
       : <InvitedPolicyPage path={path} loading={loading} onSignedIn={session} />;
   }
   else if (isMemberPath(path) || path === "/staff/moderation") {
