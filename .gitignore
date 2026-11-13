@@ -33,3 +33,10 @@ apps/ios/Porchday.xcodeproj/
 packages/crypto/native/build/
 
 apps/macos/build/
+
+apps/android/.gradle/
+apps/android/**/build/
+apps/android/artifacts/
+apps/android/local.properties
+*.jks
+*.keystore
