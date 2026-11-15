@@ -100,3 +100,12 @@ test('connection events accept route patterns and job labels but never concrete 
  // Ordinary request events keep their existing coarse route categories.
  expect(e.blobs[3]).toBe('none');
 });
+
+test('push-denial counters retain finite channel codes without identifiers or hosted console output',()=>{
+ const writeDataPoint=vi.fn(),consoleOutput=vi.spyOn(console,'log').mockImplementation(()=>{});
+ try{
+  for(const code of ['web_push_denied','native_push_denied'])event('job',{code,count:1,sessionId:'private-session',jobId:'private-job',endpoint:'https://private.example/token',token:'private-token'} as never,{ENVIRONMENT:'staging',METRICS:{writeDataPoint}});
+  expect(writeDataPoint.mock.calls.map(c=>c[0])).toEqual(['web_push_denied','native_push_denied'].map(code=>({indexes:['job:none'],blobs:['porchday_metrics_v1','staging','job','none','none',code,'none'],doubles:[0,-1,1]})));
+  expect(JSON.stringify(writeDataPoint.mock.calls)).not.toContain('private');expect(consoleOutput).not.toHaveBeenCalled();
+ }finally{consoleOutput.mockRestore();}
+});
