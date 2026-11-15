@@ -1,3 +1,4 @@
+import {usePhotoGallery} from './PhotoGallery';
 import {PostText} from "./PostText";
 import React,{useCallback,useEffect,useRef,useState} from 'react';
 import {base64ToBytes,canonicalJson,type EncryptedEnvelope} from '@porchday/crypto';
@@ -15,6 +16,8 @@ import {observeVisibleMilestone} from './visible-milestone';
 import {causeOf} from './causal-links';
 
 export function CachedEncryptedPhoto({media,thumbnail=false,photoProof}:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){
+ const gallery=usePhotoGallery();
+ const openViewer=(e:React.SyntheticEvent<HTMLElement>)=>{if(!gallery(media,photoProof,e.currentTarget))setViewer(true);};
  const imageRef=useRef<HTMLImageElement>(null);
  const vault=useVault(),{ref,near}=useNearViewport<HTMLDivElement>(false,6,20);
  const {ref:displayRef,near:displayNear}=useNearViewport<HTMLDivElement>(false,2);
@@ -66,7 +69,7 @@ export function CachedEncryptedPhoto({media,thumbnail=false,photoProof}:{media:M
  useEffect(()=>{const image=imageRef.current;if(!currentTraceId()||!image||!url)return;return observeVisibleMilestone(image,()=>image.getAttribute('src')===url,()=>markOnce('first-visible-photo'));},[url]);
  return <div ref={attach} className={thumbnail?'calendar-thumbnail stable-photo':'stable-photo'}><figure>
   <div className="stable-photo-frame" style={{aspectRatio:`${width} / ${height}`}}>
-   {url&&displayNear?<img ref={imageRef} src={url} width={width} height={height} alt={media.alt||'Shared photo (no description provided)'} decoding="async" role={thumbnail?undefined:'button'} tabIndex={thumbnail?undefined:0} aria-label={thumbnail?undefined:`Open photo: ${media.alt||'Shared photo'}`} onClick={thumbnail?undefined:()=>setViewer(true)} onKeyDown={thumbnail?undefined:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setViewer(true);}}}/>:<div className="photo-placeholder"><Icon name={error?'shield':'photo'} size={24}/><span>{error||(displayNear?'Opening encrypted media…':'Media loads as you scroll')}</span></div>}
+   {url&&displayNear?<img ref={imageRef} src={url} width={width} height={height} alt={media.alt||'Shared photo (no description provided)'} decoding="async" role={thumbnail?undefined:'button'} tabIndex={thumbnail?undefined:0} aria-label={thumbnail?undefined:`Open photo: ${media.alt||'Shared photo'}`} onClick={thumbnail?undefined:openViewer} onKeyDown={thumbnail?undefined:e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openViewer(e);}}}/>:<div className="photo-placeholder"><Icon name={error?'shield':'photo'} size={24}/><span>{error||(displayNear?'Opening encrypted media…':'Media loads as you scroll')}</span></div>}
   </div>
   {!thumbnail&&media.alt&&<figcaption><PostText text={media.alt} tags={media.tags}/></figcaption>}{!thumbnail&&<Tags value={media.tags}/>}
   {!thumbnail&&viewer&&url&&<PhotoViewer src={url} alt={media.alt||''} onClose={()=>setViewer(false)}/>}

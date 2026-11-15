@@ -27,7 +27,9 @@
         "docs/evidence/hidden-builder-navigation-2026-11-10.md",
         "docs/native-parity.md#photo-scrolling-runway",
         "docs/evidence/photo-scroll-runway-2026-11-10.md",
-        "docs/native-parity.md#signup-and-action-feedback-clarity-228-november-14"
+        "docs/native-parity.md#signup-and-action-feedback-clarity-228-november-14",
+        "docs/native-parity.md#feed-photo-swipe-navigation",
+        "apps/web/test/photo-gallery-browser.test.ts"
       ],
       "implementation": {
         "ios": "implemented",
@@ -76,7 +78,9 @@
         "docs/native-parity.md#photo-scrolling-runway",
         "docs/evidence/photo-scroll-runway-2026-11-10.md",
         "docs/native-parity.md#native-video-service-worker-capability",
-        "docs/native-parity.md#typed-handles-and-multiple-person-selection"
+        "docs/native-parity.md#typed-handles-and-multiple-person-selection",
+        "docs/native-parity.md#feed-photo-swipe-navigation",
+        "apps/web/test/photo-gallery-browser.test.ts"
       ],
       "implementation": {
         "ios": "implemented",
