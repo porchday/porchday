@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Current owner follow-up November 14:** #228: simplify signup emails and the private-content recovery walkthrough; explain passkeys separately from sign-in/two-factor authentication, and keep action feedback next to its control. Browser and local HTTP acceptance are in progress; no production rollout of this follow-up is claimed.
+
 **Delivered November 12:** [#228](https://github.com/porchday/porchday/issues/228), P1, `needs verification`: member-controlled encrypted-data recovery is live in web/API production. Existing members remain exempt; production migration and hosted old-key/outage tests verified that boundary. Passkey, approved device transfer and two-of-three contact recovery passed hosted acceptance; exact-source iOS/macOS tests passed. Physical providers/camera, installed-native acceptance and signed distribution remain follow-up. [Release evidence](docs/evidence/member-recovery-release-2026-11-12.md).
 
 **Delivered November 12:** [#55](https://github.com/porchday/porchday/issues/55), P1, `needs verification`: faster independently durable session denial and bounded cleanup are active in production. Independent monitor deadlines no longer let earlier requests consume revocation's budget. Production retained/restored-row denial, contention recovery, native CI and rollout continuity passed. [Evidence](docs/evidence/logout-latency-release-2026-11-12.md). Sustained tail-latency/99.99% measurement and physical-device timing remain open.

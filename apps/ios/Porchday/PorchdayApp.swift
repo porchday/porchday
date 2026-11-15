@@ -137,7 +137,7 @@ struct LoginView: View {
                 if awaitingVerification {
                     Section("Check your email") {
                         Text("Open the verification email sent to \(email). The link expires in 1 hour. Then return here and log in with the password you chose.")
-                        Text("Check your spam folder, too. On your first login, we’ll help you protect your private content and save a recovery secret.")
+                        Text("Check spam if the email hasn’t arrived. After verifying, sign in. We’ll help you save a recovery note for your private photos and posts.")
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Button(context.date < resendAfter ? "Resend available in \(Int(ceil(resendAfter.timeIntervalSince(context.date))))s" : "Resend verification email") {
                                 Task { busy = true; defer { busy = false }; await model.perform {
@@ -192,7 +192,7 @@ struct UnlockView: View {
     @State private var busy = false
     var body: some View {
         NavigationStack { Form {
-            Section { Label("Encryption keys", systemImage: "lock.shield").font(.title2); Text("Your encryption recovery secret is separate from your login password. Support cannot restore encrypted history without it.") }
+            Section { Label("Encryption keys", systemImage: "lock.shield").font(.title2); Text("Your password signs you in. Your recovery note unlocks your private photos and posts. Save it somewhere safe; support cannot replace it.") }
             if vault.devices.isEmpty {
                 if vault.recoveryNote.isEmpty { Section { Button("Set up private sharing") { Task { await model.perform { try vault.prepareInitial(member: member) } } } } }
                 else { Section("Save and check your recovery secret") {

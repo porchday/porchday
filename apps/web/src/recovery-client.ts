@@ -3,7 +3,7 @@ import {authorizeDevice,createRecoverySecret,generateDeviceKeys,signStatement,un
 import {rememberDevice,recallDevice,forgetDevice} from '@porchday/crypto/browser';
 import {deviceBackupBinding,importRecoveryPrivateKey,openRecoveryPayload,sealRecoveryPayload,recoveryDigest,type RecoveryBinding,type RecoveryBackup} from '@porchday/crypto/recovery';
 export type RecoveryActor={member:Member;device:Device;privateKey:UnlockedPrivateKey;keys:UnlockedPrivateKey[]};
-export type RecoveryState={enabled:boolean;required:boolean;check:{kit_checked_at:string|null;prompt_dismissed_at:string|null}|null;methods:any[];pairInvitations:any[];contacts:any[];invitations:any[];requests:any[];responses:any[];devices:Device[];handles:{id:string;handle:string}[]};
+export type RecoveryState={pairedDeviceReady?:boolean;enabled:boolean;required:boolean;check:{kit_checked_at:string|null;prompt_dismissed_at:string|null}|null;methods:any[];pairInvitations:any[];contacts:any[];invitations:any[];requests:any[];responses:any[];devices:Device[];handles:{id:string;handle:string}[]};
 export type PendingRecovery={record:any;key:UnlockedPrivateKey};
 const pendingSlot=(member:string)=>'porchday-pending-key-recovery:'+member;
 export const recoveryExpiry=(ms=240000)=>new Date(Date.now()+ms).toISOString();

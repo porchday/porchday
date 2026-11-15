@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { auth, get, saveFile } from "./api";
-import { Alert, Button, Field, Icon, useAction } from "./ui";
+import { Alert, ActionFeedback, Button, Field, Icon, useAction } from "./ui";
 export function EmailSettings() {
   const [email, setEmail] = useState("");
   const action = useAction();
@@ -37,8 +37,7 @@ export function EmailSettings() {
         <Button variant="outline" busy={action.busy}>
           Request an email change
         </Button>
-        <Alert>{action.error}</Alert>
-        <Alert success>{action.notice}</Alert>
+        <ActionFeedback error={action.error} notice={action.notice}/>
       </form>
       <a href="/stolen-account" className="text-link">
         Can’t access your established methods? Report a stolen account.
@@ -90,13 +89,10 @@ export function MfaSettings() {
   }
   return (
     <section className="panel form-stack">
-      <h2>A second layer for your account</h2>
+      <h2>Two-step sign-in (optional)</h2>
       <p>
-        An authenticator code protects your login in addition to your password.
-        It does not replace your separate encryption recovery secret.
+        This asks for a code from an authenticator app when you sign in, in addition to your password. It helps stop someone else signing in. It does not recover lost photos or posts; use your recovery note or spare key for that.
       </p>
-      <Alert>{action.error}</Alert>
-      <Alert success>{action.notice}</Alert>
       {setup ? (
         <form className="form-stack" onSubmit={finish}>
           <p>
@@ -210,6 +206,7 @@ export function MfaSettings() {
           </Button>
         </form>
       )}
+      <ActionFeedback error={action.error} notice={action.notice}/>
     </section>
   );
 }

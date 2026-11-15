@@ -458,12 +458,11 @@ export function VaultProvider({
         <h1>
           {devices.length
             ? "Unlock your account"
-            : "Set up encryption"}
+            : "Keep your photos and posts safe"}
         </h1>
         <p>
-          Your posts, photos, and comments are encrypted for their recipients.
-          Porchday cannot read them. Your recovery secret is separate from your
-          login password.
+          Your email and password sign you in. A separate private key unlocks
+          your photos and posts. Porchday cannot read them or replace a lost key.
         </p>
         <div className="panel form-stack">
           <Alert>{action.error}</Alert>
@@ -502,11 +501,10 @@ export function VaultProvider({
             </form>
           ) : generated ? (
             <>
-              <h2>Save your recovery secret</h2>
+              <h2>Step 1 of 2: save your recovery note</h2>
               <p>
-                This secret can restore your encryption keys. Save it in your
-                password manager or store a printed copy somewhere private. We
-                can’t replace it.
+                Download the note below, or save this entire secret in your password manager.
+                Keep it somewhere private that you can find if you lose this device.
               </p>
               <div data-diagnostic-private hidden={checkingSavedSecret}>
               <div className="secret-box">
@@ -535,7 +533,7 @@ export function VaultProvider({
               </div>
               {checkingSavedSecret && <div className="form-stack" data-diagnostic-private>
                 <h3>Check the copy you saved</h3>
-                <p>Open your password manager or saved note and paste the secret here. We’ll test it on this device before creating your account’s encryption backup. Your login password and two-factor backup codes will not work here.</p>
+                <p>Open the note you just saved and copy the entire secret into this box. This quick check makes sure your copy works. Use the secret from the note, not your login password.</p>
                 <Field label="Saved encryption recovery secret" type="password" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={savedSecret} disabled={action.busy} onChange={e => setSavedSecret(e.target.value)} />
                 <Button variant="quiet" disabled={action.busy} onClick={() => {setSavedSecret(""); setCheckingSavedSecret(false);}}>Show secret again</Button>
               </div>}
@@ -572,8 +570,7 @@ export function VaultProvider({
             <>
               <h2>Protect your private content</h2>
               <p>
-                We’ll create your keys right here on your device. You’ll save a
-                recovery secret before continuing. It never goes to Porchday.
+                We’ll help you save a recovery note, check that it works, then add a spare key with your phone or another device. You don’t need to have a passkey already.
               </p>
               <Button variant="primary" busy={action.busy} onClick={generate}>
                 Set up private sharing <Icon name="arrow" size={18} />

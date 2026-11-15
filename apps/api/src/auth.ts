@@ -48,7 +48,7 @@ export function createAuth(env: Env, pool: Pool, signupId?: string, inTransactio
     emailVerification: {
       sendOnSignUp:true, sendOnSignIn:true, autoSignInAfterVerification:false, expiresIn:3600,
       sendVerificationEmail: async ({user,url}) => {
-        await accountEmail(user.id,user.email,'Verify your Porchday email',`One more step: verify your email address for Porchday.\n\nOpen this link to verify your email:\n\n${url}\n\nThis link expires in 1 hour. After verifying, log in with the email address and password you chose. On your first login, we’ll help you protect your private content and save a recovery secret.\n\nIf you opened this email on another device, you can return to the Porchday app to log in after verification. Never forward this link. If you did not request this, ignore this message.`);
+        await accountEmail(user.id,user.email,'Verify your Porchday email',`Confirm your email to join Porchday.\n\nOpen this link to verify your email:\n\n${url}\n\nThis link expires in 1 hour.\n\nNext: sign in with the email address and password you chose. Porchday will guide you through saving a recovery note and a spare key for your private photos and posts. You don’t need an existing passkey—we’ll help you create one, or use another device you own.\n\nYour password signs you in. Your recovery note and spare key help you recover your private content if you lose access to your device.\n\nIf you opened this email on another device, you can return to the Porchday app to log in after verification. Never forward this link. If you did not request this, ignore this message.`);
       },
     },
     rateLimit: { enabled:false }, // Durable, hashed-identifier rate limits are applied outside this handler.

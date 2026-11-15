@@ -6,7 +6,7 @@ const fromUrl=(value:string)=>new Uint8Array(base64ToBytes(value.replace(/-/g,'+
 const random=()=>crypto.getRandomValues(new Uint8Array(32));
 type PRF={enabled?:boolean;results?:{first:ArrayBuffer}};
 type Output={prf?:PRF};
-function result(credential:PublicKeyCredential){const first=(credential.getClientExtensionResults() as Output).prf?.results?.first;if(!first||first.byteLength!==32)throw Error('This passkey, browser or device cannot unlock encrypted backups. Use another provider or pair a trusted device.');return new Uint8Array(first);}
+function result(credential:PublicKeyCredential){const first=(credential.getClientExtensionResults() as Output).prf?.results?.first;if(!first||first.byteLength!==32)throw Error('This device or password manager cannot create a spare key for your photos and posts. Try another password manager, or use another private device.');return new Uint8Array(first);}
 function validate(credential:PublicKeyCredential,challenge:Uint8Array,creation:boolean){
  const data=JSON.parse(new TextDecoder().decode(credential.response.clientDataJSON));
  if(data.origin!==location.origin||data.crossOrigin===true||data.type!==(creation?'webauthn.create':'webauthn.get')||data.challenge!==b64url(challenge.buffer as ArrayBuffer))throw Error('Passkey response did not match this request.');
