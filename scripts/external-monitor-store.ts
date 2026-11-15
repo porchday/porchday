@@ -1,7 +1,7 @@
 import {constants,appendFileSync,closeSync,fsyncSync,lstatSync,mkdirSync,openSync,readFileSync,renameSync,writeFileSync} from 'node:fs';
 import {join,dirname} from 'node:path';
 import {randomUUID} from 'node:crypto';
-import {alertBody,initialState,type AlertState} from './external-monitor-alerts';
+import {alertBody,initialState,checkNames,type AlertState} from './external-monitor-alerts';
 import type {Observation} from './external-monitor-probe';
 
 export function privateFile(path:string):string {
@@ -28,6 +28,7 @@ export function readState(directory:string):AlertState {
  if(state.failureStreak!==undefined&&![0,1,2].includes(state.failureStreak))throw Error('MONITOR_STATE_INVALID');
  if(state.firstFailureAt!==undefined&&!Number.isFinite(Date.parse(state.firstFailureAt)))throw Error('MONITOR_STATE_INVALID');
  if(state.healthySince!==undefined&&!Number.isFinite(Date.parse(state.healthySince)))throw Error('MONITOR_STATE_INVALID');
+ for(const values of [state.observedFailures,state.observedDependencies])if(values!==undefined&&(!Array.isArray(values)||values.some(name=>!checkNames.includes(name as typeof checkNames[number]))))throw Error('MONITOR_STATE_INVALID');
  for(const event of state.pending)alertBody(event,'operator-mac');
  return state;
 }

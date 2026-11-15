@@ -30,7 +30,8 @@
         "docs/native-parity.md#signup-and-action-feedback-clarity-228-november-14",
         "docs/native-parity.md#feed-photo-swipe-navigation",
         "docs/native-parity.md#inline-recovery-identity-confirmation",
-        "apps/web/test/photo-gallery-browser.test.ts"
+        "apps/web/test/photo-gallery-browser.test.ts",
+        "docs/native-parity.md#health-check-transport-and-storage-resilience--november-15"
       ],
       "implementation": {
         "ios": "implemented",

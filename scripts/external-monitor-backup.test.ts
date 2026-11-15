@@ -95,3 +95,9 @@ describe('hosted backup monitor',()=>{
 it('does not convert a lone failed probe into an execution-failure alert on the next run',async()=>{
  const f=fixture([false,true]);expect(await runBackup(config,f.options)).toEqual({healthy:false,notificationsDelivered:true,incidentOpen:false});expect(f.writes()).toBe(0);expect(f.observations).toHaveLength(2);
 });
+
+it('reconciles hosted alerts with separately reported skipped checks',async()=>{
+ const value={...event,notAttemptedChecks:['logout','revocation']};const body=alertBody(value,'github-backup');
+ const transport:GitHubTransport=async(_,path)=>path.includes('/comments?')?[{id:1,body,user:bot}]:{title:'External production availability alerts (github-backup)'};
+ expect(await latestHostedEvent(53,transport)).toEqual(value);
+});

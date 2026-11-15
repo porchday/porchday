@@ -1,3 +1,4 @@
+import {readStorageText} from './storage-read-retry';
 import {CandidateTimings} from './session-denial-timing';
 import type {Pool} from 'pg';
 import type {JournalStore} from './privacy-journal';
@@ -90,7 +91,7 @@ export async function sweepSessionCandidates(store:JournalStore,list:(after:stri
  const startedAt=Date.now(),deadline=workDeadline??startedAt+20000;
  if(!Number.isSafeInteger(deadline)||deadline<=startedAt||deadline>startedAt+20000)throw new DenialCleanupError();
  if(expectedProgressEtag!==undefined&&(typeof expectedProgressEtag!=='string'||!expectedProgressEtag||expectedProgressEtag.length>256))throw new DenialCleanupError();
- const saved=await timing.run('progress_read',()=>boundedIO(async()=>{const object=await store.get(candidateProgressKey);return object?{etag:object.etag,text:await object.text()}:null;}));
+ const saved=await timing.run('progress_read',()=>boundedIO(async()=>{const object=await readStorageText(store,candidateProgressKey);return object?{etag:object.etag,text:await object.text()}:null;}));
  // A delayed/duplicate continuation cannot restart a completed pass or fan out.
  // Cron jobs have no token and resume current persisted work after a lost send.
  if(expectedProgressEtag!==undefined&&saved?.etag!==expectedProgressEtag)return {seen:0,deleted:0,invalid:0,advanced:false};
@@ -175,7 +176,7 @@ export async function readCandidateCleanupHealth(env:Pick<Env,'SESSION_DENIAL_CL
  try{
   if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
   const progress=await boundedIO(async()=>{
-   const object=await env.RECOVERY_JOURNAL!.get(candidateProgressKey);
+   const object=await readStorageText(env.RECOVERY_JOURNAL! as JournalStore,candidateProgressKey);
    return object?parseCandidateProgress(await object.text()):null;
   });
   return progress?candidateProgressHealth(progress):{issues:['session_denial_cleanup_missing'],snapshot:null};
