@@ -18,7 +18,7 @@ Virtual authenticator and browser/native CI results do not establish physical-de
 
 ## Deployment and hosted verification
 
-PR #233 merged as `2488060cfecdd96c545cc6ba49da28683085f1e5`. Tested application source: `5dc0085b59f8dc699364b0aa01f64a9609370337`. Staging API source: `a9045f36133b9581821383e31d461ea79239ddbd`, preserving its previously staged runtime changes. Release tooling: `25556465cc8283d40092186572c47aace37bd61b` with the maintained native parity gate.
+PR #233 merged as `2488060cfecdd96c545cc6ba49da28683085f1e5`. Tested application source: `5dc0085b59f8dc699364b0aa01f64a9609370337`. Staging backend revision: `a9045f36133b9581821383e31d461ea79239ddbd`, preserving its previously staged runtime changes. Release tooling: `25556465cc8283d40092186572c47aace37bd61b` with the maintained native parity gate.
 
 Exact-source checks passed: [web/API CI](https://github.com/porchday/porchday/actions/runs/43660960901), [secret scan](https://github.com/porchday/porchday/actions/runs/43660960899), [iOS simulator](https://github.com/porchday/porchday/actions/runs/43660960951), [macOS build/tests](https://github.com/porchday/porchday/actions/runs/43660960914), and [staging CI](https://github.com/porchday/porchday/actions/runs/43660967377).
 
