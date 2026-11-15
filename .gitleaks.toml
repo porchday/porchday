@@ -163,3 +163,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['(?:^|/)docs/evidence/signup-clarity-release-2026-11-14\.md$']
 regexes = ['^a9045f36133b9581821383e31d461ea79239ddbd$']
+
+[[allowlists]]
+description = "Literal signature/proof prose in historical photo-swipe release evidence; not a credential."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['(?:^|/)docs/evidence/feed-photo-swipes-release-2026-11-14\.md$']
+regexes = ['^signature/proof$']
