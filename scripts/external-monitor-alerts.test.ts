@@ -55,3 +55,17 @@ it('records an isolated failure without notification and confirms contiguous fai
  const gap=advance(state,observation(60000,false),'gap');expect(gap.pending).toHaveLength(0);
  state=advance(JSON.parse(JSON.stringify(state)),observation(20000,false),'confirmed');expect(state.pending).toHaveLength(1);expect(state.pending[0].at).toBe(observation(0,false).at);
 });
+
+it('reports the union of observed failures across confirmation and separates skipped dependencies',()=>{
+ const first={...observation(0,false),checks:[{name:'login',ok:false,failure:'deadline' as const},{name:'logout',ok:false,failure:'dependency' as const},{name:'revocation',ok:false,failure:'dependency' as const}]};
+ const second={...observation(20000,false),checks:[{name:'login',ok:true},{name:'logout',ok:true},{name:'revocation',ok:true},{name:'protected_readiness',ok:false,failure:'deadline' as const}]};
+ let state=advance(initialState(),first,'first');state=advance(JSON.parse(JSON.stringify(state)),second,'confirmed');
+ expect(state.pending[0].failedChecks).toEqual(['login','protected_readiness']);expect(state.pending[0].notAttemptedChecks).toEqual(['logout','revocation']);
+ expect(alertBody(state.pending[0],'operator-mac')).toContain('Not attempted after an earlier failure: logout, revocation');
+ const recovered=advance(state,observation(40000,true),'good');expect(recovered.observedFailures).toBeUndefined();expect(recovered.observedDependencies).toBeUndefined();
+});
+it('preserves legacy pending event rendering and rejects private skipped-check content',()=>{
+ const legacy={id:'old',kind:'outage' as const,at:new Date(at).toISOString(),failedChecks:['login']};
+ expect(alertBody(legacy,'operator-mac')).not.toContain('Not attempted');
+ expect(()=>alertBody({...legacy,notAttemptedChecks:['private details']},'operator-mac')).toThrow();
+});

@@ -1,3 +1,4 @@
+import {readStorageText} from './storage-read-retry';
 import {z} from 'zod';
 import type {JournalStore} from './privacy-journal';
 import type {Env} from './types';
@@ -42,7 +43,7 @@ export async function readDenialCleanupHealth(env:Pick<Env,'SESSION_DENIAL_CLEAN
   if(!env.RECOVERY_JOURNAL)throw Error('SESSION_DENIAL_PROGRESS_UNAVAILABLE');
   const store=env.RECOVERY_JOURNAL as JournalStore;
   const progress=await Promise.race([
-   (async()=>{const object=await store.get(denialProgressKey);return object?parseDenialProgress(await object.text()):null;})(),
+   (async()=>{const object=await readStorageText(store,denialProgressKey);return object?parseDenialProgress(await object.text()):null;})(),
    new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('SESSION_DENIAL_PROGRESS_UNAVAILABLE')),2000);}),
   ]);
   return progress?denialProgressHealth(progress):{issues:['session_denial_cleanup_missing'],snapshot:null};
