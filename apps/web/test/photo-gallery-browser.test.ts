@@ -3,7 +3,7 @@ import {build} from 'esbuild';
 import {readFile} from 'node:fs/promises';
 import {chromium,webkit,type Page} from 'playwright';
 const origin='http://localhost:43219';
-async function fixture(page:Page){
+async function fixture(page:Page,local=false){
  const js=(await build({stdin:{contents:`
  import React from 'react';import{createRoot}from'react-dom/client';
  import{PhotoGallery,PhotoGalleryGroup,usePhotoGallery}from'./apps/web/src/PhotoGallery';import{invalidatePhotos}from'./apps/web/src/photo-cache';
@@ -14,7 +14,7 @@ async function fixture(page:Page){
  const source=(id,ids)=>({id,parentId:id,photos:async()=>ids.map(id=>id==='video'?video:photo(id))});
  function Open(){const open=usePhotoGallery();return <button onClick={e=>open(photo('one').media,undefined,e.currentTarget)}>Open first photo</button>;}
  const more=async cursor=>{window.pages.push(cursor);if(window.failPage)throw Error('More photos could not be loaded. Try again.');return cursor==='p1'?{sources:[source('empty-page',[])],next:'p2'}:{sources:[source('post-four',['four'])],next:null};};
- createRoot(document.getElementById('root')).render(<><PhotoGallery sources={[source('post-one',['one','video','two']),source('text-only',[]),source('post-three',['three'])]} next='p1' loadMore={more}><PhotoGalleryGroup id='post-one'><Open/></PhotoGalleryGroup></PhotoGallery><div style={{height:2000}}/></>);
+ createRoot(document.getElementById('root')).render(<><PhotoGalleryGroup id='outer-calendar-entry'><PhotoGallery sources={[source('post-one',['one','video','two']),source('text-only',[]),source('post-three',['three'])]} next='p1' loadMore={more}>${local?'<Open/>':"<PhotoGalleryGroup id='post-one'><Open/></PhotoGalleryGroup>"}</PhotoGallery></PhotoGalleryGroup><div style={{height:2000}}/></>);
  `,loader:'tsx',resolveDir:process.cwd()},bundle:true,write:false,format:'iife',define:{'process.env.NODE_ENV':'"production"'},plugins:[{name:'vault-fixture',setup(b){b.onResolve({filter:/^\.\/vault$/},()=>({path:'vault',namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:`export const useVault=()=>({member:{id:'member'},device:{id:'device'},keys:[{getFingerprint:()=> 'key'}],open:async row=>row.envelope.payload});`,loader:'js'}));}}]})).outputFiles[0].text;
  const css=await readFile('apps/web/src/styles.css','utf8')+await readFile('apps/web/src/retro.css','utf8');
  await page.route(origin+'/**',route=>route.fulfill({contentType:'text/html',body:`<meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}</style><div id="root"></div><script>${js}</script>`}));await page.goto(origin);
@@ -63,4 +63,8 @@ it('the real feed supplies ordered post photos, skips filtered/text/video items 
  };b.onResolve({filter:/^\.\/(vault|Social|PhotoCollection)$/},a=>({path:a.path,namespace:'fixture'}));b.onLoad({filter:/.*/,namespace:'fixture'},a=>({contents:mocks[a.path],loader:'tsx',resolveDir:process.cwd()}));}}]})).outputFiles[0].text;
  const css=await readFile('apps/web/src/styles.css','utf8');await page.route(origin+'/**',r=>r.fulfill({contentType:'text/html',body:`<style>${css}</style><div id="root"></div><script>${js}</script>`}));await page.goto(origin);await page.getByRole('button',{name:'Open first',exact:true}).click();await page.locator('.photo-viewer-stage img[alt=first]').waitFor();await page.getByRole('button',{name:'Next photo',exact:true}).click();await page.locator('.photo-viewer-stage img[alt=second]').waitFor();await page.getByRole('button',{name:'Next photo',exact:true}).click();await page.locator('.photo-viewer-stage img[alt=last]').waitFor();expect(await page.evaluate(()=>(window as any).feedPages)).toEqual([null,'next-page']);expect(await page.getByRole('button',{name:'Open hidden',exact:true}).count()).toBe(0);
  }finally{await browser.close();}
+},60000);
+
+it('a standalone post gallery isolates its own ordering from an outer calendar group',async()=>{
+ const browser=await chromium.launch();try{const page=await browser.newPage();await fixture(page,true);await page.getByRole('button',{name:'Open first photo'}).click();await caption(page,'one');await page.getByRole('button',{name:'Next photo',exact:true}).click();await caption(page,'two');}finally{await browser.close();}
 },60000);

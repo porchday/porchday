@@ -16,7 +16,7 @@ export function PhotoGalleryGroup({id,children}:{id:string;children:React.ReactN
 export function usePhotoGallery(){const open=useContext(Gallery),group=useContext(Group);return (media:MediaPayload,photoProof?:PhotoProof,trigger?:HTMLElement)=>open?.(media,group,photoProof,trigger)??false;}
 export function PhotoGallery({sources,next=null,loadMore,inherit=false,children}:{sources:GallerySource[];next?:string|null;loadMore?:(cursor:string)=>Promise<GalleryPage>;inherit?:boolean;children:React.ReactNode}){
  const parent=useContext(Gallery);
- return inherit&&parent?<>{children}</>:<GalleryController sources={sources} next={next} loadMore={loadMore}>{children}</GalleryController>;
+ return inherit&&parent?<>{children}</>:<Group.Provider value={undefined}><GalleryController sources={sources} next={next} loadMore={loadMore}>{children}</GalleryController></Group.Provider>;
 }
 function GalleryController({sources,next,loadMore,children}:{sources:GallerySource[];next:string|null;loadMore?: (cursor:string)=>Promise<GalleryPage>;children:React.ReactNode}){
  const latest=useRef({sources,next,loadMore});latest.current={sources,next,loadMore};
