@@ -226,7 +226,8 @@ suite("Authenticated account privacy journal boundary", () => {
     expect(sent.response.status).toBe(200);
     const mail = emails.filter(v=>v.subject==="Verify your Porchday email").at(-1)!;
     expect(mail.text).toContain("expires in 1 hour");
-    expect(mail.text).toContain("recovery secret");
+    expect(mail.text).toContain("recovery note and a spare key");
+    expect(mail.text).toContain("Your password signs you in.");
     const url = new URL(mail.text.match(/http:\/\/localhost:5173\/api\/auth\/verify-email\?\S+/)![0]);
     const checked = await call("verify-email"+url.search, undefined, "", {Accept:"text/html"});
     expect(checked.response.status).toBe(303);
