@@ -88,6 +88,9 @@ for bundle in [app,preview_extension]:
  signed=plistlib.loads(subprocess.check_output(['codesign','-d','--entitlements',':-',str(bundle)],stderr=subprocess.DEVNULL))
  assert group in signed.get('keychain-access-groups',[]), 'Notification keychain group must be signed'
  assert group==info.get('PorchdayNotificationKeychainGroup'), 'App and extension must share the same notification keychain'
+ if bundle==app:
+  domains=signed.get('com.apple.developer.associated-domains',[])
+  assert all('webcredentials:'+host in domains for host in ['porchday.org','porchday.com']), 'Signed app must permit recovery passkeys on both production domains'
 
 (p/'evidence.json').write_text(json.dumps({'source':subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip(),'bundleId':info['CFBundleIdentifier'],'version':info['CFBundleShortVersionString'],'build':info['CFBundleVersion'],'ipaSha256':hashlib.sha256(ipa[0].read_bytes()).hexdigest(),'uploaded':False},indent=2))
 PY

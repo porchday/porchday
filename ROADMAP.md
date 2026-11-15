@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**Delivered November 15:** [#228](https://github.com/porchday/porchday/issues/228) / [#49](https://github.com/porchday/porchday/issues/49), P1, `needs verification`: iOS TestFlight **498** includes the recovery passkey entitlement missing from build 424. Actual signed IPA, native tests, Apple processing and existing internal group availability verified. Physical-device creation/restore and clearer old-shell capability guidance remain open. [Release evidence](docs/evidence/recovery-native-passkeys-2026-11-15.md).
+
 **Delivered November 15:** [#228](https://github.com/porchday/porchday/issues/228), `needs verification`: recovery actions now confirm the login password inline, request an authenticator code when enabled, and resume without signing out or losing the local recovery form. Exact-source web/iOS/macOS checks and hosted staging/production flows passed. Physical-device keyboard/autofill remains follow-up. [Release evidence](docs/evidence/inline-recovery-confirmation-2026-11-15.md).
 
 **Delivered November 14:** [#235](https://github.com/porchday/porchday/issues/235), P2, `needs verification`: base-zoom photo swipes navigate within posts and across the filtered feed, including pagination. Staging/production encrypted-photo acceptance and exact-source web/iOS/macOS checks passed. Physical-device gestures remain pending. [Release evidence](docs/evidence/feed-photo-swipes-release-2026-11-14.md).
