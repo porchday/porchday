@@ -6,7 +6,7 @@ Issue [#235](https://github.com/porchday/porchday/issues/235), implementation [P
 
 At base zoom, deliberate horizontal swipes move through a post’s photos, then through subsequent photo-containing feed items in displayed/filter order. Reverse swipes move backward. Text-only posts and videos are skipped, further feed pages load on demand, and boundaries do not wrap. Standalone post viewers remain scoped to their post. Previous/next buttons and keyboard arrows provide alternatives; pinch and zoomed-in pan retain their behavior. Closing restores focus.
 
-Media remains encrypted in transit/storage with authenticated reads, signature/proof checks, expiry and access invalidation. Decrypted image URLs are memory-only and revoked on change/close. This release changes frontend assets only; API versions, database schema, recovery keys and reader floors remain unchanged.
+Media remains encrypted in transit/storage with authenticated reads, signature and photo-byte checks, expiry and access invalidation. Decrypted image URLs are memory-only and revoked on change/close. This release changes frontend assets only; API versions, database schema, recovery keys and reader floors remain unchanged.
 
 ## Verification
 
