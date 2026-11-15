@@ -1,3 +1,4 @@
+import {readStorageText} from './storage-read-retry';
 import type {JournalStore} from './privacy-journal';
 import type {Env} from './types';
 
@@ -17,7 +18,7 @@ async function recordFor(sessionId:string){
 }
 async function readExact(store:JournalStore,record:{key:string;text:string}){
  let object:Awaited<ReturnType<JournalStore['get']>>,text:string;
- try{object=await store.get(record.key);if(!object)return false;text=await object.text();}
+ try{object=await readStorageText(store,record.key);if(!object)return false;text=await object.text();}
  catch{throw new SessionDenialError('SESSION_DENIAL_READ_FAILED');}
  // Canonical immutable bytes include the session ID and format. A conflicting
  // entry is an integrity failure, never permission to authenticate or overwrite.

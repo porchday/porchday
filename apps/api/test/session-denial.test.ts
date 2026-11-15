@@ -44,14 +44,14 @@ describe('Independent session denial storage (not live authentication integratio
   expect([...s.rows]).toEqual(before);expect(s.rows.size).toBe(1);
  });
  it('preserves a committed denial when its acknowledgement and reconciliation read both fail',async()=>{
-  const s=storage();s.setFailure('after');s.get.mockRejectedValueOnce(Error('private network details'));
+  const s=storage();s.setFailure('after');s.get.mockRejectedValue(Error('private network details'));
   await expect(persistSessionDenial(s,first)).rejects.toThrow('SESSION_DENIAL_READ_FAILED');
-  expect(s.put).toHaveBeenCalledTimes(1);expect(await sessionDenied(s,first)).toBe(true);
+  expect(s.put).toHaveBeenCalledTimes(1);expect(s.get).toHaveBeenCalledTimes(3);s.get.mockImplementation(async key=>({etag:'stored',text:async()=>s.rows.get(key)!}));expect(await sessionDenied(s,first)).toBe(true);
  });
  it('fails closed on read or body transport errors, without disclosing their details',async()=>{
-  const s=storage();s.get.mockRejectedValueOnce(Error('private token'));
+  const s=storage();s.get.mockRejectedValue(Error('private token'));
   await expect(sessionDenied(s,first)).rejects.toThrow('SESSION_DENIAL_READ_FAILED');
-  s.get.mockResolvedValueOnce({etag:'x',text:async()=>{throw Error('private body');}});
+  s.get.mockResolvedValue({etag:'x',text:async()=>{throw Error('private body');}});
   await expect(sessionDenied(s,first)).rejects.toThrow('SESSION_DENIAL_READ_FAILED');
  });
  it.each(['{}','null','private malformed body',JSON.stringify({v:1,kind:'session-denial',sessionId:second})])('never accepts or overwrites a conflicting entry (%#)',async text=>{
@@ -112,4 +112,9 @@ describe('bounded denial publication',()=>{
  it('requires independent storage, including in development',async()=>{
   await expect(publishSessionDenial({},first)).rejects.toThrow('SESSION_DENIAL_NOT_CONFIGURED');
  });
+});
+
+it('reconciles a lost write acknowledgement through transient read errors without another PUT',async()=>{
+ const s=storage();s.setFailure('after');s.get.mockRejectedValueOnce(Error('transient'));
+ await persistSessionDenial(s,first);expect(s.put).toHaveBeenCalledTimes(1);expect(s.get).toHaveBeenCalledTimes(2);expect(await sessionDenied(s,first)).toBe(true);
 });
