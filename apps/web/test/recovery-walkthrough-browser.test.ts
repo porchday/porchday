@@ -79,7 +79,10 @@ it.each(['chromium','webkit'] as const)('%s keeps check-secret confirmation besi
   await page.getByLabel('Saved encryption recovery secret').fill(await page.evaluate(()=>(window as any).fixture.secret));
   await page.getByRole('button',{name:'Check saved secret',exact:true}).click();
   await page.getByRole('status').filter({hasText:'Your saved recovery note works'}).waitFor();await adjacent(page,'Check saved secret','status');
-  expect(await page.getByRole('button',{name:'Create a recovery passkey'}).isEnabled()).toBe(true);
+  const supported=await page.evaluate(()=>typeof PublicKeyCredential!=='undefined'&&!!navigator.credentials&&window.isSecureContext);
+  expect(await page.getByLabel('Saved encryption recovery secret').inputValue()).toBe(await page.evaluate(()=>(window as any).fixture.secret));
+  await expect.poll(()=>page.getByRole('button',{name:'Create a recovery passkey'}).isEnabled()).toBe(supported);
+  if(!supported)await page.getByText('This browser cannot create a passkey. Use another private device instead.',{exact:true}).waitFor();
   if(process.env.SIGNUP_SCREENSHOT_DIR){await mkdir(process.env.SIGNUP_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:process.env.SIGNUP_SCREENSHOT_DIR+'/'+engine+'-inline-feedback.png'});}
   await page.goto(origin+'/');await page.getByRole('button',{name:'Use another device instead'}).click();
   expect(await page.getByRole('button',{name:'Create a recovery passkey'}).count()).toBe(0);
