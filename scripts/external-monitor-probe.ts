@@ -1,7 +1,8 @@
+import {monitorFetch,type ConnectionEvidence} from './external-monitor-transport.ts';
 import {AsyncLocalStorage} from 'node:async_hooks';
 /** External account-readiness probe. Only fixed checks/statuses leave this module. */
 export type ProbeConfig={environment:'staging'|'production';healthToken:string;synthetic:{id:string;email:string;password:string}};
-export type Check={name:string;ok:boolean;status?:number;durationMs?:number;traceId?:string;spanId?:string;phase?:'headers'|'body'|'complete';headersMs?:number;bodyMs?:number;remainingBudgetMs?:number;startedOffsetMs?:number;transportCode?:string;failure?:'deadline'|'transport_or_response'|'dependency'};
+export type Check={name:string;connection?:ConnectionEvidence;ok:boolean;status?:number;durationMs?:number;traceId?:string;spanId?:string;phase?:'headers'|'body'|'complete';headersMs?:number;bodyMs?:number;remainingBudgetMs?:number;startedOffsetMs?:number;transportCode?:string;failure?:'deadline'|'transport_or_response'|'dependency'};
 export type Observation={v:1;at:string;environment:'staging'|'production';healthy:boolean;checks:Check[];durationMs:number;scope:'login_authorized_reads_logout_and_readiness';timing?:{version:2;journeyBudgetMs:number;legacyTenSecondJourneyExceeded:boolean}};
 // Availability is evaluated per operation; the journey cap prevents overlapping work.
 export const PROBE_REQUEST_TIMEOUT_MS=10000;
@@ -26,7 +27,7 @@ async function boundedJson(response:Response){
 
 export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?:()=>number;timeoutMs?:number}={}):Promise<Observation>{
  validateProbeConfig(config);
- const request=options.fetch??fetch,now=options.now??Date.now,started=now(),checks:Check[]=[];
+ const now=options.now??Date.now,started=now(),checks:Check[]=[];
  const origin=config.environment==='production'?'https://porchday.org':'https://staging.porchday.com';
  const statusOrigin=config.environment==='production'?'https://status.porchday.com':'https://staging-status.porchday.com';
  const local=new AsyncLocalStorage<{evidence:Partial<Check>;signal:AbortSignal}>(),traceId=crypto.randomUUID().replaceAll('-','');
@@ -37,7 +38,9 @@ export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?
   headers.set('traceparent',`00-${traceId}-${spanId}-01`);
   if(check){check.traceId=traceId;check.spanId=spanId;check.phase='headers';}
   const before=now();
-  const r=await request(url,{...init,headers,redirect:'manual',signal:context?.signal??controller.signal});
+  const requestInit:RequestInit={...init,headers,redirect:'manual',signal:context?.signal??controller.signal};
+  const connection:ConnectionEvidence={phase:'dns',attempts:[]};if(check&&!options.fetch)check.connection=connection;
+  const r=await (options.fetch?options.fetch(url,requestInit):monitorFetch(url,requestInit,connection));
   if(check){check.status=r.status;check.headersMs=Math.max(0,now()-before);check.phase='body';}
   if(r.status>=300&&r.status<400){await r.body?.cancel();throw Error('REDIRECT_REJECTED');}
   const bodyStart=now(),value=await boundedJson(r);if(check){check.bodyMs=Math.max(0,now()-bodyStart);check.phase='complete';}

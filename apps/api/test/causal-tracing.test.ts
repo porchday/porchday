@@ -1,5 +1,5 @@
 import {describe,it,expect,vi} from 'vitest';
-import {OperationTrace,causalSpan,parseTraceparent,safeRoute,causalError,type CausalRecord,d1CausalSink} from '../src/causal-tracing';
+import {OperationTrace,causalSpan,causalPhase,parseTraceparent,safeRoute,causalError,type CausalRecord,d1CausalSink} from '../src/causal-tracing';
 import {causalPostgres,causalPgQuery} from '../src/causal-database';
 import {tracedBindings} from '../src/causal-bindings';
 import type {Env} from '../src/types';
@@ -82,4 +82,11 @@ describe.skipIf(!process.env.CAUSAL_DATABASE_URL)('real database driver contract
    await new Promise<void>((resolve,reject)=>{pool.query('select 13 as value',(error,result)=>{if(error)reject(error);else{expect(result.rows[0].value).toBe(13);resolve();}});});
   });}finally{await pool.end();}h.trace.finish(200);await h.flush();expect(h.records.at(-1)!.reason).toBe('error');
  });
+});
+
+it('records denial phases and fixed storage failure codes without arbitrary error text',async()=>{
+ const h=harness();await h.trace.run(async()=>{causalPhase('denial_publish',12);causalPhase('denial_cleanup',34);await causalSpan('storage.read_retry',async()=>{});});h.trace.finish(200);await h.flush();
+ const text=JSON.stringify(h.records);expect(text).toContain('denial_publish');expect(text).toContain('denial_cleanup');expect(text).toContain('storage.read_retry');
+ for(const code of ['STORAGE_READ_UNAVAILABLE','SESSION_DENIAL_READ_FAILED','SESSION_DENIAL_UNCONFIRMED','JOURNAL_IO_DEADLINE'])expect(causalError(Error(code))).toBe(code);
+ expect(causalError(Error('STORAGE_READ_UNAVAILABLE private details'))).toBe('OPERATION_FAILED');
 });

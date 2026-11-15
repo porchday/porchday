@@ -108,16 +108,16 @@ describe('SQL candidate denial discovery',()=>{
   finally{release();await pending;}
  });
  it('a failure after refilling stops further dispatch and late reads cannot delete',async()=>{
-  const f=await fixture(30);const get=f.store.get.getMockImplementation()!;let reads=0,active=0,release!:()=>void;
+  const f=await fixture(30);const get=f.store.get.getMockImplementation()!;let reads=0,active=0,maxActive=0,release!:()=>void;const keys:string[]=[];
   const gate=new Promise<void>(r=>{release=r;});
   f.store.get.mockImplementation(async key=>{
    if(key===candidateProgressKey)return get(key);
-   const ordinal=++reads;active++;
+   const ordinal=++reads;active++;maxActive=Math.max(maxActive,active);keys.push(key);
    try{if(ordinal===7)throw Error('unavailable');if(ordinal!==1)await gate;return await get(key);}finally{active--;}
   });
   try{
-   await expect(f.sweep()).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');expect(reads).toBe(7);
-   release();await vi.waitFor(()=>expect(active).toBe(0));expect(reads).toBe(7);
+   await expect(f.sweep()).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');expect(reads).toBe(8);expect(keys[7]).toBe(keys[6]);expect(maxActive).toBeLessThanOrEqual(6);
+   release();await vi.waitFor(()=>expect(active).toBe(0));expect(reads).toBe(8);
    expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);
   }finally{release();}
  });
@@ -138,18 +138,18 @@ describe('SQL candidate denial discovery',()=>{
  });
  it('a failed sixth authority read cannot delete or checkpoint when other reads finish late',async()=>{
   const f=await fixture(7);for(let n=1;n<=7;n++)await persistSessionDenial(f.store,id(n));
-  const get=f.store.get.getMockImplementation()!;let release!:()=>void,reads=0,active=0;
+  const get=f.store.get.getMockImplementation()!;let release!:()=>void,reads=0,active=0,maxActive=0;const keys:string[]=[];
   const gate=new Promise<void>(resolve=>{release=resolve;});
   f.store.get.mockImplementation(async key=>{
    if(key===candidateProgressKey)return get(key);
-   const ordinal=++reads;active++;
+   const ordinal=++reads;active++;maxActive=Math.max(maxActive,active);keys.push(key);
    try{if(ordinal===6)throw Error('authority unavailable');await gate;return await get(key);}finally{active--;}
   });
   try{
    await expect(f.sweep()).rejects.toThrow('SESSION_DENIAL_CLEANUP_UNAVAILABLE');
-   expect(reads).toBe(6);expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);
+   expect(reads).toBe(7);expect(keys[6]).toBe(keys[5]);expect(maxActive).toBeLessThanOrEqual(6);expect(f.cleanup).not.toHaveBeenCalled();expect(f.records.has(candidateProgressKey)).toBe(false);
    release();await vi.waitFor(()=>expect(active).toBe(0));
-   expect(reads).toBe(6);expect(f.cleanup).not.toHaveBeenCalled();expect(f.sessions.size).toBe(7);
+   expect(reads).toBe(7);expect(keys[6]).toBe(keys[5]);expect(maxActive).toBeLessThanOrEqual(6);expect(f.cleanup).not.toHaveBeenCalled();expect(f.sessions.size).toBe(7);
   }finally{release();}
  });
  it('repeats discovery after an unknown SQL commit and preserves unrelated sessions',async()=>{

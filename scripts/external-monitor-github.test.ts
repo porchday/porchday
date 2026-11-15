@@ -28,3 +28,10 @@ describe('GitHub owner alert delivery',()=>{
   await expect(deliver(123,event,'operator-mac',{transport})).rejects.toThrow('MONITOR_EVENT_CONFLICT');
  });
 });
+
+it('preserves skipped dependencies through the workflow relay payload',async()=>{
+ const value={...event,notAttemptedChecks:['logout','revocation']};let payload:any;
+ const transport:GitHubTransport=async(method,path,body)=>{if(method==='POST'){payload=body;return {};}return path.includes('/comments?')?[]:target;};
+ await expect(deliver(52,value,'operator-mac',{transport,relay:true})).rejects.toThrow('NOTIFICATION_PENDING');
+ expect(JSON.parse(payload.inputs.payload).event).toEqual(value);
+});
