@@ -1,3 +1,4 @@
+import {readStorageText} from './storage-read-retry';
 import {Pool} from 'pg';
 import type {Env,DenialJob} from './types';
 import type {JournalStore} from './privacy-journal';
@@ -63,7 +64,7 @@ export async function readManagedDenialCleanupHealth(env:ModeEnv&Partial<Pick<En
   if(mode==='disabled'||mode==='shadow')return await readCandidateCleanupHealth(env);
   if(!env.RECOVERY_JOURNAL)throw new DenialCleanupError();
   const progress=await bounded(()=>Promise.all(denialPartitions.map(async partition=>{
-   const object=await env.RECOVERY_JOURNAL!.get(partitionProgressKey(partition));
+   const object=await readStorageText(env.RECOVERY_JOURNAL! as JournalStore,partitionProgressKey(partition));
    return object?parsePartitionProgress(await object.text(),partition):null;
   })),2000);
   return partitionCleanupHealth(progress);

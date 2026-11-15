@@ -46,6 +46,10 @@ describe('partition cleanup runtime admission and modes',()=>{
   const result=await readManagedDenialCleanupHealth(e);expect(get).toHaveBeenCalledTimes(3);expect(result.issues).toContain('session_denial_pass_stale');expect(result.snapshot?.pass_age_seconds).toBe(301);expect(get).not.toHaveBeenCalledWith(candidateProgressKey);
   get.mockResolvedValueOnce(null as never);expect((await readManagedDenialCleanupHealth(e)).issues).toEqual(['session_denial_cleanup_missing']);
  });
+ it('recovers a transient partition health read within the shared deadline',async()=>{
+  const e=env(),get=vi.fn(async(key:string)=>{const partition=[0,1,2].find(p=>partitionProgressKey(p)===key);if(partition===undefined)throw Error('legacy read');return{etag:'e',text:async()=>JSON.stringify(record(partition))};});get.mockRejectedValueOnce(Error('temporary R2 failure'));e.RECOVERY_JOURNAL={get} as never;
+  expect((await readManagedDenialCleanupHealth(e)).issues).toEqual([]);expect(get).toHaveBeenCalledTimes(4);expect(get).not.toHaveBeenCalledWith(candidateProgressKey);
+ });
  it('keeps strict v4 readiness when rolling back active to dual after legacy progress has aged out',async()=>{
   const e=env('active');let stalled=false;
   const get=vi.fn(async(key:string)=>{const partition=[0,1,2].find(p=>partitionProgressKey(p)===key);if(partition===undefined)throw Error('legacy checkpoint is stale');return{etag:'e',text:async()=>JSON.stringify(record(partition,stalled&&partition===2?301000:0))};});e.RECOVERY_JOURNAL={get} as never;
