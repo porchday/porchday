@@ -30,9 +30,11 @@ async function serve(page:Page,source:string){
    if(!state.devices.length)state.devices=[fixture.device];
    if(r.method()==='GET'&&path==='/api/v1/key-recovery')return route.fulfill({json:state});
    if(path==='/api/v1/keys/backup')return route.fulfill({json:{envelope:fixture.backup}});
+   if(r.method()==='DELETE'&&path.startsWith('/api/v1/devices/')){state.devices.find((d:any)=>path.endsWith(d.id)).revoked_at=new Date().toISOString();return route.fulfill({json:{ok:true}});}
    const body=r.postDataJSON();writes.push({path,body});
    if(path.endsWith('/methods'))state.methods.push({id:body.statement.id,kind:'passkey',record:body,created_at:new Date().toISOString()});
    if(body?.statement?.action==='complete')state.required=false;
+   if(body?.statement?.action==='remove')state.methods.find((m:any)=>m.id===body.statement.id).disabled_at=new Date().toISOString();
    return route.fulfill({json:{ok:true}});
   }
   return route.fulfill({contentType:'text/html',body:'<meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/style.css"><main class="wrap"><div id="root"></div></main><script type="module" src="/module.js"></script>'});
@@ -135,5 +137,21 @@ it('shows Continue only after the server confirms both the saved note and a comp
   state.check={kit_checked_at:new Date().toISOString()};await page.reload();
   await page.getByRole('heading',{name:'You’re ready'}).waitFor();
   await page.getByRole('button',{name:'Continue to Porchday'}).click();await page.getByRole('heading',{name:'Feed'}).waitFor();
+ }finally{await browser.close();}
+},60000);
+
+it('keeps removal confirmation next to the removed method without calling it ready',async()=>{
+ const browser=await chromium.launch();try{
+  const page=await browser.newPage({viewport:{width:390,height:700}}),{state}=await serve(page,await bundle());
+  state.devices=[{id:'22222222-2222-4222-8222-222222222222',fingerprint:'a'.repeat(64)},{id:'44444444-4444-4444-8444-444444444444',fingerprint:'b'.repeat(64)}];
+  state.methods=[{id:'33333333-3333-4333-8333-333333333333',kind:'passkey',created_at:new Date().toISOString(),record:{statement:{label:'Spare key',passkey:{backupEligible:true}}}}];
+  await page.goto(origin+'/settings');await page.getByText('Manage saved keys and devices',{exact:true}).click();
+  page.on('dialog',d=>d.accept());await page.getByRole('button',{name:'Remove method',exact:true}).click();
+  await page.getByRole('status').filter({hasText:'Recovery method removed.'}).waitFor();await adjacent(page,'Remove method','status');
+  expect(await page.getByRole('button',{name:'Remove method',exact:true}).isDisabled()).toBe(true);
+  expect(await page.getByRole('button',{name:'Test passkey',exact:true}).count()).toBe(0);
+  expect(await page.getByText(/Removed · Added/).count()).toBe(1);
+  await page.getByRole('button',{name:'Revoke device',exact:true}).click();await page.getByRole('status').filter({hasText:'Device access revoked.'}).waitFor();await adjacent(page,'Revoke device','status');
+  expect(await page.getByRole('button',{name:'Revoke device',exact:true}).isDisabled()).toBe(true);
  }finally{await browser.close();}
 },60000);
