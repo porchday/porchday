@@ -119,6 +119,7 @@ suite('Key recovery with real encryption and runtime RLS', () => {
       const rows=(await request(owner.id,'/key-recovery')).data.responses;
       const recovered=await Promise.all(rows.map(async(r:any)=>{const c=contacts.find(c=>c.id===r.member_id)!;return(await openRecoveryPayload<{share:string}>(r.record.statement.ciphertext,bindings(requester.fingerprint,requestId),key,c.publicKey)).share;}));
       expect(await combineContactRecoveryShares(recovered)).toBe(owner.secret);
+      expect((await request(owner.id,'/key-recovery')).data.pairedDeviceReady).toBe(false);
       const proof=await signStatement({v:1,purpose:'porchday-recovery-finish',requestId,memberId:owner.id,cancel:true},key);
       expect((await request(owner.id,'/key-recovery/requests/'+requestId+'/finish','POST',{cancel:true,proof})).status).toBe(200);
       expect((await request(contacts[2].id,'/key-recovery/responses','POST',await makeResponse(2))).status).toBe(409);
@@ -140,10 +141,13 @@ suite('Key recovery with real encryption and runtime RLS', () => {
       const proof=await signStatement({v:1,purpose:'porchday-recovery-finish',requestId:id,memberId:owner.id,cancel:false},key);
       expect((await request(owner.id,'/key-recovery/requests/'+id+'/finish','POST',{cancel:false,proof})).status).toBe(200);
       expect((await request(owner.id,'/key-recovery/pair-approval','POST',approval)).status).toBe(409);
+      expect((await request(owner.id,'/key-recovery')).data.pairedDeviceReady).toBe(true);
       const current=(await request(owner.id,'/keys/backup')).data.envelope;
       expect((await readRecoveryBackup(current,owner.secret,owner.id)).devices.map(d=>d.key.getFingerprint())).toContain(keys.fingerprint);
       expect((await request(owner.id,'/key-recovery/actions','POST',await action(owner,'kit-checked',owner.id,owner.recoveryFingerprint))).status).toBe(200);
       expect((await request(owner.id,'/key-recovery/actions','POST',await action(owner,'complete',owner.id))).status).toBe(200);
+      expect((await request(owner.id,'/devices/'+deviceId,'DELETE')).status).toBe(200);
+      expect((await request(owner.id,'/key-recovery')).data.pairedDeviceReady).toBe(false);
     });
     it('expires pairing, rejects revoked approvers, and consumes invitations only once',async()=>{
       const owner=await person(),id=randomUUID(),deviceId=randomUUID(),keys=await generateDeviceKeys(owner.id,deviceId),key=await unlockPrivateKey(keys.encryptedPrivateKey,keys.recoverySecret);

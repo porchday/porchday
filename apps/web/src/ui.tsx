@@ -212,6 +212,16 @@ export function Alert({
     </div>
   ) : null;
 }
+/** Place immediately after the initiating control. Keep feedback visible on small screens. */
+export function ActionFeedback({error,notice}:{error?:string;notice?:string}) {
+  const ref=React.useRef<HTMLDivElement>(null);
+  useEffect(()=>{
+    if(!error&&!notice)return;
+    const frame=requestAnimationFrame(()=>ref.current?.scrollIntoView({block:'nearest',behavior:'instant'}));
+    return()=>cancelAnimationFrame(frame);
+  },[error,notice]);
+  return error||notice?<div ref={ref} className="action-feedback"><Alert>{error}</Alert><Alert success>{notice}</Alert></div>:null;
+}
 export function Field({
   label,
   help,

@@ -19,6 +19,10 @@ test.skipIf(!enabled)('invite-bound signup verifies email, password reset revoke
   expect(signup.status).toBe(200);
   const member=await pool.query('SELECT app.auth_member_status($1::uuid) AS status',[id]);expect(member.rows[0].status).toBe('active');
   expect(deliveries[0].subject).toBe('Verify your Porchday email');
+  expect(deliveries[0].text).toContain('This link expires in 1 hour');
+  expect(deliveries[0].text).toContain('You don’t need an existing passkey');
+  expect(deliveries[0].text).toContain('Your password signs you in');
+  expect(deliveries[0].text).toContain('Never forward this link');
   const blocked=await call('sign-in/email',{email,password:'a-long-synthetic-password-123'});expect(blocked.status).toBe(403);
   const verifyURL=deliveries[0].text.match(/http:\/\/localhost:8787\/api\/auth\/verify-email\?\S+/)![0];
   expect((await auth.handler(new Request(verifyURL))).status).toBeLessThan(400);

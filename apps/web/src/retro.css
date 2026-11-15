@@ -2323,11 +2323,11 @@ body
 .domain-move-notice details p { max-width: 78ch; margin-top: 6px; }
 .domain-unlock-hint { font-size: 14px; }
 
-/* Keep the requested tagline on one unbolded line; narrow screens can scroll it. */
+/* Keep login copy readable without horizontal scrolling on phones. */
 .porchday-tagline {
   font-weight: normal;
-  white-space: nowrap;
-  overflow-x: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
   max-width: 100%;
   padding-bottom: 4px;
 }
@@ -2339,3 +2339,5 @@ body
 .auth-card:has(.porchday-tagline) > h1 { text-align: center; }
 
 .feed-photo-card { padding-bottom: 16px; }
+
+.action-feedback { scroll-margin-block: 1rem 7rem; }

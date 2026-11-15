@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
 import {get} from './api';
-import {Alert, Button, Field, useAction} from './ui';
+import {ActionFeedback, Button, Field, useAction} from './ui';
 import {verifyRecoveryBackup, type RecoveryBackup} from './recovery-check';
 
 export function RecoverySettings({memberId=''}:{memberId?:string}={}) {
@@ -22,8 +22,7 @@ export function RecoverySettings({memberId=''}:{memberId?:string}={}) {
       <Field label="Saved encryption recovery secret" type="password" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={secret} onChange={event => setSecret(event.target.value)} required disabled={action.busy}/>
       <Button variant="outline" busy={action.busy} disabled={!secret.trim()}>Check saved secret</Button>
     </form>
-    <Alert>{action.error}</Alert>
-    <Alert success>{action.notice}</Alert>
+    <ActionFeedback error={action.error} notice={action.notice}/>
     <p className="small-copy">Keep a second private copy somewhere independent of this device. If you cannot find the secret, stay signed in: do not delete the account, reinstall the app or clear its storage. Support cannot reconstruct lost encryption keys.</p>
   </section>;
 }

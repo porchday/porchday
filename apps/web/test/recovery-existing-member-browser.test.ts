@@ -52,10 +52,10 @@ it.each(['chromium','webkit'] as const)('%s preserves existing-device and origin
     await page.getByText('Existing encrypted history remains readable',{exact:true}).waitFor();
     await expect.poll(()=>recoveryReads.length).toBeGreaterThan(0);
     expect(await page.getByRole('button',{name:'Share post',exact:true}).isEnabled()).toBe(true);
-    expect(await page.getByRole('heading',{name:'Protect your access'}).count()).toBe(0);
+    expect(await page.getByRole('heading',{name:'Keep your photos and posts safe'}).count()).toBe(0);
     expect(mutations.filter(path=>path.startsWith('/api/v1/key-recovery')||path==='/api/v1/devices')).toEqual([]);
     await page.reload();await page.getByText('Existing encrypted history remains readable',{exact:true}).waitFor();
-    expect(await page.getByRole('heading',{name:'Protect your access'}).count()).toBe(0);
+    expect(await page.getByRole('heading',{name:'Keep your photos and posts safe'}).count()).toBe(0);
     await context.close();
   }}finally{await browser.close();}
 });

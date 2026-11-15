@@ -1,7 +1,7 @@
 import { loginDestination } from "./routes";
 import React, { useEffect, useRef, useState } from "react";
 import { auth, post, localDate } from "./api";
-import { Logo, Icon, Button, Field, Alert, useAction, navigate } from "./ui";
+import { Logo, Icon, Button, Field, Alert, ActionFeedback, useAction, navigate } from "./ui";
 import { BackgroundControls } from "./BackgroundControls";
 import { ColorSchemeControls } from "./ColorSchemeControls";
 export function PublicHeader({ member = false }: { member?: boolean }) {
@@ -235,9 +235,8 @@ export function AuthPage({
                   : "If the request is eligible, a message with your next step is on its way. Check your spam folder, too."}
               </p>
               {(join || verify) && <>
-                <p>Check your spam folder if it hasn’t arrived. After your first login, we’ll help you save a recovery secret for your private content.</p>
-                <Alert>{action.error}</Alert>
-                <Button busy={action.busy} disabled={now < resendAt} onClick={resend}>{now < resendAt ? `Resend available in ${Math.ceil((resendAt - now) / 1000)}s` : "Resend verification email"}</Button>
+                <p>After you verify your email, sign in here. We’ll help you save a recovery note and a spare key for your private photos and posts. You don’t need an existing passkey. Check spam if the email hasn’t arrived.</p>
+                <Button busy={action.busy} disabled={now < resendAt} onClick={resend}>{now < resendAt ? `Resend available in ${Math.ceil((resendAt - now) / 1000)}s` : "Resend verification email"}</Button><ActionFeedback error={action.error} notice={action.notice}/>
                 <p className="small-copy">Wrong email address? Use the address that received your invitation. An invitation cannot be transferred to a different address. Ask your inviter for a new invitation if that address is wrong; don’t create another account to correct a typo.</p>
               </>}
               <a className="button primary" href="/login">
@@ -246,7 +245,6 @@ export function AuthPage({
             </div>
           ) : (
             <form onSubmit={submit}>
-              <Alert>{action.error}</Alert>
               {secondFactor && (
                 <>
                   <Field
@@ -408,6 +406,7 @@ export function AuthPage({
                           : "Log in"}
                 <Icon name="arrow" size={18} />
               </Button>
+              <ActionFeedback error={action.error} notice={action.notice}/>
             </form>
           )}
           {!done && verificationState !== "verified" && <div className="auth-bottom">
