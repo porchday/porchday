@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**Current owner follow-up November 15:** [#228](https://github.com/porchday/porchday/issues/228): confirm the login password inline when recovery actions need recent authentication, retain MFA and the current session, preserve the local recovery form, and deploy after exact-source and hosted verification.
+**Delivered November 15:** [#228](https://github.com/porchday/porchday/issues/228), `needs verification`: recovery actions now confirm the login password inline, request an authenticator code when enabled, and resume without signing out or losing the local recovery form. Exact-source web/iOS/macOS checks and hosted staging/production flows passed. Physical-device keyboard/autofill remains follow-up. [Release evidence](docs/evidence/inline-recovery-confirmation-2026-11-15.md).
 
 **Delivered November 14:** [#235](https://github.com/porchday/porchday/issues/235), P2, `needs verification`: base-zoom photo swipes navigate within posts and across the filtered feed, including pagination. Staging/production encrypted-photo acceptance and exact-source web/iOS/macOS checks passed. Physical-device gestures remain pending. [Release evidence](docs/evidence/feed-photo-swipes-release-2026-11-14.md).
 
