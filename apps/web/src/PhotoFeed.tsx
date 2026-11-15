@@ -1,3 +1,4 @@
+import {PhotoGallery,PhotoGalleryGroup,type GalleryPage,type GallerySource} from './PhotoGallery';
 import {ReadableFeedItem} from "./FeedUnread";
 import {ActivityAuthor,postAudienceLabel} from "./ActivityAuthor";
 import {useCalendarScrollAnchor} from "./calendar-scroll-anchor";
@@ -18,9 +19,17 @@ export function usePhotos(month?:string,enabled=true,owned=false,content:FeedCon
  const vault=useVault(),action=useAction(),generation=useRef(0),loading=useRef(false);
  const [clock,setClock]=useState(Date.now());
  const [entries,setEntries]=useState<Entry[]>([]),[next,setNext]=useState<string|null>(null),[loaded,setLoaded]=useState(false);
- async function load(after?:string){
+ type Page={entries:Entry[];next:string|null};
+ const pendingPage=useRef<{cursor?:string;work:Promise<Page|undefined>}|null>(null);
+ async function load(after?:string):Promise<Page|undefined>{
+  const pending=pendingPage.current;if(after&&pending){const page=await pending.work;if(pending.cursor===after)return page;}
+  const work=performLoad(after);pendingPage.current={cursor:after,work};
+  try{return await work;}finally{if(pendingPage.current?.work===work)pendingPage.current=null;}
+ }
+ async function performLoad(after?:string){
   if(after&&loading.current)return;
   const current=++generation.current;loading.current=true;
+  let page:{entries:Entry[];next:string|null}|undefined;
   await action.run(async()=>{
    let result;
    try{result=await get("/photo-feed?"+new URLSearchParams({timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,...(content!=="photos"?{content}:{}),...(order!=="date"?{order}:{}),...(month?{month}:{}),...(owned?{owner:"me"}:{}),...(after?{after}:{})}));}catch(error){if(current===generation.current&&accessLost(error)){setEntries([]);setNext(null);}throw error;}
@@ -36,9 +45,10 @@ export function usePhotos(month?:string,enabled=true,owned=false,content:FeedCon
     }catch(error){return {...entry,error:message(error)};}
    }));
    if(current!==generation.current)return;
-   setEntries(old=>after?[...old,...decoded.filter(e=>!old.some(o=>o.id===e.id&&o.kind===e.kind))]:decoded);setNext(result.next||null);setLoaded(true);
+   setEntries(old=>after?[...old,...decoded.filter(e=>!old.some(o=>o.id===e.id&&o.kind===e.kind))]:decoded);setNext(result.next||null);setLoaded(true);page={entries:decoded,next:result.next||null};
   });
   if(current===generation.current)loading.current=false;
+  return page;
  }
  useEffect(()=>{if(!enabled)return;setLoaded(false);setEntries([]);setNext(null);void load();const refresh=()=>{if(document.visibilityState!=="hidden")void load();};const timer=setInterval(()=>setClock(Date.now()),1000);document.addEventListener("visibilitychange",refresh);window.addEventListener("online",refresh);window.addEventListener("porchday:posts-shared",refresh);return()=>{clearInterval(timer);document.removeEventListener("visibilitychange",refresh);window.removeEventListener("online",refresh);generation.current++;loading.current=false;window.removeEventListener("porchday:posts-shared",refresh);};},[month,vault.member.id,enabled,owned,content,order]);
  const available=entries.filter(entry=>{const expires=entry.photo?.expires_at||entry.post?.effective_expires_at||entry.post?.expires_at;return !expires||Date.parse(expires)>clock;});
@@ -54,9 +64,10 @@ function EntryCardContent({entry,refresh}:{entry:Entry;refresh:()=>void}){
 }
 function EntryCard({entry,refresh}:{entry:Entry;refresh:()=>void}){
  const kind=entry.kind==='photo'?'photo':'post',id=kind==='photo'?entry.id:entry.post?.id;
- return id?<ReadableFeedItem item={{kind,id}} ready={!entry.error} photo={kind==='photo'}><EntryCardContent entry={entry} refresh={refresh}/></ReadableFeedItem>:<EntryCardContent entry={entry} refresh={refresh}/>;
+ return <PhotoGalleryGroup id={entry.kind+entry.id}>{id?<ReadableFeedItem item={{kind,id}} ready={!entry.error} photo={kind==='photo'}><EntryCardContent entry={entry} refresh={refresh}/></ReadableFeedItem>:<EntryCardContent entry={entry} refresh={refresh}/>}</PhotoGalleryGroup>;
 }
 export function PhotoFeed({authorFilter,content="photos",publishedPost,onReconciled}:{authorFilter:AuthorFilter;content?:FeedContent;publishedPost?:PublishedPost|null;onReconciled?:()=>void}){
+ const vault=useVault();
  const data=usePhotos(undefined,true,false,content,"shared"),sentinel=useRef<HTMLDivElement>(null);
  useEffect(()=>{
   if(!data.next||data.busy||data.error||!sentinel.current)return;
@@ -67,7 +78,14 @@ export function PhotoFeed({authorFilter,content="photos",publishedPost,onReconci
  const recentEntry:Entry|null=recent?{id:recent.row.id,kind:"post",author_id:recent.row.author_id,author_handle:recent.row.author_handle,day:localDay(new Date(recent.row.created_at)),post:recent.row,photo:null,decoded:recent.content}:null;
  const merged=recentEntry?[recentEntry,...data.entries.filter(e=>!(e.kind==="post"&&e.id===recentEntry.id))]:data.entries;
  const visible=merged.filter(e=>matchesAuthor(e,authorFilter)&&(content!=="photos"||e.kind!=="post"));
- return <><Alert>{data.error}</Alert><div className="activity-feed">{visible.map(entry=><EntryCard key={entry.kind+entry.id} entry={entry} refresh={()=>{if(recent?.row.id===entry.id)onReconciled?.();void data.load();}}/>)}</div>{data.busy&&<Loading/>}{data.loaded&&!data.error&&!data.next&&!visible.length&&<Empty icon="photo" title="Nothing in this view"><a href="/share">Share something</a>, or change your filters.</Empty>}<div ref={sentinel}/>{data.next&&<Button busy={data.busy} onClick={()=>data.load(data.next!)}>Load more activity</Button>}</>;
+ function sources(entries:Entry[]):GallerySource[]{return entries.map(entry=>({id:entry.kind+entry.id,parentId:entry.post?.id??entry.photo?.id,photos:async()=>{
+  const expires=entry.photo?.expires_at||entry.post?.effective_expires_at||entry.post?.expires_at;if(expires&&Date.parse(expires)<=Date.now())return [];
+  if(entry.kind==='post'&&entry.post){try{const decoded=entry.decoded??await vault.open(entry.post);return (decoded.media??[]).map(media=>({media}));}catch{return [];}}
+  return entry.media?[{media:entry.media,photoProof:entry.photoProof}]:[];
+ }}));}
+ async function morePhotos(cursor:string):Promise<GalleryPage>{const page=await data.load(cursor);if(!page)throw Error('More photos could not be loaded. Try again.');return {sources:sources(page.entries.filter(e=>matchesAuthor(e,authorFilter)&&(content!=="photos"||e.kind!=="post"))),next:page.next};}
+
+ return <PhotoGallery key={content+':'+authorFilter.audience} sources={sources(visible)} next={data.next} loadMore={morePhotos}><Alert>{data.error}</Alert><div className="activity-feed">{visible.map(entry=><EntryCard key={entry.kind+entry.id} entry={entry} refresh={()=>{if(recent?.row.id===entry.id)onReconciled?.();void data.load();}}/>)}</div>{data.busy&&<Loading/>}{data.loaded&&!data.error&&!data.next&&!visible.length&&<Empty icon="photo" title="Nothing in this view"><a href="/share">Share something</a>, or change your filters.</Empty>}<div ref={sentinel}/>{data.next&&<Button busy={data.busy} onClick={()=>data.load(data.next!)}>Load more activity</Button>}</PhotoGallery>;
 }
 function PhotoMonth({month,authorFilter,content}:{month:Date;authorFilter:AuthorFilter;content:FeedContent}){
  const {ref,near}=useNearViewport<HTMLElement>(true,6);

@@ -2341,3 +2341,7 @@ body
 .feed-photo-card { padding-bottom: 16px; }
 
 .action-feedback { scroll-margin-block: 1rem 7rem; }
+
+.photo-viewer-navigation { display:flex; align-items:center; justify-content:space-between; gap:1rem; padding:.5rem 1rem; flex-shrink:0; }
+.photo-viewer-navigation button { min-width:44px; min-height:44px; }
+.photo-viewer-navigation span { font-size:.875rem; text-align:center; }

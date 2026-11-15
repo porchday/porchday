@@ -1,3 +1,4 @@
+import {PhotoGallery,usePhotoGallery} from './PhotoGallery';
 import {CachedEncryptedPhoto} from "./CachedEncryptedPhoto";
 import {causeOf} from './causal-links';
 import {PostText} from "./PostText";
@@ -1097,13 +1098,13 @@ export function PostCard({
           <Tags value={content.tags}/>
           {row.on_behalf_of && <p className="muted">Posted on behalf of {validTags(content.tags).find(t=>t.kind==="child"&&t.id===row.on_behalf_of)?.label||"a child"} by @{row.author_handle||"the author"}.</p>}
           {content.media && (
-            <div
+            <PhotoGallery inherit sources={[{id:row.id,photos:async()=>content.media!.map(media=>({media}))}]}><div
               className={`post-photos photos-${Math.min(content.media.length, 3)}`}
             >
               {content.media.map((media) => (
                 <EncryptedPhoto key={media.id} media={media} />
               ))}
-            </div>
+            </div></PhotoGallery>
           )}
         </>
       )}
@@ -1159,6 +1160,8 @@ export function PostCard({
 }
 export function EncryptedPhoto(props:{media:MediaPayload;thumbnail?:boolean;photoProof?:PhotoProof}){return (props.media.videoVersion===2||props.media.videoVersion===3)?<SegmentedVideo media={props.media} thumbnail={props.thumbnail} photoProof={props.photoProof}/>:props.media.mime==="image/jpeg"?<CachedEncryptedPhoto {...props}/>:<LegacyEncryptedPhoto {...props}/>;}
 function LegacyEncryptedPhoto({ media, thumbnail=false, photoProof }: { media: MediaPayload; thumbnail?:boolean; photoProof?:PhotoProof }) {
+ const gallery=usePhotoGallery();
+ const openViewer=(e:React.SyntheticEvent<HTMLElement>)=>{if(!gallery(media,photoProof,e.currentTarget))setViewer(true);};
   const vault = useVault();
   const { ref: photoRef, near } = useNearViewport<HTMLDivElement>();
   const imageRef = useRef<HTMLImageElement>(null);
@@ -1268,8 +1271,8 @@ function LegacyEncryptedPhoto({ media, thumbnail=false, photoProof }: { media: M
         role={thumbnail?undefined:"button"}
         tabIndex={thumbnail?undefined:0}
         aria-label={thumbnail?undefined:`Open photo: ${media.alt||"Shared photo"}`}
-        onClick={thumbnail?undefined:()=>setViewer(true)}
-        onKeyDown={thumbnail?undefined:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();setViewer(true);}}}
+        onClick={thumbnail?undefined:openViewer}
+        onKeyDown={thumbnail?undefined:e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();openViewer(e);}}}
         className={thumbnail?undefined:"viewable-photo"}
       />}
       {!thumbnail&&!video&&viewer&&<PhotoViewer src={url} alt={media.alt||""} onClose={()=>setViewer(false)}/>}
