@@ -1,3 +1,4 @@
+import {recoveryAuthTime} from './recent-auth';
 import {authSchemaGate} from './auth-schema';
 import {phaseTiming} from './request-timing';
 import { createMiddleware } from 'hono/factory';
@@ -34,7 +35,7 @@ export const requireMember=createMiddleware<{Bindings:Env;Variables:Variables}>(
    || /^\/api\/v1\/exports(?:\/|$)/.test(c.req.path)
    || (c.req.method==='DELETE' && (c.req.path==='/api/v1/account'||/^\/api\/v1\/groups\/[a-f0-9-]{36}$/.test(c.req.path)));
   if(!rows[0]?.status || ['hold','deleting','deleted','security_hold'].includes(rows[0].status) || (rows[0].status==='suspended'&&!dataOnly))return c.json({error:{code:'ACCOUNT_UNAVAILABLE',message:'This account is unavailable. Recovery and appeals remain available.'}},403);
-  c.set('memberId',session.user.id);c.set('sessionId',session.session.id);c.set('authTime',new Date(session.session.createdAt).getTime());
+  c.set('memberId',session.user.id);c.set('sessionId',session.session.id);c.set('authTime',await recoveryAuthTime(c,session.user.id,session.session.id,new Date(session.session.createdAt).getTime()));
   await next();
  } finally {if(!prepared)c.executionCtx.waitUntil(pool.end());}
 });

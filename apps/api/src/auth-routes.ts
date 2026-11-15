@@ -1,3 +1,4 @@
+import {recoveryConfirmationCookie} from './recent-auth';
 import {readVerificationResult,verificationRedirect} from './verification-result';
 import {logoutJournalTiming,measureJournalPhase} from './journal-timing';
 import {publishSessionDenial} from './session-denial';
@@ -30,6 +31,7 @@ function reject(
   throw new AuthRejection(code, status);
 }
 const allowed = new Set([
+  "confirm-password",
   "invitation-policy",
   "sign-in/email",
   "sign-up/email",
@@ -79,7 +81,7 @@ export const authMailRoutes = new Set([
 const sensitive = (path: string) =>
   freshSessionRoutes.has(path) ||
   factorChecks.has(path) ||
-  ["sign-out", "verify-email", "reset-password"].includes(path);
+  ["sign-out", "verify-email", "reset-password", "confirm-password"].includes(path);
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
 type Authorization = {
   memberId: string;
@@ -249,7 +251,7 @@ async function authorize(
       ["hold", "deleted", "deleting", "suspended"].includes(status)
     )
       reject("ACCOUNT_UNAVAILABLE", 403);
-    return { memberId: session.user.id, sessionId: session.session.id, auth, journal: true };
+    return { memberId: session.user.id, sessionId: session.session.id, auth, journal: path !== "confirm-password" };
   }
   if (factorChecks.has(path)) {
     // Hono verifies the same standard HMAC-SHA256 signed-cookie format as
@@ -365,6 +367,12 @@ authRoutes.all("/*", async (c) => {
     const proof = sensitive(path)
       ? await measureJournalPhase(logoutTiming,'initial_authorization',()=>authorize(c, physicalPool, path, incoming))
       : null;
+    if(path==='confirm-password'){
+      if(!proof?.memberId||!proof.sessionId)reject('UNAUTHORIZED',401);
+      const rateKey=await hashToken(c.env.BETTER_AUTH_SECRET+'|recovery-confirmation|'+proof.memberId);
+      const attempts=await physicalPool.query(`INSERT INTO public.auth_rate_limits(key,count,expires_at) VALUES($1,1,now()+interval '1 minute') ON CONFLICT(key) DO UPDATE SET count=CASE WHEN auth_rate_limits.expires_at<now() THEN 1 ELSE auth_rate_limits.count+1 END,expires_at=CASE WHEN auth_rate_limits.expires_at<now() THEN now()+interval '1 minute' ELSE auth_rate_limits.expires_at END RETURNING count`,[rateKey]);
+      if(attempts.rows[0].count>5)reject('RATE_LIMIT',429);
+    }
     if(path==='sign-out'&&c.env.SESSION_DENIAL_WRITER_V1==='true'){
       if(!proof?.sessionId||!proof.auth)reject('UNAUTHORIZED',401);
       if(c.env.SESSION_DENIAL_CLEANUP_V1!=='true')throw Error('SESSION_DENIAL_CLEANUP_REQUIRED');
@@ -504,6 +512,24 @@ authRoutes.all("/*", async (c) => {
           }
 
           const auth = createAuth(c.env, pool, signupId, true);
+          if(path==='confirm-password'){
+            if(!checked?.sessionId||incoming.memberId!==checked.memberId)reject('UNAUTHORIZED',401);
+            if(typeof incoming.password!=='string'||incoming.password.length<1||incoming.password.length>128)reject('INVALID_PASSWORD');
+            const verified=await auth.api.verifyPassword({headers:request.headers,body:{password:incoming.password},asResponse:true});
+            if(!verified.ok)return c.json({error:{code:'INVALID_PASSWORD',message:'That password was not correct. Try again.'}},400);
+            const user=(await pool.query('SELECT "twoFactorEnabled" FROM public.auth_user WHERE id=$1',[checked.memberId])).rows[0];
+            if(user?.twoFactorEnabled){
+              if(typeof incoming.code!=='string'||!/^\d{6}$/.test(incoming.code))return c.json({error:{code:'TWO_FACTOR_REQUIRED',message:'Enter the six-digit code from your authenticator app.'}},403);
+              const factor=(await pool.query('SELECT verified,"lockedUntil" FROM public.auth_two_factor WHERE "userId"=$1',[checked.memberId])).rows[0];
+              if(factor?.verified!==true)reject('UNAUTHORIZED',401);
+              if(factor.lockedUntil&&new Date(factor.lockedUntil).getTime()>Date.now())return c.json({error:{code:'RATE_LIMIT',message:'Too many attempts. Try again after the temporary security lock expires.'}},429);
+              const result=await auth.api.verifyTOTP({headers:request.headers,body:{code:incoming.code,trustDevice:false},asResponse:true});
+              if(!result.ok)return c.json({error:{code:'INVALID_CODE',message:'That code was not correct. Try the current code from your authenticator app.'}},400);
+            }
+            // Keep the login cookie and expiry unchanged. Do not attach a grant
+            // to the context: failed commit responses must never inherit it.
+            return new Response(JSON.stringify({ok:true}),{headers:{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':await recoveryConfirmationCookie(c,checked.memberId,checked.sessionId)}});
+          }
           if (path === "change-password" && request.method === "POST")
             request = new Request(request.url, {
               method: "POST",

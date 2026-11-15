@@ -158,3 +158,17 @@ it('keeps removal confirmation next to the removed method without calling it rea
   expect(await page.getByRole('button',{name:'Revoke device',exact:true}).isDisabled()).toBe(true);
  }finally{await browser.close();}
 },60000);
+
+it.each(['chromium','webkit'] as const)('%s confirms an aged recovery session inline, preserves the secret, and resumes after password/MFA',async engine=>{
+ const browser=await(engine==='chromium'?chromium:webkit).launch();try{
+  const page=await browser.newPage({viewport:{width:390,height:844}});await serve(page,await bundle());let confirmed=false;const confirmations:any[]=[];
+  await page.route(origin+'/api/v1/keys/backup',async route=>confirmed?route.fulfill({json:{envelope:await page.evaluate(()=>(window as any).fixture.backup)}}):route.fulfill({status:403,json:{error:{code:'RECENT_AUTH_REQUIRED'}}}));
+  await page.route(origin+'/api/auth/confirm-password',async route=>{const body=route.request().postDataJSON();confirmations.push(body);if(body.password!=='synthetic-login-password')return route.fulfill({status:400,json:{error:{code:'INVALID_PASSWORD',message:'That password was not correct. Try again.'}}});if(!body.code)return route.fulfill({status:403,json:{error:{code:'TWO_FACTOR_REQUIRED'}}});if(body.code!=='123456')return route.fulfill({status:400,json:{error:{code:'INVALID_CODE'}}});confirmed=true;return route.fulfill({json:{ok:true}});});
+  await page.goto(origin+'/settings');await page.getByLabel('Saved encryption recovery secret').waitFor();const secret=await page.evaluate(()=>(window as any).fixture.secret),field=page.getByLabel('Saved encryption recovery secret');await field.fill(secret);await page.getByRole('button',{name:'Check saved secret',exact:true}).click();
+  const group=page.getByRole('group',{name:'Confirm your identity'});await group.waitFor();expect(await field.inputValue()).toBe(secret);await group.getByRole('button',{name:'Cancel',exact:true}).click();expect(await field.inputValue()).toBe(secret);expect(confirmations).toHaveLength(0);
+  await page.getByRole('button',{name:'Check saved secret',exact:true}).click();await group.getByLabel('Porchday login password').fill('wrong');await group.getByRole('button',{name:'Confirm and continue'}).click();await page.getByText('That password was not correct. Try again.',{exact:true}).waitFor();expect(await field.inputValue()).toBe(secret);
+  await group.getByLabel('Porchday login password').fill('synthetic-login-password');await group.getByRole('button',{name:'Confirm and continue'}).click();await group.getByLabel('Authenticator code').fill('123456');await group.getByRole('button',{name:'Confirm and continue'}).click();
+  await page.getByText('Your saved recovery note works. You can now create a spare key below.',{exact:true}).waitFor();expect(await group.count()).toBe(0);expect(page.url()).toBe(origin+'/settings');expect(await field.inputValue()).toBe(secret);expect(confirmations.every(body=>!JSON.stringify(body).includes(secret))).toBe(true);
+  expect(await page.evaluate(()=>Object.values(localStorage).some(x=>String(x).includes('synthetic-login-password')))).toBe(false);
+ }finally{await browser.close();}
+},60000);
