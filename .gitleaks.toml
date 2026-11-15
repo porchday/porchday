@@ -155,3 +155,11 @@ condition = "AND"
 regexTarget = "secret"
 paths = ['(?:^|/)docs/evidence/member-recovery-release-2026-11-12\.md$']
 regexes = ['^a56aa1047aa07cfc1a47043f5545131be855bd56\.$']
+
+[[allowlists]]
+description = "Exact public Git revision in historical November 14 signup release evidence; not a credential."
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['(?:^|/)docs/evidence/signup-clarity-release-2026-11-14\.md$']
+regexes = ['^a9045f36133b9581821383e31d461ea79239ddbd$']

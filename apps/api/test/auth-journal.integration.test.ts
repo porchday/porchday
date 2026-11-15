@@ -551,6 +551,39 @@ suite("Authenticated account privacy journal boundary", () => {
     expect((await owner.query('SELECT 1 FROM public.auth_session WHERE "userId"=$1', [target.id])).rowCount).toBe(0);
     expect((await readJournalControl(store)).value.pending).toHaveLength(1);
   });
+  it('limits password confirmations per member across client addresses and rejects foreign origins',async()=>{
+    const p=await person();await journal(p.id);
+    expect((await call('confirm-password',{memberId:p.id,password:p.password},p.cookie,{Origin:'https://elsewhere.invalid'})).response.status).toBe(403);
+    for(let i=0;i<5;i++)expect((await call('confirm-password',{memberId:p.id,password:'wrong'},p.cookie)).response.status).toBe(400);
+    const limited=await call('confirm-password',{memberId:p.id,password:p.password},p.cookie);expect(limited.response.status).toBe(429);expect(limited.response.headers.get('set-cookie')).toBeNull();
+  });
+
+  it('confirms an aged session password in place, binds the grant and preserves MFA',async()=>{
+    const p=await person();await journal(p.id);
+    const before=(await owner.query('SELECT id,"expiresAt" FROM public.auth_session WHERE "userId"=$1',[p.id])).rows[0];
+    await owner.query("UPDATE public.auth_session SET \"createdAt\"=now()-interval '1 hour' WHERE id=$1",[before.id]);
+    const confirm=(body:unknown,cookie=p.cookie)=>call('confirm-password',body,cookie);
+    const wrong=await confirm({memberId:p.id,password:'wrong'});expect(wrong.response.status).toBe(400);expect(wrong.response.headers.get('set-cookie')).toBeNull();
+    expect((await confirm({memberId:crypto.randomUUID(),password:p.password})).response.status).toBe(401);
+    const good=await confirm({memberId:p.id,password:p.password});expect(good.response.status).toBe(200);expect(await good.response.json()).toEqual({ok:true});
+    expect(good.response.headers.get('set-cookie')).toContain('porchday.recovery_confirmation');expect(good.response.headers.get('set-cookie')).not.toContain('session_token');
+    expect((await owner.query('SELECT id,"expiresAt" FROM public.auth_session WHERE "userId"=$1',[p.id])).rows).toEqual([before]);
+    expect((await call('get-session',undefined,p.cookie)).response.status).toBe(200);
+    expect((await confirm({memberId:p.id,password:p.password},'')).response.status).toBe(401);
+    const other=await person();await journal(other.id);
+    const enabled=await call('two-factor/enable',{password:other.password},other.cookie);const setup=await enabled.response.json();
+    const secret=new URL(setup.totpURI).searchParams.get('secret')!,code=()=>createOTP(new TextDecoder().decode(base32.decode(secret))).totp();
+    const enrollment=await call('two-factor/verify-totp',{code:await code(),trustDevice:false},other.cookie);
+    const cookie=enrollment.response.headers.getSetCookie().map(v=>v.split(';')[0]).join('; ');
+    const session=(await(await call('get-session',undefined,cookie)).response.json()).session;
+    await owner.query("UPDATE public.auth_session SET \"createdAt\"=now()-interval '1 hour' WHERE id=$1",[session.id]);
+    const missing=await confirm({memberId:other.id,password:other.password},cookie);expect(missing.response.status).toBe(403);expect((await missing.response.json()).error.code).toBe('TWO_FACTOR_REQUIRED');expect(missing.response.headers.get('set-cookie')).toBeNull();
+    const invalid=await confirm({memberId:other.id,password:other.password,code:'not-a-code'},cookie);expect(invalid.response.status).toBe(403);
+    const verified=await confirm({memberId:other.id,password:other.password,code:await code()},cookie);expect(verified.response.status).toBe(200);
+    expect((await(await call('get-session',undefined,cookie)).response.json()).session.id).toBe(session.id);
+    await call('sign-out',{},cookie);expect((await confirm({memberId:other.id,password:other.password},cookie)).response.status).toBe(401);
+  });
+
   it.each([false,true])("journals MFA enrollment and backup-code consumption while ordinary TOTP login remains read-only to R2 (durable logout=%s)", async durable => {
     const run=durable?writer:async(work:()=>Promise<void>)=>work();
     await run(async()=>{
