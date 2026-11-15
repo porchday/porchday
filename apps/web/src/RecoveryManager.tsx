@@ -1,3 +1,4 @@
+import {useRecoveryAction} from './RecoveryConfirmation';
 import {RecoverySettings} from './RecoverySettings';
 import React,{useEffect,useState} from 'react';
 import {get,post,del,type Device} from './api';
@@ -11,16 +12,16 @@ import {approvePairing,createPairingInvitation,invitationCode,pairingCode,checke
 export function RecoveryManager({actor,setup=false,onChanged}:{actor:RecoveryActor;setup?:boolean;onChanged?:()=>void}){
  const [state,setState]=useState<RecoveryState|null>(null),[secret,setSecret]=useState(''),[label,setLabel]=useState('My recovery passkey'),[selection,setSelection]=useState(['','','']),[candidates,setCandidates]=useState<Device[]>([]),[verifiedContacts,setVerifiedContacts]=useState(false),[pair,setPair]=useState<{request:any;code:string}|null>(null),[pairConfirmed,setPairConfirmed]=useState(false),[contactConfirmed,setContactConfirmed]=useState<Record<string,boolean>>({});
  const [invitation,setInvitation]=useState<any>(null),[candidateHandles,setCandidateHandles]=useState<{id:string;handle:string}[]>([]);
- const action=useAction();
+ const action=useRecoveryAction(actor.member.id);
  const [feedback,setFeedback]=useState('load'),[setupChoice,setSetupChoice]=useState<'passkey'|'device'>('passkey');
- const run=(id:string,work:()=>Promise<unknown>,notice?:string)=>{setFeedback(id);return action.run(work,notice);};
- const result=(id:string)=>feedback===id?<ActionFeedback error={action.error} notice={action.notice}/>:null;
+ const run=(id:string,work:()=>Promise<unknown>,notice?:string)=>{setFeedback(id);return action.runRecovery(id,work,notice);};
+ const result=(id:string)=>feedback===id?<><ActionFeedback error={action.error} notice={action.notice}/>{action.confirmation(id)}</>:null;
  async function refresh(){setState(await recoveryState());onChanged?.();}
  useEffect(()=>{let alive=true;const read=async()=>{if(!navigator.onLine||document.hidden)return;try{const next=await recoveryState();if(alive)setState(next);}catch{/* Explicit actions surface failures; routine refresh leaves current controls intact. */}};void action.run(async()=>{const next=await recoveryState();if(alive)setState(next);});const timer=setInterval(read,10000);window.addEventListener('focus',read);return()=>{alive=false;clearInterval(timer);window.removeEventListener('focus',read);};},[actor.member.id]);
  const handle=(id:string)=>'@'+(state?.handles.find(h=>h.id===id)?.handle??candidateHandles.find(h=>h.id===id)?.handle??id.slice(0,8));
  const activeMethods=state?.methods.filter(m=>!m.disabled_at)??[];
  const ready=(m:any)=>m.kind==='passkey'||state?.contacts.filter(c=>c.method_id===m.id&&c.accepted_at&&!c.declined_at).length===3;
- async function checkSecret(clear=true){const input=secret.trim();if(clear)setSecret('');const{envelope}=await get('/keys/backup') as {envelope:RecoveryBackup};await verifyRecoveryBackup(envelope,input,actor.member.id);await recoveryAction(actor,'kit-checked',actor.member.id,envelope.recovery.fingerprint);return{input,backup:envelope};}
+ async function checkSecret(clear=true){const input=secret.trim();const{envelope}=await get('/keys/backup') as {envelope:RecoveryBackup};await verifyRecoveryBackup(envelope,input,actor.member.id);if(clear)setSecret('');await recoveryAction(actor,'kit-checked',actor.member.id,envelope.recovery.fingerprint);return{input,backup:envelope};}
  async function addPasskey(){const{input,backup}=await checkSecret(false),id=crypto.randomUUID();let passkey;try{passkey=await enrollRecoveryPasskey(actor.member.id,actor.member.handle,id,backup.recovery.fingerprint,input);}catch(error){if(error instanceof DOMException&&error.name==='NotAllowedError')throw Error('Passkey setup wasn’t completed. Try again when you’re ready, or use another private device instead.');throw error;}await post('/key-recovery/methods',await signStatement({...recoveryIdentity(actor),purpose:'porchday-recovery-method',id,label:label.trim()||'Recovery passkey',kind:'passkey',recoveryFingerprint:backup.recovery.fingerprint,passkey,tested:true},actor.privateKey));setSecret('');await refresh();}
  async function loadContacts(){const[result,directory]=await Promise.all([get('/audiences?audience=connections'),get('/connections')]);setCandidateHandles(directory.handles??[]);setCandidates((result.devices as Device[]).filter(d=>d.member_id!==actor.member.id&&!d.revoked_at));}
  async function addContacts(){
@@ -59,7 +60,7 @@ export function RecoveryManager({actor,setup=false,onChanged}:{actor:RecoveryAct
    {setup&&<section className="panel form-stack" aria-live="polite"><h2>{setupReady?'You’re ready':'Step 2 of 2: save a spare key'}</h2><p>{kitReady?'✓ Recovery note saved and checked.':'First, check the secret in your saved recovery note below.'}</p><p>{spareReady?'✓ Spare key ready.':'A spare key helps you get your private photos and posts back if you lose that note.'}</p>{!setupReady&&<><p>Your email and password sign you in. Your recovery note and spare key unlock your private content.</p></>}</section>}
    {(!setup||(!setupReady&&setupChoice==='passkey'))&&<section className="panel form-stack"><h2>Save a spare key with a passkey</h2><p>A passkey is a spare digital key saved by your phone or password manager. It can recover your private photos and posts if you lose your recovery note. You unlock it with your device’s face, fingerprint or PIN.</p>
     <p>We’ll create one for you—even if you declined before. It doesn’t change how you sign in to Porchday.</p><p>Paste the secret from your saved recovery note below. It stays on this device.</p>
-    <Field label="Saved encryption recovery secret" type="password" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={secret} disabled={action.busy} onChange={e=>setSecret(e.target.value)}/>
+    <Field label="Saved encryption recovery secret" type="password" autoComplete="off" autoCorrect="off" autoCapitalize="none" spellCheck={false} value={secret} disabled={action.busy||action.confirming} onChange={e=>setSecret(e.target.value)}/>
     {(!setup||!kitReady)&&<><Button variant="outline" busy={action.busy} disabled={!secret.trim()} onClick={()=>run('check',async()=>{await checkSecret(false);await refresh();},'Your saved recovery note works. You can now create a spare key below.')}>Check saved secret</Button>{result('check')}</>}
     <details><summary>Name this spare key (optional)</summary><Field label="Passkey name" help="Just a label so you can recognize it later—not a password." value={label} maxLength={80} onChange={e=>setLabel(e.target.value)}/></details>
     <Button variant="primary" busy={action.busy} disabled={!secret.trim()||!passkeyRecoveryAvailable()} onClick={()=>run('passkey',addPasskey,'Your spare key is saved and tested. You can use it to recover your private photos and posts.')}>Create a recovery passkey</Button>{result('passkey')}
