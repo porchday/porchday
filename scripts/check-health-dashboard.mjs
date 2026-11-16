@@ -8,6 +8,7 @@ try{
  await page.goto(origin+'/staff/health');await page.getByText('Checks passing',{exact:true}).waitFor();assert(await page.getByText('Not connected here',{exact:true}).isVisible());assert(await page.getByRole('link',{name:'Follow trace ↗'}).getAttribute('href')==='/operations/traces?trace='+'a'.repeat(32));
  await page.screenshot({path:'/tmp/porchday-health-dashboard-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'/tmp/porchday-health-dashboard-mobile.png',fullPage:true});
+ value.monitoring.last_checked_at=new Date(now-120000).toISOString();await page.getByRole('button',{name:'Refresh now'}).click();await page.getByText('Status unconfirmed',{exact:true}).waitFor();assert(await page.getByText('Unknown / stale',{exact:true}).first().isVisible());
  value.at=now-120000;await page.getByRole('button',{name:'Refresh now'}).click();await page.getByText('Status unconfirmed',{exact:true}).waitFor();assert(!(await page.getByText('Checks passing',{exact:true}).isVisible()));
  denied=true;await page.getByRole('button',{name:'Refresh now'}).click();await page.getByRole('alert').waitFor();assert(!(await page.getByText('synthetic-preview',{exact:false}).isVisible()));assert(!(await page.getByRole('link',{name:'Follow trace ↗'}).isVisible()));
  console.log('Health dashboard: desktop/mobile, unknown external coverage, stale snapshot and access loss checks passed.');
