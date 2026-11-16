@@ -1,0 +1,6 @@
+{
+  "name": "porchday-external-monitor-runtime",
+  "private": true,
+  "version": "1.0.0",
+  "dependencies": {"undici": "7.30.1"}
+}

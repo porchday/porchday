@@ -20,7 +20,7 @@ jobs:
   probe:
     if: github.repository == 'porchday/porchday' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
@@ -28,7 +28,14 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: scripts/external-monitor-runtime/package-lock.json
+      - name: Install the pinned monitor transport dependency
+        run: |
+          npm ci --prefix scripts/external-monitor-runtime --ignore-scripts --no-audit --no-fund
+          ln -s external-monitor-runtime/node_modules scripts/node_modules
       - name: Verify synthetic account readiness and notify owners on transitions
+        timeout-minutes: 3
         env:
           GH_TOKEN: ${{ github.token }}
           PORCHDAY_EXTERNAL_MONITOR_CONFIG: ${{ secrets.PORCHDAY_EXTERNAL_MONITOR_CONFIG }}
