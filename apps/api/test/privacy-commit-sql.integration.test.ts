@@ -129,6 +129,20 @@ suite('Atomic privacy commit marker and restore compatibility',()=>{
    await seal(scope);
    await expect(withPrivacyOperation(scope,()=>privacySqlTransaction(auth,async tx=>{await tx`update public.commit_fixture set value=value+1 where id=${id}`;}))).rejects.toThrow('PRIVACY_OPERATION_NOT_PREPARED');expect(await value(id)).toBe(1);
   });
+  it('stale recovery sealing waits for an unexpired in-flight transaction, preserves its commit and denies later entry',async()=>{
+   const scope=await multi(),id=await fixture();let ready!:()=>void,release!:()=>void;
+   const entered=new Promise<void>(r=>{ready=r;}),hold=new Promise<void>(r=>{release=r;});
+   const work=withPrivacyOperation(scope,()=>privacySqlTransaction(auth,async tx=>{ready();await hold;await tx`update public.commit_fixture set value=1 where id=${id}`;}));
+   await entered;
+   try{
+    // A bounded recovery attempt cannot pass the transaction's shared lock.
+    await expect(owner.begin(async tx=>{await tx`set local lock_timeout='100ms'`;await tx`select app.seal_privacy_operation(${scope.operationId}::uuid,${digest},${generation}::uuid)`;})).rejects.toMatchObject({code:'55P03'});
+    expect((await owner`select terminal_sequence,expires_at>clock_timestamp() as unexpired from app.privacy_operation_admissions where operation_id=${scope.operationId}::uuid`)[0]).toMatchObject({terminal_sequence:null,unexpired:true});
+   }finally{release();await work;}
+   await seal(scope);expect(await value(id)).toBe(1);
+   await expect(withPrivacyOperation(scope,()=>privacySqlTransaction(auth,async tx=>{await tx`update public.commit_fixture set value=2 where id=${id}`;}))).rejects.toThrow('PRIVACY_OPERATION_NOT_PREPARED');
+   expect(await value(id)).toBe(1);
+  });
   it('cannot abandon a shared in-flight transaction, then closes before later work',async()=>{
    const scope=await multi(),id=await fixture();let ready!:()=>void,release!:()=>void;
    const entered=new Promise<void>(r=>{ready=r;}),hold=new Promise<void>(r=>{release=r;});

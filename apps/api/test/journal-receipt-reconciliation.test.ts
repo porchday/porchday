@@ -1,6 +1,6 @@
 import {afterEach,beforeEach,describe,expect,it,vi} from 'vitest';
 import {randomUUID} from 'node:crypto';
-import {assertJournalReadable,beginPrivacyIntent,checkpointJournal,completePrivacyIntent,initializePrivacyJournal,provePrivacyReceipts,publishAuthPrivacyCommitScope,readJournalControl,sha256,type JournalDatabase,type JournalEvent,type JournalStore} from '../src/privacy-journal';
+import {assertJournalReadable,prepareFencedPrivacyIntent,beginPrivacyIntent,checkpointJournal,completePrivacyIntent,initializePrivacyJournal,provePrivacyReceipts,publishAuthPrivacyCommitScope,readJournalControl,sha256,type JournalDatabase,type JournalEvent,type JournalStore} from '../src/privacy-journal';
 
 class Store implements JournalStore{
   rows=new Map<string,{text:string;etag:string}>();serial=0;reads:string[]=[];writes:string[]=[];
@@ -212,4 +212,41 @@ describe('Independent auth commit recovery',()=>{
     store.put=async(key,text,options)=>{if(key==='control.json'){attempts++;return null;}return put(key,text,options);};
     vi.setSystemTime(start+120001);await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('JOURNAL_BUSY');expect(attempts).toBe(8);
   });
+});
+
+
+describe('Stale multi-step admission recovery before admission expiry',()=>{
+ beforeEach(()=>{vi.useFakeTimers({toFake:['Date']});vi.setSystemTime(start);});
+ afterEach(()=>vi.useRealTimers());
+ async function prepared(kind:'auth'|'multi'='multi'){
+  const {store,db}=await setup();
+  const database=Object.assign(db,{prepareOperation:vi.fn(async()=>{}),recoverOperation:vi.fn(async()=>({recognized:true,sequence:null})),seal:vi.fn(async(scope:{operationId:string;scopeSha256:string})=>{
+   db.events.push({sequence:String(db.events.length+1),id:randomUUID(),occurred_at:new Date().toISOString(),decision:{kind:'privacy_operation_committed',operation_id:scope.operationId,scope_sha256:scope.scopeSha256}});
+  })});
+  const value=await prepareFencedPrivacyIntent(store,database,true,kind);return {store,db:database,...value};
+ }
+ it('seals stale multi-step work and proves its terminal checkpoint without waiting another minute',async()=>{
+  const {store,db,intent,scope}=await prepared();db.append();
+  vi.setSystemTime(start+120000);expect((await assertJournalReadable(store,db,undefined,true)).value.pending).toHaveLength(1);expect(db.seal).not.toHaveBeenCalled();
+  vi.setSystemTime(start+120001);const recovered=await assertJournalReadable(store,db,undefined,true);
+  expect(db.seal).toHaveBeenCalledExactlyOnceWith({...scope});expect(db.recoverOperation).not.toHaveBeenCalled();
+  expect(recovered.value).toMatchObject({mode:'active',sequence:'2',pending:[]});expect(db.events[0].decision.kind).toBe('posts');
+  expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(true);
+ });
+ it('does not seal an unexpired auth admission',async()=>{
+  const {store,db}=await prepared('auth');vi.setSystemTime(start+120001);
+  await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('JOURNAL_RECOVERY_PENDING');expect(db.seal).not.toHaveBeenCalled();expect(db.recoverOperation).toHaveBeenCalledTimes(1);
+ });
+ it('retains the intent when sealing cannot acquire its lock or returns an unknown outcome',async()=>{
+  const {store,db,intent}=await prepared();db.seal.mockRejectedValueOnce(Error('seal unavailable'));vi.setSystemTime(start+120001);
+  await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('seal unavailable');expect((await readJournalControl(store)).value.pending).toEqual([intent]);expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(false);
+ });
+ it('does not trust a seal acknowledgement without a canonical terminal marker',async()=>{
+  const {store,db,intent}=await prepared();db.seal.mockImplementation(async()=>{});vi.setSystemTime(start+120001);
+  await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow('JOURNAL_BUSY');expect((await readJournalControl(store)).value.pending).toEqual([intent]);expect(store.rows.has(`receipts/${intent.id}.json`)).toBe(false);
+ });
+ it('rejects damaged independent intent evidence before touching SQL admission',async()=>{
+  const {store,db,intent}=await prepared();store.rows.delete(`intents/${intent.id}.json`);vi.setSystemTime(start+120001);
+  await expect(assertJournalReadable(store,db,undefined,true)).rejects.toThrow();expect(db.seal).not.toHaveBeenCalled();expect(db.recoverOperation).not.toHaveBeenCalled();
+ });
 });
