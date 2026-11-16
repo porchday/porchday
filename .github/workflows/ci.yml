@@ -86,5 +86,16 @@ jobs:
       - run: node scripts/check-photo-scroll-cache.mjs
       - run: node scripts/check-photo-interaction-demand.mjs
       - run: node scripts/check-unified-feed.mjs
+      - run: node scripts/check-health-dashboard-runtime.mjs
+      - name: Verify private health dashboard states and mobile layout
+        run: |
+          npm run dev -w @porchday/web -- --port 5197 > /tmp/health-dashboard-vite.log 2>&1 &
+          dashboard_pid=$!
+          trap 'kill "$dashboard_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:5197/ > /dev/null; then break; fi
+            sleep 1
+          done
+          node scripts/check-health-dashboard.mjs
       - run: npm run build
       - run: python3 scripts/check-secrets.py

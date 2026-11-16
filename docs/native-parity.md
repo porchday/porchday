@@ -350,3 +350,15 @@ Exact-source iOS simulator and macOS CI passed for both API candidates and the i
 ## Stale multi-step privacy admission recovery — November 16
 
 Both default iOS/macOS shells and legacy native API consumers share the same privacy read guard. Once a multi-step intent crosses the existing two-minute stale cutoff, recovery uses its existing exclusive SQL seal to close admission, then checkpoints and independently proves the terminal marker before retiring the intent. In-flight SQL transactions retain their shared locks; later entry is rejected. Auth transaction recovery and the read cutoff are unchanged. No UI, native bridge, schema or signed binary changes are introduced. Exact-source iOS/macOS and full CI, staging and production continuity are required before activation. Device timing and sustained availability remain pending in #55/#8/#42.
+
+## Private operator health dashboard — November 16
+
+The default iOS and macOS WKWebView shells render the same responsive `/staff/health` page and trace links as the browser. The operator surface requires Cloudflare Access plus a current builder staff role; member sign-in and encryption keys do not grant access. Native navigation retains its existing same-origin policy; physical-device Access redirects are not claimed verified. No native bridge or member capability changes are needed; legacy native clients can use the existing authenticated web operator surface. The existing API privacy guard still applies; a guard failure makes the dashboard unavailable rather than bypassing revocation protection. Readiness, stale/unknown evidence, sampling limits and disconnected external monitor coverage use the same shared implementation. Exact-source iOS simulator/macOS tests and browser desktop/mobile acceptance are required before production. Physical-device Access sign-in remains follow-up under #12/#49; no new signed native binary is claimed.
+
+## Operator dashboard service data path — November 16
+
+The shared iOS/macOS/web dashboard now reads readiness in-process and monitor status through an environment-specific Cloudflare service binding. This corrects the same-zone public-fetch path observed returning unknown in staging. No client behavior, native bridge, permissions or member data path changes. Re-run exact-source platform checks for this candidate; earlier candidate checks are not substituted. Hosted authenticated diagnostics and physical-device Access verification remain separately recorded.
+
+## Dashboard Workers runtime compatibility — November 16
+
+Monitor status requests use manual redirects with explicit rejection because workerd does not implement redirect error mode. A real workerd service-binding regression now verifies successful JSON and refused redirects in CI. Shared iOS/macOS UI and client behavior are unchanged. Exact-source native CI is required again for this corrected API candidate; no earlier build or physical-device check is substituted.

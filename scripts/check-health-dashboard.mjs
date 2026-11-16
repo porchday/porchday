@@ -1,0 +1,15 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+const origin=process.env.DASHBOARD_TEST_ORIGIN??'http://127.0.0.1:5197',browser=await chromium.launch();
+try{
+ const page=await browser.newPage({viewport:{width:1440,height:1100}}),now=Date.now();let denied=false;
+ const value={at:now,environment:'production',release:'synthetic-preview',readiness:{state:'healthy',issues:[],snapshot:{cleanup_age_seconds:12,deletion_first_pass_pending:0,identity_pending:0,email_failed:0},backup:{last_complete_age_seconds:7200,unfinished_runs:0}},monitoring:{status:'operational',fresh:true,last_checked_at:new Date(now-10000).toISOString(),metrics_monitoring:'ready',availability:{status:'collecting',expected_minutes:20160,failed_minutes:12,unknown_minutes:4,conservative_pass_percent:99.921}},traces:{state:'available',latest:now-1000,retained:4382,errors:12,p95Ms:924,capped:false,hourly:Array.from({length:24},(_,i)=>({start:now-(24-i)*3600000,retained:90+i*6,errors:i===18?9:0})),failures:[{trace_id:'a'.repeat(32),root_id:'b'.repeat(16),started_at:now-3600000,route:'/api/v1/feed',service:'api',status:503,duration:1240}]},externalMonitor:{state:'not_connected',incidents:'https://github.com/porchday/porchday/issues/52'}};
+ await page.route('**/api/**',route=>{const path=new URL(route.request().url()).pathname;return route.fulfill({status:path==='/api/staff/health'&&denied?403:200,contentType:'application/json',body:JSON.stringify(path==='/api/staff/health'?value:null)});});
+ await page.goto(origin+'/staff/health');await page.getByText('Checks passing',{exact:true}).waitFor();assert(await page.getByText('Not connected here',{exact:true}).isVisible());assert(await page.getByRole('link',{name:'Follow trace ↗'}).getAttribute('href')==='/operations/traces?trace='+'a'.repeat(32));
+ await page.screenshot({path:'/tmp/porchday-health-dashboard-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:'/tmp/porchday-health-dashboard-mobile.png',fullPage:true});
+ value.monitoring.last_checked_at=new Date(now-120000).toISOString();await page.getByRole('button',{name:'Refresh now'}).click();await page.getByText('Status unconfirmed',{exact:true}).waitFor();assert(await page.getByText('Unknown / stale',{exact:true}).first().isVisible());
+ value.at=now-120000;await page.getByRole('button',{name:'Refresh now'}).click();await page.getByText('Status unconfirmed',{exact:true}).waitFor();assert(!(await page.getByText('Checks passing',{exact:true}).isVisible()));
+ denied=true;await page.getByRole('button',{name:'Refresh now'}).click();await page.getByRole('alert').waitFor();assert(!(await page.getByText('synthetic-preview',{exact:false}).isVisible()));assert(!(await page.getByRole('link',{name:'Follow trace ↗'}).isVisible()));
+ console.log('Health dashboard: desktop/mobile, unknown external coverage, stale snapshot and access loss checks passed.');
+}finally{await browser.close();}

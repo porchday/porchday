@@ -32,7 +32,10 @@
         "docs/native-parity.md#inline-recovery-identity-confirmation",
         "apps/web/test/photo-gallery-browser.test.ts",
         "docs/native-parity.md#health-check-transport-and-storage-resilience--november-15",
-        "docs/native-parity.md#stale-multi-step-privacy-admission-recovery--november-16"
+        "docs/native-parity.md#stale-multi-step-privacy-admission-recovery--november-16",
+        "docs/native-parity.md#private-operator-health-dashboard--november-16",
+        "docs/native-parity.md#operator-dashboard-service-data-path--november-16",
+        "docs/native-parity.md#dashboard-workers-runtime-compatibility--november-16"
       ],
       "implementation": {
         "ios": "implemented",
