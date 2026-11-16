@@ -1,5 +1,4 @@
 import React,{useEffect,useState} from 'react';
-import './health-dashboard.css';
 type Failure={trace_id:string;root_id:string;started_at:number;route:string;status:number;duration:number;service:string};
 type Snapshot={at:number;environment:string;release:string|null;readiness:{state:string;issues?:string[];snapshot?:Record<string,number|null>;backup?:Record<string,number|null>;statusCode?:number};monitoring:{status:string;fresh:boolean;last_checked_at?:string;metrics_monitoring?:string;availability?:{status:string;expected_minutes?:number;failed_minutes?:number;unknown_minutes?:number;conservative_pass_percent?:number}};traces:{state:string;latest?:number|null;retained?:number;errors?:number;p95Ms?:number|null;capped?:boolean;failures?:Failure[];hourly?:{start:number;retained:number;errors:number}[]};externalMonitor:{state:string;incidents:string}};
 const date=(n:number|string|undefined|null)=>n?new Date(n).toLocaleString(): 'No observation';
@@ -20,7 +19,7 @@ export default function HealthDashboard(){
   void load();const interval=setInterval(()=>void load(),60000);const visibility=()=>{if(document.hidden){active?.abort();setData(null);}else void load();};document.addEventListener('visibilitychange',visibility);
   return()=>{alive=false;active?.abort();clearInterval(interval);document.removeEventListener('visibilitychange',visibility);};
  },[refresh]);
- const stale=!data||clock-data.at>90000||data.at>clock+30000,health=stale?'unknown':data.readiness.state,monitorFresh=!stale&&data?.monitoring.fresh,traceFresh=!stale&&data?.traces.state==='available';
+ const stale=!data||clock-data.at>90000||data.at>clock+30000,health=stale?'unknown':data.readiness.state,monitorFresh=!stale&&data?.monitoring.fresh&&Number.isFinite(Date.parse(data.monitoring.last_checked_at??''))&&clock-Date.parse(data.monitoring.last_checked_at!)<=90000,traceFresh=!stale&&data?.traces.state==='available'&&data.traces.latest!=null&&clock-data.traces.latest<=15*60000;
  const overall=health==='degraded'?'degraded':health==='healthy'&&monitorFresh&&data?.monitoring.status==='operational'?'healthy':'unknown';
  const availability=data?.monitoring.availability,stats=data?.readiness.snapshot,backup=data?.readiness.backup,hours=data?.traces.hourly??[],maximum=Math.max(1,...hours.map(h=>h.retained));
  return <main className="health-dashboard" data-diagnostic-private>
