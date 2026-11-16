@@ -7,6 +7,8 @@ export interface Env {
   OPERATIONAL_TRACING?: string;
   /** Opt-in performance traces (docs/performance-tracing.md). Absent until provisioned. */
   TRACES?: D1Database;
+  /** Read-only status access through the environment-specific monitor service. */
+  HEALTH_MONITOR?: Fetcher;
   /** Temporary aggregate diagnostics; honored only in staging, never production. */
   FEED_PHASE_TIMING?: string;
   /** Opt-in aggregate logout diagnostics; no identities or request correlation. */
