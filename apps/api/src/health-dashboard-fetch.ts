@@ -1,0 +1,4 @@
+export async function dashboardJson(url:string,headers:HeadersInit={},request:typeof fetch=fetch){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
+ try{const r=await request(url,{headers,redirect:'manual',signal:controller.signal});if(r.status>=300&&r.status<400){await r.body?.cancel().catch(()=>{});throw Error('REDIRECT_REJECTED');}const reader=r.body?.getReader();if(!reader)throw Error('UNAVAILABLE');let text='',size=0;const decoder=new TextDecoder();try{for(;;){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>65536)throw Error('TOO_LARGE');text+=decoder.decode(part.value,{stream:true});}}finally{await reader.cancel().catch(()=>{});}return{status:r.status,value:JSON.parse(text+decoder.decode())};}finally{clearTimeout(timer);controller.abort();}
+}
