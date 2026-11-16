@@ -38,6 +38,7 @@ import {
 import { Settings } from "./Settings";
 import { Recovery } from "./Recovery";
 import { IntegrationConsent } from "./Integrations";
+const HealthDashboard=React.lazy(()=>import("./HealthDashboard"));
 import { StaffConsole, StaffEntry } from "./Staff";
 import { Appeals } from "./Appeals";
 import { signOutSafely } from "./logout";
@@ -211,6 +212,8 @@ function App() {
   else if (path === "/recovery") page = <Recovery />;
   else if (path === "/appeals") page = <Appeals onLogout={signOut} />;
   else if (path === "/staff" || path === "/staff/") page = <StaffEntry />;
+  else if (path === "/staff/health") page = <React.Suspense fallback={<Loading />}><HealthDashboard /></React.Suspense>;
+  else if (path === "/operations/traces") page = <main className="narrow-page"><React.Suspense fallback={<Loading />}><Observability /></React.Suspense></main>;
   else if (["/login", "/join", "/forgot", "/reset", "/verify"].includes(path))
     page = <AuthPage key={route} mode={path.slice(1)} onSignedIn={session} />;
   else if (informationPage) {
@@ -375,8 +378,6 @@ function AppShell({
   else if (path === "/notifications") content = <Notifications />;
   else if (path === "/features") content = <FeatureAdditions />;
   else if (path === "/builder-chat") content = <BuilderChat />;
-  else if (path === "/operations/traces")
-    content = <React.Suspense fallback={<Loading />}><Observability /></React.Suspense>;
   else if (path === "/diagnostics")
     content = <React.Suspense fallback={<Loading />}><DiagnosticInspector /></React.Suspense>;
   else if (path === "/performance")

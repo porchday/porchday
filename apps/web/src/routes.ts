@@ -10,6 +10,6 @@ export function loginDestination(value: string): string {
   if (!value.startsWith("/") || value.startsWith("//") || value.includes("\\")) return "/";
   const url = new URL(value, "https://porchday.invalid");
   const path = canonicalPath(url.pathname);
-  return isMemberPath(path) || ["/about", "/mission", "/principles", "/privacy", "/community", "/accessibility", "/help", "/contact", "/staff", "/staff/moderation"].includes(path)
+  return isMemberPath(path) || ["/about", "/mission", "/principles", "/privacy", "/community", "/accessibility", "/help", "/contact", "/staff", "/staff/health", "/operations/traces", "/staff/moderation"].includes(path)
     ? path + url.search + url.hash : "/";
 }

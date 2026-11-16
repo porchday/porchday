@@ -31,6 +31,7 @@ export function StaffEntry() {
         <Button variant="outline" busy={action.busy} onClick={() => action.run(refresh)}>Check staff access</Button>
       </> : <>
         <p>Signed in as <strong>{identity.email}</strong>.</p>
+        {identity.roles.includes("builder_chat")&&<a className="button outline" href="/staff/health">Open health dashboard</a>}
         {!identity.roles.length && <>
           <p>Your sign-in is verified. An operator must authorize your staff role before you can review cases.</p>
           <p>Give the operator this account reference: <code>{identity.subject}</code>. This reference grants no access; never share a sign-in code or session token.</p>

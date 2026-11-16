@@ -1,5 +1,7 @@
 # Porchday roadmap
 
+**In progress November 16:** [#12](https://github.com/porchday/porchday/issues/12): private operator health dashboard with audited Access/role checks, readiness and backlog diagnostics, monitor freshness, sampled availability, retained traces and honest unknown states. External Mac/GitHub live ingestion remains a validation gap; link incident evidence instead of inferring health.
+
 **In progress November 16:** [#40](https://github.com/porchday/porchday/issues/40) / [#55](https://github.com/porchday/porchday/issues/55): a confirmed 503 burst exposed the gap between the two-minute stale read cutoff and three-minute multi-step admission expiry. Validate exclusive sealing plus canonical terminal proof at the existing stale cutoff. Investigate recurring monitor transport failures separately; do not treat them as proven database faults or hide failures by changing alert thresholds.
 
 **Current owner follow-up November 15:** [#228](https://github.com/porchday/porchday/issues/228): confirm the login password inline when recovery actions need recent authentication, retain MFA and the current session, preserve the local recovery form, and deploy after exact-source and hosted verification.
