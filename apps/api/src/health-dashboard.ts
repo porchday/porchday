@@ -1,7 +1,7 @@
 import {Hono} from 'hono';
 import {z} from 'zod';
 import type {Env,Variables} from './types';
-import {operationalSnapshotSchema,mediaBackupSnapshotSchema} from './operations-health';
+import {operationalSnapshotSchema,mediaBackupSnapshotSchema,readOperationalHealth} from './operations-health';
 const count=z.number().int().nonnegative();
 const monitorSchema=z.object({status:z.enum(['operational','degraded','checking','unknown']),last_checked_at:z.string().datetime().nullable(),metrics_monitoring:z.enum(['not_configured','checking','ready','unavailable']).optional(),availability:z.object({status:z.enum(['unavailable','collecting','complete_window']),expected_minutes:count.optional(),passed_minutes:count.optional(),failed_minutes:count.optional(),unknown_minutes:count.optional(),conservative_pass_percent:z.number().min(0).max(100).optional(),observed_percent:z.number().min(0).max(100).optional()}).optional()});
 const healthSchema=z.object({status:z.enum(['ok','degraded']),issues:z.array(z.string().regex(/^[a-z_]{1,64}$/)).max(32),snapshot:operationalSnapshotSchema,backup:mediaBackupSnapshotSchema});
@@ -13,17 +13,17 @@ export async function dashboardJson(url:string,headers:HeadersInit={},request:ty
 async function bounded<T>(work:Promise<T>){let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('DASHBOARD_DEADLINE')),8000);})]);}finally{if(timer)clearTimeout(timer);}}
 /** Mounted behind the privacy guard, Access and the active builder role.
  * No member content or recovery actions. Guard failures stay unavailable. */
-export function createHealthDashboard(request:typeof fetch=fetch){
+export function createHealthDashboard(request?:typeof fetch,health:typeof readOperationalHealth=readOperationalHealth){
  const app=new Hono<{Bindings:Env;Variables:Variables}>();
  app.use('*',async(c,next)=>{c.header('Cache-Control','private, no-store');c.header('Vary','Cookie, Cf-Access-Jwt-Assertion');await next();});
  app.get('/',async c=>{
   const now=Date.now(),db=c.env.TRACES;
   if(!db)return c.json({error:{code:'HEALTH_DASHBOARD_UNAVAILABLE'}},503);
   await bounded(db.prepare('INSERT INTO diagnostic_access(id,operator,session_id,action,at) VALUES(?1,?2,?3,?4,?5)').bind(crypto.randomUUID(),c.get('staffSubject'),'operational','health-dashboard',now).run());
-  const production=c.env.ENVIRONMENT==='production',origin=production?'https://porchday.org':'https://staging.porchday.com',monitor=production?'https://status.porchday.com':'https://staging-status.porchday.com';
+  const monitorRequest=request??c.env.HEALTH_MONITOR?.fetch.bind(c.env.HEALTH_MONITOR);
   const settled=await Promise.allSettled([
-   c.env.OPERATIONS_HEALTH_TOKEN?dashboardJson(origin+'/api/operations/health',{Authorization:'Bearer '+c.env.OPERATIONS_HEALTH_TOKEN},request):Promise.reject(Error('NOT_CONFIGURED')),
-   dashboardJson(monitor+'/status',{},request),
+   bounded(health(c.env)).then(value=>({status:value.status==='ok'?200:503,value})),
+   monitorRequest?dashboardJson('https://monitor.internal/status',{},monitorRequest):Promise.reject(Error('NOT_CONFIGURED')),
    bounded(db.prepare(`SELECT trace_id,root_id,started_at,route,status,reason,json_extract(payload,'$.responseDuration') AS duration,json_extract(payload,'$.service') AS service FROM operational_traces WHERE started_at>?1 AND expires_at>?2 AND json_extract(payload,'$.kind')='http' ORDER BY started_at DESC LIMIT 5000`).bind(now-86400000,now).all()),
   ]);
   const [h,m,t]=settled;
