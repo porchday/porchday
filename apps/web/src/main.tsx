@@ -55,6 +55,7 @@ const Observability = React.lazy(() => import("./Observability"));
 const DiagnosticInspector = React.lazy(() => import("./DiagnosticPanels"));
 const TraceInspector = React.lazy(() => import("./TraceInspector"));
 import "./styles.css";
+import "./health-dashboard.css";
 import "./retro.css";
 import "virtual:dark.css";
 class ErrorBoundary extends React.Component<
