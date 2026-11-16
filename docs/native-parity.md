@@ -358,3 +358,7 @@ The default iOS and macOS WKWebView shells render the same responsive `/staff/he
 ## Operator dashboard service data path — November 16
 
 The shared iOS/macOS/web dashboard now reads readiness in-process and monitor status through an environment-specific Cloudflare service binding. This corrects the same-zone public-fetch path observed returning unknown in staging. No client behavior, native bridge, permissions or member data path changes. Re-run exact-source platform checks for this candidate; earlier candidate checks are not substituted. Hosted authenticated diagnostics and physical-device Access verification remain separately recorded.
+
+## Dashboard Workers runtime compatibility — November 16
+
+Monitor status requests use manual redirects with explicit rejection because workerd does not implement redirect error mode. A real workerd service-binding regression now verifies successful JSON and refused redirects in CI. Shared iOS/macOS UI and client behavior are unchanged. Exact-source native CI is required again for this corrected API candidate; no earlier build or physical-device check is substituted.

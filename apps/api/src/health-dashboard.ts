@@ -1,3 +1,5 @@
+import {dashboardJson} from './health-dashboard-fetch';
+export {dashboardJson} from './health-dashboard-fetch';
 import {Hono} from 'hono';
 import {z} from 'zod';
 import type {Env,Variables} from './types';
@@ -6,10 +8,6 @@ const count=z.number().int().nonnegative();
 const monitorSchema=z.object({status:z.enum(['operational','degraded','checking','unknown']),last_checked_at:z.string().datetime().nullable(),metrics_monitoring:z.enum(['not_configured','checking','ready','unavailable']).optional(),availability:z.object({status:z.enum(['unavailable','collecting','complete_window']),expected_minutes:count.optional(),passed_minutes:count.optional(),failed_minutes:count.optional(),unknown_minutes:count.optional(),conservative_pass_percent:z.number().min(0).max(100).optional(),observed_percent:z.number().min(0).max(100).optional()}).optional()});
 const healthSchema=z.object({status:z.enum(['ok','degraded']),issues:z.array(z.string().regex(/^[a-z_]{1,64}$/)).max(32),snapshot:operationalSnapshotSchema,backup:mediaBackupSnapshotSchema});
 const rowSchema=z.object({trace_id:z.string().regex(/^[a-f0-9]{32}$/),root_id:z.string().regex(/^[a-f0-9]{16}$/),started_at:z.number(),route:z.string().max(160),status:z.number().int().min(0).max(599),reason:z.enum(['error','slow','sample','linked','forced']).or(z.string().regex(/^[a-z_]{1,32}$/)),duration:z.number().min(0),service:z.string().regex(/^[a-z_-]{1,32}$/)});
-export async function dashboardJson(url:string,headers:HeadersInit={},request:typeof fetch=fetch){
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
- try{const r=await request(url,{headers,redirect:'error',signal:controller.signal});const reader=r.body?.getReader();if(!reader)throw Error('UNAVAILABLE');let text='',size=0;const decoder=new TextDecoder();try{for(;;){const part=await reader.read();if(part.done)break;size+=part.value.byteLength;if(size>65536)throw Error('TOO_LARGE');text+=decoder.decode(part.value,{stream:true});}}finally{await reader.cancel().catch(()=>{});}return{status:r.status,value:JSON.parse(text+decoder.decode())};}finally{clearTimeout(timer);controller.abort();}
-}
 async function bounded<T>(work:Promise<T>){let timer:ReturnType<typeof setTimeout>|undefined;try{return await Promise.race([work,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(Error('DASHBOARD_DEADLINE')),8000);})]);}finally{if(timer)clearTimeout(timer);}}
 /** Mounted behind the privacy guard, Access and the active builder role.
  * No member content or recovery actions. Guard failures stay unavailable. */
