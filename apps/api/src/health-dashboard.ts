@@ -24,7 +24,7 @@ export function createHealthDashboard(request:typeof fetch=fetch){
   const settled=await Promise.allSettled([
    c.env.OPERATIONS_HEALTH_TOKEN?dashboardJson(origin+'/api/operations/health',{Authorization:'Bearer '+c.env.OPERATIONS_HEALTH_TOKEN},request):Promise.reject(Error('NOT_CONFIGURED')),
    dashboardJson(monitor+'/status',{},request),
-   bounded(db.prepare(`SELECT trace_id,root_id,started_at,route,status,reason,json_extract(payload,'$.responseDuration') AS duration,json_extract(payload,'$.service') AS service FROM operational_traces WHERE started_at>?1 AND expires_at>?2 ORDER BY started_at DESC LIMIT 5000`).bind(now-86400000,now).all()),
+   bounded(db.prepare(`SELECT trace_id,root_id,started_at,route,status,reason,json_extract(payload,'$.responseDuration') AS duration,json_extract(payload,'$.service') AS service FROM operational_traces WHERE started_at>?1 AND expires_at>?2 AND json_extract(payload,'$.kind')='http' ORDER BY started_at DESC LIMIT 5000`).bind(now-86400000,now).all()),
   ]);
   const [h,m,t]=settled;
   const parsedHealth=h.status==='fulfilled'?healthSchema.safeParse(h.value.value):null;
