@@ -6,6 +6,7 @@
   "compatibility_flags": [
     "nodejs_compat"
   ],
+  "services": [{"binding":"HEALTH_MONITOR","service":"porchday-monitor-staging"}],
   "workers_dev": false,
   "preview_urls": false,
   "assets": {
