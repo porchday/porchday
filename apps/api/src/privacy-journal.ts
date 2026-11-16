@@ -195,8 +195,20 @@ async function reconcileStalePrivacyReceipts(store:JournalStore,db:JournalDataba
         const raw=await proofText(object);
         try{scope=privacyCommitScopeSchema.parse(JSON.parse(raw));}catch{return stop('INVALID_JOURNAL_COMMIT_PROOF');}
         if(scope.id!==intent.id||scope.started_at!==intent.started_at||scope.generation!==remote.value.generation)stop('INVALID_JOURNAL_COMMIT_PROOF');
-        const result=await db.recoverOperation({operationId:intent.id,scopeSha256:await sha256(raw),generation:scope.generation,admission:true});
-        if(result.recognized){admissionPending=true;if(result.sequence!==null)fenced=true;}
+        const identity={operationId:intent.id,scopeSha256:await sha256(raw),generation:scope.generation,admission:true as const};
+        if(scope.transaction==='fenced-multi-transaction'&&db.seal){
+          // Stale multi-step work has already crossed the read-guard cutoff.
+          // Seal under the existing exclusive SQL admission lock now, rather
+          // than blocking every reader until the longer admission expires.
+          // This waits behind in-flight transactions, preserves their commits,
+          // and prevents later transactions from entering. It is not rollback
+          // evidence: checkpoint and prove the terminal marker before retiring.
+          await db.seal({...identity,transactionKind:'multi'});fenced=true;
+        }else{
+          // Auth transactions retain expiry/claim recovery; never seal them.
+          const result=await db.recoverOperation(identity);
+          if(result.recognized){admissionPending=true;if(result.sequence!==null)fenced=true;}
+        }
       }
       if(fenced){
         // SQL alone is never retirement proof. Publish and then validate the
