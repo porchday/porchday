@@ -1,10 +1,11 @@
-import React,{useState} from 'react';
+import React,{useEffect,useState} from 'react';
 import {Alert,Button,Loading,useAction} from './ui';
 type Span={id:string;parent:string;name:string;start:number;duration?:number;outcome:string;code?:string;quantity?:number};
 type Record={traceId:string;rootId:string;parentId?:string;service:string;kind:string;route:string;release:string;started:number;duration:number;responseDuration:number;status:number;reason:string;droppedSpans:number;droppedLinks?:number;links:{traceId:string;spanId:string}[];spans:Span[]};
 async function read(path:string){const r=await fetch('/api/staff/observability/'+path,{credentials:'same-origin',cache:'no-store',redirect:'error'});if(!r.ok)throw Error('This view requires Cloudflare Access sign-in and an active builder staff role. The trace store must also be available.');return r.json();}
 export default function Observability(){
  const action=useAction(),[id,setId]=useState(''),[recent,setRecent]=useState<any>(null),[records,setRecords]=useState<Record[]|null>(null),[client,setClient]=useState<any[]>([]);
+ useEffect(()=>{const trace=new URLSearchParams(location.search).get('trace');if(trace&&/^[a-f0-9]{32}$/.test(trace))void action.run(()=>load(trace));},[]);
  async function load(trace=id){if(!/^[a-f0-9]{32}$/.test(trace))throw Error('Enter a 32-character trace ID.');setId(trace);const result=await read('trace/'+trace);setRecords(result.items);setClient([...(result.client||[]),...(result.performance||[])]);}
  return <section className="panel form-stack trace-inspector" data-diagnostic-private><h1>Production investigation</h1><p>Restricted operational metadata. Reads are audited. Retention is seven days; errors and slow work are retained within collection limits, with 5% of normal traces selected consistently across services. Counts below describe retained traces, not total traffic.</p>
  <div className="button-row"><Button busy={action.busy} onClick={()=>action.run(async()=>{setRecent(await read('recent'));})}>Refresh recent traces</Button></div>
