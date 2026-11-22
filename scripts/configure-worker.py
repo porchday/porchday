@@ -1,9 +1,71 @@
 #!/usr/bin/env python3
-"""Render deployable configs only from verified IDs. No database URLs or secrets."""
+"""Render deployable configs only from verified IDs. No database URLs or secrets.
+
+Required CLI: configure-worker.py staging|production --reviewed-runtime FILE
+FILE is private operator-reviewed JSON, never a provider dump or a source default:
+{"schemaVersion":1,"environment":"staging","flags":{
+ "KEY_RECOVERY_ENABLED":false,"LOGOUT_PHASE_TIMING":false,
+ "SESSION_DENIAL_CLEANUP_V1":true,"SESSION_DENIAL_WRITER_V1":false,
+ "VIDEO_UPLOADS_V2":false,"SESSION_DENIAL_PARTITIONS_V1":null,
+ "SESSION_DENIAL_QUEUE_TOPOLOGY_V1":null},
+ "HEALTH_MONITOR":{"service":"synthetic-health-monitor"}}
+This example is synthetic, not a recommended runtime configuration.
+All keys are required; unknown/duplicate keys are rejected. Five core flags are
+JSON booleans. The two additional capability flags accept booleans or explicit
+null (omit the variable, distinct from false), in either environment. Current
+application source does not consume those two flags; no dependency is inferred.
+HEALTH_MONITOR requires exactly a service name (1-63 ASCII letters/digits/hyphens,
+starting with a letter). Provider environment fields are not normalized here.
+
+Adapters must supply a reviewed file for the selected environment, fail on a
+nonzero exit, and never reuse stale output after failure. Missing input has no
+legacy fallback. Keep files outside source/artifacts/logs; bind review evidence
+to the input digest and candidate privately. Review remains an operator action;
+this schema validates structure and known constraints, not approval provenance.
+Writer-off/cleanup-on rollback is supported. Recovery/video flags gate writes,
+not compatible readers: deployment must separately preserve the reader-capable
+rollback floor. This generator cannot prove previously admitted source versions.
+"""
 import json,re,sys
 from pathlib import Path
 name=sys.argv[1] if len(sys.argv)>1 else ''
-if name not in ('staging','production'):raise SystemExit('Usage: configure-worker.py staging|production')
+if name not in ('staging','production') or len(sys.argv)!=4 or sys.argv[2]!='--reviewed-runtime':
+ raise SystemExit('Usage: configure-worker.py staging|production --reviewed-runtime FILE (required)')
+
+def exact_keys(value,keys,label):
+ if not isinstance(value,dict) or set(value)!=set(keys):
+  raise SystemExit(label+' must contain exactly the documented keys.')
+
+def unique_object(pairs):
+ result={}
+ for key,value in pairs:
+  if key in result:raise ValueError('Duplicate JSON key')
+  result[key]=value
+ return result
+
+try:
+ reviewed=json.loads(Path(sys.argv[3]).read_text(),object_pairs_hook=unique_object,
+  parse_constant=lambda value: (_ for _ in ()).throw(ValueError('Non-JSON constant')))
+except (OSError,ValueError):
+ raise SystemExit('Cannot read reviewed runtime JSON; require valid JSON with unique keys.')
+exact_keys(reviewed,['schemaVersion','environment','flags','HEALTH_MONITOR'],'Reviewed runtime')
+if type(reviewed['schemaVersion']) is not int or reviewed['schemaVersion']!=1:
+ raise SystemExit('Reviewed runtime schemaVersion must be 1.')
+if reviewed['environment']!=name:raise SystemExit('Reviewed runtime environment must match the requested environment.')
+required_flags=['KEY_RECOVERY_ENABLED','LOGOUT_PHASE_TIMING','SESSION_DENIAL_CLEANUP_V1','SESSION_DENIAL_WRITER_V1','VIDEO_UPLOADS_V2']
+omittable_flags=['SESSION_DENIAL_PARTITIONS_V1','SESSION_DENIAL_QUEUE_TOPOLOGY_V1']
+flags=reviewed['flags']
+exact_keys(flags,required_flags+omittable_flags,'Reviewed runtime flags')
+for flag in required_flags+omittable_flags:
+ value=flags[flag]
+ if type(value) is not bool and not (flag in omittable_flags and value is None):
+  raise SystemExit(flag+' must be a JSON boolean'+(' or explicit null for omission.' if flag in omittable_flags else '.'))
+if flags['SESSION_DENIAL_WRITER_V1'] and not flags['SESSION_DENIAL_CLEANUP_V1']:
+ raise SystemExit('Session denial writer requires cleanup; preserve cleanup during writer rollback.')
+monitor=reviewed['HEALTH_MONITOR']
+exact_keys(monitor,['service'],'HEALTH_MONITOR')
+if not isinstance(monitor['service'],str) or not re.fullmatch(r'[A-Za-z][A-Za-z0-9-]{0,62}',monitor['service']):
+ raise SystemExit('HEALTH_MONITOR service must be a valid Worker service name.')
 resources=json.loads(Path('infra/resources.json').read_text())
 env=resources['environments'][name]
 for role in ['auth','social','jobs']:
@@ -24,6 +86,12 @@ if name!='production' and 'legacy_app_url' in env:
 host=origin.removeprefix('https://')
 base.update(name='porchday-'+name,account_id=resources['account_id'],workers_dev=False)
 base['vars'].update(APP_URL=origin,ENVIRONMENT=name)
+# Never inherit local operational choices, including explicitly omitted flags.
+for flag in required_flags+omittable_flags:
+ base['vars'].pop(flag,None)
+ if flags[flag] is not None:base['vars'][flag]='true' if flags[flag] else 'false'
+base['services']=[binding for binding in base.get('services',[]) if binding.get('binding')!='HEALTH_MONITOR']
+base['services'].append({'binding':'HEALTH_MONITOR','service':monitor['service']})
 base['vars'].pop('LEGACY_APP_URL',None)
 if legacy is not None:base['vars']['LEGACY_APP_URL']=legacy
 # Placement is explicit per environment, not inherited from local development.
