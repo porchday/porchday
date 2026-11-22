@@ -135,3 +135,21 @@ No application tests or native tests were newly run during this audit-only conti
 The source audit is documented and host-side configured checks are now evidenced. Required native checks and remaining behavioral evidence are still missing. No implementation defect was confirmed, and no implementation code was changed. The task remains active; no completion proposal is made.
 
 Bobby has not accepted this candidate. Human sign-off is an application action. No commit, push, CI dispatch, hosted account creation, credential tooling, production-data access, runtime configuration change, deployment or live-service verification occurred in this continuation. Historical acceptance and release records remain provenance only.
+
+## Publication and formatting follow-up — November 21
+
+The operator reports controlled publication operation `4b84a9ae-0738-4024-9f17-877f68bc0b80` published `51431ccfb9ee5fcd83f97130a2926b30c20e7883` on `codex/small-potato-porchday-integration` with remote-ref verification. Local `git rev-parse HEAD` confirms that commit; the working tree was clean at inspection. This supersedes earlier descriptions of the candidate as entirely uncommitted. Remote publication was reported by the operator, not performed or independently rechecked by this agent.
+
+Operator-reported CI at the start of this turn: Verify Porchday run `44965084899` failed in job `verify` at `Run python3 scripts/check-format.py`; secret scan and invitation-connections, post-detail and reaction-save browser workflows passed. iOS `44965084973` and macOS `44965084837` were running. Their subsequent outcomes were not checked and are not claimed.
+
+Inspected `scripts/check-format.py`: it checks repository text for UTF-8, LF line endings, final newlines and trailing whitespace while permitting Markdown hard breaks. Ran `python3 scripts/check-format.py` locally at the published commit: exit 1, with exactly one diagnostic:
+
+```text
+tasks/460c54df-49ef-42d5-8bc6-20b7b4c4f21b/task.md: missing final newline
+```
+
+The reported file belongs to the published candidate. Its observed SHA-256 was `e5cb68a18540e6c43980b5745af2f816b9c7da94e9bd510f319c9e138ca43385`, and its bytes lacked a final LF. No unrelated baseline violations were reported. The minimal formatting correction is a final LF on this task document; this section records the authorized evidence update. No implementation, native audit, historical accepted task or other file requires correction.
+
+Because task Markdown may be edited only through structured actions, this correction is returned as an `update_task` action, not written directly. Re-ran the maintained checker's `main()` against the complete repository with only this task's proposed bytes substituted in memory via `Path.read_bytes`: exit 0, `First-party text formatting checks passed.` The proposed bytes include this evidence section and a final LF. This validates the proposed document, not an already-applied working-tree change. After the application applies the action, run `python3 scripts/check-format.py` on disk before the separate controlled publication; preservation of the final LF remains to be confirmed there.
+
+No application/native tests were rerun for this documentation-only correction. No commits, pushes, credentials, CI dispatch, configuration changes, deployment or human acceptance occurred in this turn. The task remains active with no completion proposal. The corrected candidate needs separately authorized publication and matching CI; earlier source runs do not establish its readiness.
