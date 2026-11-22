@@ -93,6 +93,8 @@ const server = createServer(async (req, res) => {
       context: { id: "00000000-0000-4000-8000-000000000006", expiresAt: null },
       payload: { mime: "image/jpeg", bytes: jpeg },
     });
+  if (url.pathname === "/api/v1/platform-invitations" && req.method === "GET")
+    return send({ items: [], next_cursor: null });
   if (url.pathname === "/api/v1/connections")
     return send({
       items: [{ member_a: self, member_b: friend,kind:"friend",mutual_family:false }],
@@ -472,7 +474,9 @@ try {
   await page.getByRole('button',{name:'Post',exact:true}).click();
   await page.getByText('Draft saved on this device',{exact:true}).waitFor().catch(async error=>{console.error(await page.locator('.draft-status').innerText());throw error;});
   await page.evaluate(()=>{window.keptDraftComposer=document.querySelector('form.composer');window.showRoute('/connections');});
+  await page.getByText('No invitations yet.',{exact:true}).waitFor({state:'visible'});
   assert.equal(await page.locator('textarea#post-text').isVisible(),false);
+  assert.deepEqual(errors, []);
   await page.evaluate(()=>window.showRoute('/share'));
   await page.locator('textarea#post-text').waitFor({state:'visible'});
   assert.equal(await page.evaluate(()=>window.keptDraftComposer===document.querySelector('form.composer')),true,'Share composer stays mounted across app routes');
