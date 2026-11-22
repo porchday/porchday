@@ -1,6 +1,7 @@
 import {describe,expect,it} from 'vitest';
 import {createElement} from 'react';
 import {renderToStaticMarkup} from 'react-dom/server';
+import {readFileSync} from 'node:fs';
 import {BackgroundControls} from '../src/BackgroundControls';
 import {createSiteAppearanceStore,generateSitePattern,parseSiteAppearance,siteAppearanceStyle,type SiteAppearance,type SiteAppearanceEnvironment} from '../src/site-appearance';
 
@@ -18,6 +19,33 @@ function browser(saved: string | null = null) {
 }
 
 describe('Browser-local site appearance',()=>{
+  it('applies and persists Thanksgiving, restores it on reload and synchronizes another tab',()=>{
+    const first=browser(),store=createSiteAppearanceStore(first.environment);
+    store.choose('thanksgiving');
+    expect(first.state.saved).toBe('{"v":1,"mode":"thanksgiving"}');
+    expect(first.state.applied.at(-1)).toEqual({v:1,mode:'thanksgiving'});
+    expect(store.getSnapshot().announcement).toBe('Thanksgiving background.');
+    expect(siteAppearanceStyle(store.getSnapshot().preference)).toEqual({color:'#493125',image:'url("/thanksgiving-pattern.svg")'});
+    const later=browser(first.state.saved),reloaded=createSiteAppearanceStore(later.environment);reloaded.init();
+    expect(reloaded.getSnapshot().preference).toEqual(store.getSnapshot().preference);
+    const other=browser(),synced=createSiteAppearanceStore(other.environment);synced.init();other.storageEvent(first.state.saved);
+    expect(synced.getSnapshot().preference).toEqual(store.getSnapshot().preference);
+    expect(other.state.writes).toEqual([]);
+    store.choose('clean');store.choose('pattern');store.choose('autumn');
+    expect(store.getSnapshot().preference.mode).toBe('autumn');
+  });
+  it('applies Thanksgiving even when saving is blocked',()=>{
+    const tab=browser(),store=createSiteAppearanceStore(tab.environment);tab.state.deniedRead=true;tab.state.deniedWrite=true;
+    store.choose('thanksgiving');
+    expect(tab.state.applied.at(-1)?.mode).toBe('thanksgiving');
+    expect(store.getSnapshot()).toMatchObject({storageAvailable:false,announcement:'Thanksgiving background. This browser could not save the preference.'});
+    expect(tab.state.writes).toEqual([]);
+  });
+  it('bundles Thanksgiving artwork without executable markup or external resources',()=>{
+    const svg=readFileSync(new URL('../public/thanksgiving-pattern.svg',import.meta.url),'utf8');
+    expect(svg).toContain('<svg');
+    expect(svg).not.toMatch(/<script|<foreignObject|<image|href=|onload=|onerror=|javascript:|https:|<style/i);
+  });
   it('initializes synchronously once with the exact original autumn tile and no storage write',()=>{
     const tab=browser(),store=createSiteAppearanceStore(tab.environment);let updates=0;
     store.subscribe(()=>updates++);store.init();store.init();
@@ -71,6 +99,7 @@ describe('Browser-local site appearance',()=>{
   });
   it.each([
     '', 'invalid', 'null', '[]', '{"v":2,"mode":"clean"}', '{"v":1,"mode":"https://example.test/tile"}',
+    '{"v":1,"mode":"thanksgiving","image":"url(https://example.test)"}', '{"v":1,"mode":"thanksgiving","seed":1}',
     '{"v":1,"mode":"clean","image":"url(https://example.test)"}', '{"v":1,"mode":"pattern","seed":"1"}',
     '{"v":1,"mode":"pattern","seed":-1}', '{"v":1,"mode":"pattern","seed":1.5}',
     '{"v":1,"mode":"pattern","seed":4294967296}', '{"v":1,"mode":"pattern","seed":1,"css":"red"}',
@@ -82,7 +111,9 @@ describe('Browser-local site appearance',()=>{
   });
   it('renders an accessible footer control group with native buttons and a polite status',()=>{
     const html=renderToStaticMarkup(createElement(BackgroundControls));
-    expect(html).toContain('role="group" aria-label="Background"');expect(html.match(/type="button"/g)).toHaveLength(3);
+    expect(html).toContain('role="group" aria-label="Background"');expect(html.match(/type="button"/g)).toHaveLength(4);
+    expect([...html.matchAll(/<button[^>]*>([^<]+)<\/button>/g)].map(match=>match[1])).toEqual(['Autumn','Thanksgiving','Clean','New pattern']);
+    expect(html).toContain('aria-pressed="false">Thanksgiving');
     expect(html).toContain('aria-pressed="true">Autumn');expect(html).toContain('aria-pressed="false">Clean');expect(html).toContain('aria-pressed="false">New pattern');
     expect(html).toContain('role="status" aria-live="polite" aria-atomic="true"');
   });

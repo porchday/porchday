@@ -105,6 +105,7 @@ export default defineConfig({
           "/icon.svg",
           "/logo.svg",
           "/porch-pattern.svg",
+          "/thanksgiving-pattern.svg",
           "/wallpaper-checker.svg",
           "/wallpaper-daisies.svg",
           "/wallpaper-diamonds.svg",

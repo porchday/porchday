@@ -1,7 +1,7 @@
 export const SITE_APPEARANCE_KEY = 'porchday.site-appearance.v1';
 
 export type SiteAppearance =
-  | {v: 1; mode: 'autumn' | 'clean'}
+  | {v: 1; mode: 'autumn' | 'thanksgiving' | 'clean'}
   | {v: 1; mode: 'pattern'; seed: number};
 export type SiteAppearanceSnapshot = {
   preference: SiteAppearance;
@@ -25,7 +25,7 @@ export function parseSiteAppearance(value: string | null): SiteAppearance {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return original;
     const item = parsed as Record<string, unknown>;
     if (item.v !== 1) return original;
-    if ((item.mode === 'autumn' || item.mode === 'clean') && Object.keys(item).length === 2)
+    if ((item.mode === 'autumn' || item.mode === 'thanksgiving' || item.mode === 'clean') && Object.keys(item).length === 2)
       return {v: 1, mode: item.mode};
     if (item.mode === 'pattern' && Object.keys(item).length === 3 && validSeed(item.seed))
       return {v: 1, mode: 'pattern', seed: item.seed};
@@ -87,6 +87,7 @@ export function generateSitePattern(seed: number): {svg: string; color: string; 
 export function siteAppearanceStyle(preference: SiteAppearance): {color: string; image: string} {
   if (preference.mode === 'pattern') return generateSitePattern(preference.seed);
   if (preference.mode === 'clean') return {color: '#f4f0e8', image: 'none'};
+  if (preference.mode === 'thanksgiving') return {color: '#493125', image: 'url("/thanksgiving-pattern.svg")'};
   return {color: '#281b13', image: 'url("/porch-pattern.svg")'};
 }
 
@@ -120,9 +121,9 @@ export function createSiteAppearanceStore(environment: SiteAppearanceEnvironment
       publish(parseSiteAppearance(value), true, 'Background updated in this browser.');
     });
   };
-  const choose = (mode: 'autumn' | 'clean' | 'pattern') => {
+  const choose = (mode: SiteAppearance['mode']) => {
     init();
-    let preference: SiteAppearance = {v: 1, mode: mode === 'clean' ? 'clean' : 'autumn'};
+    let preference: SiteAppearance = {v: 1, mode: mode === 'pattern' ? 'autumn' : mode};
     if (mode === 'pattern') {
       let seed: number;
       try { seed = environment.randomSeed(); } catch { seed = ((lastSeed ?? 0) + 1) >>> 0; }
@@ -133,7 +134,7 @@ export function createSiteAppearanceStore(environment: SiteAppearanceEnvironment
     }
     let available = true;
     try { environment.write(JSON.stringify(preference)); } catch { available = false; }
-    const label = mode === 'autumn' ? 'Autumn background.' : mode === 'clean' ? 'Clean background.' : `Background pattern ${patternChanges} selected.`;
+    const label = mode === 'autumn' ? 'Autumn background.' : mode === 'thanksgiving' ? 'Thanksgiving background.' : mode === 'clean' ? 'Clean background.' : `Background pattern ${patternChanges} selected.`;
     publish(preference, available, label + (available ? '' : ' This browser could not save the preference.'));
   };
   return {
