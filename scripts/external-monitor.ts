@@ -1,3 +1,4 @@
+import {sessionReconciliation} from './external-monitor-reconciliation';
 import {randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
@@ -13,6 +14,7 @@ async function main(){
  const config=JSON.parse(privateFile(resolve(configPath))) as ProbeConfig&{issue:number;incidentDispatch?:DispatchConfig};validateProbeConfig(config);
  if(config.environment!=='production'||!Number.isSafeInteger(config.issue)||config.issue<1)throw Error('MONITOR_PRODUCTION_CONFIGURATION');
  const stateDirectory=resolve(directory);privateDirectory(stateDirectory);
+ const sessionEvidence=sessionReconciliation(resolve(stateDirectory,'session-evidence'));
  let state=readState(stateDirectory),stopping=false;
  process.on('SIGTERM',()=>{stopping=true;});process.on('SIGINT',()=>{stopping=true;});
  const save=()=>persistState(stateDirectory,state);
@@ -32,7 +34,9 @@ async function main(){
  const timer=mode==='--continuous'?setInterval(()=>{void drainer.flush();},5000):undefined;
  try{
  do{
-  const started=Date.now(),observation=await probe(config);
+  const started=Date.now();await sessionEvidence.reconcile();
+  if(!sessionEvidence.available())throw Error('MONITOR_RECONCILIATION_CAPACITY');
+  const observation=await probe(config,{sessionEvidence});
   record(stateDirectory,observation);state=advanceActionable(state,observation,randomUUID());save();void drainer.flush();
   try{if(state.incident||observation.healthy)incidentDispatcher?.observe(observation);}catch{incidentNotice('incident_dispatch_needs_attention','state');}
   console.log(JSON.stringify({at:observation.at,event:'probe',healthy:observation.healthy,durationMs:observation.durationMs,pendingNotifications:state.pending.length}));

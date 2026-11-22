@@ -29,6 +29,16 @@ describe('external synthetic account readiness',()=>{
   const serialized=JSON.stringify(result);
   for(const value of [config.healthToken,config.synthetic.email,config.synthetic.password,'synthetic-session',id])expect(serialized).not.toContain(value);
  });
+ it('persists the exact synthetic cookie before logout and confirms only its rejection',async()=>{
+  const f=fixture(),events:string[]=[];
+  const result=await probe(config,{...f,fetch:(async(input,init)=>{if(String(input).endsWith('/sign-out'))events.push('logout');return f.fetch(input,init);}) as typeof fetch,sessionEvidence:{capture(cookie){expect(cookie).toContain('synthetic-session');events.push('captured');return 'evidence-id';},rejected(id){expect(id).toBe('evidence-id');events.push('rejected');}}});
+  expect(result.healthy).toBe(true);expect(events).toEqual(['captured','logout','rejected']);
+ });
+ it('preserves evidence when the logout cookie still authorizes',async()=>{
+  const rejected=vi.fn(),f=fixture(url=>url.endsWith('/sign-out')?response({},503):undefined);
+  const result=await probe(config,{...f,sessionEvidence:{capture:()=> 'evidence-id',rejected}});
+  expect(result.healthy).toBe(false);expect(rejected).not.toHaveBeenCalled();expect(f.calls.filter(c=>c.url.endsWith('/sign-out'))).toHaveLength(1);
+ });
  it('detects protected quarantine despite healthy anonymous requests',async()=>{
   const result=await probe(config,fixture(url=>url.endsWith('/health')?response({status:'unavailable',issues:['private detail']},503):undefined));
   expect(result.healthy).toBe(false);expect(result.checks.find(c=>c.name==='protected_readiness')).toMatchObject({name:'protected_readiness',ok:false,status:503});
