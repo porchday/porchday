@@ -6,14 +6,18 @@ FILE is private operator-reviewed JSON, never a provider dump or a source defaul
 {"schemaVersion":1,"environment":"staging","flags":{
  "KEY_RECOVERY_ENABLED":false,"LOGOUT_PHASE_TIMING":false,
  "SESSION_DENIAL_CLEANUP_V1":true,"SESSION_DENIAL_WRITER_V1":false,
- "VIDEO_UPLOADS_V2":false,"SESSION_DENIAL_PARTITIONS_V1":null,
- "SESSION_DENIAL_QUEUE_TOPOLOGY_V1":null},
+ "VIDEO_UPLOADS_V2":false,"SESSION_DENIAL_PARTITIONS_V1":"synthetic-partitions",
+ "SESSION_DENIAL_QUEUE_TOPOLOGY_V1":"synthetic-topology"},
  "HEALTH_MONITOR":{"service":"synthetic-health-monitor"}}
 This example is synthetic, not a recommended runtime configuration.
 All keys are required; unknown/duplicate keys are rejected. Five core flags are
-JSON booleans. The two additional capability flags accept booleans or explicit
-null (omit the variable, distinct from false), in either environment. Current
-application source does not consume those two flags; no dependency is inferred.
+JSON booleans. The two additional capability fields require strings or explicit
+null (omit the variable) in either environment. Strings contain 1-1024 Unicode
+code points and exclude controls, format controls, surrogates and line/paragraph
+separators (Unicode categories Cc, Cf, Cs, Zl, Zp). Preserve strings exactly,
+including spaces, case and boolean-looking text: "false" is text, false is invalid,
+and null omits. No trimming, normalization, enum or activation inference applies.
+Current application source does not consume these fields; no dependency is inferred.
 HEALTH_MONITOR requires exactly a service name (1-63 ASCII letters/digits/hyphens,
 starting with a letter). Provider environment fields are not normalized here.
 
@@ -26,7 +30,7 @@ Writer-off/cleanup-on rollback is supported. Recovery/video flags gate writes,
 not compatible readers: deployment must separately preserve the reader-capable
 rollback floor. This generator cannot prove previously admitted source versions.
 """
-import json,re,sys
+import json,re,sys,unicodedata
 from pathlib import Path
 name=sys.argv[1] if len(sys.argv)>1 else ''
 if name not in ('staging','production') or len(sys.argv)!=4 or sys.argv[2]!='--reviewed-runtime':
@@ -56,10 +60,13 @@ required_flags=['KEY_RECOVERY_ENABLED','LOGOUT_PHASE_TIMING','SESSION_DENIAL_CLE
 omittable_flags=['SESSION_DENIAL_PARTITIONS_V1','SESSION_DENIAL_QUEUE_TOPOLOGY_V1']
 flags=reviewed['flags']
 exact_keys(flags,required_flags+omittable_flags,'Reviewed runtime flags')
-for flag in required_flags+omittable_flags:
+for flag in required_flags:
+ if type(flags[flag]) is not bool:raise SystemExit(flag+' must be a JSON boolean.')
+for flag in omittable_flags:
  value=flags[flag]
- if type(value) is not bool and not (flag in omittable_flags and value is None):
-  raise SystemExit(flag+' must be a JSON boolean'+(' or explicit null for omission.' if flag in omittable_flags else '.'))
+ if value is not None and (not isinstance(value,str) or not 1<=len(value)<=1024 or
+  any(unicodedata.category(char) in {'Cc','Cf','Cs','Zl','Zp'} for char in value)):
+  raise SystemExit(flag+' must be null or a 1-1024 code point string without controls or line separators.')
 if flags['SESSION_DENIAL_WRITER_V1'] and not flags['SESSION_DENIAL_CLEANUP_V1']:
  raise SystemExit('Session denial writer requires cleanup; preserve cleanup during writer rollback.')
 monitor=reviewed['HEALTH_MONITOR']
@@ -89,7 +96,8 @@ base['vars'].update(APP_URL=origin,ENVIRONMENT=name)
 # Never inherit local operational choices, including explicitly omitted flags.
 for flag in required_flags+omittable_flags:
  base['vars'].pop(flag,None)
- if flags[flag] is not None:base['vars'][flag]='true' if flags[flag] else 'false'
+ if flag in required_flags:base['vars'][flag]='true' if flags[flag] else 'false'
+ elif flags[flag] is not None:base['vars'][flag]=flags[flag]
 base['services']=[binding for binding in base.get('services',[]) if binding.get('binding')!='HEALTH_MONITOR']
 base['services'].append({'binding':'HEALTH_MONITOR','service':monitor['service']})
 base['vars'].pop('LEGACY_APP_URL',None)
