@@ -168,3 +168,23 @@ availability. Preserve the input byte prefixes alongside retained reports to
 reproduce a fixed snapshot. The reporter does not delete history or post alerts.
 
 November 12 alert confirmation: outage delivery requires two consecutive failed probes no more than 45 seconds apart. A lone failure remains recorded without an outage/recovery notification pair. Confirmed recovery still requires 140 seconds of continuous healthy observations. See [incident dispatch](incident-dispatch.md#november-12-notification-noise-remediation) for responder thread reuse and backup workflow exit semantics.
+
+## Durable synthetic-session reconciliation
+
+The Mac monitor persists the exact synthetic cookie in a separate owner-only
+`session-evidence/pending-sessions.json` before attempting logout. Ordinary
+observations, notifications and logs never contain it. A confirmed 401 removes
+that entry; a 200 or failed read keeps it. Restart resumes at most one bounded
+five-second read per ordinary cycle before the next journey, without replaying
+login or logout. This does not revise a failed observation to healthy.
+
+Only the configured synthetic identity enters this path. Cookies have a maximum
+seven-day retention; retention expiry is recorded as **unconfirmed**, never as
+revocation. A maximum of 100 retained sessions bounds storage; evidence-storage
+failure or capacity exhaustion stops new journeys rather than silently losing
+more evidence. Sanitized reconciliation history records rejected, still-authorized,
+read-failed, or retention-expired outcomes. Existing cookies discarded by older
+monitor versions cannot be reconstructed by this change.
+
+This is an operator-side monitor change, with no web/API/native user behavior,
+provider deployment, schema change, credential reset or queue change.
