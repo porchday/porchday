@@ -85,7 +85,7 @@ export async function deliver(issue:number,event:AlertEvent,source:'operator-mac
     if(options.reconcileOnly)throw Error('NOTIFICATION_PENDING');
     await options.beforeRelayDispatch?.();
     await transport('POST','/repos/porchday/porchday/actions/workflows/external-monitor-relay.yml/dispatches',{
-     ref:'main',inputs:{event_id:event.id,payload:JSON.stringify({event:{id:event.id,kind:event.kind,at:event.at,failedChecks:event.failedChecks,...(event.notAttemptedChecks===undefined?{}:{notAttemptedChecks:event.notAttemptedChecks})},drill:!!options.drill})},
+     ref:'main',inputs:{event_id:event.id,payload:JSON.stringify({event:{id:event.id,kind:event.kind,at:event.at,failedChecks:event.failedChecks,...(event.notice===undefined?{}:{notice:event.notice}),...(event.notAttemptedChecks===undefined?{}:{notAttemptedChecks:event.notAttemptedChecks})},drill:!!options.drill})},
     });
     // Dispatch acceptance is not notification delivery. Keep the durable outbox
     // until a later reconciliation observes the exact bot-authored comment.

@@ -25,3 +25,14 @@ it('does not emit a second downtime alert for responder failure and deduplicates
  s=dispatchAttention(s,new Date(base+1000).toISOString(),'second');expect(s.pending).toHaveLength(1);
  expect(dispatchAttention({...s,incident:true},new Date(base+7200000).toISOString(),'third').pending).toHaveLength(1);
 });
+
+it('preserves the notice category across relay dispatch for exact read-back reconciliation',async()=>{
+ const {deliver}=await import('./external-monitor-github');
+ const event={id:'monitor-fault',kind:'outage' as const,at:new Date(base).toISOString(),failedChecks:['incident_dispatch'],notice:'monitoring' as const};
+ let sent:any;
+ await expect(deliver(52,event,'operator-mac',{relay:true,transport:async(method,path,body)=>{
+  if(method==='POST'){sent=body;return null;}
+  return path.includes('/comments?')?[]:{title:'External production availability alerts (operator-mac)'};
+ }})).rejects.toThrow('NOTIFICATION_PENDING');
+ expect(JSON.parse(sent.inputs.payload).event).toEqual(event);
+});
