@@ -35,7 +35,7 @@ Application API/frontend versions were not changed. Both monitor environments re
 
 ## Post-release health window
 
-9 complete Mac journeys passed from 2026-11-23T18:15:36.063Z through 2026-11-23T18:18:15.814Z (159.8 seconds), each covering all nine checks. No open incident or pending notifications remained. The installed bundle hash and daemon PID matched the installation receipt.
+9 complete Mac journeys passed from 2026-11-23T18:15:36.063Z through 2026-11-23T18:18:15.814Z (159.8 seconds), each covering all nine checks. No open incident or pending notifications remained. The installed bundle hash matched the installation receipt, and launchd reported the monitor running.
 
 Normal GitHub backup [45236303402](https://github.com/porchday/porchday/actions/runs/45236303402) passed two complete journeys, found no open incident and created no linked alert comments. Its 4,356.6-second scheduling gap remains retained as diagnostic coverage evidence, not an inferred outage.
 
