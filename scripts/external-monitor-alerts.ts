@@ -52,6 +52,7 @@ export function alertBody(event:AlertEvent, source:'operator-mac'|'github-backup
  * after an acknowledged logout are immediate. No request timeout is changed.
  */
 export function advanceActionable(state:AlertState, observation:Observation, eventId:string):AlertState {
+ if(state.lastAt!==null&&Date.parse(observation.at)<=Date.parse(state.lastAt))return state;
  const failed=observation.checks.filter(c=>!c.ok&&c.failure!=='dependency');
  const service=failed.filter(c=>!['monitor_freshness','backup_execution','incident_dispatch'].includes(c.name));
  const security=observation.checks.some(c=>c.name==='logout'&&c.ok)&&failed.some(c=>c.name==='revocation'&&c.status===200);

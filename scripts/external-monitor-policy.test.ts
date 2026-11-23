@@ -36,3 +36,8 @@ it('preserves the notice category across relay dispatch for exact read-back reco
  }})).rejects.toThrow('NOTIFICATION_PENDING');
  expect(JSON.parse(sent.inputs.payload).event).toEqual(event);
 });
+
+it('does not replay an old security observation',()=>{
+ const s={...initialState(),lastAt:new Date(base+20000).toISOString()};
+ expect(advanceActionable(s,obs(0,[{name:'logout',ok:true,status:200},{name:'revocation',ok:false,status:200}]),'old')).toBe(s);
+});
