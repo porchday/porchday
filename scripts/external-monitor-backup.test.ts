@@ -101,3 +101,11 @@ it('reconciles hosted alerts with separately reported skipped checks',async()=>{
  const transport:GitHubTransport=async(_,path)=>path.includes('/comments?')?[{id:1,body,user:bot}]:{title:'External production availability alerts (github-backup)'};
  expect(await latestHostedEvent(53,transport)).toEqual(value);
 });
+
+
+it('hands confirmed backup failures to a live agent receiver without paging the owner',async()=>{
+ const f=fixture([false,false]);let handoffs=0;await runBackup(config,{...f.options,handoff:async()=>{handoffs++;return true;}});expect(handoffs).toBeGreaterThan(0);expect(f.writes()).toBe(0);
+});
+it('labels a failed agent handoff as an explicit fallback and reconciles its exact message',async()=>{
+ const f=fixture([false,false]);await runBackup(config,{...f.options,handoff:async()=>false});expect(f.writes()).toBe(1);expect(f.comments[0].body).toContain('fallback');expect((await latestHostedEvent(53,f.options.transport))?.review?.kind).toBe('fallback');
+});

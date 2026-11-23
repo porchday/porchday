@@ -38,3 +38,9 @@ describe('relay scheduling',()=>{
   const f=fixture();let unblock!:()=>void;const gate=new Promise<void>(resolve=>{unblock=resolve;});const transport:GitHubTransport=async(...args)=>{await gate;return f.options.transport(...args);};const d=createRelayDrainer({...f.options,transport});const first=d.flush(),second=d.flush();expect(first).toBe(second);f.append();unblock();await first;expect(f.posts()).toBe(1);expect(f.state().pending).toEqual([outage,recovery]);
  });
 });
+
+
+it('does not hold an immediate security escalation behind an ordinary incident awaiting review',async()=>{
+ const f=fixture(),security={...outage,id:'security',failedChecks:['revocation'],review:{kind:'fallback' as const,summary:'Acknowledged logout access violation.'}};
+ f.options.write({...f.state(),pending:[{...outage,reviewPending:true},security]});await createRelayDrainer(f.options).flush();expect(f.posts()).toBe(1);expect(f.state().lastRelayAttempt?.id).toBe('security');expect(f.state().pending[0].reviewPending).toBe(true);
+});

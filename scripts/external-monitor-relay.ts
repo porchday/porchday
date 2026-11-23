@@ -4,7 +4,7 @@ import {alertBody,type AlertEvent} from './external-monitor-alerts.ts';
 import {deliver,type GitHubTransport} from './external-monitor-github.ts';
 
 export async function relayNotification(eventId:string,payload:string,transport?:GitHubTransport):Promise<void>{
- if(payload.length>2048)throw Error('INVALID_RELAY_EVENT');
+ if(payload.length>4096)throw Error('INVALID_RELAY_EVENT');
  const input=JSON.parse(payload) as {event:AlertEvent;drill:boolean};
  if(!input?.event||typeof input.drill!=='boolean'||input.event.id!==eventId)throw Error('INVALID_RELAY_EVENT');
  // The shared renderer validates fixed names and emits no caller-supplied prose.

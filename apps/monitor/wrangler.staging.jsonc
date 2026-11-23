@@ -23,6 +23,7 @@
   ],
   "vars": {
     "ENVIRONMENT": "staging",
+    "AGENT_FIRST_ALERTS": "true",
     "EMAIL_FROM": "Porchday <accounts@porchday.com>",
     "METRICS_ENABLED": "true",
     "ANALYTICS_ACCOUNT_ID": "8e992aa185989f80520215b6489bfacb",

@@ -28,7 +28,7 @@ it('does not emit a second downtime alert for responder failure and deduplicates
 
 it('preserves the notice category across relay dispatch for exact read-back reconciliation',async()=>{
  const {deliver}=await import('./external-monitor-github');
- const event={id:'monitor-fault',kind:'outage' as const,at:new Date(base).toISOString(),failedChecks:['incident_dispatch'],notice:'monitoring' as const};
+ const event={id:'monitor-fault',kind:'outage' as const,at:new Date(base).toISOString(),failedChecks:['incident_dispatch'],notice:'monitoring' as const,review:{kind:'reviewed' as const,summary:'A reviewed operator action is required.'}};
  let sent:any;
  await expect(deliver(52,event,'operator-mac',{relay:true,transport:async(method,path,body)=>{
   if(method==='POST'){sent=body;return null;}
@@ -40,4 +40,12 @@ it('preserves the notice category across relay dispatch for exact read-back reco
 it('does not replay an old security observation',()=>{
  const s={...initialState(),lastAt:new Date(base+20000).toISOString()};
  expect(advanceActionable(s,obs(0,[{name:'logout',ok:true,status:200},{name:'revocation',ok:false,status:200}]),'old')).toBe(s);
+});
+
+
+it('escalates an acknowledged-logout access violation even during a previously notified incident',()=>{
+ const s={...initialState(),incident:true,lastAt:new Date(base).toISOString()};
+ const o=obs(20000,[{name:'logout',ok:true,status:200},{name:'revocation',ok:false,status:200}]);
+ const first=advanceActionable(s,o,'security');expect(first.pending).toHaveLength(1);
+ expect(advanceActionable(first,{...o,at:new Date(base+40000).toISOString()},'repeat').pending).toHaveLength(1);
 });
