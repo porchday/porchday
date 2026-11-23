@@ -49,7 +49,7 @@ describe('hosted backup monitor',()=>{
   expect(result).toEqual({healthy:false,notificationsDelivered:false,incidentOpen:false});expect(f.observations).toHaveLength(2);
   expect(JSON.stringify(result)).not.toContain('SECRET_RESPONSE');
  });
- it('reports a prior execution gap and recovery even when the next application checks pass',async()=>{
+ it('reports a prior failed execution as monitoring trouble and recovery even when the next application checks pass',async()=>{
   const f=fixture([true,true]);
   expect(await runBackup(config,{...f.options,previousExecutionFailed:true})).toEqual({healthy:true,notificationsDelivered:true,incidentOpen:false});
   expect(f.writes()).toBe(2);expect(f.comments[0].body).toContain('backup_execution');expect(f.comments[1].body).toContain('checks recovered');
@@ -63,7 +63,7 @@ describe('hosted backup monitor',()=>{
   const lookup=(patch:object={})=>previousHostedExecutionFailed('10',async()=>({workflow_runs:[{...run,id:11,conclusion:'failure'},{...run,id:10,conclusion:null},{...run,...patch}]}),base);
   expect(await lookup()).toBe(false);
   for(const conclusion of ['failure','cancelled','timed_out'])expect(await lookup({conclusion})).toBe(true);
-  expect(await lookup({updated_at:new Date(base-13*60000).toISOString()})).toBe(true);
+  expect(await lookup({updated_at:new Date(base-13*60000).toISOString()})).toBe(false);
   expect(await previousHostedExecutionFailed('10',async()=>({workflow_runs:[]}),base)).toBe(false);
  });
  it('refuses staging or ordinary member credentials before any probe',async()=>{

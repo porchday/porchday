@@ -168,3 +168,9 @@ availability. Preserve the input byte prefixes alongside retained reports to
 reproduce a fixed snapshot. The reporter does not delete history or post alerts.
 
 November 12 alert confirmation: outage delivery requires two consecutive failed probes no more than 45 seconds apart. A lone failure remains recorded without an outage/recovery notification pair. Confirmed recovery still requires 140 seconds of continuous healthy observations. See [incident dispatch](incident-dispatch.md#november-12-notification-noise-remediation) for responder thread reuse and backup workflow exit semantics.
+
+## Actionability policy — November 23
+
+The 20-second diagnostic collection cadence and per-request deadlines are unchanged. Every failed/skipped observation stays in the append-only history. The Mac's notification reducer is separate: confirmed HTTP failures alert after two contiguous observations; successful logout followed by HTTP 200 on the old cookie alerts immediately; transport-only failures require 120 seconds; monitor-only faults require 600 seconds and explicitly do not establish application downtime. Gaps over 45 seconds reset confirmation. Recovery still requires 140 seconds of contiguous healthy observations.
+
+A responder dispatch fault is not another application outage: it is retained in incident state/logs, coalesced while an incident is open, or separately labeled monitoring trouble with at most one standalone notice per hour. Responder dispatch follows actionable incidents rather than every short diagnostic fluctuation. GitHub jobs print prior-run age/coverage gaps; schedule lateness alone no longer creates an application outage/recovery pair. A genuinely failed previous execution remains a monitoring notice. Historical events keep their original renderer and are not deleted.

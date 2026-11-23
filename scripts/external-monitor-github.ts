@@ -36,11 +36,12 @@ export async function latestHostedEvent(issue:number,transport:GitHubTransport=g
    if(comment.user?.login!=='github-actions[bot]'||comment.user.type!=='Bot'||typeof comment.body!=='string'||!Number.isSafeInteger(comment.id)||comment.id!<=0)continue;
    const body=comment.body,id=/^<!-- porchday-external-monitor:github-backup:([a-zA-Z0-9-]{1,64}) -->\n/.exec(body)?.[1];
    const at=/^Observed at: (\S+)$/m.exec(body)?.[1];
-   const kind=body.includes('\nExternal availability check failed.\n')?'outage':body.includes('\nExternal availability checks recovered.\n')?'recovery':null;
+   const kind=body.includes('\nExternal availability check failed.\n')||body.includes('\nMonitoring needs attention; application downtime is not established.\n')?'outage':body.includes('\nExternal availability checks recovered.\n')||body.includes('\nMonitoring checks recovered.\n')?'recovery':null;
+   const notice=/^Notice: (service|monitoring)$/m.exec(body)?.[1] as AlertEvent['notice'];
    if(!id||!at||!kind)continue;
    const failedChecks=kind==='outage'?(/^Failed checks: (.*)$/m.exec(body)?.[1]??'').split(', '):[];
    const skipped=/^Not attempted after an earlier failure: (.*)$/m.exec(body)?.[1];
-   const event:AlertEvent={id,kind,at,failedChecks,...(skipped===undefined?{}:{notAttemptedChecks:skipped==='none'?[]:skipped.split(', ')})};
+   const event:AlertEvent={id,kind,at,failedChecks,...(notice?{notice}:{}),...(skipped===undefined?{}:{notAttemptedChecks:skipped==='none'?[]:skipped.split(', ')})};
    try{if(alertBody(event,'github-backup')===body&&comment.id!>latestId){latest=event;latestId=comment.id!;}}catch{/* Untrusted text is never executed or echoed. */}
   }
   if(comments.length<100)return latest;
@@ -48,8 +49,8 @@ export async function latestHostedEvent(issue:number,transport:GitHubTransport=g
  throw Error('MONITOR_ISSUE_ROTATION_REQUIRED');
 }
 
-/** A failed or missing previous execution must not disappear when the next probe is healthy. */
-export async function previousHostedExecutionFailed(runId:string,transport:GitHubTransport=ghTransport,now=Date.now()):Promise<boolean>{
+/** Failed executions alert; historical schedule gaps remain coverage evidence, not application outages. */
+export async function previousHostedExecutionFailed(runId:string,transport:GitHubTransport=ghTransport,now=Date.now(),coverage?:(gapMs:number)=>void):Promise<boolean>{
  const current=Number(runId);
  if(!/^\d+$/.test(runId)||!Number.isSafeInteger(current)||current<1)throw Error('INVALID_WORKFLOW_RUN');
  const response=await transport('GET','/repos/porchday/porchday/actions/workflows/external-monitor.yml/runs?branch=main&per_page=10&exclude_pull_requests=true') as {workflow_runs?:{id:number;head_branch:string;event:string;status:string;conclusion:string|null;updated_at:string}[]};
@@ -58,7 +59,8 @@ export async function previousHostedExecutionFailed(runId:string,transport:GitHu
  if(!previous)return false;
  const updated=Date.parse(previous.updated_at);
  if(!Number.isFinite(updated)||updated>now+30000)throw Error('GITHUB_RESPONSE_INVALID');
- return previous.status!=='completed'||previous.conclusion!=='success'||now-updated>12*60000;
+ coverage?.(Math.max(0,now-updated));
+ return previous.status!=='completed'||previous.conclusion!=='success';
 }
 
 /** Reconcile an uncertain comment write using its persisted event marker before retrying. */

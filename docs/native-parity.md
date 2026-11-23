@@ -362,3 +362,7 @@ The shared iOS/macOS/web dashboard now reads readiness in-process and monitor st
 ## Dashboard Workers runtime compatibility — November 16
 
 Monitor status requests use manual redirects with explicit rejection because workerd does not implement redirect error mode. A real workerd service-binding regression now verifies successful JSON and refused redirects in CI. Shared iOS/macOS UI and client behavior are unchanged. Exact-source native CI is required again for this corrected API candidate; no earlier build or physical-device check is substituted.
+
+## Actionable health notifications — November 23
+
+Operator-monitor policy only: iOS/macOS shells, legacy native consumers, API privacy guards and session revocation behavior are unchanged. All probe outcomes remain in append-only diagnostics. Service HTTP failures retain two-observation confirmation; a successful logout followed by accepted old-cookie access alerts immediately. Single-vantage transport failures require 120 seconds, monitor-only failures 600 seconds. Responder faults are separately labeled and coalesced with an already open incident. GitHub cadence gaps remain explicit coverage telemetry rather than recurring application downtime/recovery pairs. Full and exact-source native CI are required before installing this production monitor; no signed binary distribution or physical-device verification is claimed.
