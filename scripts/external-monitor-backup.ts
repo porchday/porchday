@@ -15,17 +15,17 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
  validateProbeConfig(config);
  if(config.environment!=='production')throw Error('HOSTED_MONITOR_PRODUCTION_ONLY');
  let state=initialState(),stateAvailable=true,allHealthy=true;
- try{const previous=await latestHostedEvent(config.issue,options.transport);state.incident=previous?.kind==='outage';}
+ try{const previous=await latestHostedEvent(config.issue,options.transport);state.incident=previous?.kind==='outage';state.incidentNotice=previous?.notice;}
  catch{stateAvailable=false;}
  const now=options.now??Date.now;
  if(stateAvailable&&!state.incident&&options.previousExecutionFailed){
-  state.incident=true;
-  state.pending.push({id:randomUUID(),kind:'outage',at:new Date(now()).toISOString(),failedChecks:['backup_execution']});
+  state.incident=true;state.incidentNotice='monitoring';
+  state.pending.push({id:randomUUID(),kind:'outage',at:new Date(now()).toISOString(),failedChecks:['backup_execution'],notice:'monitoring'});
  }
  for(let sample=0;sample<2||(state.incident&&sample<8);sample++){
   const started=now(),observation=await (options.probe??probe)(config);
   options.observe(observation);allHealthy=allHealthy&&observation.healthy;
-  state=advance(state,observation,randomUUID());
+  const previousCount=state.pending.length;state=advance(state,observation,randomUUID());if(state.pending.length>previousCount&&state.pending.at(-1)?.kind==='recovery'&&state.incidentNotice){state.pending.at(-1)!.notice=state.incidentNotice;delete state.incidentNotice;}
   if(stateAvailable){
    while(state.pending.length){
     try{await deliver(config.issue,state.pending[0],'github-backup',{transport:options.transport,requireBot:true});state.pending.shift();}
@@ -53,7 +53,7 @@ async function main(){
  // Remove the scoped synthetic configuration from the environment inherited by gh.
  delete process.env.PORCHDAY_EXTERNAL_MONITOR_CONFIG;
  let previousExecutionFailed=false,executionHistoryAvailable=true;
- try{previousExecutionFailed=await previousHostedExecutionFailed(process.env.GITHUB_RUN_ID??'');}catch{executionHistoryAvailable=false;}
+ try{previousExecutionFailed=await previousHostedExecutionFailed(process.env.GITHUB_RUN_ID??'',ghTransport,Date.now(),gapMs=>console.log(JSON.stringify({source:'github-backup',event:'coverage',previousRunAgeMs:gapMs,coverageGap:gapMs>12*60000})));}catch{executionHistoryAvailable=false;}
  const result=await runBackup(config,{previousExecutionFailed,observe:observation=>console.log(JSON.stringify({source:'github-backup',...observation}))});
  console.log(JSON.stringify({source:'github-backup',...result,executionHistoryAvailable,previousExecutionFailed}));
  if(process.env.PORCHDAY_MONITOR_NOTIFICATION_DRILL==='true'){

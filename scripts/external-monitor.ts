@@ -1,8 +1,9 @@
+import {sessionReconciliation} from './external-monitor-reconciliation';
 import {randomUUID} from 'node:crypto';
 import {resolve} from 'node:path';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {probe,validateProbeConfig,type ProbeConfig} from './external-monitor-probe';
-import {advance} from './external-monitor-alerts';
+import {advanceActionable,dispatchAttention} from './external-monitor-alerts';
 import {createRelayDrainer} from './external-monitor-delivery';
 import {privateFile,privateDirectory,readState,persistState,record} from './external-monitor-store';
 import {createIncidentDispatcher,type DispatchConfig} from './incident-dispatch.ts';
@@ -13,6 +14,7 @@ async function main(){
  const config=JSON.parse(privateFile(resolve(configPath))) as ProbeConfig&{issue:number;incidentDispatch?:DispatchConfig};validateProbeConfig(config);
  if(config.environment!=='production'||!Number.isSafeInteger(config.issue)||config.issue<1)throw Error('MONITOR_PRODUCTION_CONFIGURATION');
  const stateDirectory=resolve(directory);privateDirectory(stateDirectory);
+ const sessionEvidence=sessionReconciliation(resolve(stateDirectory,'session-evidence'));
  let state=readState(stateDirectory),stopping=false;
  process.on('SIGTERM',()=>{stopping=true;});process.on('SIGINT',()=>{stopping=true;});
  const save=()=>persistState(stateDirectory,state);
@@ -21,7 +23,7 @@ async function main(){
   if(event==='incident_dispatch_needs_attention'||event==='incident_dispatch_uncertain'){
    // Existing bot relay accepts this finite execution-failure check. Owner
    // delivery remains independent of the agent daemon and inference service.
-   state={...state,pending:[...state.pending,{id:randomUUID(),kind:'outage',at:new Date().toISOString(),failedChecks:['backup_execution']}]};save();
+   state=dispatchAttention(state,new Date().toISOString(),randomUUID());save();
   }
  };
  let incidentDispatcher:ReturnType<typeof createIncidentDispatcher>|undefined;
@@ -32,9 +34,11 @@ async function main(){
  const timer=mode==='--continuous'?setInterval(()=>{void drainer.flush();},5000):undefined;
  try{
  do{
-  const started=Date.now(),observation=await probe(config);
-  record(stateDirectory,observation);state=advance(state,observation,randomUUID());save();void drainer.flush();
-  try{incidentDispatcher?.observe(observation);}catch{incidentNotice('incident_dispatch_needs_attention','state');}
+  const started=Date.now();await sessionEvidence.reconcile();
+  if(!sessionEvidence.available())throw Error('MONITOR_RECONCILIATION_CAPACITY');
+  const observation=await probe(config,{sessionEvidence});
+  record(stateDirectory,observation);state=advanceActionable(state,observation,randomUUID());save();void drainer.flush();
+  try{if(state.incident||observation.healthy)incidentDispatcher?.observe(observation);}catch{incidentNotice('incident_dispatch_needs_attention','state');}
   console.log(JSON.stringify({at:observation.at,event:'probe',healthy:observation.healthy,durationMs:observation.durationMs,pendingNotifications:state.pending.length}));
   if(mode==='--once'){await drainer.flush();break;}
   // No overlapping probes and no catch-up burst after sleep, outage or restart.

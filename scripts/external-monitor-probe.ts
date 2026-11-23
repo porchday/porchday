@@ -25,7 +25,7 @@ async function boundedJson(response:Response){
  return JSON.parse(new TextDecoder().decode(bytes));
 }
 
-export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?:()=>number;timeoutMs?:number}={}):Promise<Observation>{
+export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?:()=>number;timeoutMs?:number;sessionEvidence?:{capture:(cookie:string)=>string;rejected:(id:string)=>void}}={}):Promise<Observation>{
  validateProbeConfig(config);
  const now=options.now??Date.now,started=now(),checks:Check[]=[];
  const origin=config.environment==='production'?'https://porchday.org':'https://staging.porchday.com';
@@ -55,7 +55,7 @@ export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?
   catch(error){const code=(error as {cause?:{code?:unknown}})?.cause?.code;if(typeof code==='string'&&['ECONNRESET','ECONNREFUSED','ETIMEDOUT','ENOTFOUND','EAI_AGAIN','UND_ERR_CONNECT_TIMEOUT','UND_ERR_HEADERS_TIMEOUT','UND_ERR_BODY_TIMEOUT','UND_ERR_SOCKET'].includes(code))evidence.transportCode=code;checks.push({name,ok:false,...evidence,durationMs:Math.max(0,Math.round(now()-checkStarted)),failure:signal.aborted?'deadline':'transport_or_response'});}
   finally{clearTimeout(deadline);}
  };
- let cookie:string|undefined;
+ let cookie:string|undefined,sessionEvidenceId:string|undefined,evidenceFailed=false;
  try{
   await Promise.all([
    safe('protected_readiness',async()=>{
@@ -75,6 +75,7 @@ export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?
      const cookies=r.headers.getSetCookie().filter(value=>/^__Secure-[^=]*session_token=|^[^=;]*session_token=/.test(value));
      if(cookies.length!==1)return{status:r.status,ok:false};
      cookie=cookies[0].split(';',1)[0];
+     try{sessionEvidenceId=options.sessionEvidence?.capture(cookie);}catch{evidenceFailed=true;throw Error('MONITOR_SESSION_EVIDENCE_FAILED');}
      return{status:r.status,ok:true};
     });
     if(!cookie){for(const name of ['authorized_profile','authorized_feed','logout','revocation'])checks.push({name,ok:false,failure:'dependency'});return;}
@@ -84,10 +85,11 @@ export async function probe(config:ProbeConfig,options:{fetch?:typeof fetch;now?
     ]);
     // One logout only. Never replay an ambiguous write or print its response.
     await safe('logout',async()=>{const {response:r}=await json(origin+'/api/auth/sign-out',{method:'POST',headers:{Cookie:cookie!,Origin:origin,'Content-Type':'application/json'},body:'{}'});return{status:r.status,ok:r.status===200};});
-    await safe('revocation',async()=>{const {response:r}=await json(origin+'/api/v1/me?bootstrap=1',{headers:{Cookie:cookie!}});return{status:r.status,ok:r.status===401};});
+    await safe('revocation',async()=>{const {response:r}=await json(origin+'/api/v1/me?bootstrap=1',{headers:{Cookie:cookie!}});if(r.status===401&&sessionEvidenceId)options.sessionEvidence?.rejected(sessionEvidenceId);return{status:r.status,ok:r.status===401};});
    })(),
   ]);
  }finally{clearTimeout(timer);cookie=undefined;}
+ if(evidenceFailed)throw Error('MONITOR_SESSION_EVIDENCE_FAILED');
  checks.sort((a,b)=>a.name.localeCompare(b.name));
  const durationMs=Math.max(0,Math.round(now()-started));
  return{v:1,at:new Date(started).toISOString(),environment:config.environment,healthy:checks.every(check=>check.ok),checks,

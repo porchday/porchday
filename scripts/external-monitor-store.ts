@@ -24,6 +24,7 @@ export function readState(directory:string):AlertState {
  try{state=JSON.parse(privateFile(join(directory,'state.json')));}catch(error){if((error as NodeJS.ErrnoException).code==='ENOENT')return initialState();throw Error('MONITOR_STATE_INVALID');}
  if(state.v!==1||typeof state.incident!=='boolean'||![0,1,2].includes(state.healthyStreak)
   ||(state.lastAt!==null&&!Number.isFinite(Date.parse(state.lastAt)))||!Array.isArray(state.pending))throw Error('MONITOR_STATE_INVALID');
+ if(state.incidentNotice!==undefined&&!['service','monitoring'].includes(state.incidentNotice)||state.lastDispatchNoticeAt!==undefined&&!Number.isFinite(Date.parse(state.lastDispatchNoticeAt)))throw Error('MONITOR_STATE_INVALID');
  if(state.lastRelayAttempt!==undefined&&(!state.lastRelayAttempt||!/^[a-zA-Z0-9-]{1,64}$/.test(state.lastRelayAttempt.id)||!Number.isFinite(Date.parse(state.lastRelayAttempt.at))))throw Error('MONITOR_STATE_INVALID');
  if(state.failureStreak!==undefined&&![0,1,2].includes(state.failureStreak))throw Error('MONITOR_STATE_INVALID');
  if(state.firstFailureAt!==undefined&&!Number.isFinite(Date.parse(state.firstFailureAt)))throw Error('MONITOR_STATE_INVALID');
