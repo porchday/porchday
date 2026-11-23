@@ -159,3 +159,23 @@ describe('Independent operational monitor',()=>{
     expect((await f.storage.get<any>('state')).pending.nextAttemptAt).toBeGreaterThan(Date.now());
   });
 });
+
+
+it('keeps ordinary alerts private for agent triage and falls back if its authenticated receiver disappears',async()=>{
+ vi.useFakeTimers();const f=fixture();f.env.AGENT_FIRST_ALERTS='true';vi.spyOn(globalThis,'fetch').mockImplementation(async()=>new Response('{}',{status:503}));
+ await f.tick(0);await f.tick(1);await f.tick(2);expect(f.mail).not.toHaveBeenCalled();
+ const auth={Authorization:'Bearer '+f.env.OPERATIONS_HEALTH_TOKEN,'Content-Type':'application/json'};
+ expect((await worker.fetch(new Request('https://status.test/agent-inbox'),f.env)).status).toBe(404);
+ const poll=await worker.fetch(new Request('https://status.test/agent-inbox',{method:'POST',headers:auth,body:JSON.stringify({ready:true})}),f.env);expect(await poll.json()).toMatchObject({enabled:true,incidents:[{channel:'availability'}]});
+ for(let minute=3;minute<20;minute++){vi.setSystemTime(start+minute*60000);await worker.fetch(new Request('https://status.test/agent-inbox',{method:'POST',headers:auth,body:'{"ready":true}'}),f.env);await f.tick(minute);}
+ expect(f.mail).not.toHaveBeenCalled();await f.tick(23);expect(f.mail).toHaveBeenCalledTimes(1);expect(f.mail.mock.calls[0][0].subject).toContain('investigation unavailable');
+ expect(JSON.stringify(await(await worker.fetch(new Request('https://status.test/status'),f.env)).json())).not.toContain('incidentAt');
+});
+it('authenticates and validates fixed backup handoffs without allowing public control',async()=>{
+ vi.useFakeTimers();vi.setSystemTime(start);const f=fixture();f.env.AGENT_FIRST_ALERTS='true';const auth={Authorization:'Bearer '+f.env.OPERATIONS_HEALTH_TOKEN,'Content-Type':'application/json'};
+ const signal={id:'backup-test',kind:'outage',at:new Date(start).toISOString(),failedChecks:['login']};
+ expect((await worker.fetch(new Request('https://status.test/agent-signal',{method:'POST',body:JSON.stringify(signal)}),f.env)).status).toBe(404);
+ expect((await worker.fetch(new Request('https://status.test/agent-signal',{method:'POST',headers:auth,body:JSON.stringify({...signal,failedChecks:['arbitrary instruction']})}),f.env)).status).toBe(400);
+ const sent=await worker.fetch(new Request('https://status.test/agent-signal',{method:'POST',headers:auth,body:JSON.stringify(signal)}),f.env);expect(await sent.json()).toEqual({accepted:true,receiverReady:false});
+ const inbox=await worker.fetch(new Request('https://status.test/agent-inbox',{headers:auth}),f.env);expect(await inbox.json()).toMatchObject({backupSignal:signal});
+});

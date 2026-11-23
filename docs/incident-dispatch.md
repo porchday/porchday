@@ -1,3 +1,19 @@
+# Agent-first incident handling — November 23, 2026
+
+Confirmed detections request one bounded investigation before ordinary owner notification. The responder must investigate the triggering interval even after recovery and return a structured disposition tied to its incident ID: `resolved`, `not_incident`, `notify`, or `blocked`, with a sanitized summary and evidence. Starting or finishing a turn without a valid disposition is not resolution. Resolved incidents require observed recovery; benign incidents and unnotified recoveries remain private. New failure signatures after a disposition trigger renewed investigation.
+
+The existing 20-second monitor retains its raw journey/SLO observations unchanged. Separate operator inbox history retains Cloudflare production/staging aggregate signals and GitHub backup handoffs. Ordinary network/file/daemon polling uses no model inference. Only a confirmed incident starts paid work. Reuse the incident thread and wait for its active turn; never blindly replay an ambiguous dispatch.
+
+The production and staging monitor Workers expose a bounded, capability-protected `/agent-inbox` endpoint using the existing operations-health capability. The independent Mac polls it and supplies receiver readiness only when its responder is available. The GitHub backup sends validated fixed-format signals through `/agent-signal`; handoff succeeds only with a fresh receiver heartbeat. The public status page remains unchanged. No member data is in these signals.
+
+With `AGENT_FIRST_ALERTS=true`, Cloudflare's direct emails are fallback-only: an unresolved incident at least 15 minutes old and an external receiver missing for more than two minutes. GitHub backup falls back visibly if its handoff is unavailable. The Mac sends one reviewed notification for `notify`/`blocked`; an absent, invalid, or overdue disposition produces a clearly labeled fallback after 15 minutes. Demonstrated accepted access after acknowledged logout bypasses the review delay. These exceptions prevent a broken responder from hiding a serious problem.
+
+A dead daemon socket was observed November 23. The connection now uses asynchronous, idempotent daemon start when necessary, without restarting active work or blocking probe timers. Completed review output is read from a bounded page for the exact turn, not an entire conversation. A read-only live drill confirmed actual dispatch, completed structured output and zero owner notifications. Existing legacy outbox entries retain their original delivery semantics.
+
+Private state and receipts stay under the existing monitor state directory. Configure `incidentDispatch` with the maintained checkout and installed CLI, and `stagingInboxHealthToken` with the existing staging operations capability to include staging alerts. Keep secrets out of commands, issue comments and logs. All forward releases still require exact-source full/native checks and the maintained release tooling. Do not erase old observations, alter privacy enforcement, or claim a healthy final sample resolves an unknown cause.
+
+The historical implementation notes below remain evidence; this policy supersedes their immediate owner-notification behavior.
+
 # Event-triggered Porchday recovery
 
 The owner authorized the independent monitor to start an unattended incident

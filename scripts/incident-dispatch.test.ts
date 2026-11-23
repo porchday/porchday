@@ -76,3 +76,24 @@ it('does not launch paid work after recovery while daemon connection was pending
  f.connect.mockImplementation(()=>new Promise(resolve=>{connected=()=>resolve({call:f.call,close:vi.fn()});}));
  f.dispatcher.observe(observation(0));f.dispatcher.observe(observation(20));f.dispatcher.observe(observation(40,true));connected();await settle();expect(f.call).not.toHaveBeenCalled();
 });
+
+
+it('requests structured review at confirmation and continues it after observed recovery',async()=>{
+ const f=fixture();f.dispatcher.observe(observation(0),id);await settle();expect(f.dispatcher.current).toMatchObject({reviewRequired:true,id,phase:'accepted'});
+ expect((f.call.mock.calls as any[]).find(c=>c[0]==='turn/start')[1].outputSchema).toBeDefined();
+ f.dispatcher.observe(observation(20,true));f.dispatcher.current!.lastAttempt=undefined;
+ f.call.mockResolvedValue({data:[{id:'turn-1',status:'completed',items:[{type:'agentMessage',text:JSON.stringify({incidentId:id,decision:'not_incident',summary:'Correlated monitor-path failure.',evidence:['Matching retained observations.']})}]}]} as never);
+ await f.dispatcher.flush();expect(f.dispatcher.current?.review?.decision).toBe('not_incident');expect(f.notify).toHaveBeenCalledWith('incident_review_completed',id);
+});
+it('does not silence an incident with another turn or mismatched review result',async()=>{
+ const f=fixture({v:1,id,at:observation(0).at,lastAt:observation(20).at,failures:2,failedChecks:['login'],phase:'accepted',threadId:thread,turnId:'expected',reviewRequired:true});
+ f.call.mockResolvedValue({data:[{id:'other',status:'completed',items:[]}]} as never);await f.dispatcher.flush();expect(f.dispatcher.current?.review).toBeUndefined();
+});
+
+
+it('keeps checking for the review after the full recovery window has closed',async()=>{
+ const f=fixture();f.dispatcher.observe(observation(0),id);await settle();
+ for(let t=20;t<=160;t+=20)f.dispatcher.observe(observation(t,true));expect(f.dispatcher.current?.closedAt).toBeDefined();
+ f.dispatcher.current!.lastAttempt=undefined;f.call.mockResolvedValue({data:[{id:'turn-1',status:'completed',items:[{type:'agentMessage',text:JSON.stringify({incidentId:id,decision:'resolved',summary:'Verified repair and stability.',evidence:['Retained 140-second recovery.']})}]}]} as never);
+ f.dispatcher.observe(observation(180,true));await settle();expect(f.dispatcher.current?.review?.decision).toBe('resolved');
+});

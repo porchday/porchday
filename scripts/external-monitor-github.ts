@@ -36,12 +36,14 @@ export async function latestHostedEvent(issue:number,transport:GitHubTransport=g
    if(comment.user?.login!=='github-actions[bot]'||comment.user.type!=='Bot'||typeof comment.body!=='string'||!Number.isSafeInteger(comment.id)||comment.id!<=0)continue;
    const body=comment.body,id=/^<!-- porchday-external-monitor:github-backup:([a-zA-Z0-9-]{1,64}) -->\n/.exec(body)?.[1];
    const at=/^Observed at: (\S+)$/m.exec(body)?.[1];
-   const kind=body.includes('\nExternal availability check failed.\n')||body.includes('\nMonitoring needs attention; application downtime is not established.\n')?'outage':body.includes('\nExternal availability checks recovered.\n')||body.includes('\nMonitoring checks recovered.\n')?'recovery':null;
+   const kind=body.includes('\nReviewed Porchday incident needs your attention.\n')||body.includes('\nPorchday investigation needs attention.\n')||body.includes('\nExternal availability check failed.\n')||body.includes('\nMonitoring needs attention; application downtime is not established.\n')?'outage':body.includes('\nReviewed incident recovered.\n')||body.includes('\nExternal availability checks recovered.\n')||body.includes('\nMonitoring checks recovered.\n')?'recovery':null;
+   const reviewed=/^Review: (reviewed|fallback)\n([^\n]+)\n\nObserved at:/m.exec(body);
+   const review=reviewed?{kind:reviewed[1] as 'reviewed'|'fallback',summary:reviewed[2]}:undefined;
    const notice=/^Notice: (service|monitoring)$/m.exec(body)?.[1] as AlertEvent['notice'];
    if(!id||!at||!kind)continue;
    const failedChecks=kind==='outage'?(/^Failed checks: (.*)$/m.exec(body)?.[1]??'').split(', '):[];
    const skipped=/^Not attempted after an earlier failure: (.*)$/m.exec(body)?.[1];
-   const event:AlertEvent={id,kind,at,failedChecks,...(notice?{notice}:{}),...(skipped===undefined?{}:{notAttemptedChecks:skipped==='none'?[]:skipped.split(', ')})};
+   const event:AlertEvent={id,kind,at,failedChecks,...(review?{review}:{}),...(notice?{notice}:{}),...(skipped===undefined?{}:{notAttemptedChecks:skipped==='none'?[]:skipped.split(', ')})};
    try{if(alertBody(event,'github-backup')===body&&comment.id!>latestId){latest=event;latestId=comment.id!;}}catch{/* Untrusted text is never executed or echoed. */}
   }
   if(comments.length<100)return latest;
@@ -85,7 +87,7 @@ export async function deliver(issue:number,event:AlertEvent,source:'operator-mac
     if(options.reconcileOnly)throw Error('NOTIFICATION_PENDING');
     await options.beforeRelayDispatch?.();
     await transport('POST','/repos/porchday/porchday/actions/workflows/external-monitor-relay.yml/dispatches',{
-     ref:'main',inputs:{event_id:event.id,payload:JSON.stringify({event:{id:event.id,kind:event.kind,at:event.at,failedChecks:event.failedChecks,...(event.notice===undefined?{}:{notice:event.notice}),...(event.notAttemptedChecks===undefined?{}:{notAttemptedChecks:event.notAttemptedChecks})},drill:!!options.drill})},
+     ref:'main',inputs:{event_id:event.id,payload:JSON.stringify({event:{id:event.id,kind:event.kind,at:event.at,failedChecks:event.failedChecks,...(event.notice===undefined?{}:{notice:event.notice}),...(event.incidentId?{incidentId:event.incidentId}:{}),...(event.review?{review:event.review}:{}),...(event.notAttemptedChecks===undefined?{}:{notAttemptedChecks:event.notAttemptedChecks})},drill:!!options.drill})},
     });
     // Dispatch acceptance is not notification delivery. Keep the durable outbox
     // until a later reconciliation observes the exact bot-authored comment.

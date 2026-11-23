@@ -1,4 +1,4 @@
-import {execFileSync} from 'node:child_process';
+import {execFile,execFileSync} from 'node:child_process';
 import {isAbsolute} from 'node:path';
 import {statSync} from 'node:fs';
 import WebSocket from 'ws';
@@ -10,9 +10,19 @@ export class IncidentCodex {
  private pending=new Map<number,{resolve:(value:any)=>void;reject:(error:Error)=>void;timer:ReturnType<typeof setTimeout>}>();
  private socket:WebSocket;
  private opened:Promise<void>;
- constructor(executable:string){
-  let version:any;
-  try{version=JSON.parse(execFileSync(executable,['app-server','daemon','version'],{encoding:'utf8',timeout:5000,stdio:['ignore','pipe','pipe']}));}catch{throw Error('INCIDENT_DAEMON_UNAVAILABLE');}
+ static async connect(executable:string):Promise<IncidentCodex>{
+  const run=(args:string[],timeout:number)=>new Promise<string>((resolve,reject)=>execFile(executable,args,{encoding:'utf8',timeout,maxBuffer:65536},(error,out)=>error?reject(Error('INCIDENT_DAEMON_UNAVAILABLE')):resolve(out)));
+  let version:any;try{version=JSON.parse(await run(['app-server','daemon','version'],5000));}catch{await run(['app-server','daemon','start'],15000);version=JSON.parse(await run(['app-server','daemon','version'],5000));}
+  const rpc=new IncidentCodex(executable,version);try{await rpc.initialize();return rpc;}catch(error){rpc.close();throw error;}
+ }
+ constructor(executable:string,metadata?:unknown){
+  let version:any=metadata;
+  const read=()=>JSON.parse(execFileSync(executable,['app-server','daemon','version'],{encoding:'utf8',timeout:5000,stdio:['ignore','pipe','pipe']}));
+  if(!version)try{version=read();}catch{
+   // Idempotent daemon start repairs a stale socket without restarting active work
+   // or starting inference. The dispatcher's durable cooldown bounds retries.
+   try{execFileSync(executable,['app-server','daemon','start'],{timeout:15000,stdio:'ignore'});version=read();}catch{throw Error('INCIDENT_DAEMON_UNAVAILABLE');}
+  }
   const path=version.socketPath;
   if(version.status!=='running'||typeof path!=='string'||!isAbsolute(path))throw Error('INCIDENT_DAEMON_UNAVAILABLE');
   const stat=statSync(path);if(!stat.isSocket()||stat.uid!==process.getuid?.())throw Error('INCIDENT_DAEMON_SOCKET_INVALID');

@@ -36,7 +36,8 @@
         "docs/native-parity.md#private-operator-health-dashboard--november-16",
         "docs/native-parity.md#operator-dashboard-service-data-path--november-16",
         "docs/native-parity.md#dashboard-workers-runtime-compatibility--november-16",
-        "docs/native-parity.md#actionable-health-notifications--november-23"
+        "docs/native-parity.md#actionable-health-notifications--november-23",
+        "docs/native-parity.md#agent-first-incident-review--november-23"
       ],
       "implementation": {
         "ios": "implemented",

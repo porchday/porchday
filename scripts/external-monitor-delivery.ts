@@ -5,12 +5,13 @@ export function createRelayDrainer(options:{issue:number;drill?:boolean;read:()=
  const now=options.now??Date.now;let inFlight:Promise<void>|undefined,retryReadAfter=0;
  async function drain(){
   while(options.read().pending.length&&!options.stopping()){
-   const event=options.read().pending[0],last=options.read().lastRelayAttempt;
+   const event=options.read().pending.find(e=>!e.reviewPending),last=options.read().lastRelayAttempt;
+   if(!event)return;
    const reconcileOnly=!!last&&last.id===event.id&&now()-Date.parse(last.at)<60000;
    try{
     await deliver(options.issue,event,'operator-mac',{relay:true,drill:options.drill,reconcileOnly,transport:options.transport,beforeRelayDispatch:()=>{
      if(options.stopping())throw Error('MONITOR_STOPPING');
-     const state=options.read();if(state.pending[0]?.id!==event.id)throw Error('MONITOR_OUTBOX_CHANGED');
+     const state=options.read();if(state.pending.find(e=>!e.reviewPending)?.id!==event.id)throw Error('MONITOR_OUTBOX_CHANGED');
      // Persist before dispatch: a restart must reconcile an uncertain POST first.
      options.write({...state,lastRelayAttempt:{id:event.id,at:new Date(now()).toISOString()}});
     }});

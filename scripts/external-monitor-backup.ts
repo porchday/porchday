@@ -1,3 +1,4 @@
+import {handoffBackup} from './incident-inbox-client.ts';
 import {randomUUID} from 'node:crypto';
 import {setTimeout as sleep} from 'node:timers/promises';
 import {fileURLToPath} from 'node:url';
@@ -9,7 +10,7 @@ import {deliver,latestHostedEvent,previousHostedExecutionFailed,ghTransport,type
 /** Healthy checks remain brief; an open incident needs a full stability window. */
 export async function runBackup(config:ProbeConfig&{issue:number},options:{
  transport?:GitHubTransport;probe?:typeof probe;sleep?:(ms:number)=>Promise<unknown>;now?:()=>number;
- previousExecutionFailed?:boolean;
+ previousExecutionFailed?:boolean;handoff?:(event:import('./external-monitor-alerts.ts').AlertEvent)=>Promise<boolean|undefined>;
  observe:(observation:Observation)=>void;
 }):Promise<{healthy:boolean;notificationsDelivered:boolean;incidentOpen:boolean}>{
  validateProbeConfig(config);
@@ -17,6 +18,7 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
  let state=initialState(),stateAvailable=true,allHealthy=true;
  try{const previous=await latestHostedEvent(config.issue,options.transport);state.incident=previous?.kind==='outage';state.incidentNotice=previous?.notice;}
  catch{stateAvailable=false;}
+ let ownerIncident=state.incident;
  const now=options.now??Date.now;
  if(stateAvailable&&!state.incident&&options.previousExecutionFailed){
   state.incident=true;state.incidentNotice='monitoring';
@@ -25,10 +27,15 @@ export async function runBackup(config:ProbeConfig&{issue:number},options:{
  for(let sample=0;sample<2||(state.incident&&sample<8);sample++){
   const started=now(),observation=await (options.probe??probe)(config);
   options.observe(observation);allHealthy=allHealthy&&observation.healthy;
-  const previousCount=state.pending.length;state=advance(state,observation,randomUUID());if(state.pending.length>previousCount&&state.pending.at(-1)?.kind==='recovery'&&state.incidentNotice){state.pending.at(-1)!.notice=state.incidentNotice;delete state.incidentNotice;}
+  const security=observation.checks.some(c=>c.name==='logout'&&c.ok)&&observation.checks.some(c=>c.name==='revocation'&&!c.ok&&c.status===200);
+  const previousCount=state.pending.length;state=advance(security&&!state.incident?{...state,failureStreak:1,lastAt:new Date(Date.parse(observation.at)-1).toISOString()}:state,observation,randomUUID());if(state.pending.length>previousCount&&state.pending.at(-1)?.kind==='recovery'&&state.incidentNotice){state.pending.at(-1)!.notice=state.incidentNotice;delete state.incidentNotice;}
   if(stateAvailable){
    while(state.pending.length){
-    try{await deliver(config.issue,state.pending[0],'github-backup',{transport:options.transport,requireBot:true});state.pending.shift();}
+    try{if(options.handoff&&!security&&!(ownerIncident&&state.pending[0].kind==='recovery')){let handedOff:boolean|undefined;try{handedOff=await options.handoff(state.pending[0]);}catch{handedOff=false;}
+     if(handedOff){state.pending.shift();continue;}
+     if(handedOff===false&&state.pending[0].kind==='recovery'){state.pending.shift();continue;}
+     if(handedOff===false)state.pending[0].review={kind:'fallback',summary:'The GitHub backup confirmed failed checks, but the independent agent receiver is unavailable. This fallback is not a completed agent assessment.'};
+    }await deliver(config.issue,state.pending[0],'github-backup',{transport:options.transport,requireBot:true});if(state.pending[0].kind==='outage')ownerIncident=true;state.pending.shift();}
     catch{break;}
    }
   }
@@ -54,7 +61,7 @@ async function main(){
  delete process.env.PORCHDAY_EXTERNAL_MONITOR_CONFIG;
  let previousExecutionFailed=false,executionHistoryAvailable=true;
  try{previousExecutionFailed=await previousHostedExecutionFailed(process.env.GITHUB_RUN_ID??'',ghTransport,Date.now(),gapMs=>console.log(JSON.stringify({source:'github-backup',event:'coverage',previousRunAgeMs:gapMs,coverageGap:gapMs>12*60000})));}catch{executionHistoryAvailable=false;}
- const result=await runBackup(config,{previousExecutionFailed,observe:observation=>console.log(JSON.stringify({source:'github-backup',...observation}))});
+ const result=await runBackup(config,{previousExecutionFailed,handoff:event=>handoffBackup(config,event),observe:observation=>console.log(JSON.stringify({source:'github-backup',...observation}))});
  console.log(JSON.stringify({source:'github-backup',...result,executionHistoryAvailable,previousExecutionFailed}));
  if(process.env.PORCHDAY_MONITOR_NOTIFICATION_DRILL==='true'){
   if(!result.healthy||!result.notificationsDelivered||!executionHistoryAvailable)throw Error('DRILL_REQUIRES_HEALTHY_MONITOR');
