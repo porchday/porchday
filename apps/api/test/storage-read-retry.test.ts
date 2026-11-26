@@ -21,6 +21,19 @@ describe('bounded read-only storage recovery',()=>{
   await vi.advanceTimersByTimeAsync(2000);await verdict;finish({etag:'late',text});await vi.runAllTimersAsync();
   expect(text).not.toHaveBeenCalled();expect(get).toHaveBeenCalledTimes(1);expect(vi.getTimerCount()).toBe(0);
  });
+ it('reproduces a short storage outage exhausting attempts before the read deadline',async()=>{
+  vi.useFakeTimers();const random=vi.spyOn(Math,'random').mockReturnValue(0),started=Date.now();
+  // Production traces show short rejected reads, not a two-second hung lookup.
+  // Keep this limitation explicit: a 400ms outage can exhaust the attempt cap.
+  const get=vi.fn(async()=>{await new Promise(resolve=>setTimeout(resolve,70));if(Date.now()-started<400)throw Error('synthetic unavailable');return {etag:'fresh',text:async()=>'canonical'};});
+  try{
+   let outcome='pending';const pending=readStorageText({get},'key').then(()=>{outcome='read';},error=>{outcome=error.message;});
+   await vi.advanceTimersByTimeAsync(360);await pending;
+   expect(outcome).toBe('STORAGE_READ_UNAVAILABLE');expect(get).toHaveBeenCalledTimes(3);expect(vi.getTimerCount()).toBe(0);
+   await vi.advanceTimersByTimeAsync(40);const fresh=readStorageText({get},'key');await vi.advanceTimersByTimeAsync(70);
+   expect(await (await fresh)?.text()).toBe('canonical');
+  }finally{random.mockRestore();}
+ });
  it('shares two seconds across retries instead of resetting the deadline',async()=>{
   vi.useFakeTimers();const get=vi.fn().mockRejectedValueOnce(Error('transient')).mockImplementation(()=>new Promise(()=>{}));
   const verdict=expect(readStorageText({get},'key')).rejects.toThrow('STORAGE_READ_UNAVAILABLE');await vi.advanceTimersByTimeAsync(2000);await verdict;
