@@ -136,7 +136,7 @@ export class IncidentDispatcher {
 async function completedReview(item:Incident,turn:any,rpc:Rpc):Promise<IncidentReview>{
  if(turn?.id!==item.turnId||turn?.status!=='completed')throw Error('INCIDENT_REVIEW_NOT_COMPLETE');
  let messages=turn.items?.filter((i:any)=>i.type==='agentMessage'&&typeof i.text==='string');
- if(!messages){const page=await rpc.call('thread/items/list',{threadId:item.threadId,turnId:item.turnId,limit:10,sortDirection:'desc',deferOutput:{commandExecution:true,mcpToolCall:true}});messages=page.data?.filter((e:any)=>e.turnId===item.turnId&&e.item?.type==='agentMessage').map((e:any)=>e.item).reverse();}
+ if(turn.itemsView==='notLoaded'||!messages?.length){const page=await rpc.call('thread/items/list',{threadId:item.threadId,turnId:item.turnId,limit:10,sortDirection:'desc',deferOutput:{commandExecution:true,mcpToolCall:true}});messages=page.data?.filter((e:any)=>e.turnId===item.turnId&&e.item?.type==='agentMessage').map((e:any)=>e.item).reverse();}
  return parseReview(JSON.parse(messages?.at(-1)?.text??''),item.id);
 }
 export function createIncidentDispatcher(config:DispatchConfig,directory:string,notify:Dependencies['notify'],drill=false){

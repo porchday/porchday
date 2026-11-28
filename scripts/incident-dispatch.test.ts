@@ -97,3 +97,11 @@ it('keeps checking for the review after the full recovery window has closed',asy
  f.dispatcher.current!.lastAttempt=undefined;f.call.mockResolvedValue({data:[{id:'turn-1',status:'completed',items:[{type:'agentMessage',text:JSON.stringify({incidentId:id,decision:'resolved',summary:'Verified repair and stability.',evidence:['Retained 140-second recovery.']})}]}]} as never);
  f.dispatcher.observe(observation(180,true));await settle();expect(f.dispatcher.current?.review?.decision).toBe('resolved');
 });
+it('loads the exact completed turn when the daemon returns an unloaded empty items array',async()=>{
+ const f=fixture({v:1,id,at:observation(0).at,lastAt:observation(20).at,failures:0,failedChecks:['login'],phase:'accepted',threadId:thread,turnId:'expected',reviewRequired:true,closedAt:observation(180,true).at});
+ const review={incidentId:id,decision:'notify',summary:'Verified investigation needs operator action.',evidence:['Retained incident evidence.']};
+ f.call.mockImplementation(async(method:string)=>method==='thread/turns/list'?{data:[{id:'expected',status:'completed',itemsView:'notLoaded',items:[]}]}:method==='thread/items/list'?{data:[{turnId:'expected',item:{type:'agentMessage',text:JSON.stringify(review)}},{turnId:'expected',item:{type:'agentMessage',text:'Earlier progress commentary.'}}]}:{} as never);
+ await f.dispatcher.flush();
+ expect(f.call).toHaveBeenCalledWith('thread/items/list',expect.objectContaining({threadId:thread,turnId:'expected',limit:10}));
+ expect(f.dispatcher.current?.review).toEqual(review);expect(f.dispatcher.current?.error).toBeUndefined();
+});

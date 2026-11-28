@@ -372,3 +372,8 @@ November 23 installation verified exact source `d5c5b23cede6e8f017ecefe03cd7e76e
 ## Agent-first incident review — November 23
 
 This candidate changes operator monitoring, capability-protected monitor inboxes, responder dispatch and notification eligibility only. Shared iOS/macOS/member APIs, encryption, logout enforcement and native permissions are unchanged. The native matrix remains implemented with its existing physical-device follow-ups. Exact-source full CI, iOS simulator/interoperability/launch and macOS build/contract checks are required before production activation. Production/staging monitoring differences (including staging's bounded status-reader retry) are preserved; no signed binary release is claimed.
+
+
+## Incident review readback
+
+November 27 operator-only audit: completed incident review readback now fetches exact-turn messages when the daemon returns `itemsView: notLoaded` with an empty items array. No app/API, native capability, permission or distribution behavior changes. Existing native implementation and physical-device follow-up statuses remain unchanged; exact-source iOS/macOS CI still gates installation.
