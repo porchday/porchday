@@ -1,6 +1,6 @@
 # Porchday roadmap
 
-**In progress November27:** [#8](https://github.com/porchday/porchday/issues/8): actual daemon response reproduces a completed-review parser failure (`items: []` with `itemsView: notLoaded`). Fix fetches the exact turn before validating its disposition; regression fails before the change. Release gates and production monitor installation remain pending. Historical telemetry incident and watchdog notification are preserved.
+**Delivered November 27:** [#8](https://github.com/porchday/porchday/issues/8): [PR #247](https://github.com/porchday/porchday/pull/247) fixes completed-investigation readback for unloaded empty turn items. Exact-source full CI, iOS and macOS checks passed; the production Mac monitor is installed and nine complete post-install journeys passed. The original valid investigation receipt was restored without a duplicate notification. Recurring storage/telemetry causes remain open under #55. [Review evidence](docs/evidence/health-review-2026-11-27.md).
 
 **Reviewed November25:** [#55](https://github.com/porchday/porchday/issues/55) / [#8](https://github.com/porchday/porchday/issues/8):25 failed journeys retained across48 hours, no Mac coverage gaps or new notifications. Exact traces correlate all seven503 journeys; a deterministic400ms storage-outage regression reproduces exhaustion of the three-read cap before its deadline.108 targeted tests pass. Provider error classification, unknown write outcomes and backup scheduling remain open; no runtime change deployed. [Evidence](docs/evidence/health-review-2026-11-25.md).
 
